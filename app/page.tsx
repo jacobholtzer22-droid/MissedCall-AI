@@ -11,7 +11,7 @@ export default function LandingPage() {
         <div className="container mx-auto px-6 py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-3">
-              <Image src="/images/logo.png" alt="Align & Acquire" width={40} height={40} className="h-10 w-auto" />
+              <Image src="/images/logo.png" alt="Align & Acquire" width={56} height={56} className="h-14 w-auto" />
               <div className="hidden sm:block">
                 <span className="text-xl font-bold text-gray-900">MissedCall AI</span>
                 <span className="text-xs text-gray-500 block -mt-1">by Align & Acquire</span>
@@ -382,7 +382,7 @@ export default function LandingPage() {
         <div className="container mx-auto px-6">
           <div className="flex flex-col md:flex-row justify-between items-center">
             <div className="flex items-center space-x-3 mb-4 md:mb-0">
-              <Image src="/images/logo.png" alt="Align & Acquire" width={32} height={32} className="h-8 w-auto" />
+              <Image src="/images/logo.png" alt="Align & Acquire" width={48} height={48} className="h-12 w-auto" />
               <div>
                 <span className="text-white font-bold">MissedCall AI</span>
                 <span className="text-xs text-gray-500 block">A product by Align & Acquire</span>
