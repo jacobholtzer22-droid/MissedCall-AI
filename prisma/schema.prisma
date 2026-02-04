@@ -1,0 +1,216 @@
+// ===========================================
+// MISSEDCALL AI - DATABASE SCHEMA
+// ===========================================
+// This defines all your database tables and relationships
+// Run `npm run db:push` to sync this to your database
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ===========================================
+// BUSINESS - Your customers (dentists, salons, etc.)
+// ===========================================
+model Business {
+  id                    String    @id @default(cuid())
+  
+  // Basic info
+  name                  String                          // "Smith Dental"
+  slug                  String    @unique               // "smith-dental" (for URLs)
+  
+  // Twilio phone number provisioned for this business
+  twilioPhoneNumber     String?   @unique
+  
+  // Business details
+  timezone              String    @default("America/New_York")
+  businessHours         Json?                           // { monday: { open: "09:00", close: "17:00" }, ... }
+  servicesOffered       Json?                           // ["cleaning", "filling", "crown", ...]
+  
+  // AI customization
+  aiGreeting            String?                         // Custom first message
+  aiInstructions        String?   @db.Text              // Custom personality/rules for the AI
+  aiContext             String?   @db.Text              // Business context (what they do, policies, etc.)
+  
+  // Calendar integration
+  googleCalendarId      String?
+  googleRefreshToken    String?
+  
+  // Billing
+  stripeCustomerId      String?   @unique
+  stripeSubscriptionId  String?
+  subscriptionStatus    String    @default("trialing")  // trialing, active, past_due, canceled
+  
+  // Timestamps
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+  
+  // Relationships
+  users                 User[]
+  conversations         Conversation[]
+  appointments          Appointment[]
+  
+  @@index([stripeCustomerId])
+}
+
+// ===========================================
+// USER - People who log into the dashboard
+// ===========================================
+model User {
+  id                    String    @id @default(cuid())
+  
+  // Clerk integration
+  clerkId               String    @unique               // Clerk's user ID
+  
+  // User info (synced from Clerk)
+  email                 String
+  firstName             String?
+  lastName              String?
+  imageUrl              String?
+  
+  // Role within the business
+  role                  String    @default("owner")     // owner, admin, staff
+  
+  // Which business they belong to
+  businessId            String
+  business              Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  
+  // Timestamps
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+  
+  @@index([clerkId])
+  @@index([businessId])
+}
+
+// ===========================================
+// CONVERSATION - Each missed call = one conversation
+// ===========================================
+model Conversation {
+  id                    String    @id @default(cuid())
+  
+  // Which business this belongs to
+  businessId            String
+  business              Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  
+  // Caller info
+  callerPhone           String                          // +1234567890
+  callerName            String?                         // Gathered during conversation
+  
+  // Conversation state
+  status                String    @default("active")    // active, completed, appointment_booked, no_response
+  
+  // AI-generated summary of the conversation
+  summary               String?   @db.Text
+  
+  // What the caller needed (extracted by AI)
+  intent                String?                         // "book_appointment", "question", "emergency", etc.
+  serviceRequested      String?                         // "teeth cleaning", "oil change", etc.
+  
+  // Timestamps
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+  lastMessageAt         DateTime  @default(now())
+  
+  // Relationships
+  messages              Message[]
+  appointment           Appointment?
+  
+  @@index([businessId])
+  @@index([callerPhone])
+  @@index([status])
+  @@index([createdAt])
+}
+
+// ===========================================
+// MESSAGE - Individual texts in a conversation
+// ===========================================
+model Message {
+  id                    String    @id @default(cuid())
+  
+  // Which conversation this belongs to
+  conversationId        String
+  conversation          Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  
+  // Message details
+  direction             String                          // "inbound" (from caller) or "outbound" (from AI)
+  content               String    @db.Text              // The actual message text
+  
+  // Twilio tracking
+  twilioSid             String?                         // Twilio message SID for tracking
+  twilioStatus          String?                         // sent, delivered, failed, etc.
+  
+  // Timestamps
+  createdAt             DateTime  @default(now())
+  
+  @@index([conversationId])
+  @@index([createdAt])
+}
+
+// ===========================================
+// APPOINTMENT - When AI successfully books
+// ===========================================
+model Appointment {
+  id                    String    @id @default(cuid())
+  
+  // Relationships
+  businessId            String
+  business              Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  
+  conversationId        String    @unique               // One appointment per conversation
+  conversation          Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  
+  // Customer info
+  customerName          String
+  customerPhone         String
+  customerEmail         String?
+  
+  // Appointment details
+  serviceType           String                          // "teeth cleaning", "haircut", etc.
+  scheduledAt           DateTime                        // When the appointment is
+  duration              Int       @default(60)          // Duration in minutes
+  notes                 String?   @db.Text              // Any special notes/requests
+  
+  // Calendar integration
+  googleCalendarEventId String?
+  
+  // Status tracking
+  status                String    @default("confirmed") // confirmed, cancelled, completed, no_show
+  
+  // Reminders
+  reminderSentAt        DateTime?
+  
+  // Timestamps
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+  
+  @@index([businessId])
+  @@index([scheduledAt])
+  @@index([status])
+}
+
+// ===========================================
+// PHONE NUMBER POOL - Available Twilio numbers
+// ===========================================
+model PhoneNumber {
+  id                    String    @id @default(cuid())
+  
+  phoneNumber           String    @unique               // +1234567890
+  twilioSid             String    @unique               // Twilio phone number SID
+  
+  // Assignment
+  assignedToBusinessId  String?                         // Which business is using this (null = available)
+  
+  // Status
+  status                String    @default("available") // available, assigned, released
+  
+  // Timestamps
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+  
+  @@index([status])
+}
