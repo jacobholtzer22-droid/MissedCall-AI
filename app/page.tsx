@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import Image from 'next/image'
 import { SignedIn, SignedOut } from '@clerk/nextjs'
 import { Phone, MessageSquare, Calendar, ArrowRight, CheckCircle, Clock, DollarSign, Shield, Zap, ChevronDown, Play, Mail } from 'lucide-react'
 
@@ -9,10 +10,12 @@ export default function LandingPage() {
       <nav className="border-b border-gray-100 sticky top-0 bg-white z-50">
         <div className="container mx-auto px-6 py-4">
           <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-2">
-              {/* LOGO GOES HERE - Replace the Phone icon with your logo */}
-              <Phone className="h-8 w-8 text-blue-600" />
-              <span className="text-xl font-bold text-gray-900">MissedCall AI</span>
+            <div className="flex items-center space-x-3">
+              <Image src="/images/logo.png" alt="Align & Acquire" width={40} height={40} className="h-10 w-auto" />
+              <div className="hidden sm:block">
+                <span className="text-xl font-bold text-gray-900">MissedCall AI</span>
+                <span className="text-xs text-gray-500 block -mt-1">by Align & Acquire</span>
+              </div>
             </div>
             <div className="hidden md:flex items-center space-x-8">
               <a href="#how-it-works" className="text-gray-600 hover:text-gray-900 transition">How It Works</a>
@@ -22,7 +25,7 @@ export default function LandingPage() {
             </div>
             <div className="flex items-center space-x-4">
               <SignedOut>
-                <Link href="/sign-in" className="text-gray-600 hover:text-gray-900 transition">Sign In</Link>
+                <Link href="/sign-in" className="text-gray-600 hover:text-gray-900 transition hidden sm:block">Sign In</Link>
                 <Link href="/sign-up" className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition">Start Free Trial</Link>
               </SignedOut>
               <SignedIn>
@@ -65,7 +68,6 @@ export default function LandingPage() {
               <div className="relative">
                 <div className="w-[300px] h-[600px] bg-gray-900 rounded-[3rem] p-3 shadow-2xl">
                   <div className="w-full h-full bg-white rounded-[2.5rem] overflow-hidden flex flex-col">
-                    {/* Phone Header */}
                     <div className="bg-gray-100 px-6 py-4 flex items-center space-x-3">
                       <div className="w-10 h-10 bg-blue-600 rounded-full flex items-center justify-center">
                         <Phone className="h-5 w-5 text-white" />
@@ -76,7 +78,6 @@ export default function LandingPage() {
                       </div>
                     </div>
                     
-                    {/* Messages */}
                     <div className="flex-1 p-4 space-y-3 bg-gray-50">
                       <div className="flex justify-start">
                         <div className="bg-white rounded-2xl rounded-tl-none px-4 py-2 shadow-sm max-w-[80%]">
@@ -108,7 +109,7 @@ export default function LandingPage() {
                       
                       <div className="flex justify-start">
                         <div className="bg-white rounded-2xl rounded-tl-none px-4 py-2 shadow-sm max-w-[80%]">
-                          <p className="text-sm text-gray-800">Thanks Sarah! When works best for you? We have openings this week.</p>
+                          <p className="text-sm text-gray-800">Thanks Sarah! When works best for you?</p>
                           <p className="text-xs text-gray-400 mt-1">2:36 PM</p>
                         </div>
                       </div>
@@ -122,7 +123,7 @@ export default function LandingPage() {
                       
                       <div className="flex justify-start">
                         <div className="bg-white rounded-2xl rounded-tl-none px-4 py-2 shadow-sm max-w-[80%]">
-                          <p className="text-sm text-gray-800">Perfect! Youre booked for a cleaning on Thursday at 2pm. See you then!</p>
+                          <p className="text-sm text-gray-800">Perfect! Youre booked for Thursday at 2pm. See you then!</p>
                           <p className="text-xs text-gray-400 mt-1">2:37 PM</p>
                         </div>
                       </div>
@@ -130,7 +131,6 @@ export default function LandingPage() {
                   </div>
                 </div>
                 
-                {/* Floating Badge */}
                 <div className="absolute -right-4 top-20 bg-green-500 text-white px-4 py-2 rounded-lg shadow-lg text-sm font-medium">
                   ✓ Appointment Booked!
                 </div>
@@ -198,7 +198,7 @@ export default function LandingPage() {
             <p className="text-gray-600 max-w-2xl mx-auto">Watch how MissedCall AI turns a missed call into a booked appointment in under 2 minutes</p>
           </div>
           <div className="max-w-4xl mx-auto">
-            {/* Video Placeholder - Replace with actual video embed */}
+            {/* VIDEO PLACEHOLDER - Replace with your video embed */}
             <div className="aspect-video bg-gray-900 rounded-2xl flex items-center justify-center relative overflow-hidden shadow-2xl">
               <div className="absolute inset-0 bg-gradient-to-br from-blue-600/20 to-purple-600/20"></div>
               <div className="text-center z-10">
@@ -208,8 +208,6 @@ export default function LandingPage() {
                 <p className="text-white text-lg">Watch Demo Video</p>
                 <p className="text-gray-300 text-sm mt-2">1:47 minutes</p>
               </div>
-              {/* Replace this entire div with your video embed code */}
-              {/* Example: <iframe src="your-video-url" className="absolute inset-0 w-full h-full" /> */}
             </div>
           </div>
         </div>
@@ -383,17 +381,19 @@ export default function LandingPage() {
       <footer className="bg-gray-900 text-gray-400 py-12">
         <div className="container mx-auto px-6">
           <div className="flex flex-col md:flex-row justify-between items-center">
-            <div className="flex items-center space-x-2 mb-4 md:mb-0">
-              {/* LOGO GOES HERE - Replace the Phone icon with your logo */}
-              <Phone className="h-6 w-6 text-blue-500" />
-              <span className="text-white font-bold">MissedCall AI</span>
+            <div className="flex items-center space-x-3 mb-4 md:mb-0">
+              <Image src="/images/logo.png" alt="Align & Acquire" width={32} height={32} className="h-8 w-auto" />
+              <div>
+                <span className="text-white font-bold">MissedCall AI</span>
+                <span className="text-xs text-gray-500 block">A product by Align & Acquire</span>
+              </div>
             </div>
             <div className="flex space-x-8 mb-4 md:mb-0">
               <a href="#how-it-works" className="hover:text-white transition">How It Works</a>
               <a href="#faq" className="hover:text-white transition">FAQ</a>
               <a href="#book-demo" className="hover:text-white transition">Book Demo</a>
             </div>
-            <p>© {new Date().getFullYear()} MissedCall AI. All rights reserved.</p>
+            <p>© {new Date().getFullYear()} Align & Acquire. All rights reserved.</p>
           </div>
         </div>
       </footer>
