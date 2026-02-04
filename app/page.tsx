@@ -11,7 +11,7 @@ export default function LandingPage() {
         <div className="container mx-auto px-4 sm:px-6 py-3 sm:py-4">
           <div className="flex flex-wrap items-center justify-between gap-y-3 gap-x-4">
             <div className="flex items-center space-x-3 flex-shrink-0">
-              <Image src="/images/logo.png" alt="Align & Acquire" width={40} height={40} className="h-10 w-auto" />
+              <Image src="/images/logo.png" alt="Align & Acquire" width={160} height={160} className="h-20 w-auto mix-blend-multiply" priority unoptimized />
               <div className="hidden sm:block">
                 <span className="text-xl font-bold text-gray-900">MissedCall AI</span>
                 <span className="text-xs text-gray-500 block -mt-1">by Align & Acquire</span>
@@ -161,7 +161,7 @@ export default function LandingPage() {
       </section>
 
       {/* How It Works */}
-      <section id="how-it-works" className="py-20">
+      <section id="how-it-works" className="py-20 scroll-mt-24">
         <div className="container mx-auto px-6">
           <div className="text-center mb-16">
             <h2 className="text-3xl font-bold text-gray-900 mb-4">How It Works</h2>
@@ -191,7 +191,7 @@ export default function LandingPage() {
       </section>
 
       {/* Demo Video Section */}
-      <section id="demo" className="py-20 bg-gray-50">
+      <section id="demo" className="py-20 bg-gray-50 scroll-mt-24">
         <div className="container mx-auto px-6">
           <div className="text-center mb-12">
             <h2 className="text-3xl font-bold text-gray-900 mb-4">See It In Action</h2>
@@ -279,7 +279,7 @@ export default function LandingPage() {
       </section>
 
       {/* FAQ */}
-      <section id="faq" className="py-20 bg-gray-50">
+      <section id="faq" className="py-20 bg-gray-50 scroll-mt-24">
         <div className="container mx-auto px-6">
           <div className="text-center mb-12">
             <h2 className="text-3xl font-bold text-gray-900 mb-4">Frequently Asked Questions</h2>
@@ -314,7 +314,7 @@ export default function LandingPage() {
       </section>
 
       {/* Book a Demo Form */}
-      <section id="book-demo" className="py-20 bg-blue-600">
+      <section id="book-demo" className="py-20 bg-blue-600 scroll-mt-24">
         <div className="container mx-auto px-6">
           <div className="max-w-2xl mx-auto">
             <div className="text-center mb-10">
@@ -382,7 +382,7 @@ export default function LandingPage() {
         <div className="container mx-auto px-6">
           <div className="flex flex-col md:flex-row justify-between items-center">
             <div className="flex items-center space-x-3 mb-4 md:mb-0">
-              <Image src="/images/logo.png" alt="Align & Acquire" width={32} height={32} className="h-8 w-auto" />
+              <Image src="/images/logo.png" alt="Align & Acquire" width={128} height={128} className="h-16 w-auto mix-blend-multiply opacity-90 hover:opacity-100 transition" unoptimized />
               <div>
                 <span className="text-white font-bold">MissedCall AI</span>
                 <span className="text-xs text-gray-500 block">A product by Align & Acquire</span>
