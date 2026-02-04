@@ -7,29 +7,29 @@ export default function LandingPage() {
   return (
     <div className="min-h-screen bg-white">
       {/* Navigation */}
-      <nav className="border-b border-gray-100 sticky top-0 bg-white z-50">
-        <div className="container mx-auto px-6 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-3">
-              <Image src="/images/logo.png" alt="Align & Acquire" width={56} height={56} className="h-14 w-auto" />
+      <nav className="border-b border-gray-100 sticky top-0 bg-white z-50 shadow-sm">
+        <div className="container mx-auto px-4 sm:px-6 py-3 sm:py-4">
+          <div className="flex flex-wrap items-center justify-between gap-y-3 gap-x-4">
+            <div className="flex items-center space-x-3 flex-shrink-0">
+              <Image src="/images/logo.png" alt="Align & Acquire" width={40} height={40} className="h-10 w-auto" />
               <div className="hidden sm:block">
                 <span className="text-xl font-bold text-gray-900">MissedCall AI</span>
                 <span className="text-xs text-gray-500 block -mt-1">by Align & Acquire</span>
               </div>
             </div>
-            <div className="hidden md:flex items-center space-x-8">
-              <a href="#how-it-works" className="text-gray-600 hover:text-gray-900 transition">How It Works</a>
-              <a href="#demo" className="text-gray-600 hover:text-gray-900 transition">Demo</a>
-              <a href="#faq" className="text-gray-600 hover:text-gray-900 transition">FAQ</a>
-              <a href="#book-demo" className="text-gray-600 hover:text-gray-900 transition">Book a Demo</a>
+            <div className="flex flex-wrap items-center justify-center gap-x-6 gap-y-2 sm:gap-x-8 order-3 w-full md:order-2 md:w-auto">
+              <a href="#how-it-works" className="text-sm sm:text-base text-gray-600 hover:text-gray-900 transition whitespace-nowrap py-1">How It Works</a>
+              <a href="#demo" className="text-sm sm:text-base text-gray-600 hover:text-gray-900 transition whitespace-nowrap py-1">Demo</a>
+              <a href="#faq" className="text-sm sm:text-base text-gray-600 hover:text-gray-900 transition whitespace-nowrap py-1">FAQ</a>
+              <a href="#book-demo" className="text-sm sm:text-base text-gray-600 hover:text-gray-900 transition whitespace-nowrap py-1">Make a Specialized Plan</a>
             </div>
-            <div className="flex items-center space-x-4">
+            <div className="flex items-center space-x-3 sm:space-x-4 flex-shrink-0 order-2 md:order-3">
               <SignedOut>
-                <Link href="/sign-in" className="text-gray-600 hover:text-gray-900 transition hidden sm:block">Sign In</Link>
-                <Link href="/sign-up" className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition">Start Free Trial</Link>
+                <Link href="/sign-in" className="text-sm sm:text-base text-gray-600 hover:text-gray-900 transition hidden sm:block">Sign In</Link>
+                <Link href="/sign-up" className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition text-sm sm:text-base whitespace-nowrap">Start Free Trial</Link>
               </SignedOut>
               <SignedIn>
-                <Link href="/dashboard" className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition flex items-center">
+                <Link href="/dashboard" className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition flex items-center text-sm sm:text-base whitespace-nowrap">
                   Dashboard <ArrowRight className="ml-2 h-4 w-4" />
                 </Link>
               </SignedIn>
@@ -382,7 +382,7 @@ export default function LandingPage() {
         <div className="container mx-auto px-6">
           <div className="flex flex-col md:flex-row justify-between items-center">
             <div className="flex items-center space-x-3 mb-4 md:mb-0">
-              <Image src="/images/logo.png" alt="Align & Acquire" width={48} height={48} className="h-12 w-auto" />
+              <Image src="/images/logo.png" alt="Align & Acquire" width={32} height={32} className="h-8 w-auto" />
               <div>
                 <span className="text-white font-bold">MissedCall AI</span>
                 <span className="text-xs text-gray-500 block">A product by Align & Acquire</span>
@@ -391,7 +391,7 @@ export default function LandingPage() {
             <div className="flex space-x-8 mb-4 md:mb-0">
               <a href="#how-it-works" className="hover:text-white transition">How It Works</a>
               <a href="#faq" className="hover:text-white transition">FAQ</a>
-              <a href="#book-demo" className="hover:text-white transition">Book Demo</a>
+              <a href="#book-demo" className="hover:text-white transition">Make a Specialized Plan</a>
             </div>
             <p>© {new Date().getFullYear()} Align & Acquire. All rights reserved.</p>
           </div>
