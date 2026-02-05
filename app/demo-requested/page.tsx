@@ -10,7 +10,7 @@ export default function DemoRequestedPage() {
         </div>
         <h1 className="text-3xl font-bold text-gray-900 mb-4">Demo Request Received!</h1>
         <p className="text-gray-600 mb-8">
-          Thanks for your interest in MissedCall AI. Well reach out within 24 hours to schedule your personalized demo.
+          Thanks for your interest in MissedCall AI. We'll reach out within 24 hours to schedule your free demo call.
         </p>
         <p className="text-gray-500 mb-8">
           Check your email for a confirmation.
