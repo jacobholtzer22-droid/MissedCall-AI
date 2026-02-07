@@ -21,6 +21,7 @@ export default function LandingPage() {
             </div>
             <div className="flex flex-wrap items-center justify-center gap-x-6 gap-y-2 sm:gap-x-8 order-3 w-full md:order-2 md:w-auto">
               <a href="#how-it-works" className="text-sm sm:text-base text-gray-600 hover:text-gray-900 transition whitespace-nowrap py-1">How It Works</a>
+              <a href="#roi-calculator" className="text-sm sm:text-base text-gray-600 hover:text-gray-900 transition whitespace-nowrap py-1">ROI Calculator</a>
               <a href="#faq" className="text-sm sm:text-base text-gray-600 hover:text-gray-900 transition whitespace-nowrap py-1">FAQ</a>
               <a href="#book-demo" className="text-sm sm:text-base text-gray-600 hover:text-gray-900 transition whitespace-nowrap py-1">Make a Specialized Plan</a>
             </div>
@@ -139,7 +140,7 @@ export default function LandingPage() {
       </section>
 
       {/* ROI Calculator */}
-      <section className="py-16 md:py-20">
+      <section id="roi-calculator" className="py-16 md:py-20 scroll-mt-24">
         <div className="container mx-auto px-6">
           <ROICalculator />
         </div>
@@ -305,6 +306,7 @@ export default function LandingPage() {
             </div>
             <div className="flex space-x-8 mb-4 md:mb-0">
               <a href="#how-it-works" className="hover:text-white transition">How It Works</a>
+              <a href="#roi-calculator" className="hover:text-white transition">ROI Calculator</a>
               <a href="#faq" className="hover:text-white transition">FAQ</a>
               <a href="#book-demo" className="hover:text-white transition">Make a Specialized Plan</a>
             </div>
