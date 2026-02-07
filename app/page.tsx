@@ -2,6 +2,7 @@ import Link from 'next/link'
 import Image from 'next/image'
 import { SignedIn, SignedOut } from '@clerk/nextjs'
 import { Phone, MessageSquare, Calendar, ArrowRight, CheckCircle, Clock, DollarSign, Shield, Zap, ChevronDown, Mail } from 'lucide-react'
+import ROICalculator from './components/roi-calculator'
 
 export default function LandingPage() {
   return (
@@ -136,6 +137,13 @@ export default function LandingPage() {
         </div>
       </section>
 
+      {/* ROI Calculator */}
+      <section className="py-16 md:py-20">
+        <div className="container mx-auto px-6">
+          <ROICalculator />
+        </div>
+      </section>
+
       {/* Stats */}
       <section className="py-12 border-y border-gray-100">
         <div className="container mx-auto px-6">
@@ -239,7 +247,7 @@ export default function LandingPage() {
             />
             <FAQItem 
               question="How much does it cost?" 
-              answer="Plans start at $299/month and include unlimited AI conversations. The service typically pays for itself with just one recovered appointment — that's missed revenue back in your pocket. Book a demo and we'll find the right plan for your business."
+              answer="Startup fee starting at $500. Plans start at $250/month and include unlimited AI conversations. The service typically pays for itself with just one recovered appointment — that's missed revenue back in your pocket. Book a demo and we'll find the right plan for your business."
             />
             <FAQItem 
               question="Can I customize what the AI says?" 
@@ -314,7 +322,7 @@ export default function LandingPage() {
       <section className="py-20">
         <div className="container mx-auto px-6 text-center">
           <h2 className="text-3xl font-bold text-gray-900 mb-4">Ready to Recover Your Missed Revenue?</h2>
-          <p className="text-gray-600 mb-8 max-w-2xl mx-auto">Join hundreds of businesses using MissedCall AI to turn every missed call into revenue.</p>
+          <p className="text-gray-600 mb-8 max-w-2xl mx-auto">Book your free demo today and see how much you're actually losing in a month.</p>
           <a href="#book-demo" className="bg-blue-600 text-white px-8 py-4 rounded-lg text-lg font-semibold hover:bg-blue-700 transition inline-flex items-center">
             Book Your Free Demo <ArrowRight className="ml-2 h-5 w-5" />
           </a>
