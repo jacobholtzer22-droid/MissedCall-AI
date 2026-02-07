@@ -10,32 +10,35 @@ export async function POST(request: NextRequest) {
     const phone = formData.get('phone') as string
     const businessType = formData.get('businessType') as string
 
-    // Send email using Resend (free tier: 100 emails/day)
-    const response = await fetch('https://api.resend.com/emails', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${process.env.RESEND_API_KEY}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        from: 'MissedCall AI <onboarding@resend.dev>',
-        to: process.env.YOUR_EMAIL,
-        subject: `🎯 New Demo Request: ${business}`,
-        html: `
-          <h2>New Demo Request!</h2>
-          <p><strong>Name:</strong> ${name}</p>
-          <p><strong>Business:</strong> ${business}</p>
-          <p><strong>Email:</strong> ${email}</p>
-          <p><strong>Phone:</strong> ${phone}</p>
-          <p><strong>Industry:</strong> ${businessType}</p>
-          <hr />
-          <p>Reach out to schedule a Zoom call!</p>
-        `,
-      }),
-    })
+    // Log the submission (you can see this in Vercel logs)
+    console.log('Demo request:', { name, business, email, phone, businessType })
 
-    if (!response.ok) {
-      console.error('Email send failed:', await response.text())
+    // Try to send email via Resend
+    if (process.env.RESEND_API_KEY && process.env.YOUR_EMAIL) {
+      try {
+        await fetch('https://api.resend.com/emails', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${process.env.RESEND_API_KEY}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            from: 'MissedCall AI <onboarding@resend.dev>',
+            to: process.env.YOUR_EMAIL,
+            subject: `New Demo Request: ${business}`,
+            html: `
+              <h2>New Demo Request!</h2>
+              <p><strong>Name:</strong> ${name}</p>
+              <p><strong>Business:</strong> ${business}</p>
+              <p><strong>Email:</strong> ${email}</p>
+              <p><strong>Phone:</strong> ${phone}</p>
+              <p><strong>Industry:</strong> ${businessType}</p>
+            `,
+          }),
+        })
+      } catch (emailError) {
+        console.error('Email failed:', emailError)
+      }
     }
 
     // Redirect to thank you page
@@ -43,6 +46,7 @@ export async function POST(request: NextRequest) {
 
   } catch (error) {
     console.error('Demo booking error:', error)
+    // Still redirect even if there's an error
     return NextResponse.redirect(new URL('/demo-requested', request.url))
   }
 }
