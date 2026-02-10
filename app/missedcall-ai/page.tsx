@@ -1,6 +1,5 @@
 import Link from 'next/link'
 import Image from 'next/image'
-import { SignedIn, SignedOut } from '@clerk/nextjs'
 import DemoForm from '../components/DemoForm'
 import { Phone, MessageSquare, Calendar, ArrowRight, CheckCircle, Clock, DollarSign, Shield, Zap, ChevronDown } from 'lucide-react'
 import ROICalculator from '../components/roi-calculator'
@@ -11,31 +10,24 @@ export default function LandingPage() {
       {/* Navigation */}
       <nav className="border-b border-gray-100 sticky top-0 bg-white z-50 shadow-sm">
         <div className="container mx-auto px-4 sm:px-6 py-3 sm:py-4">
-          <div className="flex flex-wrap items-center justify-between gap-y-3 gap-x-4">
-            <div className="flex items-center space-x-3 flex-shrink-0">
+          <div className="flex items-center justify-between">
+            <Link href="/" className="flex items-center space-x-3">
               <Image src="/images/logo.png" alt="Align & Acquire" width={160} height={160} className="h-20 w-auto mix-blend-multiply" priority unoptimized />
               <div className="hidden sm:block">
                 <span className="text-xl font-bold text-gray-900">MissedCall AI</span>
                 <span className="text-xs text-gray-500 block -mt-1">by Align & Acquire</span>
               </div>
+            </Link>
+            <div className="hidden md:flex items-center space-x-8">
+              <Link href="/" className="text-gray-600 hover:text-gray-900 transition">Home</Link>
+              <a href="#how-it-works" className="text-gray-600 hover:text-gray-900 transition">How It Works</a>
+              <a href="#roi-calculator" className="text-gray-600 hover:text-gray-900 transition">ROI Calculator</a>
+              <a href="#faq" className="text-gray-600 hover:text-gray-900 transition">FAQ</a>
+              <Link href="/websites" className="text-gray-600 hover:text-gray-900 transition">Websites</Link>
             </div>
-            <div className="flex flex-wrap items-center justify-center gap-x-6 gap-y-2 sm:gap-x-8 order-3 w-full md:order-2 md:w-auto">
-              <a href="#how-it-works" className="text-sm sm:text-base text-gray-600 hover:text-gray-900 transition whitespace-nowrap py-1">How It Works</a>
-              <a href="#roi-calculator" className="text-sm sm:text-base text-gray-600 hover:text-gray-900 transition whitespace-nowrap py-1">ROI Calculator</a>
-              <a href="#faq" className="text-sm sm:text-base text-gray-600 hover:text-gray-900 transition whitespace-nowrap py-1">FAQ</a>
-              <a href="#book-demo" className="text-sm sm:text-base text-gray-600 hover:text-gray-900 transition whitespace-nowrap py-1">Make a Specialized Plan</a>
-            </div>
-            <div className="flex items-center space-x-3 sm:space-x-4 flex-shrink-0 order-2 md:order-3">
-              <SignedOut>
-                <Link href="/sign-in" className="text-sm sm:text-base text-gray-600 hover:text-gray-900 transition hidden sm:block">Sign In</Link>
-                <Link href="/sign-up" className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition text-sm sm:text-base whitespace-nowrap">Sign up</Link>
-              </SignedOut>
-              <SignedIn>
-                <Link href="/dashboard" className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition flex items-center text-sm sm:text-base whitespace-nowrap">
-                  Dashboard <ArrowRight className="ml-2 h-4 w-4" />
-                </Link>
-              </SignedIn>
-            </div>
+            <a href="#book-demo" className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition">
+              Book a Demo
+            </a>
           </div>
         </div>
       </nav>

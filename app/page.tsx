@@ -1,240 +1,223 @@
 import Link from 'next/link'
 import Image from 'next/image'
-import { Phone, MessageSquare, Globe, ArrowRight, Code, Smartphone, Zap } from 'lucide-react'
+import { Phone, MessageSquare, Globe, ArrowRight, Code, Sparkles } from 'lucide-react'
 
 export default function HomePage() {
   return (
-    <div className="min-h-screen bg-white">
+    <div className="min-h-screen bg-gray-950 text-white overflow-hidden">
       {/* Navigation */}
-      <nav className="border-b border-gray-100 sticky top-0 bg-white z-50">
+      <nav className="fixed top-0 left-0 right-0 z-50 bg-gray-950/80 backdrop-blur-lg border-b border-white/10">
         <div className="container mx-auto px-6 py-4">
           <div className="flex items-center justify-between">
             <Link href="/" className="flex items-center space-x-3">
               <Image src="/images/logo.png" alt="Align & Acquire" width={40} height={40} className="h-10 w-auto" />
-              <span className="text-xl font-bold text-gray-900">Align & Acquire</span>
+              <span className="text-xl font-bold">Align & Acquire</span>
             </Link>
             <div className="hidden md:flex items-center space-x-8">
-              <Link href="/missedcall-ai" className="text-gray-600 hover:text-gray-900 transition">MissedCall AI</Link>
-              <Link href="/websites" className="text-gray-600 hover:text-gray-900 transition">Websites</Link>
-              <a href="#contact" className="text-gray-600 hover:text-gray-900 transition">Contact</a>
+              <Link href="/missedcall-ai" className="text-gray-400 hover:text-white transition">MissedCall AI</Link>
+              <Link href="/websites" className="text-gray-400 hover:text-white transition">Websites</Link>
             </div>
-            <Link href="#contact" className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition">
-              Book a Call
+            <Link href="#contact" className="bg-white text-gray-900 px-4 py-2 rounded-lg hover:bg-gray-200 transition font-medium">
+              Get Started
             </Link>
           </div>
         </div>
       </nav>
 
       {/* Hero */}
-      <section className="py-24 bg-gradient-to-b from-gray-50 to-white">
-        <div className="container mx-auto px-6 text-center">
-          <h1 className="text-5xl md:text-6xl font-bold text-gray-900 mb-6">
-            We Help Small Businesses <span className="text-blue-600">Grow</span>
-          </h1>
-          <p className="text-xl text-gray-600 mb-12 max-w-3xl mx-auto">
-            AI-powered tools and custom websites that bring in more customers. Built by a founder who understands what small businesses actually need.
-          </p>
-          <div className="flex flex-col sm:flex-row gap-4 justify-center">
-            <Link href="/missedcall-ai" className="bg-blue-600 text-white px-8 py-4 rounded-lg text-lg font-semibold hover:bg-blue-700 transition flex items-center justify-center">
-              Explore MissedCall AI <ArrowRight className="ml-2 h-5 w-5" />
-            </Link>
-            <Link href="/websites" className="border-2 border-gray-300 text-gray-700 px-8 py-4 rounded-lg text-lg font-semibold hover:bg-gray-50 transition flex items-center justify-center">
-              See Our Work <Globe className="ml-2 h-5 w-5" />
-            </Link>
-          </div>
+      <section className="relative min-h-screen flex items-center justify-center pt-20">
+        {/* Background Effects */}
+        <div className="absolute inset-0 overflow-hidden">
+          <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-blue-500/20 rounded-full blur-3xl"></div>
+          <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-purple-500/20 rounded-full blur-3xl"></div>
+          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[800px] bg-gradient-to-r from-blue-500/10 to-purple-500/10 rounded-full blur-3xl"></div>
         </div>
-      </section>
 
-      {/* Services */}
-      <section className="py-20">
-        <div className="container mx-auto px-6">
+        <div className="relative z-10 container mx-auto px-6 py-20">
           <div className="text-center mb-16">
-            <h2 className="text-3xl font-bold text-gray-900 mb-4">What We Do</h2>
-            <p className="text-gray-600 max-w-2xl mx-auto">Two ways we help small businesses capture more customers and look professional online.</p>
+            <div className="inline-flex items-center bg-white/10 backdrop-blur-sm px-4 py-2 rounded-full text-sm mb-8 border border-white/20">
+              <Sparkles className="h-4 w-4 mr-2 text-yellow-400" />
+              Helping small businesses grow
+            </div>
+            <h1 className="text-5xl md:text-7xl font-bold mb-6 leading-tight">
+              Tools That Bring You
+              <br />
+              <span className="bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">
+                More Customers
+              </span>
+            </h1>
+            <p className="text-xl text-gray-400 max-w-2xl mx-auto">
+              AI-powered automation and custom websites built specifically for small businesses. Stop losing leads. Start growing.
+            </p>
           </div>
 
-          <div className="grid md:grid-cols-2 gap-8 max-w-5xl mx-auto">
+          {/* Two Big Cards */}
+          <div className="grid md:grid-cols-2 gap-6 max-w-5xl mx-auto">
             {/* MissedCall AI Card */}
-            <Link href="/missedcall-ai" className="group">
-              <div className="bg-white border-2 border-gray-200 rounded-2xl p-8 hover:border-blue-500 hover:shadow-xl transition-all h-full">
-                <div className="bg-blue-100 w-16 h-16 rounded-2xl flex items-center justify-center mb-6">
-                  <MessageSquare className="h-8 w-8 text-blue-600" />
+            <Link href="/missedcall-ai" className="group relative">
+              <div className="absolute inset-0 bg-gradient-to-r from-blue-600 to-blue-400 rounded-3xl blur-xl opacity-50 group-hover:opacity-75 transition-opacity"></div>
+              <div className="relative bg-gradient-to-br from-gray-900 to-gray-800 border border-white/10 rounded-3xl p-8 h-full hover:border-blue-500/50 transition-all hover:-translate-y-2 duration-300">
+                <div className="bg-blue-500/20 w-16 h-16 rounded-2xl flex items-center justify-center mb-6">
+                  <MessageSquare className="h-8 w-8 text-blue-400" />
                 </div>
-                <h3 className="text-2xl font-bold text-gray-900 mb-4">MissedCall AI</h3>
-                <p className="text-gray-600 mb-6">
-                  When you miss a call, our AI instantly texts the customer, finds out what they need, and books the appointment. Works 24/7 so you never lose a lead.
+                <h2 className="text-3xl font-bold mb-4">MissedCall AI</h2>
+                <p className="text-gray-400 mb-6 text-lg">
+                  Never lose a customer to voicemail again. Our AI texts back instantly, books appointments, and recovers missed revenue 24/7.
                 </p>
-                <ul className="space-y-3 mb-6">
-                  <li className="flex items-center text-gray-600">
-                    <Zap className="h-5 w-5 text-blue-500 mr-3 flex-shrink-0" />
-                    Instant text response to missed calls
-                  </li>
-                  <li className="flex items-center text-gray-600">
-                    <Zap className="h-5 w-5 text-blue-500 mr-3 flex-shrink-0" />
-                    AI books appointments automatically
-                  </li>
-                  <li className="flex items-center text-gray-600">
-                    <Zap className="h-5 w-5 text-blue-500 mr-3 flex-shrink-0" />
-                    Dashboard to track every conversation
-                  </li>
-                </ul>
-                <div className="flex items-center text-blue-600 font-semibold group-hover:translate-x-2 transition-transform">
-                  Learn More <ArrowRight className="ml-2 h-5 w-5" />
+                <div className="flex items-center text-blue-400 font-semibold text-lg">
+                  Explore MissedCall AI
+                  <ArrowRight className="ml-2 h-5 w-5 group-hover:translate-x-2 transition-transform" />
                 </div>
               </div>
             </Link>
 
             {/* Websites Card */}
-            <Link href="/websites" className="group">
-              <div className="bg-white border-2 border-gray-200 rounded-2xl p-8 hover:border-blue-500 hover:shadow-xl transition-all h-full">
-                <div className="bg-green-100 w-16 h-16 rounded-2xl flex items-center justify-center mb-6">
-                  <Globe className="h-8 w-8 text-green-600" />
+            <Link href="/websites" className="group relative">
+              <div className="absolute inset-0 bg-gradient-to-r from-purple-600 to-pink-400 rounded-3xl blur-xl opacity-50 group-hover:opacity-75 transition-opacity"></div>
+              <div className="relative bg-gradient-to-br from-gray-900 to-gray-800 border border-white/10 rounded-3xl p-8 h-full hover:border-purple-500/50 transition-all hover:-translate-y-2 duration-300">
+                <div className="bg-purple-500/20 w-16 h-16 rounded-2xl flex items-center justify-center mb-6">
+                  <Globe className="h-8 w-8 text-purple-400" />
                 </div>
-                <h3 className="text-2xl font-bold text-gray-900 mb-4">Custom Websites</h3>
-                <p className="text-gray-600 mb-6">
-                  Professional websites that make your business look great and convert visitors into customers. From landing pages to full e-commerce.
+                <h2 className="text-3xl font-bold mb-4">Custom Websites</h2>
+                <p className="text-gray-400 mb-6 text-lg">
+                  Professional websites that convert visitors into customers. Custom code, mobile-first, blazing fast. No templates.
                 </p>
-                <ul className="space-y-3 mb-6">
-                  <li className="flex items-center text-gray-600">
-                    <Code className="h-5 w-5 text-green-500 mr-3 flex-shrink-0" />
-                    Custom design, not templates
-                  </li>
-                  <li className="flex items-center text-gray-600">
-                    <Smartphone className="h-5 w-5 text-green-500 mr-3 flex-shrink-0" />
-                    Mobile-friendly & fast
-                  </li>
-                  <li className="flex items-center text-gray-600">
-                    <Zap className="h-5 w-5 text-green-500 mr-3 flex-shrink-0" />
-                    Booking & payment integration
-                  </li>
-                </ul>
-                <div className="flex items-center text-green-600 font-semibold group-hover:translate-x-2 transition-transform">
-                  See Our Work <ArrowRight className="ml-2 h-5 w-5" />
+                <div className="flex items-center text-purple-400 font-semibold text-lg">
+                  See Our Work
+                  <ArrowRight className="ml-2 h-5 w-5 group-hover:translate-x-2 transition-transform" />
                 </div>
               </div>
             </Link>
           </div>
         </div>
+
+        {/* Scroll Indicator */}
+        <div className="absolute bottom-10 left-1/2 -translate-x-1/2 animate-bounce">
+          <div className="w-6 h-10 border-2 border-white/30 rounded-full flex items-start justify-center p-2">
+            <div className="w-1.5 h-3 bg-white/50 rounded-full animate-pulse"></div>
+          </div>
+        </div>
       </section>
 
-      {/* Quick Stats */}
-      <section className="py-16 bg-gray-900 text-white">
+      {/* Stats Bar */}
+      <section className="relative z-10 py-16 border-y border-white/10 bg-gray-900/50 backdrop-blur-sm">
         <div className="container mx-auto px-6">
           <div className="grid grid-cols-2 md:grid-cols-4 gap-8 text-center">
             <div>
-              <p className="text-4xl font-bold text-blue-400">4+</p>
-              <p className="text-gray-400">Projects Launched</p>
+              <p className="text-4xl font-bold bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">4+</p>
+              <p className="text-gray-500 mt-1">Projects Launched</p>
             </div>
             <div>
-              <p className="text-4xl font-bold text-blue-400">100%</p>
-              <p className="text-gray-400">Client Satisfaction</p>
+              <p className="text-4xl font-bold bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">100%</p>
+              <p className="text-gray-500 mt-1">Client Satisfaction</p>
             </div>
             <div>
-              <p className="text-4xl font-bold text-blue-400">24/7</p>
-              <p className="text-gray-400">AI Never Sleeps</p>
+              <p className="text-4xl font-bold bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">24/7</p>
+              <p className="text-gray-500 mt-1">AI Never Sleeps</p>
             </div>
             <div>
-              <p className="text-4xl font-bold text-blue-400">1</p>
-              <p className="text-gray-400">Founder Who Cares</p>
+              <p className="text-4xl font-bold bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">$0</p>
+              <p className="text-gray-500 mt-1">Missed Opportunities</p>
             </div>
           </div>
         </div>
       </section>
 
-      {/* About */}
-      <section className="py-20">
+      {/* About Section */}
+      <section className="relative z-10 py-24">
         <div className="container mx-auto px-6">
-          <div className="max-w-3xl mx-auto text-center">
-            <h2 className="text-3xl font-bold text-gray-900 mb-6">Built by a Founder, Not an Agency</h2>
-            <p className="text-lg text-gray-600 mb-8">
-              I'm Jacob — I started Align & Acquire because I saw small businesses struggling with two things: losing customers to missed calls and having websites that don't convert.
-            </p>
-            <p className="text-lg text-gray-600 mb-8">
-              I personally build every website and set up every AI system. When you work with me, you're not getting passed off to a junior developer. You're getting direct access to the person who built these tools from scratch.
-            </p>
+          <div className="max-w-4xl mx-auto">
+            <div className="grid md:grid-cols-2 gap-12 items-center">
+              <div>
+                <h2 className="text-4xl font-bold mb-6">
+                  Built by a Founder,
+                  <br />
+                  <span className="text-gray-500">Not an Agency</span>
+                </h2>
+                <p className="text-gray-400 text-lg mb-6">
+                  I'm Jacob — I started Align & Acquire because small businesses deserve better tools. Not overpriced agencies. Not cookie-cutter templates.
+                </p>
+                <p className="text-gray-400 text-lg mb-8">
+                  Every website and AI system is built by me, personally. When you work with Align & Acquire, you get direct access to the person who built these tools from scratch.
+                </p>
+                <div className="flex items-center space-x-4">
+                  <div className="w-12 h-12 bg-gradient-to-r from-blue-500 to-purple-500 rounded-full flex items-center justify-center text-xl font-bold">
+                    J
+                  </div>
+                  <div>
+                    <p className="font-semibold">Jacob Holtzer</p>
+                    <p className="text-gray-500 text-sm">Founder, Align & Acquire</p>
+                  </div>
+                </div>
+              </div>
+              <div className="relative">
+                <div className="absolute inset-0 bg-gradient-to-r from-blue-500/20 to-purple-500/20 rounded-3xl blur-2xl"></div>
+                <div className="relative bg-gray-900 border border-white/10 rounded-3xl p-8">
+                  <Code className="h-12 w-12 text-blue-400 mb-4" />
+                  <h3 className="text-xl font-semibold mb-3">What You Get</h3>
+                  <ul className="space-y-3 text-gray-400">
+                    <li className="flex items-center">
+                      <span className="w-2 h-2 bg-blue-400 rounded-full mr-3"></span>
+                      Direct communication — no middlemen
+                    </li>
+                    <li className="flex items-center">
+                      <span className="w-2 h-2 bg-purple-400 rounded-full mr-3"></span>
+                      Custom solutions for your business
+                    </li>
+                    <li className="flex items-center">
+                      <span className="w-2 h-2 bg-pink-400 rounded-full mr-3"></span>
+                      Fast turnaround times
+                    </li>
+                    <li className="flex items-center">
+                      <span className="w-2 h-2 bg-green-400 rounded-full mr-3"></span>
+                      Ongoing support included
+                    </li>
+                  </ul>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </section>
 
-      {/* Contact */}
-      <section id="contact" className="py-20 bg-blue-600">
+      {/* CTA Section */}
+      <section id="contact" className="relative z-10 py-24">
         <div className="container mx-auto px-6">
-          <div className="max-w-2xl mx-auto text-center">
-            <h2 className="text-3xl font-bold text-white mb-4">Ready to Grow Your Business?</h2>
-            <p className="text-blue-100 text-lg mb-8">
-              Book a free call and I'll show you exactly how we can help.
-            </p>
-            <div className="bg-white rounded-2xl p-8">
-              <form action="/api/book-demo" method="POST" className="space-y-4">
-                <div className="grid md:grid-cols-2 gap-4">
-                  <input
-                    type="text"
-                    name="name"
-                    required
-                    placeholder="Your Name"
-                    className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                  <input
-                    type="text"
-                    name="business"
-                    required
-                    placeholder="Business Name"
-                    className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-                <div className="grid md:grid-cols-2 gap-4">
-                  <input
-                    type="email"
-                    name="email"
-                    required
-                    placeholder="Email"
-                    className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                  <input
-                    type="tel"
-                    name="phone"
-                    required
-                    placeholder="Phone"
-                    className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-                <select
-                  name="service"
-                  required
-                  className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                >
-                  <option value="">What are you interested in?</option>
-                  <option value="missedcall-ai">MissedCall AI</option>
-                  <option value="website">Custom Website</option>
-                  <option value="both">Both</option>
-                </select>
-                <button
-                  type="submit"
-                  className="w-full bg-blue-600 text-white py-4 rounded-lg text-lg font-semibold hover:bg-blue-700 transition"
-                >
-                  Book a Free Call
-                </button>
-              </form>
-              <p className="text-sm text-gray-500 mt-4">I'll reach out within 24 hours to schedule a time.</p>
+          <div className="relative max-w-4xl mx-auto">
+            <div className="absolute inset-0 bg-gradient-to-r from-blue-600 to-purple-600 rounded-3xl blur-2xl opacity-50"></div>
+            <div className="relative bg-gradient-to-r from-blue-600 to-purple-600 rounded-3xl p-12 text-center">
+              <h2 className="text-4xl font-bold mb-4">Ready to Grow Your Business?</h2>
+              <p className="text-blue-100 text-lg mb-8 max-w-2xl mx-auto">
+                Whether you need an AI to handle missed calls or a website that actually converts — let's talk.
+              </p>
+              <div className="flex flex-col sm:flex-row gap-4 justify-center">
+                <Link href="/missedcall-ai#book-demo" className="bg-white text-gray-900 px-8 py-4 rounded-xl text-lg font-semibold hover:bg-gray-100 transition inline-flex items-center justify-center">
+                  <MessageSquare className="mr-2 h-5 w-5" />
+                  Demo MissedCall AI
+                </Link>
+                <Link href="/websites#contact" className="bg-white/10 backdrop-blur-sm text-white border border-white/30 px-8 py-4 rounded-xl text-lg font-semibold hover:bg-white/20 transition inline-flex items-center justify-center">
+                  <Globe className="mr-2 h-5 w-5" />
+                  Get a Website Quote
+                </Link>
+              </div>
             </div>
           </div>
         </div>
       </section>
 
       {/* Footer */}
-      <footer className="bg-gray-900 text-gray-400 py-12">
+      <footer className="relative z-10 border-t border-white/10 py-12">
         <div className="container mx-auto px-6">
           <div className="flex flex-col md:flex-row justify-between items-center">
             <div className="flex items-center space-x-3 mb-4 md:mb-0">
               <Image src="/images/logo.png" alt="Align & Acquire" width={32} height={32} className="h-8 w-auto" />
-              <span className="text-white font-bold">Align & Acquire</span>
+              <span className="font-bold">Align & Acquire</span>
             </div>
             <div className="flex space-x-8 mb-4 md:mb-0">
-              <Link href="/missedcall-ai" className="hover:text-white transition">MissedCall AI</Link>
-              <Link href="/websites" className="hover:text-white transition">Websites</Link>
-              <a href="#contact" className="hover:text-white transition">Contact</a>
+              <Link href="/missedcall-ai" className="text-gray-500 hover:text-white transition">MissedCall AI</Link>
+              <Link href="/websites" className="text-gray-500 hover:text-white transition">Websites</Link>
             </div>
-            <p>© {new Date().getFullYear()} Align & Acquire. All rights reserved.</p>
+            <p className="text-gray-500">© {new Date().getFullYear()} Align & Acquire</p>
           </div>
         </div>
       </footer>

@@ -53,6 +53,7 @@ export default function WebsitesPage() {
               <span className="text-xl font-bold text-gray-900">Align & Acquire</span>
             </Link>
             <div className="hidden md:flex items-center space-x-8">
+              <Link href="/" className="text-gray-600 hover:text-gray-900 transition">Home</Link>
               <Link href="/missedcall-ai" className="text-gray-600 hover:text-gray-900 transition">MissedCall AI</Link>
               <Link href="/websites" className="text-gray-900 font-semibold">Websites</Link>
               <a href="#contact" className="text-gray-600 hover:text-gray-900 transition">Contact</a>
