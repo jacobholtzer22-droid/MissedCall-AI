@@ -24,26 +24,26 @@ export default function ROICalculator() {
   const roi = ((monthlyNetGain / monthlyServiceCost) * 100).toFixed(0);
 
   return (
-    <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-2xl p-5 md:p-6 shadow-xl">
+    <div className="bg-gray-900 border border-white/10 rounded-2xl p-5 md:p-6">
       <div className="max-w-3xl mx-auto">
         <div className="text-center mb-6">
-          <h2 className="text-2xl md:text-3xl font-bold text-gray-900 mb-2">
+          <h2 className="text-2xl md:text-3xl font-bold mb-2">
             Calculate Your Revenue Loss
           </h2>
-          <p className="text-base text-gray-600">
+          <p className="text-base text-gray-400">
             See exactly how much revenue you're leaving on the table
           </p>
         </div>
 
-        <div className="bg-white rounded-xl p-5 shadow-lg mb-6">
+        <div className="bg-gray-800/50 border border-white/10 rounded-xl p-5 mb-6">
           <div className="space-y-6">
             {/* Missed Calls Input */}
             <div>
               <div className="flex justify-between items-center mb-3">
-                <label className="text-sm font-semibold text-gray-700 uppercase tracking-wide">
+                <label className="text-sm font-semibold text-gray-300 uppercase tracking-wide">
                   Missed Calls Per Month
                 </label>
-                <span className="text-xl font-bold text-indigo-600">
+                <span className="text-xl font-bold text-blue-400">
                   {missedCallsPerMonth}
                 </span>
               </div>
@@ -53,7 +53,7 @@ export default function ROICalculator() {
                 max="150"
                 value={missedCallsPerMonth}
                 onChange={(e) => setMissedCallsPerMonth(Number(e.target.value))}
-                className="w-full h-3 bg-indigo-100 rounded-lg appearance-none cursor-pointer slider"
+                className="w-full h-3 bg-gray-700 rounded-lg appearance-none cursor-pointer slider"
               />
               <div className="flex justify-between text-xs text-gray-500 mt-2">
                 <span>1</span>
@@ -65,10 +65,10 @@ export default function ROICalculator() {
             {/* Appointment Value Input */}
             <div>
               <div className="flex justify-between items-center mb-3">
-                <label className="text-sm font-semibold text-gray-700 uppercase tracking-wide">
+                <label className="text-sm font-semibold text-gray-300 uppercase tracking-wide">
                   Average Appointment Value
                 </label>
-                <span className="text-xl font-bold text-indigo-600">
+                <span className="text-xl font-bold text-blue-400">
                   ${appointmentValue}
                 </span>
               </div>
@@ -79,7 +79,7 @@ export default function ROICalculator() {
                 step="1"
                 value={appointmentValue}
                 onChange={(e) => setAppointmentValue(Number(e.target.value))}
-                className="w-full h-3 bg-indigo-100 rounded-lg appearance-none cursor-pointer slider"
+                className="w-full h-3 bg-gray-700 rounded-lg appearance-none cursor-pointer slider"
               />
               <div className="flex justify-between text-xs text-gray-500 mt-2">
                 <span>$50</span>
@@ -93,41 +93,41 @@ export default function ROICalculator() {
         {/* Results Grid */}
         <div className="grid md:grid-cols-2 gap-4 mb-6">
           {/* Revenue Loss */}
-          <div className="bg-red-50 border-2 border-red-200 rounded-xl p-4">
-            <div className="text-xs font-semibold text-red-600 uppercase tracking-wide mb-1">
+          <div className="bg-red-950/50 border border-red-500/30 rounded-xl p-4">
+            <div className="text-xs font-semibold text-red-400 uppercase tracking-wide mb-1">
               You're Currently Losing
             </div>
-            <div className="text-3xl font-bold text-red-700 mb-0.5">
+            <div className="text-3xl font-bold text-red-400 mb-0.5">
               ${monthlyRevenueLoss.toLocaleString()}
             </div>
-            <div className="text-sm text-red-600">
+            <div className="text-sm text-red-300/90">
               per month (est. {appointmentsPerMonth.toFixed(0)} bookings lost from those missed calls at 30% conversion)
             </div>
-            <div className="mt-3 pt-3 border-t border-red-200">
-              <div className="text-xs text-red-600 mb-0.5">Annual Revenue Loss</div>
-              <div className="text-xl font-bold text-red-700">
+            <div className="mt-3 pt-3 border-t border-red-500/30">
+              <div className="text-xs text-red-400 mb-0.5">Annual Revenue Loss</div>
+              <div className="text-xl font-bold text-red-400">
                 ${yearlyRevenueLoss.toLocaleString()}
               </div>
             </div>
           </div>
 
           {/* Net Gain with MissedCall AI */}
-          <div className="bg-green-50 border-2 border-green-200 rounded-xl p-4">
-            <div className="text-xs font-semibold text-green-600 uppercase tracking-wide mb-1">
+          <div className="bg-green-950/50 border border-green-500/30 rounded-xl p-4">
+            <div className="text-xs font-semibold text-green-400 uppercase tracking-wide mb-1">
               Your Monthly Net Gain
             </div>
-            <div className="text-3xl font-bold text-green-700 mb-0.5">
+            <div className="text-3xl font-bold text-green-400 mb-0.5">
               ${monthlyNetGain.toLocaleString()}
             </div>
-            <div className="text-sm text-green-600">
+            <div className="text-sm text-green-300/90">
               after $299/mo service cost
             </div>
-            <div className="text-sm text-green-600">
+            <div className="text-sm text-green-300/90">
               Based on 30% of missed calls converting to bookings
             </div>
-            <div className="mt-3 pt-3 border-t border-green-200">
-              <div className="text-xs text-green-600 mb-0.5">Annual Net Gain</div>
-              <div className="text-xl font-bold text-green-700">
+            <div className="mt-3 pt-3 border-t border-green-500/30">
+              <div className="text-xs text-green-400 mb-0.5">Annual Net Gain</div>
+              <div className="text-xl font-bold text-green-400">
                 ${yearlyNetGain.toLocaleString()}
               </div>
             </div>
@@ -135,7 +135,7 @@ export default function ROICalculator() {
         </div>
 
         {/* ROI Highlight */}
-        <div className="bg-gradient-to-r from-indigo-600 to-blue-600 rounded-xl p-5 text-center text-white">
+        <div className="bg-gradient-to-r from-blue-600 to-purple-600 rounded-xl p-5 text-center text-white">
           <div className="text-xs font-semibold uppercase tracking-wide mb-1 opacity-90">
             Return on Investment
           </div>
@@ -147,7 +147,7 @@ export default function ROICalculator() {
           </div>
           <a
             href="#book-demo"
-            className="inline-block bg-white text-indigo-600 font-bold px-6 py-3 rounded-lg hover:bg-gray-100 transition-colors shadow-lg text-sm"
+            className="inline-block bg-white text-gray-900 font-bold px-6 py-3 rounded-lg hover:bg-gray-200 transition-colors shadow-lg text-sm"
           >
             Book Your Free Demo →
           </a>

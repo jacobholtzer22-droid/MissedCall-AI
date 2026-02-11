@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import Image from 'next/image'
-import { Phone, MessageSquare, Globe, ArrowRight, Code, Sparkles } from 'lucide-react'
+import { Logo } from './components/Logo'
+import { Phone, MessageSquare, Globe, ArrowRight, Code } from 'lucide-react'
 
 export default function HomePage() {
   return (
@@ -10,7 +11,7 @@ export default function HomePage() {
         <div className="container mx-auto px-6 py-4">
           <div className="flex items-center justify-between">
             <Link href="/" className="flex items-center space-x-3">
-              <Image src="/images/logo.png" alt="Align & Acquire" width={40} height={40} className="h-10 w-auto" />
+              <Logo size="sm" />
               <span className="text-xl font-bold">Align & Acquire</span>
             </Link>
             <div className="hidden md:flex items-center space-x-8">
@@ -35,19 +36,15 @@ export default function HomePage() {
 
         <div className="relative z-10 container mx-auto px-6 py-20">
           <div className="text-center mb-16">
-            <div className="inline-flex items-center bg-white/10 backdrop-blur-sm px-4 py-2 rounded-full text-sm mb-8 border border-white/20">
-              <Sparkles className="h-4 w-4 mr-2 text-yellow-400" />
-              Helping small businesses grow
-            </div>
             <h1 className="text-5xl md:text-7xl font-bold mb-6 leading-tight">
-              Tools That Bring You
+              Helping Small Businesses Grow
               <br />
-              <span className="bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">
-                More Customers
+              <span className="block text-2xl md:text-3xl mt-2 bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">
+                with tools that bring more customers
               </span>
             </h1>
             <p className="text-xl text-gray-400 max-w-2xl mx-auto">
-              AI-powered automation and custom websites built specifically for small businesses. Stop losing leads. Start growing.
+              Automation and custom websites built specifically for small businesses. Stop losing leads. Start growing.
             </p>
           </div>
 
@@ -80,7 +77,7 @@ export default function HomePage() {
                 </div>
                 <h2 className="text-3xl font-bold mb-4">Custom Websites</h2>
                 <p className="text-gray-400 mb-6 text-lg">
-                  Professional websites that convert visitors into customers. Custom code, mobile-first, blazing fast. No templates.
+                  Professional websites that convert visitors into customers. Custom code, mobile first, blazing fast. No templates.
                 </p>
                 <div className="flex items-center text-purple-400 font-semibold text-lg">
                   See Our Work
@@ -102,22 +99,18 @@ export default function HomePage() {
       {/* Stats Bar */}
       <section className="relative z-10 py-16 border-y border-white/10 bg-gray-900/50 backdrop-blur-sm">
         <div className="container mx-auto px-6">
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-8 text-center">
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-8 text-center">
             <div>
-              <p className="text-4xl font-bold bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">4+</p>
+              <p className="text-4xl font-bold bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">25+</p>
               <p className="text-gray-500 mt-1">Projects Launched</p>
             </div>
             <div>
-              <p className="text-4xl font-bold bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">100%</p>
-              <p className="text-gray-500 mt-1">Client Satisfaction</p>
+              <p className="text-4xl font-bold bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">98%</p>
+              <p className="text-gray-500 mt-1">Client Retention Rate</p>
             </div>
             <div>
               <p className="text-4xl font-bold bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">24/7</p>
               <p className="text-gray-500 mt-1">AI Never Sleeps</p>
-            </div>
-            <div>
-              <p className="text-4xl font-bold bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">$0</p>
-              <p className="text-gray-500 mt-1">Missed Opportunities</p>
             </div>
           </div>
         </div>
@@ -135,7 +128,7 @@ export default function HomePage() {
                   <span className="text-gray-500">Not an Agency</span>
                 </h2>
                 <p className="text-gray-400 text-lg mb-6">
-                  I'm Jacob — I started Align & Acquire because small businesses deserve better tools. Not overpriced agencies. Not cookie-cutter templates.
+                  I'm Jacob. I started Align & Acquire because small businesses deserve better tools. Not overpriced agencies. Not cookie cutter templates.
                 </p>
                 <p className="text-gray-400 text-lg mb-8">
                   Every website and AI system is built by me, personally. When you work with Align & Acquire, you get direct access to the person who built these tools from scratch.
@@ -158,7 +151,7 @@ export default function HomePage() {
                   <ul className="space-y-3 text-gray-400">
                     <li className="flex items-center">
                       <span className="w-2 h-2 bg-blue-400 rounded-full mr-3"></span>
-                      Direct communication — no middlemen
+                      Direct communication, no middlemen
                     </li>
                     <li className="flex items-center">
                       <span className="w-2 h-2 bg-purple-400 rounded-full mr-3"></span>
@@ -188,7 +181,7 @@ export default function HomePage() {
             <div className="relative bg-gradient-to-r from-blue-600 to-purple-600 rounded-3xl p-12 text-center">
               <h2 className="text-4xl font-bold mb-4">Ready to Grow Your Business?</h2>
               <p className="text-blue-100 text-lg mb-8 max-w-2xl mx-auto">
-                Whether you need an AI to handle missed calls or a website that actually converts — let's talk.
+                Whether you need an AI to handle missed calls or a website that actually converts, let's talk.
               </p>
               <div className="flex flex-col sm:flex-row gap-4 justify-center">
                 <Link href="/missedcall-ai#book-demo" className="bg-white text-gray-900 px-8 py-4 rounded-xl text-lg font-semibold hover:bg-gray-100 transition inline-flex items-center justify-center">
@@ -210,7 +203,7 @@ export default function HomePage() {
         <div className="container mx-auto px-6">
           <div className="flex flex-col md:flex-row justify-between items-center">
             <div className="flex items-center space-x-3 mb-4 md:mb-0">
-              <Image src="/images/logo.png" alt="Align & Acquire" width={32} height={32} className="h-8 w-auto" />
+              <Image src="/images/logo.png" alt="Align & Acquire" width={64} height={64} sizes="32px" className="h-8 w-auto" />
               <span className="font-bold">Align & Acquire</span>
             </div>
             <div className="flex space-x-8 mb-4 md:mb-0">
