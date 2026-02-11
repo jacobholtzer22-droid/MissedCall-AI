@@ -69,9 +69,11 @@ export default function HomePage() {
         </div>
 
         {/* Scroll Indicator */}
-        <div className="absolute bottom-10 left-1/2 -translate-x-1/2 animate-bounce">
-          <div className="w-6 h-10 border-2 border-white/30 rounded-full flex items-start justify-center p-2">
-            <div className="w-1.5 h-3 bg-white/50 rounded-full animate-pulse"></div>
+        <div className="absolute bottom-10 left-0 right-0 flex justify-center">
+          <div className="animate-bounce">
+            <div className="w-6 h-10 border-2 border-white/30 rounded-full flex items-start justify-center p-2">
+              <div className="w-1.5 h-3 bg-white/50 rounded-full animate-pulse"></div>
+            </div>
           </div>
         </div>
       </section>

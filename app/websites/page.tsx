@@ -11,6 +11,7 @@ type Project = {
   url: string | null
   features: string[]
   imagesSeparate?: boolean
+  imageCompact?: boolean
 }
 
 const projects: Project[] = [
@@ -23,11 +24,12 @@ const projects: Project[] = [
     url: 'https://learning-log-app-kimu.vercel.app/',
     features: ['User Authentication', 'Dashboard', 'Progress Tracking', 'Responsive Design'],
     imagesSeparate: true,
+    imageCompact: true,
   },
   {
     title: 'Apex Detail Studio',
     category: 'Business Website',
-    description: 'Premium auto detailing website for a Nashville-based studio. Features service packages, gallery, testimonials, and booking integration.',
+    description: 'Premium auto detailing website for a car detailing company. Features service packages, gallery, testimonials, and booking integration.',
     image1: '/images/portfolio/detailing-1.png',
     image2: '/images/portfolio/detailing-2.png',
     url: 'https://detailing-site-seven.vercel.app/',
@@ -107,20 +109,22 @@ export default function WebsitesPage() {
       <section id="portfolio" className="py-20">
         <div className="container mx-auto px-6">
           <div className="text-center mb-16">
-            <h2 className="text-3xl font-bold mb-4">Align and Acquires portfolio</h2>
+            <h2 className="text-4xl md:text-5xl font-bold mb-4 bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">
+              Align and Acquires portfolio
+            </h2>
             <p className="text-gray-400 max-w-2xl mx-auto">Recent projects we have built and launched</p>
           </div>
 
-          <div className="space-y-20">
+          <div className="space-y-20 max-w-4xl mx-auto">
             {projects.map((project) => (
-              <div key={project.title} className="grid lg:grid-cols-2 gap-12 items-center">
-                {/* Info - project name before pictures */}
-                <div className="lg:order-1">
+              <div key={project.title} className="space-y-10">
+                {/* Info - project name and details above picture */}
+                <div className="text-center">
                   <span className="text-blue-400 font-medium">{project.category}</span>
                   <h3 className="text-3xl font-bold mt-2 mb-4">{project.title}</h3>
                   <p className="text-gray-400 mb-6">{project.description}</p>
                   
-                  <div className="flex flex-wrap gap-2 mb-6">
+                  <div className="flex flex-wrap gap-2 mb-6 justify-center">
                     {project.features.map((feature) => (
                       <span key={feature} className="bg-gray-800 text-gray-300 px-3 py-1 rounded-full text-sm border border-white/10">
                         {feature}
@@ -144,25 +148,25 @@ export default function WebsitesPage() {
                   )}
                 </div>
 
-                {/* Images */}
-                <div className="lg:order-2">
+                {/* Images - bigger, below the name */}
+                <div className={project.imageCompact ? 'max-w-lg mx-auto' : 'max-w-5xl mx-auto'}>
                   {project.imagesSeparate ? (
-                    <div className="space-y-4 max-w-md mx-auto lg:mx-0">
-                      <div className="bg-gray-900 rounded-2xl overflow-hidden shadow-xl border border-white/10">
-                        <Image 
-                          src={project.image1} 
-                          alt={project.title}
-                          width={448}
-                          height={280}
-                          className="w-full h-auto"
-                        />
-                      </div>
+                    <div className="relative">
                       <div className="bg-gray-900 rounded-2xl overflow-hidden shadow-xl border border-white/10">
                         <Image 
                           src={project.image2} 
                           alt={`${project.title} detail`}
-                          width={448}
-                          height={280}
+                          width={project.imageCompact ? 480 : 1200}
+                          height={project.imageCompact ? 300 : 750}
+                          className="w-full h-auto"
+                        />
+                      </div>
+                      <div className="absolute -top-6 -right-6 w-2/3 bg-gray-900 rounded-2xl overflow-hidden shadow-xl border-4 border-gray-800">
+                        <Image 
+                          src={project.image1} 
+                          alt={project.title}
+                          width={project.imageCompact ? 240 : 600}
+                          height={project.imageCompact ? 150 : 360}
                           className="w-full h-auto"
                         />
                       </div>
@@ -173,8 +177,8 @@ export default function WebsitesPage() {
                         <Image 
                           src={project.image1} 
                           alt={project.title}
-                          width={800}
-                          height={500}
+                          width={1200}
+                          height={750}
                           className="w-full h-auto"
                         />
                       </div>
@@ -183,8 +187,8 @@ export default function WebsitesPage() {
                           <Image 
                             src={project.image2} 
                             alt={`${project.title} detail`}
-                            width={500}
-                            height={300}
+                            width={600}
+                            height={360}
                             className="w-full h-auto"
                           />
                         </div>
