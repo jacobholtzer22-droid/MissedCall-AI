@@ -1,6 +1,5 @@
 import Link from 'next/link'
 import Image from 'next/image'
-import { Logo } from '../components/Logo'
 import DemoForm from '../components/DemoForm'
 import { Phone, MessageSquare, Calendar, ArrowRight, CheckCircle, Clock, DollarSign, Shield, Zap, ChevronDown } from 'lucide-react'
 import ROICalculator from '../components/roi-calculator'
@@ -8,38 +7,8 @@ import ROICalculator from '../components/roi-calculator'
 export default function LandingPage() {
   return (
     <div className="min-h-screen bg-gray-950 text-white">
-      {/* Navigation */}
-      <nav className="border-b border-white/10 sticky top-0 bg-gray-950/80 backdrop-blur-lg z-50">
-        <div className="container mx-auto px-4 sm:px-6 py-3 sm:py-4">
-          <div className="flex items-center justify-between">
-            <Link href="/" className="flex items-center space-x-3">
-              <Logo size="lg" />
-              <div className="hidden sm:block">
-                <span className="text-xl font-bold">MissedCall AI</span>
-                <span className="text-xs text-gray-400 block -mt-1">by Align & Acquire</span>
-              </div>
-            </Link>
-            <div className="hidden md:flex items-center space-x-8">
-              <Link href="/" className="text-gray-400 hover:text-white transition">Home</Link>
-              <a href="#how-it-works" className="text-gray-400 hover:text-white transition">How It Works</a>
-              <a href="#roi-calculator" className="text-gray-400 hover:text-white transition">ROI Calculator</a>
-              <a href="#faq" className="text-gray-400 hover:text-white transition">FAQ</a>
-              <Link href="/websites" className="text-gray-400 hover:text-white transition">Websites</Link>
-            </div>
-            <div className="flex items-center space-x-4">
-              <Link href="/dashboard" className="text-gray-600 hover:text-gray-900 transition font-medium">
-                Sign In
-              </Link>
-              <a href="#book-demo" className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition">
-                Book a Demo
-              </a>
-            </div>
-          </div>
-        </div>
-      </nav>
-
       {/* Hero with Phone Mockup */}
-      <section className="py-20 overflow-hidden">
+      <section className="pt-24 pb-20 overflow-hidden">
         <div className="container mx-auto px-6">
           <div className="grid lg:grid-cols-2 gap-12 items-center">
             <div>

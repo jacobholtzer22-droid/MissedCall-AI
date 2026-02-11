@@ -90,7 +90,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
         </nav>
       </header>
 
-      <main className="lg:pl-64 pt-[104px] lg:pt-0">
+      <main className="lg:pl-64 pt-[168px] lg:pt-16">
         <div className="p-6 lg:p-8">{children}</div>
       </main>
     </div>

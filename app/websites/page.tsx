@@ -1,6 +1,5 @@
 import Link from 'next/link'
 import Image from 'next/image'
-import { Logo } from '../components/Logo'
 import { ArrowRight, ExternalLink, Globe, Code, Smartphone, Palette, ShoppingCart, Calendar } from 'lucide-react'
 
 type Project = {
@@ -57,29 +56,8 @@ const projects: Project[] = [
 export default function WebsitesPage() {
   return (
     <div className="min-h-screen bg-gray-950 text-white">
-      {/* Navigation */}
-      <nav className="border-b border-white/10 sticky top-0 bg-gray-950/80 backdrop-blur-lg z-50">
-        <div className="container mx-auto px-6 py-4">
-          <div className="flex items-center justify-between">
-            <Link href="/" className="flex items-center space-x-3">
-              <Logo size="sm" />
-              <span className="text-xl font-bold">Align & Acquire</span>
-            </Link>
-            <div className="hidden md:flex items-center space-x-8">
-              <Link href="/" className="text-gray-400 hover:text-white transition">Home</Link>
-              <Link href="/missedcall-ai" className="text-gray-400 hover:text-white transition">MissedCall AI</Link>
-              <Link href="/websites" className="text-white font-semibold">Websites</Link>
-              <a href="#contact" className="text-gray-400 hover:text-white transition">Contact</a>
-            </div>
-            <a href="#contact" className="bg-white text-gray-900 px-4 py-2 rounded-lg hover:bg-gray-200 transition font-medium">
-              Get a Quote
-            </a>
-          </div>
-        </div>
-      </nav>
-
       {/* Hero */}
-      <section className="py-20">
+      <section className="pt-24 pb-20">
         <div className="container mx-auto px-6 text-center">
           <h1 className="text-5xl md:text-6xl font-bold mb-6">
             Websites That <span className="bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">Convert</span>
@@ -126,10 +104,10 @@ export default function WebsitesPage() {
       </section>
 
       {/* Portfolio */}
-      <section className="py-20">
+      <section id="portfolio" className="py-20">
         <div className="container mx-auto px-6">
           <div className="text-center mb-16">
-            <h2 className="text-3xl font-bold mb-4">Our Work</h2>
+            <h2 className="text-3xl font-bold mb-4">Align and Acquires portfolio</h2>
             <p className="text-gray-400 max-w-2xl mx-auto">Recent projects we have built and launched</p>
           </div>
 
