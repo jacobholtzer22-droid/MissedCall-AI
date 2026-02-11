@@ -48,7 +48,7 @@ export function OnboardingForm({ createBusiness }: { createBusiness: CreateBusin
               name="businessName"
               required
               placeholder="Smith Family Dental"
-              className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full px-3 py-2 bg-white text-gray-900 border border-gray-200 rounded-lg placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
           </div>
 
@@ -62,7 +62,7 @@ export function OnboardingForm({ createBusiness }: { createBusiness: CreateBusin
               required
               value={businessType}
               onChange={(e) => setBusinessType(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full px-3 py-2 bg-white text-gray-900 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
               <option value="">Select your industry...</option>
               <option value="Dental Office">Dental Office</option>
@@ -90,7 +90,7 @@ export function OnboardingForm({ createBusiness }: { createBusiness: CreateBusin
               required
               rows={2}
               placeholder={placeholders.services}
-              className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 placeholder:text-gray-400"
+              className="w-full px-3 py-2 bg-white text-gray-900 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 placeholder:text-gray-400"
             />
             <p className="text-xs text-gray-500 mt-1">Separate with commas. The AI will use this to help customers.</p>
           </div>
@@ -105,7 +105,7 @@ export function OnboardingForm({ createBusiness }: { createBusiness: CreateBusin
               name="businessHours"
               required
               placeholder={placeholders.businessHours}
-              className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 placeholder:text-gray-400"
+              className="w-full px-3 py-2 bg-white text-gray-900 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 placeholder:text-gray-400"
             />
           </div>
 
@@ -120,7 +120,7 @@ export function OnboardingForm({ createBusiness }: { createBusiness: CreateBusin
               required
               rows={2}
               placeholder={placeholders.specialInfo}
-              className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 placeholder:text-gray-400"
+              className="w-full px-3 py-2 bg-white text-gray-900 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 placeholder:text-gray-400"
             />
           </div>
 
@@ -133,7 +133,7 @@ export function OnboardingForm({ createBusiness }: { createBusiness: CreateBusin
               name="cannotHelp"
               rows={2}
               placeholder={placeholders.cannotHelp}
-              className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 placeholder:text-gray-400"
+              className="w-full px-3 py-2 bg-white text-gray-900 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 placeholder:text-gray-400"
             />
             <p className="text-xs text-gray-500 mt-1">For these topics, AI will offer to have someone call them back.</p>
           </div>
