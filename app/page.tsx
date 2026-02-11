@@ -18,9 +18,14 @@ export default function HomePage() {
               <Link href="/missedcall-ai" className="text-gray-400 hover:text-white transition">MissedCall AI</Link>
               <Link href="/websites" className="text-gray-400 hover:text-white transition">Websites</Link>
             </div>
-            <Link href="#contact" className="bg-white text-gray-900 px-4 py-2 rounded-lg hover:bg-gray-200 transition font-medium">
-              Get Started
-            </Link>
+            <div className="flex items-center space-x-4">
+              <Link href="/dashboard" className="text-gray-400 hover:text-white transition">
+                Sign In
+              </Link>
+              <Link href="#contact" className="bg-white text-gray-900 px-4 py-2 rounded-lg hover:bg-gray-200 transition font-medium">
+                Get Started
+              </Link>
+            </div>
           </div>
         </div>
       </nav>

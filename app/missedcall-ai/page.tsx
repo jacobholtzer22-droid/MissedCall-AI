@@ -26,9 +26,14 @@ export default function LandingPage() {
               <a href="#faq" className="text-gray-400 hover:text-white transition">FAQ</a>
               <Link href="/websites" className="text-gray-400 hover:text-white transition">Websites</Link>
             </div>
-            <a href="#book-demo" className="bg-white text-gray-900 px-4 py-2 rounded-lg hover:bg-gray-200 transition font-medium">
-              Book a Demo
-            </a>
+            <div className="flex items-center space-x-4">
+              <Link href="/dashboard" className="text-gray-600 hover:text-gray-900 transition font-medium">
+                Sign In
+              </Link>
+              <a href="#book-demo" className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition">
+                Book a Demo
+              </a>
+            </div>
           </div>
         </div>
       </nav>
