@@ -20,7 +20,7 @@ export default function HomePage() {
               Catalyzing Small Business Growth
               <br />
               <span className="block text-2xl md:text-3xl mt-2 bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">
-                Align your operations with our state-of-the-art functionality and Acquire the competitive edge your hard work deserves at a fraction of the price
+                Align your operations with our state-of-the-art functionality and Acquire the competitive edge your hard work deserves
               </span>
             </h1>
             <p className="text-xl text-gray-400 max-w-2xl mx-auto">

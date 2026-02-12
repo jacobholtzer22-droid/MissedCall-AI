@@ -11,7 +11,7 @@ export function Logo({
   variant?: 'dark' | 'light'
   className?: string
 }) {
-  const sizeMap = { xs: { dim: 64, class: 'h-8 w-auto' }, sm: { dim: 120, class: 'h-9 w-auto' }, lg: { dim: 240, class: 'h-16 w-auto md:h-20' } }
+  const sizeMap = { xs: { dim: 80, class: 'h-10 w-auto' }, sm: { dim: 160, class: 'h-12 w-auto' }, lg: { dim: 320, class: 'h-20 w-auto md:h-24' } }
   const { dim, class: sizeClass } = sizeMap[size]
   const variantClass = variant === 'light' ? 'drop-shadow-sm' : ''
   return (
