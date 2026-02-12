@@ -3,7 +3,8 @@ import { UserButton } from '@clerk/nextjs'
 import { redirect } from 'next/navigation'
 import { auth } from '@clerk/nextjs/server'
 import { db } from '@/lib/db'
-import { Phone, LayoutDashboard, MessageSquare, Calendar, Settings, FlaskConical } from 'lucide-react'
+import { LayoutDashboard, MessageSquare, Calendar, Settings, FlaskConical } from 'lucide-react'
+import { Logo } from '@/app/components/Logo'
 
 const navigation = [
   { name: 'Overview', href: '/dashboard', icon: LayoutDashboard },
@@ -34,10 +35,10 @@ export default async function DashboardLayout({ children }: { children: React.Re
   return (
     <div className="min-h-screen bg-gray-50">
       <aside className="fixed inset-y-0 left-0 z-50 w-64 bg-white border-r border-gray-200 hidden lg:block">
-        <div className="flex items-center space-x-2 px-6 py-4 border-b border-gray-200">
-          <Phone className="h-8 w-8 text-blue-600" />
+        <Link href="/" className="flex items-center gap-3 px-6 py-4 border-b border-gray-200 hover:bg-gray-50 transition">
+          <Logo size="sm" variant="light" className="shrink-0" />
           <span className="text-xl font-bold text-gray-900">MissedCall AI</span>
-        </div>
+        </Link>
 
         <div className="px-6 py-3 border-b border-gray-100">
           <p className="text-sm text-gray-500">Business</p>
@@ -70,10 +71,10 @@ export default async function DashboardLayout({ children }: { children: React.Re
 
       <header className="lg:hidden fixed top-0 left-0 right-0 z-40 bg-white border-b border-gray-200">
         <div className="flex items-center justify-between px-4 py-3">
-          <div className="flex items-center space-x-2">
-            <Phone className="h-6 w-6 text-blue-600" />
+          <Link href="/" className="flex items-center gap-2">
+            <Logo size="sm" variant="light" className="shrink-0" />
             <span className="font-bold text-gray-900">MissedCall AI</span>
-          </div>
+          </Link>
           <UserButton afterSignOutUrl="/" />
         </div>
         <nav className="flex overflow-x-auto px-4 py-2 space-x-4 border-t border-gray-100">

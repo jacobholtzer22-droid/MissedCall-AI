@@ -7,8 +7,8 @@ export function NavBar() {
     <nav className="fixed top-0 left-0 right-0 z-50 bg-gray-950/80 backdrop-blur-lg border-b border-white/10">
       <div className="container mx-auto px-6 py-4">
         <div className="flex items-center justify-between">
-          <Link href="/" className="flex items-center space-x-3">
-            <Logo size="sm" />
+          <Link href="/" className="flex items-center gap-3">
+            <Logo size="sm" className="shrink-0" />
             <span className="text-xl font-bold text-white">Align & Acquire</span>
           </Link>
           <div className="flex items-center gap-6">

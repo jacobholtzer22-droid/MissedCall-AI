@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import Image from 'next/image'
 import DemoForm from '../components/DemoForm'
+import { Logo } from '@/app/components/Logo'
 import { Phone, MessageSquare, Calendar, ArrowRight, CheckCircle, Clock, DollarSign, Shield, Zap, ChevronDown } from 'lucide-react'
 import ROICalculator from '../components/roi-calculator'
 
@@ -265,8 +266,8 @@ export default function LandingPage() {
       <footer className="border-t border-white/10 py-12">
         <div className="container mx-auto px-6">
           <div className="flex flex-col md:flex-row justify-between items-center">
-            <div className="flex items-center space-x-3 mb-4 md:mb-0">
-              <Image src="/images/portfolio/logo.png" alt="Align & Acquire" width={64} height={64} sizes="32px" className="h-8 w-auto" />
+            <div className="flex items-center gap-3 mb-4 md:mb-0">
+              <Logo size="xs" />
               <div>
                 <span className="font-bold">MissedCall AI</span>
                 <span className="text-xs text-gray-500 block">A product by Align & Acquire</span>

@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import Image from 'next/image'
 import { ArrowRight, ExternalLink, Globe, Code, Smartphone, Palette, ShoppingCart, Calendar } from 'lucide-react'
+import { Logo } from '@/app/components/Logo'
 
 type Project = {
   title: string
@@ -325,8 +326,8 @@ export default function WebsitesPage() {
       <footer className="border-t border-white/10 py-12">
         <div className="container mx-auto px-6">
           <div className="flex flex-col md:flex-row justify-between items-center">
-            <div className="flex items-center space-x-3 mb-4 md:mb-0">
-              <Image src="/images/portfolio/logo.png" alt="Align & Acquire" width={64} height={64} sizes="32px" className="h-8 w-auto" />
+            <div className="flex items-center gap-3 mb-4 md:mb-0">
+              <Logo size="xs" />
               <span className="font-bold">Align & Acquire</span>
             </div>
             <div className="flex space-x-8 mb-4 md:mb-0">
