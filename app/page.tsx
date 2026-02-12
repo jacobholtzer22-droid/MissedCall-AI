@@ -60,7 +60,7 @@ export default function HomePage() {
                   Professional websites that convert visitors into customers. Custom code, mobile first, blazing fast. No templates.
                 </p>
                 <div className="flex items-center text-purple-400 font-semibold text-lg">
-                  See Align and Acquires portfolio
+                  See Align and Acquires' portfolio
                   <ArrowRight className="ml-2 h-5 w-5 group-hover:translate-x-2 transition-transform" />
                 </div>
               </div>
