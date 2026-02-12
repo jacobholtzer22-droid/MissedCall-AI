@@ -50,8 +50,8 @@ const projects: Project[] = [
 export default function WebsitesPage() {
   return (
     <div className="min-h-screen bg-gray-950 text-white">
-      {/* Hero */}
-      <section className="pt-24 pb-20">
+      {/* Hero - extra top padding so title clears fixed nav */}
+      <section className="pt-36 pb-20">
         <div className="container mx-auto px-6 text-center">
           <h1 className="text-5xl md:text-6xl font-bold mb-6">
             Websites That <span className="bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">Convert</span>

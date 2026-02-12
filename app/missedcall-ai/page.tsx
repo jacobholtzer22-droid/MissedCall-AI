@@ -8,8 +8,8 @@ import ROICalculator from '../components/roi-calculator'
 export default function LandingPage() {
   return (
     <div className="min-h-screen bg-gray-950 text-white">
-      {/* Hero with Phone Mockup */}
-      <section className="pt-24 pb-20 overflow-hidden">
+      {/* Hero with Phone Mockup - extra top padding so content clears fixed nav */}
+      <section className="pt-36 pb-20 overflow-hidden">
         <div className="container mx-auto px-6">
           <div className="grid lg:grid-cols-2 gap-12 items-center">
             <div>
