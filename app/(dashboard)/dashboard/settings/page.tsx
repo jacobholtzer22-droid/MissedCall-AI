@@ -70,7 +70,7 @@ export default async function SettingsPage() {
           <div className="ml-11 grid gap-4 sm:grid-cols-2">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Business Name</label>
-              <input type="text" name="name" defaultValue={business.name} required className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" />
+              <input type="text" name="name" defaultValue={business.name} required className="w-full px-3 py-2 bg-white text-gray-900 border border-gray-200 rounded-lg placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500" />
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Phone Number</label>
@@ -90,21 +90,21 @@ export default async function SettingsPage() {
           <div className="ml-11 space-y-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Greeting Message</label>
-              <textarea name="aiGreeting" rows={3} defaultValue={business.aiGreeting || ''} placeholder="Hi! Sorry we missed your call. How can I help you today?" className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" />
+              <textarea name="aiGreeting" rows={3} defaultValue={business.aiGreeting || ''} placeholder="Hi! Sorry we missed your call. How can I help you today?" className="w-full px-3 py-2 bg-white text-gray-900 border border-gray-200 rounded-lg placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500" />
               <p className="text-xs text-gray-500 mt-1">First message sent when someone misses your call.</p>
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Services Offered</label>
-              <textarea name="servicesOffered" rows={2} defaultValue={Array.isArray(business.servicesOffered) ? business.servicesOffered.join(', ') : ''} placeholder="Teeth cleaning, fillings, crowns, root canals" className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" />
+              <textarea name="servicesOffered" rows={2} defaultValue={Array.isArray(business.servicesOffered) ? business.servicesOffered.join(', ') : ''} placeholder="Teeth cleaning, fillings, crowns, root canals" className="w-full px-3 py-2 bg-white text-gray-900 border border-gray-200 rounded-lg placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500" />
               <p className="text-xs text-gray-500 mt-1">Separate with commas. AI uses this to help book appointments.</p>
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Business Context</label>
-              <textarea name="aiContext" rows={3} defaultValue={business.aiContext || ''} placeholder="We're a family dental practice. We accept most insurance plans." className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" />
+              <textarea name="aiContext" rows={3} defaultValue={business.aiContext || ''} placeholder="We're a family dental practice. We accept most insurance plans." className="w-full px-3 py-2 bg-white text-gray-900 border border-gray-200 rounded-lg placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500" />
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Special Instructions</label>
-              <textarea name="aiInstructions" rows={3} defaultValue={business.aiInstructions || ''} placeholder="Always ask for the patient's name. New patients arrive 15 min early." className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" />
+              <textarea name="aiInstructions" rows={3} defaultValue={business.aiInstructions || ''} placeholder="Always ask for the patient's name. New patients arrive 15 min early." className="w-full px-3 py-2 bg-white text-gray-900 border border-gray-200 rounded-lg placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500" />
             </div>
           </div>
         </div>
