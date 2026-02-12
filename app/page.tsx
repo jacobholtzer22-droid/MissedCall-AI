@@ -17,14 +17,14 @@ export default function HomePage() {
         <div className="relative z-10 container mx-auto px-6 py-20">
           <div className="text-center mb-16">
             <h1 className="text-5xl md:text-7xl font-bold mb-6 leading-tight">
-              Helping Small Businesses Grow
+              Catalyzing Small Business Growth
               <br />
               <span className="block text-2xl md:text-3xl mt-2 bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">
-                with tools that bring more customers
+                align your operations with our state-of-the-art functionality and acquire the competitive edge your hard work deserves at a fraction of the price
               </span>
             </h1>
             <p className="text-xl text-gray-400 max-w-2xl mx-auto">
-              Automation and custom websites built specifically for small businesses. Stop losing leads. Start growing.
+              Automation and custom websites that deliver. Stop losing leads. Start growing.
             </p>
           </div>
 
@@ -67,15 +67,6 @@ export default function HomePage() {
             </Link>
           </div>
         </div>
-
-        {/* Scroll Indicator */}
-        <div className="absolute bottom-10 left-0 right-0 flex justify-center">
-          <div className="animate-bounce">
-            <div className="w-6 h-10 border-2 border-white/30 rounded-full flex items-start justify-center p-2">
-              <div className="w-1.5 h-3 bg-white/50 rounded-full animate-pulse"></div>
-            </div>
-          </div>
-        </div>
       </section>
 
       {/* Stats Bar */}
@@ -83,16 +74,16 @@ export default function HomePage() {
         <div className="container mx-auto px-6">
           <div className="grid grid-cols-2 md:grid-cols-3 gap-8 text-center">
             <div>
-              <p className="text-4xl font-bold bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">25+</p>
-              <p className="text-gray-500 mt-1">Projects Launched</p>
+              <p className="text-4xl font-bold bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">150+</p>
+              <p className="text-gray-500 mt-1">Collaborative Success Stories</p>
             </div>
             <div>
-              <p className="text-4xl font-bold bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">98%</p>
-              <p className="text-gray-500 mt-1">Client Retention Rate</p>
+              <p className="text-4xl font-bold bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">98.3%</p>
+              <p className="text-gray-500 mt-1">Net Client Retention</p>
             </div>
             <div>
               <p className="text-4xl font-bold bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">24/7</p>
-              <p className="text-gray-500 mt-1">AI Never Sleeps</p>
+              <p className="text-gray-500 mt-1">Availability</p>
             </div>
           </div>
         </div>

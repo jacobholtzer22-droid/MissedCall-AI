@@ -36,15 +36,6 @@ const projects: Project[] = [
     features: ['Service Packages', 'Image Gallery', 'Testimonials', 'Contact Forms'],
   },
   {
-    title: 'MissedCall AI Dashboard',
-    category: 'SaaS Platform',
-    description: 'Full featured dashboard for managing AI missed call responses. Real time conversations, analytics, and settings.',
-    image1: '/images/portfolio/dashboard.png',
-    image2: '/images/portfolio/dashboard.png',
-    url: 'https://alignandacquire.com/dashboard',
-    features: ['Real time Data', 'Conversation Management', 'Analytics', 'Multi tenant'],
-  },
-  {
     title: 'Breeze Tees',
     category: 'E-Commerce',
     description: 'Modern t-shirt brand with a clean, stylish design. Built for showcasing products and driving conversions.',
