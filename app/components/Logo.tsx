@@ -13,7 +13,7 @@ export function Logo({
   const sizeClass = size === 'lg' ? 'h-20 w-auto' : 'h-10 w-auto'
   return (
     <img
-      src="/images/logo.png"
+      src="/images/portfolio/logo.png"
       alt="Align & Acquire"
       width={dim}
       height={dim}
