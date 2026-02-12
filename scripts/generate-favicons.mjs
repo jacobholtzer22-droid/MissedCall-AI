@@ -10,9 +10,9 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = join(__dirname, '..');
 const src = join(root, 'app', 'icon.png');
 
-// Crop to center ~55% so the logo is visible but not too zoomed in
+// Crop to center ~60% so the logo is visible but not too zoomed in
 const size = 512;
-const cropPercent = 0.55;
+const cropPercent = 0.6;
 const cropSize = Math.round(size * cropPercent);
 const left = Math.round((size - cropSize) / 2);
 
