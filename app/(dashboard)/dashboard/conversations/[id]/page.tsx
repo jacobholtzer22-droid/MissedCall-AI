@@ -1,14 +1,33 @@
-import { auth } from '@clerk/nextjs/server'
-import { redirect, notFound } from 'next/navigation'
-import { db } from '@/lib/db'
-import { Phone, ArrowLeft, Calendar, User, Clock, AlertTriangle } from 'lucide-react'
-import Link from 'next/link'
-import { formatPhoneNumber } from '@/lib/utils'
+// ===========================================
+// CONVERSATIONS PAGE
+// ===========================================
+// Shows all SMS conversations with callers
 
-export default async function ConversationPage({ params }: { params: Promise<{ id: string }> }) {
-  const { id } = await params
-  const { userId } = await auth()
+import { auth } from '@clerk/nextjs/server'
+import { redirect } from 'next/navigation'
+import { db } from '@/lib/db'
+import { MessageSquare, Calendar } from 'lucide-react'
+import { formatRelativeTime, formatPhoneNumber } from '@/lib/utils'
+import Link from 'next/link'
+
+async function getConversations(businessId: string) {
+  const conversations = await db.conversation.findMany({
+    where: { businessId },  // ✅ Only this business's conversations
+    orderBy: { lastMessageAt: 'desc' },
+    include: {
+      messages: {
+        orderBy: { createdAt: 'desc' },
+        take: 1
+      },
+      appointment: true
+    }
+  })
   
+  return conversations
+}
+
+export default async function ConversationsPage() {
+  const { userId } = await auth()
   if (!userId) redirect('/sign-in')
 
   const user = await db.user.findUnique({
@@ -18,142 +37,120 @@ export default async function ConversationPage({ params }: { params: Promise<{ i
 
   if (!user?.business) redirect('/onboarding')
 
-  const conversation = await db.conversation.findUnique({
-    where: { id },
-    include: {
-      messages: { orderBy: { createdAt: 'asc' } },
-      appointment: true,
-      business: true
-    }
-  })
-
-  // Make sure conversation belongs to this business
-  if (!conversation || conversation.businessId !== user.business.id) {
-    notFound()
-  }
-
-  const statusConfig: Record<string, { label: string; color: string }> = {
-    active: { label: 'Active', color: 'bg-green-100 text-green-700' },
-    completed: { label: 'Completed', color: 'bg-gray-100 text-gray-600' },
-    appointment_booked: { label: 'Appointment Booked', color: 'bg-blue-100 text-blue-700' },
-    no_response: { label: 'No Response', color: 'bg-yellow-100 text-yellow-700' },
-    needs_review: { label: 'Needs Review', color: 'bg-red-100 text-red-700' }
-  }
-
-  const status = statusConfig[conversation.status] || statusConfig.active
+  const conversations = await getConversations(user.business.id)
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center space-x-4">
-          <Link href="/dashboard/conversations" className="p-2 hover:bg-gray-100 rounded-lg transition">
-            <ArrowLeft className="h-5 w-5 text-gray-500" />
-          </Link>
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900">
-              {conversation.callerName || formatPhoneNumber(conversation.callerPhone)}
-            </h1>
-            <p className="text-gray-500 flex items-center">
-              <Phone className="h-4 w-4 mr-1" />
-              {formatPhoneNumber(conversation.callerPhone)}
+      {/* Page header */}
+      <div>
+        <h1 className="text-2xl font-bold text-gray-900">Conversations</h1>
+        <p className="text-gray-500 mt-1">
+          View all SMS conversations with callers
+        </p>
+      </div>
+
+      {/* Stats bar */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <MiniStat 
+          label="Total" 
+          value={conversations.length} 
+        />
+        <MiniStat 
+          label="Active" 
+          value={conversations.filter(c => c.status === 'active').length}
+          highlight 
+        />
+        <MiniStat 
+          label="Appointments" 
+          value={conversations.filter(c => c.status === 'appointment_booked').length} 
+        />
+        <MiniStat 
+          label="No Response" 
+          value={conversations.filter(c => c.status === 'no_response').length} 
+        />
+      </div>
+
+      {/* Conversations list */}
+      <div className="bg-white rounded-xl border border-gray-200">
+        {conversations.length === 0 ? (
+          <div className="text-center py-16">
+            <MessageSquare className="h-12 w-12 text-gray-300 mx-auto mb-4" />
+            <h3 className="text-lg font-medium text-gray-900 mb-2">No conversations yet</h3>
+            <p className="text-gray-500 max-w-md mx-auto">
+              When someone misses your call and responds to our text, 
+              their conversation will appear here.
             </p>
           </div>
-        </div>
-        
-        <span className={`px-3 py-1 rounded-full text-sm font-medium ${status.color}`}>
-          {status.label}
-        </span>
-      </div>
-
-      {conversation.status === 'needs_review' && (
-        <div className="bg-red-50 border border-red-200 rounded-lg p-4 flex items-start space-x-3">
-          <AlertTriangle className="h-5 w-5 text-red-600 flex-shrink-0 mt-0.5" />
-          <div>
-            <h3 className="font-medium text-red-900">Needs Human Review</h3>
-            <p className="text-sm text-red-700">The AI flagged this conversation for follow-up. Please review and contact the customer if needed.</p>
-          </div>
-        </div>
-      )}
-
-      <div className="grid lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2 bg-white rounded-xl border border-gray-200">
-          <div className="px-6 py-4 border-b border-gray-200">
-            <h2 className="font-semibold text-gray-900">Conversation</h2>
-          </div>
-          
-          <div className="p-6 space-y-4 max-h-[600px] overflow-y-auto">
-            {conversation.messages.length === 0 ? (
-              <p className="text-center text-gray-500 py-8">No messages yet</p>
-            ) : (
-              conversation.messages.map((message) => (
-                <div key={message.id} className={`flex ${message.direction === 'outbound' ? 'justify-end' : 'justify-start'}`}>
-                  <div className={`max-w-[80%] rounded-2xl px-4 py-2 ${message.direction === 'outbound' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-900'}`}>
-                    <p className="whitespace-pre-wrap">{message.content}</p>
-                    <p className={`text-xs mt-1 ${message.direction === 'outbound' ? 'text-blue-200' : 'text-gray-400'}`}>
-                      {new Date(message.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+        ) : (
+          <div className="divide-y divide-gray-100">
+            {conversations.map((conversation) => (
+              <Link 
+                key={conversation.id} 
+                href={`/dashboard/conversations/${conversation.id}`}
+                className="block px-6 py-4 hover:bg-gray-50 transition"
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center space-x-4">
+                    {/* Status indicator */}
+                    <div className={`w-3 h-3 rounded-full flex-shrink-0 ${
+                      conversation.status === 'active' ? 'bg-green-500' : 
+                      conversation.status === 'appointment_booked' ? 'bg-blue-500' :
+                      'bg-gray-300'
+                    }`} />
+                    
+                    {/* Caller info */}
+                    <div className="min-w-0">
+                      <div className="flex items-center space-x-2">
+                        <p className="font-medium text-gray-900">
+                          {conversation.callerName || formatPhoneNumber(conversation.callerPhone)}
+                        </p>
+                        {conversation.appointment && (
+                          <span className="flex items-center text-xs text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full">
+                            <Calendar className="h-3 w-3 mr-1" />
+                            Booked
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-sm text-gray-500 truncate max-w-md">
+                        {conversation.messages[0]?.content || 'No messages yet'}
+                      </p>
+                    </div>
+                  </div>
+                  
+                  {/* Right side */}
+                  <div className="text-right flex-shrink-0 ml-4">
+                    <p className="text-sm text-gray-500">
+                      {formatRelativeTime(conversation.lastMessageAt)}
                     </p>
+                    <span className={`text-xs px-2 py-1 rounded-full ${
+                      conversation.status === 'active' 
+                        ? 'bg-green-100 text-green-700' 
+                        : conversation.status === 'appointment_booked'
+                        ? 'bg-blue-100 text-blue-700'
+                        : conversation.status === 'completed'
+                        ? 'bg-gray-100 text-gray-600'
+                        : 'bg-yellow-100 text-yellow-700'
+                    }`}>
+                      {conversation.status === 'active' ? 'Active' : 
+                       conversation.status === 'appointment_booked' ? 'Booked' : 
+                       conversation.status === 'completed' ? 'Completed' : 'No response'}
+                    </span>
                   </div>
                 </div>
-              ))
-            )}
+              </Link>
+            ))}
           </div>
-        </div>
-
-        <div className="space-y-6">
-          <div className="bg-white rounded-xl border border-gray-200 p-6">
-            <h3 className="font-semibold text-gray-900 mb-4">Contact Info</h3>
-            <div className="space-y-3">
-              <div className="flex items-center text-sm">
-                <User className="h-4 w-4 text-gray-400 mr-3" />
-                <span className="text-gray-600">{conversation.callerName || 'Unknown'}</span>
-              </div>
-              <div className="flex items-center text-sm">
-                <Phone className="h-4 w-4 text-gray-400 mr-3" />
-                <span className="text-gray-600">{formatPhoneNumber(conversation.callerPhone)}</span>
-              </div>
-              <div className="flex items-center text-sm">
-                <Clock className="h-4 w-4 text-gray-400 mr-3" />
-                <span className="text-gray-600">Started {new Date(conversation.createdAt).toLocaleDateString()}</span>
-              </div>
-            </div>
-          </div>
-
-          {conversation.appointment && (
-            <div className="bg-blue-50 rounded-xl border border-blue-100 p-6">
-              <h3 className="font-semibold text-gray-900 mb-4 flex items-center">
-                <Calendar className="h-5 w-5 text-blue-600 mr-2" />
-                Appointment Booked
-              </h3>
-              <div className="space-y-2 text-sm">
-                <p><strong>Service:</strong> {conversation.appointment.serviceType}</p>
-                <p><strong>Date:</strong> {new Date(conversation.appointment.scheduledAt).toLocaleDateString()}</p>
-                <p><strong>Time:</strong> {new Date(conversation.appointment.scheduledAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
-                <p><strong>Status:</strong> <span className="capitalize">{conversation.appointment.status}</span></p>
-                {conversation.appointment.notes && <p><strong>Notes:</strong> {conversation.appointment.notes}</p>}
-              </div>
-            </div>
-          )}
-
-          {(conversation.intent || conversation.serviceRequested) && (
-            <div className="bg-white rounded-xl border border-gray-200 p-6">
-              <h3 className="font-semibold text-gray-900 mb-4">AI Analysis</h3>
-              {conversation.intent && (
-                <p className="text-sm text-gray-600 mb-2">
-                  <strong>Intent:</strong> <span className="capitalize">{conversation.intent.replace('_', ' ')}</span>
-                </p>
-              )}
-              {conversation.serviceRequested && (
-                <p className="text-sm text-gray-600 mb-2">
-                  <strong>Service:</strong> {conversation.serviceRequested}
-                </p>
-              )}
-              {conversation.summary && (
-                <p className="text-sm text-gray-600">{conversation.summary}</p>
-              )}
-            </div>
-          )}
-        </div>
+        )}
       </div>
+    </div>
+  )
+}
+
+function MiniStat({ label, value, highlight = false }: { label: string; value: number; highlight?: boolean }) {
+  return (
+    <div className={`rounded-lg p-4 ${highlight ? 'bg-green-50 border border-green-100' : 'bg-gray-50'}`}>
+      <p className="text-sm text-gray-500">{label}</p>
+      <p className={`text-2xl font-bold ${highlight ? 'text-green-600' : 'text-gray-900'}`}>{value}</p>
     </div>
   )
 }
