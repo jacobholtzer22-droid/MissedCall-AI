@@ -3,13 +3,16 @@
 // ===========================================
 // Shows all SMS conversations with callers
 
+import { auth } from '@clerk/nextjs/server'
+import { redirect } from 'next/navigation'
 import { db } from '@/lib/db'
-import { MessageSquare, Search, Phone, Calendar } from 'lucide-react'
+import { MessageSquare, Calendar } from 'lucide-react'
 import { formatRelativeTime, formatPhoneNumber } from '@/lib/utils'
 import Link from 'next/link'
 
-async function getConversations() {
+async function getConversations(businessId: string) {
   const conversations = await db.conversation.findMany({
+    where: { businessId },
     orderBy: { lastMessageAt: 'desc' },
     include: {
       messages: {
@@ -24,7 +27,17 @@ async function getConversations() {
 }
 
 export default async function ConversationsPage() {
-  const conversations = await getConversations()
+  const { userId } = await auth()
+  if (!userId) redirect('/sign-in')
+
+  const user = await db.user.findUnique({
+    where: { clerkId: userId },
+    include: { business: true }
+  })
+
+  if (!user?.business) redirect('/onboarding')
+
+  const conversations = await getConversations(user.business.id)
 
   return (
     <div className="space-y-6">
