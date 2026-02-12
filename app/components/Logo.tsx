@@ -15,14 +15,17 @@ export function Logo({
   const { dim, class: sizeClass } = sizeMap[size]
   const variantClass = variant === 'light' ? 'drop-shadow-sm' : ''
   return (
-    <img
-      src="/images/portfolio/logo.png"
-      alt="Align & Acquire"
-      width={dim}
-      height={dim}
-      className={`object-contain ${sizeClass} ${variantClass} ${className}`.trim()}
-      draggable={false}
-      decoding="async"
-    />
+    <picture>
+      <source srcSet="/images/portfolio/logo.webp" type="image/webp" />
+      <img
+        src="/images/portfolio/logo.png"
+        alt="Align & Acquire"
+        width={dim}
+        height={dim}
+        className={`object-contain ${sizeClass} ${variantClass} ${className}`.trim()}
+        draggable={false}
+        decoding="async"
+      />
+    </picture>
   )
 }
