@@ -1,7 +1,7 @@
 import { auth } from '@clerk/nextjs/server'
 import { redirect } from 'next/navigation'
 import { db } from '@/lib/db'
-import { Phone, MessageSquare, Calendar, TrendingUp, ArrowRight } from 'lucide-react'
+import { Phone, MessageSquare, Calendar, TrendingUp, ArrowRight, ShieldCheck, HelpCircle, Wrench } from 'lucide-react'
 import Link from 'next/link'
 import { formatRelativeTime, formatPhoneNumber } from '@/lib/utils'
 
@@ -10,6 +10,8 @@ async function getDashboardStats(businessId: string) {
   const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate())
   const weekStart = new Date(todayStart)
   weekStart.setDate(weekStart.getDate() - 7)
+  const monthStart = new Date(todayStart)
+  monthStart.setDate(monthStart.getDate() - 30)
 
   const [
     totalConversations,
@@ -17,7 +19,10 @@ async function getDashboardStats(businessId: string) {
     activeConversations,
     weeklyAppointments,
     totalMessages,
-    recentConversations
+    recentConversations,
+    conversationsWithReplies,
+    allConversationsWithService,
+    recentInboundMessages
   ] = await Promise.all([
     db.conversation.count({ where: { businessId } }),
     db.conversation.count({ where: { businessId, createdAt: { gte: todayStart } } }),
@@ -29,18 +34,70 @@ async function getDashboardStats(businessId: string) {
       take: 5,
       orderBy: { lastMessageAt: 'desc' },
       include: { messages: { take: 1, orderBy: { createdAt: 'desc' } } }
+    }),
+    // Calls Saved - conversations where customer actually replied
+    db.conversation.count({
+      where: { businessId, messages: { some: { direction: 'inbound' } } }
+    }),
+    // Top Services - get all conversations with serviceRequested
+    db.conversation.findMany({
+      where: { businessId, serviceRequested: { not: null } },
+      select: { serviceRequested: true },
+      orderBy: { createdAt: 'desc' },
+      take: 100
+    }),
+    // Common Questions - get recent inbound messages
+    db.message.findMany({
+      where: { 
+        direction: 'inbound',
+        conversation: { businessId }
+      },
+      select: { content: true },
+      orderBy: { createdAt: 'desc' },
+      take: 50
     })
   ])
 
-  const conversationsWithReplies = await db.conversation.count({
-    where: { businessId, messages: { some: { direction: 'inbound' } } }
-  })
-  
   const responseRate = totalConversations > 0 
     ? Math.round((conversationsWithReplies / totalConversations) * 100) 
     : 0
 
-  return { totalConversations, todayConversations, activeConversations, weeklyAppointments, totalMessages, responseRate, recentConversations }
+  // Calculate top requested services
+  const serviceCounts: Record<string, number> = {}
+  allConversationsWithService.forEach(conv => {
+    if (conv.serviceRequested) {
+      const service = conv.serviceRequested.toLowerCase().trim()
+      serviceCounts[service] = (serviceCounts[service] || 0) + 1
+    }
+  })
+  const topServices = Object.entries(serviceCounts)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 5)
+    .map(([service, count]) => ({ service, count }))
+
+  // Extract common questions from inbound messages
+  const questionKeywords = ['how', 'what', 'when', 'where', 'can', 'do you', 'is there', 'price', 'cost', 'available', 'open', 'hour', 'appointment', 'book', 'schedule']
+  const questions: string[] = []
+  recentInboundMessages.forEach(msg => {
+    const content = msg.content.toLowerCase()
+    if (questionKeywords.some(kw => content.includes(kw)) && msg.content.length < 200) {
+      questions.push(msg.content)
+    }
+  })
+  const commonQuestions = questions.slice(0, 5)
+
+  return { 
+    totalConversations, 
+    todayConversations, 
+    activeConversations, 
+    weeklyAppointments, 
+    totalMessages, 
+    responseRate, 
+    recentConversations,
+    callsSaved: conversationsWithReplies,
+    topServices,
+    commonQuestions
+  }
 }
 
 export default async function DashboardPage() {
@@ -63,13 +120,77 @@ export default async function DashboardPage() {
         <p className="text-gray-500 mt-1">Here's what's happening with your missed calls.</p>
       </div>
 
+      {/* Main Stats */}
       <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
         <StatCard title="Conversations Today" value={stats.todayConversations.toString()} description={`${stats.totalConversations} total`} icon={Phone} />
-        <StatCard title="Active Conversations" value={stats.activeConversations.toString()} description="In progress" icon={MessageSquare} highlight={stats.activeConversations > 0} />
+        <StatCard title="Calls Saved" value={stats.callsSaved.toString()} description="Customers who engaged" icon={ShieldCheck} highlight={stats.callsSaved > 0} />
         <StatCard title="Appointments Booked" value={stats.weeklyAppointments.toString()} description="This week" icon={Calendar} />
         <StatCard title="Response Rate" value={`${stats.responseRate}%`} description="Callers who replied" icon={TrendingUp} />
       </div>
 
+      {/* Insights Row */}
+      <div className="grid gap-6 md:grid-cols-2">
+        {/* Top Requested Services */}
+        <div className="bg-white rounded-xl border border-gray-200">
+          <div className="px-6 py-4 border-b border-gray-200 flex items-center">
+            <Wrench className="h-5 w-5 text-blue-600 mr-2" />
+            <h2 className="text-lg font-semibold text-gray-900">Top Requested Services</h2>
+          </div>
+          {stats.topServices.length === 0 ? (
+            <div className="p-6 text-center py-8">
+              <Wrench className="h-10 w-10 text-gray-300 mx-auto mb-3" />
+              <p className="text-gray-500">No service requests yet</p>
+              <p className="text-sm text-gray-400 mt-1">Services will appear as customers book</p>
+            </div>
+          ) : (
+            <div className="p-4">
+              <div className="space-y-3">
+                {stats.topServices.map((item, index) => (
+                  <div key={index} className="flex items-center justify-between">
+                    <div className="flex items-center space-x-3">
+                      <span className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold ${
+                        index === 0 ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-600'
+                      }`}>
+                        {index + 1}
+                      </span>
+                      <span className="text-gray-900 capitalize">{item.service}</span>
+                    </div>
+                    <span className="text-sm text-gray-500">{item.count} requests</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Common Questions */}
+        <div className="bg-white rounded-xl border border-gray-200">
+          <div className="px-6 py-4 border-b border-gray-200 flex items-center">
+            <HelpCircle className="h-5 w-5 text-purple-600 mr-2" />
+            <h2 className="text-lg font-semibold text-gray-900">Common Questions</h2>
+          </div>
+          {stats.commonQuestions.length === 0 ? (
+            <div className="p-6 text-center py-8">
+              <HelpCircle className="h-10 w-10 text-gray-300 mx-auto mb-3" />
+              <p className="text-gray-500">No questions yet</p>
+              <p className="text-sm text-gray-400 mt-1">Customer questions will appear here</p>
+            </div>
+          ) : (
+            <div className="p-4">
+              <div className="space-y-3">
+                {stats.commonQuestions.map((question, index) => (
+                  <div key={index} className="flex items-start space-x-3 p-3 bg-gray-50 rounded-lg">
+                    <span className="text-purple-600 font-bold">?</span>
+                    <p className="text-sm text-gray-700 line-clamp-2">{question}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Recent Conversations */}
       <div className="bg-white rounded-xl border border-gray-200">
         <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
           <h2 className="text-lg font-semibold text-gray-900">Recent Conversations</h2>
@@ -109,6 +230,7 @@ export default async function DashboardPage() {
         )}
       </div>
 
+      {/* Bottom Stats */}
       <div className="bg-gray-50 rounded-xl p-6">
         <div className="flex flex-wrap gap-8">
           <div>
@@ -123,6 +245,10 @@ export default async function DashboardPage() {
             <p className="text-sm text-gray-500">Uptime</p>
             <p className="text-2xl font-bold text-gray-900">99.9%</p>
           </div>
+          <div>
+            <p className="text-sm text-gray-500">Active Conversations</p>
+            <p className="text-2xl font-bold text-gray-900">{stats.activeConversations}</p>
+          </div>
         </div>
       </div>
     </div>
@@ -131,15 +257,15 @@ export default async function DashboardPage() {
 
 function StatCard({ title, value, description, icon: Icon, highlight = false }: { title: string; value: string; description: string; icon: React.ElementType; highlight?: boolean }) {
   return (
-    <div className={`rounded-xl border p-6 ${highlight ? 'bg-blue-50 border-blue-200' : 'bg-white border-gray-200'}`}>
+    <div className={`rounded-xl border p-6 ${highlight ? 'bg-green-50 border-green-200' : 'bg-white border-gray-200'}`}>
       <div className="flex items-center justify-between">
         <div>
           <p className="text-sm font-medium text-gray-500">{title}</p>
           <p className="text-3xl font-bold text-gray-900 mt-1">{value}</p>
           <p className="text-sm text-gray-500 mt-1">{description}</p>
         </div>
-        <div className={`p-3 rounded-lg ${highlight ? 'bg-blue-100' : 'bg-blue-50'}`}>
-          <Icon className="h-6 w-6 text-blue-600" />
+        <div className={`p-3 rounded-lg ${highlight ? 'bg-green-100' : 'bg-blue-50'}`}>
+          <Icon className={`h-6 w-6 ${highlight ? 'text-green-600' : 'text-blue-600'}`} />
         </div>
       </div>
     </div>
