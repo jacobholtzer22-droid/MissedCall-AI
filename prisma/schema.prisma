@@ -50,6 +50,8 @@ model Business {
   setupFee              Float?                           // What they paid upfront
   monthlyFee            Float?                           // What they pay monthly
   spamFilterEnabled     Boolean   @default(false)       // Premium feature - spam call filtering
+  callScreenerEnabled   Boolean   @default(false)
+  callScreenerMessage   String?
   
   // Timestamps
   createdAt             DateTime  @default(now())
@@ -59,7 +61,8 @@ model Business {
   users                 User[]
   conversations         Conversation[]
   appointments          Appointment[]
-  
+  screenedCalls         ScreenedCall[]
+
   @@index([stripeCustomerId])
 }
 
@@ -219,4 +222,21 @@ model PhoneNumber {
   updatedAt             DateTime  @updatedAt
   
   @@index([status])
+}
+
+// ===========================================
+// SCREENED CALL - Call screening / spam filter
+// ===========================================
+model ScreenedCall {
+  id            String    @id @default(cuid())
+  businessId    String
+  business      Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  callerPhone   String
+  callSid       String?
+  result        String    @default("blocked")
+  createdAt     DateTime  @default(now())
+
+  @@index([businessId])
+  @@index([businessId, result])
+  @@index([createdAt])
 }

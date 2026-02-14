@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useUser } from '@clerk/nextjs'
 import { useRouter } from 'next/navigation'
+import { CallScreenerCard } from './components/CallScreenerCard'
 
 interface Business {
   id: string
@@ -20,12 +21,15 @@ interface Business {
   monthlyFee: number | null
   subscriptionStatus: string
   spamFilterEnabled: boolean
+  callScreenerEnabled: boolean
+  callScreenerMessage: string | null
   createdAt: string
   updatedAt: string
   _count: {
     conversations: number
     appointments: number
     users: number
+    blockedCalls30d: number
   }
 }
 
@@ -219,6 +223,11 @@ export default function AdminDashboard() {
                         Spam Filter OFF
                       </span>
                     )}
+                    {business._count.blockedCalls30d > 0 && (
+                      <span className="text-xs text-red-400">
+                        🛡️ {business._count.blockedCalls30d} spam blocked (30d)
+                      </span>
+                    )}
                   </div>
 
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-4 text-sm">
@@ -273,6 +282,31 @@ export default function AdminDashboard() {
                       <span className="text-gray-400">{business.adminNotes}</span>
                     </div>
                   )}
+
+                  <div className="mt-4">
+                    <CallScreenerCard
+                      businessId={business.id}
+                      businessName={business.name}
+                      callScreenerEnabled={business.callScreenerEnabled}
+                      callScreenerMessage={business.callScreenerMessage}
+                      onToggle={async (id, enabled) => {
+                        await fetch(`/api/admin/businesses/${id}`, {
+                          method: 'PATCH',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ callScreenerEnabled: enabled }),
+                        })
+                        fetchBusinesses()
+                      }}
+                      onUpdateMessage={async (id, message) => {
+                        await fetch(`/api/admin/businesses/${id}`, {
+                          method: 'PATCH',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ callScreenerMessage: message }),
+                        })
+                        fetchBusinesses()
+                      }}
+                    />
+                  </div>
                 </div>
 
                 <div className="flex gap-2 ml-4">

@@ -32,6 +32,8 @@ export async function PATCH(
       'adminNotes',
       'setupFee',
       'monthlyFee',
+      'callScreenerEnabled',
+      'callScreenerMessage',
     ]
 
     const data: Record<string, unknown> = {}
