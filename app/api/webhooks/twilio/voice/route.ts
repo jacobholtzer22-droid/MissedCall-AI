@@ -23,6 +23,40 @@ export async function POST(request: NextRequest) {
     
     console.log('📞 Incoming call webhook:', { callSid, callStatus, from, to, direction })
 
+    // --- SPAM FILTERING ---
+    const isSpam = await isSpamCall(from)
+    if (isSpam) {
+      console.log('🚫 Spam call detected:', from)
+
+      // Find the business so we can log it
+      const business = await db.business.findFirst({
+        where: { twilioPhoneNumber: to }
+      })
+
+      if (business) {
+        // Log the spam call in the database so client can see it
+        await db.conversation.create({
+          data: {
+            businessId: business.id,
+            callerPhone: from,
+            status: 'spam',
+            summary: 'Spam call - automatically filtered',
+          }
+        })
+        console.log('📝 Logged spam call to dashboard')
+      }
+
+      // Reject the call - no voicemail, no text, just silent drop
+      return new NextResponse(
+        `<?xml version="1.0" encoding="UTF-8"?>
+        <Response>
+          <Reject />
+        </Response>`,
+        { headers: { 'Content-Type': 'text/xml' } }
+      )
+    }
+    // --- END SPAM FILTERING ---
+
     // Find which business owns this phone number
     const business = await db.business.findFirst({
       where: { twilioPhoneNumber: to }
@@ -127,4 +161,54 @@ async function sendInitialSMS(
   } catch (error) {
     console.error('❌ Error sending SMS:', error)
   }
+}
+
+async function isSpamCall(phone: string): Promise<boolean> {
+  // 1. Block toll-free numbers calling IN (real customers don't call from toll-free)
+  const tollFreePatterns = ['+1833', '+1844', '+1855', '+1866', '+1877', '+1888', '+1800']
+  if (tollFreePatterns.some(prefix => phone.startsWith(prefix))) {
+    console.log('🚫 Blocked toll-free caller:', phone)
+    return true
+  }
+
+  // 2. Block very short numbers (automated systems, short codes)
+  const digitsOnly = phone.replace(/\D/g, '')
+  if (digitsOnly.length < 10) {
+    console.log('🚫 Blocked short number:', phone)
+    return true
+  }
+
+  // 3. Block numbers with invalid US area codes starting with 0 or 1
+  if (phone.startsWith('+1')) {
+    const areaCode = digitsOnly.substring(1, 4)
+    if (areaCode.startsWith('0') || areaCode.startsWith('1')) {
+      console.log('🚫 Blocked invalid area code:', phone)
+      return true
+    }
+  }
+
+  // 4. Use Twilio Lookup to check line type (costs $0.005 per lookup)
+  try {
+    const twilioClient = twilio(
+      process.env.TWILIO_ACCOUNT_SID!,
+      process.env.TWILIO_AUTH_TOKEN!
+    )
+
+    const lookup = await twilioClient.lookups.v2
+      .phoneNumbers(phone)
+      .fetch({ fields: 'line_type_intelligence' })
+
+    const lineType = lookup.lineTypeIntelligence?.type
+
+    if (lineType === 'voip' || lineType === 'tollFree' || lineType === 'premium' || lineType === 'personal') {
+      console.log(`🚫 Blocked ${lineType} number:`, phone)
+      return true
+    }
+
+    console.log(`✅ Passed spam filter (${lineType}):`, phone)
+  } catch (error) {
+    console.log('⚠️ Lookup failed, allowing call:', phone)
+  }
+
+  return false
 }

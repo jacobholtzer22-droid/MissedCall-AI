@@ -15,6 +15,9 @@ interface Business {
   aiGreeting: string | null
   aiInstructions: string | null
   aiContext: string | null
+  adminNotes: string | null
+  setupFee: number | null
+  monthlyFee: number | null
   subscriptionStatus: string
   createdAt: string
   updatedAt: string
@@ -65,6 +68,9 @@ export default function AdminDashboard() {
       name: business.name,
       twilioPhoneNumber: business.twilioPhoneNumber || '',
       timezone: business.timezone,
+      adminNotes: business.adminNotes || '',
+      setupFee: business.setupFee ?? '',
+      monthlyFee: business.monthlyFee ?? '',
       aiGreeting: business.aiGreeting || '',
       aiInstructions: business.aiInstructions || '',
       aiContext: business.aiContext || '',
@@ -108,6 +114,9 @@ export default function AdminDashboard() {
           name: editData.name,
           twilioPhoneNumber: editData.twilioPhoneNumber || null,
           timezone: editData.timezone,
+          adminNotes: editData.adminNotes || null,
+          setupFee: editData.setupFee !== '' && editData.setupFee != null ? parseFloat(String(editData.setupFee)) : null,
+          monthlyFee: editData.monthlyFee !== '' && editData.monthlyFee != null ? parseFloat(String(editData.monthlyFee)) : null,
           aiGreeting: editData.aiGreeting || null,
           aiInstructions: editData.aiInstructions || null,
           aiContext: editData.aiContext || null,
@@ -162,7 +171,7 @@ export default function AdminDashboard() {
 
       <div className="max-w-7xl mx-auto px-6 py-8">
         {/* Stats Row */}
-        <div className="grid grid-cols-4 gap-4 mb-8">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4 mb-8">
           <StatCard label="Total Clients" value={businesses.length} />
           <StatCard
             label="Active"
@@ -178,6 +187,11 @@ export default function AdminDashboard() {
             label="Total Conversations"
             value={businesses.reduce((sum, b) => sum + b._count.conversations, 0)}
             color="blue"
+          />
+          <StatCard
+            label="Spam Blocked"
+            value={0}
+            color="red"
           />
         </div>
 
@@ -216,10 +230,35 @@ export default function AdminDashboard() {
                     </div>
                   </div>
 
+                  <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mt-3 text-sm">
+                    <div>
+                      <span className="text-gray-500">Setup Fee</span>
+                      <p className={business.setupFee != null ? 'text-gray-300' : 'text-gray-500'}>
+                        {business.setupFee != null ? `$${business.setupFee}` : 'Not set'}
+                      </p>
+                    </div>
+                    <div>
+                      <span className="text-gray-500">Monthly Fee</span>
+                      <p className={business.monthlyFee != null ? 'text-gray-300' : 'text-gray-500'}>
+                        {business.monthlyFee != null ? `$${business.monthlyFee}/mo` : 'Not set'}
+                      </p>
+                    </div>
+                    <div>
+                      <span className="text-gray-500">This Week</span>
+                      <p className="text-gray-300">{business._count.conversations}</p>
+                    </div>
+                  </div>
+
                   {business.aiGreeting && (
                     <div className="mt-3 text-sm">
                       <span className="text-gray-500">AI Greeting: </span>
                       <span className="text-gray-400 italic">&quot;{business.aiGreeting}&quot;</span>
+                    </div>
+                  )}
+                  {business.adminNotes && (
+                    <div className="mt-3 text-sm">
+                      <span className="text-gray-500">Notes: </span>
+                      <span className="text-gray-400">{business.adminNotes}</span>
                     </div>
                   )}
                 </div>
@@ -318,6 +357,42 @@ export default function AdminDashboard() {
                   <option value="past_due">Past Due</option>
                   <option value="canceled">Canceled</option>
                 </select>
+              </Field>
+
+              {/* Setup Fee */}
+              <Field label="Setup Fee">
+                <input
+                  type="number"
+                  value={editData.setupFee}
+                  onChange={e => setEditData({ ...editData, setupFee: e.target.value })}
+                  placeholder="$500"
+                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-white placeholder-gray-600"
+                />
+              </Field>
+
+              {/* Monthly Fee */}
+              <Field label="Monthly Fee">
+                <input
+                  type="number"
+                  value={editData.monthlyFee}
+                  onChange={e => setEditData({ ...editData, monthlyFee: e.target.value })}
+                  placeholder="$299"
+                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-white placeholder-gray-600"
+                />
+              </Field>
+
+              {/* Admin Notes */}
+              <Field
+                label="Admin Notes"
+                hint="Private notes about this client"
+              >
+                <textarea
+                  value={editData.adminNotes}
+                  onChange={e => setEditData({ ...editData, adminNotes: e.target.value })}
+                  rows={3}
+                  placeholder="Private notes about this client..."
+                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-white placeholder-gray-600"
+                />
               </Field>
 
               {/* AI Greeting */}
@@ -421,6 +496,7 @@ function StatCard({ label, value, color = 'gray' }: { label: string; value: numb
     green: 'text-green-400',
     yellow: 'text-yellow-400',
     blue: 'text-blue-400',
+    red: 'text-red-400',
   }
   return (
     <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">

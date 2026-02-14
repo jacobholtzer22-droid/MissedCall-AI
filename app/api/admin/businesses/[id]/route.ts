@@ -28,6 +28,9 @@ export async function PATCH(
       'aiInstructions',
       'aiContext',
       'subscriptionStatus',
+      'adminNotes',
+      'setupFee',
+      'monthlyFee',
     ]
 
     const data: Record<string, unknown> = {}

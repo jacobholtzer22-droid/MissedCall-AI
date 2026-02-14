@@ -45,6 +45,11 @@ model Business {
   stripeSubscriptionId  String?
   subscriptionStatus    String    @default("trialing")  // trialing, active, past_due, canceled
   
+  // Admin tracking
+  adminNotes            String?   @db.Text              // Private notes only Jacob sees
+  setupFee              Float?                           // What they paid upfront
+  monthlyFee            Float?                           // What they pay monthly
+  
   // Timestamps
   createdAt             DateTime  @default(now())
   updatedAt             DateTime  @updatedAt
