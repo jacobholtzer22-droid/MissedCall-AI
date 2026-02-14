@@ -25,6 +25,7 @@ model Business {
   
   // Twilio phone number provisioned for this business
   twilioPhoneNumber     String?   @unique
+  forwardingNumber      String?                         // Owner's real phone number to ring first
   
   // Business details
   timezone              String    @default("America/New_York")

@@ -21,6 +21,7 @@ export async function PATCH(
     const allowedFields = [
       'name',
       'twilioPhoneNumber',
+      'forwardingNumber',
       'timezone',
       'businessHours',
       'servicesOffered',

@@ -1,16 +1,16 @@
 // ===========================================
-// TWILIO VOICE GATHER CALLBACK
+// TWILIO VOICE GATHER CALLBACK (WITH DIAL)
 // ===========================================
 // Path: app/api/webhooks/voice-gather/route.ts
 //
-// This is called by Twilio AFTER the caller presses
-// a digit (or doesn't) during the IVR prompt.
-// If they pressed 1 → real caller → proceed with missed call flow
-// Anything else → spam/robot → reject + log it
+// Flow:
+// 1. Caller presses 1 → dial the business owner's real phone
+// 2. Owner picks up → normal phone call, done
+// 3. Owner doesn't pick up → status callback triggers MissedCall AI SMS
+// 4. Wrong digit / no digit → blocked as spam
 
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import twilio from 'twilio'
 
 export async function POST(request: NextRequest) {
   try {
@@ -21,12 +21,10 @@ export async function POST(request: NextRequest) {
     const digits = formData.get('Digits') as string | null
     const callSid = formData.get('CallSid') as string
     const from = formData.get('From') as string
-    const to = formData.get('To') as string
 
     console.log('🔢 Gather callback:', { businessId, digits, callSid, from })
 
     if (!businessId) {
-      console.error('❌ No businessId in gather callback')
       return twimlResponse(`<Say>An error occurred. Goodbye.</Say>`)
     }
 
@@ -35,12 +33,11 @@ export async function POST(request: NextRequest) {
     })
 
     if (!business) {
-      console.error('❌ Business not found:', businessId)
       return twimlResponse(`<Say>An error occurred. Goodbye.</Say>`)
     }
 
     // =============================================
-    // CALLER PRESSED 1 → REAL PERSON → Let them through
+    // CALLER PRESSED 1 → REAL PERSON
     // =============================================
     if (digits === '1') {
       console.log('✅ Caller passed IVR screening:', from)
@@ -55,34 +52,33 @@ export async function POST(request: NextRequest) {
         },
       })
 
-      // Now do the normal missed call flow:
-      // Check for existing conversation
-      const existingConversation = await db.conversation.findFirst({
-        where: {
-          businessId: business.id,
-          callerPhone: from,
-          createdAt: {
-            gte: new Date(Date.now() - 24 * 60 * 60 * 1000),
-          },
-        },
-      })
+      // If business has a forwarding number, ring it first
+      if (business.forwardingNumber) {
+        console.log('📞 Dialing business owner:', business.forwardingNumber)
 
-      if (!existingConversation) {
-        const conversation = await db.conversation.create({
-          data: {
-            businessId: business.id,
-            callerPhone: from,
-            status: 'active',
-          },
-        })
+        const baseUrl = process.env.NEXT_PUBLIC_APP_URL || process.env.VERCEL_URL
+        const protocol = baseUrl?.includes('localhost') ? 'http' : 'https'
+        const dialCallbackUrl = `${protocol}://${baseUrl}/api/webhooks/voice-dial-status?businessId=${business.id}&callerPhone=${encodeURIComponent(from)}`
 
-        console.log('📝 Created conversation after IVR pass:', conversation.id)
-        await sendInitialSMS(business, conversation, from)
-      } else {
-        console.log('📱 Existing conversation found, skipping SMS')
+        // Dial the owner's phone for 25 seconds
+        // If no answer → action URL fires → triggers SMS
+        // callerId is the caller's real number so the owner sees who's calling
+        return twimlResponse(`
+          <Dial
+            action="${dialCallbackUrl}"
+            method="POST"
+            timeout="25"
+            callerId="${from}"
+          >
+            <Number>${business.forwardingNumber}</Number>
+          </Dial>
+        `)
       }
 
-      // Tell the caller we'll text them
+      // No forwarding number set — go straight to SMS flow
+      console.log('⚠️ No forwarding number, going straight to SMS')
+      await triggerMissedCallSMS(business, from)
+
       return twimlResponse(`
         <Say voice="Polly.Joanna">Thank you. We are unable to take your call right now, but we will text you shortly to help with your request. Goodbye.</Say>
       `)
@@ -93,7 +89,6 @@ export async function POST(request: NextRequest) {
     // =============================================
     console.log('🚫 Call screened out (pressed:', digits || 'nothing', ') from:', from)
 
-    // Log as blocked
     await db.screenedCall.create({
       data: {
         businessId: business.id,
@@ -123,15 +118,39 @@ function twimlResponse(body: string) {
   )
 }
 
-async function sendInitialSMS(
+async function triggerMissedCallSMS(
   business: { id: string; name: string; aiGreeting: string | null; twilioPhoneNumber: string | null },
-  conversation: { id: string },
   callerPhone: string
 ) {
+  const twilio = require('twilio')
   const twilioClient = twilio(
     process.env.TWILIO_ACCOUNT_SID!,
     process.env.TWILIO_AUTH_TOKEN!
   )
+
+  // Check for existing conversation
+  const existingConversation = await db.conversation.findFirst({
+    where: {
+      businessId: business.id,
+      callerPhone: callerPhone,
+      createdAt: {
+        gte: new Date(Date.now() - 24 * 60 * 60 * 1000),
+      },
+    },
+  })
+
+  if (existingConversation) {
+    console.log('📱 Existing conversation found, skipping SMS')
+    return
+  }
+
+  const conversation = await db.conversation.create({
+    data: {
+      businessId: business.id,
+      callerPhone: callerPhone,
+      status: 'active',
+    },
+  })
 
   const greeting =
     business.aiGreeting ||
@@ -154,7 +173,7 @@ async function sendInitialSMS(
       },
     })
 
-    console.log('📤 Sent initial SMS after IVR pass:', message.sid)
+    console.log('📤 Sent MissedCall AI SMS:', message.sid)
   } catch (error) {
     console.error('❌ Error sending SMS:', error)
   }
