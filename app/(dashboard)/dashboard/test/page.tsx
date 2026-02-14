@@ -287,7 +287,7 @@ export default function TestModePage() {
 
           <div className="px-6 py-4 border-t border-gray-200">
             <div className="flex space-x-4">
-              <input type="text" value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && sendMessage()} placeholder="Type as the customer..." disabled={messages.length === 0 || loading} className="flex-1 px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-50 disabled:text-gray-400" />
+              <input type="text" value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && sendMessage()} placeholder="Type as the customer..." disabled={messages.length === 0 || loading} className="flex-1 px-4 py-2 border border-gray-200 rounded-lg bg-white text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-500" />
               <button onClick={sendMessage} disabled={!input.trim() || loading || messages.length === 0} className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition disabled:bg-gray-300 disabled:cursor-not-allowed">
                 <Send className="h-5 w-5" />
               </button>
@@ -301,7 +301,7 @@ export default function TestModePage() {
               <Building className="h-5 w-5 text-blue-600" />
               <h3 className="font-semibold text-gray-900">Test Different Industries</h3>
             </div>
-            <select value={industry} onChange={(e) => { setIndustry(e.target.value); setMessages([]) }} className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+            <select value={industry} onChange={(e) => { setIndustry(e.target.value); setMessages([]) }} className="w-full px-3 py-2 border border-gray-200 rounded-lg bg-white text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer">
               {industries.map((ind) => (
                 <option key={ind} value={ind}>{ind}</option>
               ))}
@@ -315,7 +315,7 @@ export default function TestModePage() {
             <h3 className="font-semibold text-gray-900 mb-4">Quick Messages</h3>
             <div className="space-y-2">
               {quickMessages.map((msg) => (
-                <button key={msg} onClick={() => setInput(msg)} disabled={messages.length === 0} className="w-full text-left p-2 text-sm bg-gray-50 hover:bg-gray-100 rounded-lg transition disabled:opacity-50 disabled:cursor-not-allowed">{msg}</button>
+                <button key={msg} onClick={() => setInput(msg)} disabled={messages.length === 0} className="w-full text-left p-2 text-sm text-gray-900 bg-gray-100 hover:bg-gray-200 rounded-lg transition disabled:opacity-50 disabled:cursor-not-allowed border border-gray-200">{msg}</button>
               ))}
             </div>
           </div>

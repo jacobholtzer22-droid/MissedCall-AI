@@ -203,60 +203,91 @@ export default function AdminDashboard() {
           {businesses.map(business => (
             <div
               key={business.id}
-              className="bg-gray-900 border border-gray-800 rounded-xl p-5"
+              className="bg-gray-900 border border-gray-800 rounded-xl p-6"
             >
-              {/* Top row: name + badges | buttons */}
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <div className="flex flex-wrap items-center gap-2 sm:gap-3">
-                  <h2 className="text-lg font-semibold">{business.name}</h2>
-                  <StatusBadge status={business.subscriptionStatus} />
-                  {business.spamFilterEnabled ? (
-                    <span className="text-xs px-2.5 py-1 rounded-full border bg-green-500/10 text-green-400 border-green-500/20">
-                      Spam Filter ON
-                    </span>
-                  ) : (
-                    <span className="text-xs px-2.5 py-1 rounded-full border bg-gray-500/10 text-gray-400 border-gray-500/20">
-                      Spam Filter OFF
-                    </span>
+              <div className="flex items-start justify-between">
+                <div className="flex-1">
+                  <div className="flex items-center gap-3 mb-2">
+                    <h2 className="text-xl font-semibold">{business.name}</h2>
+                    <StatusBadge status={business.subscriptionStatus} />
+                    {business.spamFilterEnabled ? (
+                      <span className="text-xs px-2.5 py-1 rounded-full border bg-green-500/10 text-green-400 border-green-500/20">
+                        Spam Filter ON
+                      </span>
+                    ) : (
+                      <span className="text-xs px-2.5 py-1 rounded-full border bg-gray-500/10 text-gray-400 border-gray-500/20">
+                        Spam Filter OFF
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-4 text-sm">
+                    <div>
+                      <span className="text-gray-500">Twilio Number</span>
+                      <p className={business.twilioPhoneNumber ? 'text-green-400' : 'text-red-400'}>
+                        {business.twilioPhoneNumber || 'NOT ASSIGNED'}
+                      </p>
+                    </div>
+                    <div>
+                      <span className="text-gray-500">Timezone</span>
+                      <p className="text-gray-300">{business.timezone}</p>
+                    </div>
+                    <div>
+                      <span className="text-gray-500">Conversations</span>
+                      <p className="text-gray-300">{business._count.conversations}</p>
+                    </div>
+                    <div>
+                      <span className="text-gray-500">Appointments</span>
+                      <p className="text-gray-300">{business._count.appointments}</p>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mt-3 text-sm">
+                    <div>
+                      <span className="text-gray-500">Setup Fee</span>
+                      <p className={business.setupFee != null ? 'text-gray-300' : 'text-gray-500'}>
+                        {business.setupFee != null ? `$${business.setupFee}` : 'Not set'}
+                      </p>
+                    </div>
+                    <div>
+                      <span className="text-gray-500">Monthly Fee</span>
+                      <p className={business.monthlyFee != null ? 'text-gray-300' : 'text-gray-500'}>
+                        {business.monthlyFee != null ? `$${business.monthlyFee}/mo` : 'Not set'}
+                      </p>
+                    </div>
+                    <div>
+                      <span className="text-gray-500">This Week</span>
+                      <p className="text-gray-300">{business._count.conversations}</p>
+                    </div>
+                  </div>
+
+                  {business.aiGreeting && (
+                    <div className="mt-3 text-sm">
+                      <span className="text-gray-500">AI Greeting: </span>
+                      <span className="text-gray-400 italic">&quot;{business.aiGreeting}&quot;</span>
+                    </div>
+                  )}
+                  {business.adminNotes && (
+                    <div className="mt-3 text-sm">
+                      <span className="text-gray-500">Notes: </span>
+                      <span className="text-gray-400">{business.adminNotes}</span>
+                    </div>
                   )}
                 </div>
-                <div className="flex gap-2 shrink-0">
+
+                <div className="flex gap-2 ml-4">
                   <button
                     onClick={() => startEdit(business)}
-                    className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 rounded-lg text-sm font-medium transition"
+                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg text-sm font-medium transition"
                   >
                     Edit
                   </button>
                   <a
                     href={`/admin/${business.id}/conversations`}
-                    className="px-3 py-1.5 bg-gray-800 hover:bg-gray-700 rounded-lg text-sm font-medium transition"
+                    className="px-4 py-2 bg-gray-800 hover:bg-gray-700 rounded-lg text-sm font-medium transition"
                   >
                     View Conversations
                   </a>
-                </div>
-              </div>
-
-              {/* Bottom row: stat grid */}
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mt-4 pt-4 border-t border-gray-800">
-                <div className="text-sm">
-                  <span className="text-gray-500 block text-xs">Setup Fee</span>
-                  <span className={business.setupFee != null ? 'text-gray-300' : 'text-gray-500'}>
-                    {business.setupFee != null ? `$${business.setupFee}` : 'Not set'}
-                  </span>
-                </div>
-                <div className="text-sm">
-                  <span className="text-gray-500 block text-xs">Monthly Fee</span>
-                  <span className={business.monthlyFee != null ? 'text-gray-300' : 'text-gray-500'}>
-                    {business.monthlyFee != null ? `$${business.monthlyFee}` : 'Not set'}
-                  </span>
-                </div>
-                <div className="text-sm">
-                  <span className="text-gray-500 block text-xs">Conversations</span>
-                  <span className="text-gray-300">{business._count.conversations}</span>
-                </div>
-                <div className="text-sm">
-                  <span className="text-gray-500 block text-xs">This Week</span>
-                  <span className="text-gray-300">{business._count.conversations}</span>
                 </div>
               </div>
             </div>
