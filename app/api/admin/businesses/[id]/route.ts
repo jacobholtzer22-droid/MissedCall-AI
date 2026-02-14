@@ -28,6 +28,7 @@ export async function PATCH(
       'aiInstructions',
       'aiContext',
       'subscriptionStatus',
+      'spamFilterEnabled',
       'adminNotes',
       'setupFee',
       'monthlyFee',

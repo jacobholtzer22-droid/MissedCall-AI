@@ -19,6 +19,7 @@ interface Business {
   setupFee: number | null
   monthlyFee: number | null
   subscriptionStatus: string
+  spamFilterEnabled: boolean
   createdAt: string
   updatedAt: string
   _count: {
@@ -75,6 +76,7 @@ export default function AdminDashboard() {
       aiInstructions: business.aiInstructions || '',
       aiContext: business.aiContext || '',
       subscriptionStatus: business.subscriptionStatus,
+      spamFilterEnabled: business.spamFilterEnabled,
       servicesOffered: business.servicesOffered
         ? JSON.stringify(business.servicesOffered, null, 2)
         : '[]',
@@ -121,6 +123,7 @@ export default function AdminDashboard() {
           aiInstructions: editData.aiInstructions || null,
           aiContext: editData.aiContext || null,
           subscriptionStatus: editData.subscriptionStatus,
+          spamFilterEnabled: editData.spamFilterEnabled,
           servicesOffered,
           businessHours,
         }),
@@ -207,6 +210,15 @@ export default function AdminDashboard() {
                   <div className="flex items-center gap-3 mb-2">
                     <h2 className="text-xl font-semibold">{business.name}</h2>
                     <StatusBadge status={business.subscriptionStatus} />
+                    {business.spamFilterEnabled ? (
+                      <span className="text-xs px-2.5 py-1 rounded-full border bg-green-500/10 text-green-400 border-green-500/20">
+                        Spam Filter ON
+                      </span>
+                    ) : (
+                      <span className="text-xs px-2.5 py-1 rounded-full border bg-gray-500/10 text-gray-400 border-gray-500/20">
+                        Spam Filter OFF
+                      </span>
+                    )}
                   </div>
 
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-4 text-sm">
@@ -358,6 +370,11 @@ export default function AdminDashboard() {
                   <option value="canceled">Canceled</option>
                 </select>
               </Field>
+
+              <label className="flex items-center gap-3 cursor-pointer">
+                <input type="checkbox" checked={editData.spamFilterEnabled} onChange={e => setEditData({...editData, spamFilterEnabled: e.target.checked})} className="w-5 h-5 rounded" />
+                <span className="text-sm text-gray-300">Enable Spam Filtering (Premium Feature)</span>
+              </label>
 
               {/* Setup Fee */}
               <Field label="Setup Fee">

@@ -23,40 +23,6 @@ export async function POST(request: NextRequest) {
     
     console.log('📞 Incoming call webhook:', { callSid, callStatus, from, to, direction })
 
-    // --- SPAM FILTERING ---
-    const isSpam = await isSpamCall(from)
-    if (isSpam) {
-      console.log('🚫 Spam call detected:', from)
-
-      // Find the business so we can log it
-      const business = await db.business.findFirst({
-        where: { twilioPhoneNumber: to }
-      })
-
-      if (business) {
-        // Log the spam call in the database so client can see it
-        await db.conversation.create({
-          data: {
-            businessId: business.id,
-            callerPhone: from,
-            status: 'spam',
-            summary: 'Spam call - automatically filtered',
-          }
-        })
-        console.log('📝 Logged spam call to dashboard')
-      }
-
-      // Reject the call - no voicemail, no text, just silent drop
-      return new NextResponse(
-        `<?xml version="1.0" encoding="UTF-8"?>
-        <Response>
-          <Reject />
-        </Response>`,
-        { headers: { 'Content-Type': 'text/xml' } }
-      )
-    }
-    // --- END SPAM FILTERING ---
-
     // Find which business owns this phone number
     const business = await db.business.findFirst({
       where: { twilioPhoneNumber: to }
@@ -71,6 +37,30 @@ export async function POST(request: NextRequest) {
         </Response>`,
         { headers: { 'Content-Type': 'text/xml' } }
       )
+    }
+
+    // Spam filtering (only when business has it enabled)
+    if (business.spamFilterEnabled) {
+      const isSpam = await isSpamCall(from)
+      if (isSpam) {
+        console.log('🚫 Spam call detected:', from)
+        await db.conversation.create({
+          data: {
+            businessId: business.id,
+            callerPhone: from,
+            status: 'spam',
+            summary: 'Spam call - automatically filtered',
+          }
+        })
+        console.log('📝 Logged spam call to dashboard')
+        return new NextResponse(
+          `<?xml version="1.0" encoding="UTF-8"?>
+        <Response>
+          <Reject />
+        </Response>`,
+          { headers: { 'Content-Type': 'text/xml' } }
+        )
+      }
     }
 
     // Handle the call - send SMS on ringing, no-answer, or busy

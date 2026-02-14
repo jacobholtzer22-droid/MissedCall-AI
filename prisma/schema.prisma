@@ -49,6 +49,7 @@ model Business {
   adminNotes            String?   @db.Text              // Private notes only Jacob sees
   setupFee              Float?                           // What they paid upfront
   monthlyFee            Float?                           // What they pay monthly
+  spamFilterEnabled     Boolean   @default(false)       // Premium feature - spam call filtering
   
   // Timestamps
   createdAt             DateTime  @default(now())
