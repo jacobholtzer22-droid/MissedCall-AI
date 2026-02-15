@@ -4,11 +4,10 @@
 // Path: app/api/webhooks/voice-dial-status/route.ts
 //
 // Twilio hits this AFTER the <Dial> attempt ends.
-// If the owner answered → do nothing, call was handled
-// If no answer / busy / failed AND ring duration >= 8s → trigger MissedCall AI SMS
+// If owner answered (completed, not machine) → do nothing, call was handled.
+// If no-answer/busy/failed OR (completed + AnsweredBy contains "machine"), AND duration >= 8s → trigger MissedCall AI SMS.
 
 const MIN_DURATION_SECONDS = 8
-const TRIGGER_STATUSES = ['no-answer', 'busy', 'failed'] as const
 
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
@@ -23,8 +22,9 @@ export async function POST(request: NextRequest) {
     const callerPhone = searchParams.get('callerPhone')
     const dialCallStatus = formData.get('DialCallStatus') as string
     const callSid = formData.get('CallSid') as string
+    const answeredBy = String(formData.get("AnsweredBy") ?? "").toLowerCase()
 
-    console.log('📞 Dial status callback:', { businessId, callerPhone, dialCallStatus, callSid })
+    console.log('📞 Dial status callback:', { businessId, callerPhone, dialCallStatus, callSid, answeredBy })
 
     if (!businessId || !callerPhone) {
       console.error('❌ Missing businessId or callerPhone in dial callback')
@@ -41,18 +41,15 @@ export async function POST(request: NextRequest) {
     }
 
     // =============================================
-    // OWNER ANSWERED → Call was handled, done
+    // Trigger SMS when: no-answer/busy/failed OR completed + machine
     // =============================================
-    if (dialCallStatus === 'completed') {
-      console.log('✅ Owner answered the call, no SMS needed')
-      return new NextResponse("", { status: 200 })
-    }
+    const status = String(dialCallStatus ?? "").toLowerCase()
+    const isTriggerStatus = (['no-answer', 'busy', 'failed'] as const).includes(status as 'no-answer' | 'busy' | 'failed')
+    const isCompletedMachine = status === 'completed' && (answeredBy.includes('machine') || answeredBy.includes('unknown'))
+    const shouldTriggerSms = isTriggerStatus || isCompletedMachine
 
-    // =============================================
-    // Only trigger SMS for no-answer/busy/failed (not canceled, etc.)
-    // =============================================
-    if (!TRIGGER_STATUSES.includes(dialCallStatus as (typeof TRIGGER_STATUSES)[number])) {
-      console.log('📵 Dial status not in trigger set (status:', dialCallStatus, '), skipping SMS')
+    if (!shouldTriggerSms) {
+      console.log('📵 Not triggering SMS (status:', dialCallStatus, ', answeredBy:', answeredBy, '), skipping')
       return new NextResponse("", { status: 200 })
     }
 
@@ -86,12 +83,14 @@ export async function POST(request: NextRequest) {
       return new NextResponse("", { status: 200 })
     }
 
-    if (durationSeconds < MIN_DURATION_SECONDS) {
+    const isMachine = answeredBy.includes('machine') || answeredBy.includes('unknown')
+    const minDuration = isMachine ? 2 : 8
+    if (durationSeconds < minDuration) {
       console.log(
         '📵 Call duration below minimum (',
         durationSeconds,
         's <',
-        MIN_DURATION_SECONDS,
+        minDuration,
         's), skipping SMS'
       )
       return new NextResponse("", { status: 200 })

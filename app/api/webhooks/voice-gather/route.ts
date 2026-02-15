@@ -70,7 +70,9 @@ export async function POST(request: NextRequest) {
           statusCallback: dialStatusUrl,
           statusCallbackMethod: 'POST',
           statusCallbackEvent: 'initiated ringing answered completed',
-        } as Parameters<typeof vr.dial>[0]);
+          machineDetection: 'Enable',
+          answerOnBridge: true,
+        } as any);
         dial.number(business.forwardingNumber!)
         return new NextResponse(vr.toString(), { headers: xmlHeaders })
       }
