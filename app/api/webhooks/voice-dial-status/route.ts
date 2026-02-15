@@ -5,7 +5,10 @@
 //
 // Twilio hits this AFTER the <Dial> attempt ends.
 // If the owner answered → do nothing, call was handled
-// If no answer / busy / failed → trigger MissedCall AI SMS
+// If no answer / busy / failed AND ring duration >= 8s → trigger MissedCall AI SMS
+
+const MIN_DURATION_SECONDS = 8
+const TRIGGER_STATUSES = ['no-answer', 'busy', 'failed'] as const
 
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
@@ -46,10 +49,58 @@ export async function POST(request: NextRequest) {
     }
 
     // =============================================
-    // OWNER DIDN'T ANSWER → Trigger MissedCall AI
+    // Only trigger SMS for no-answer/busy/failed (not canceled, etc.)
     // =============================================
-    // Possible statuses: no-answer, busy, failed, canceled
-    console.log('📵 Owner did not answer (status:', dialCallStatus, '), triggering SMS')
+    if (!TRIGGER_STATUSES.includes(dialCallStatus as (typeof TRIGGER_STATUSES)[number])) {
+      console.log('📵 Dial status not in trigger set (status:', dialCallStatus, '), skipping SMS')
+      return twimlResponse(`<Hangup />`)
+    }
+
+    // =============================================
+    // Resolve call duration: formData first, then Twilio API fallback
+    // =============================================
+    let durationSeconds: number | null = null
+    const durationFromForm =
+      formData.get('DialCallDuration') ?? formData.get('Duration')
+    if (durationFromForm != null && durationFromForm !== '') {
+      const parsed = parseInt(String(durationFromForm), 10)
+      if (!Number.isNaN(parsed) && parsed >= 0) durationSeconds = parsed
+    }
+
+    if (durationSeconds === null && callSid && process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN) {
+      try {
+        const twilioClient = twilio(
+          process.env.TWILIO_ACCOUNT_SID,
+          process.env.TWILIO_AUTH_TOKEN
+        )
+        const call = await twilioClient.calls(callSid).fetch()
+        const d = call.duration != null ? parseInt(String(call.duration), 10) : NaN
+        if (!Number.isNaN(d) && d >= 0) durationSeconds = d
+      } catch (err) {
+        console.error('❌ Failed to fetch call duration from Twilio API:', err)
+      }
+    }
+
+    if (durationSeconds === null) {
+      console.log('📵 Could not determine call duration, skipping SMS (treat as below threshold)')
+      return twimlResponse(`<Hangup />`)
+    }
+
+    if (durationSeconds < MIN_DURATION_SECONDS) {
+      console.log(
+        '📵 Call duration below minimum (',
+        durationSeconds,
+        's <',
+        MIN_DURATION_SECONDS,
+        's), skipping SMS'
+      )
+      return twimlResponse(`<Hangup />`)
+    }
+
+    // =============================================
+    // OWNER DIDN'T ANSWER (eligible status + duration) → Trigger MissedCall AI
+    // =============================================
+    console.log('📵 Owner did not answer (status:', dialCallStatus, ', duration:', durationSeconds, 's), triggering SMS')
 
     // Check for existing conversation in last 24h
     const existingConversation = await db.conversation.findFirst({

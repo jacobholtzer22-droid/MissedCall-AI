@@ -9,6 +9,7 @@
 // buttons, so they get filtered automatically.
 
 import { NextRequest, NextResponse } from 'next/server'
+import type { Business } from '@prisma/client'
 import { db } from '@/lib/db'
 import twilio from 'twilio'
 
@@ -24,10 +25,26 @@ export async function POST(request: NextRequest) {
 
     console.log('📞 Incoming call webhook:', { callSid, callStatus, from, to, direction })
 
-    // Find which business owns this phone number
-    const business = await db.business.findFirst({
+    // Find which business owns this phone number (normalize for formatting differences)
+    let business: Business | null = await db.business.findFirst({
       where: { twilioPhoneNumber: to },
     })
+    if (!business) {
+      const toDigits = normalizePhone(to)
+      if (toDigits) {
+        const candidates = await db.business.findMany({
+          where: { twilioPhoneNumber: { not: null } },
+        })
+        const byDigits = candidates.filter(
+          (b) => b.twilioPhoneNumber && normalizePhone(b.twilioPhoneNumber) === toDigits
+        )
+        if (byDigits.length === 1) business = byDigits[0]
+        else if (byDigits.length > 1) {
+          const e164First = byDigits.find((b) => b.twilioPhoneNumber?.startsWith('+'))
+          business = e164First ?? byDigits[0]
+        }
+      }
+    }
 
     if (!business) {
       console.log('⚠️ No business found for phone number:', to)
@@ -68,47 +85,48 @@ export async function POST(request: NextRequest) {
         `Thank you for calling ${business.name}. To be connected, please press 1.`
 
       // Build the callback URL for when they press a digit
-      const baseUrl = process.env.NEXT_PUBLIC_APP_URL || process.env.VERCEL_URL
-      const protocol = baseUrl?.includes('localhost') ? 'http' : 'https'
-      const gatherActionUrl = `${protocol}://${baseUrl}/api/webhooks/voice-gather?businessId=${business.id}`
+      const gatherActionUrl = `/api/webhooks/voice-gather?businessId=${business.id}`
 
       // Gather waits for 1 digit, times out after 8 seconds
-      // If no input → falls through to the <Say> rejection message
+      // If no input → falls through to the <Say> message and <Hangup/>
       return twimlResponse(`
-        <Gather numDigits="1" action="${gatherActionUrl}" method="POST" timeout="8">
-          <Say voice="Polly.Joanna">${escapeXml(screenerMessage)}</Say>
+        <Gather numDigits="1" timeout="8" action="${gatherActionUrl}" method="POST">
+          <Say>${escapeXml(screenerMessage)}</Say>
         </Gather>
-        <Say voice="Polly.Joanna">We did not receive a response. Goodbye.</Say>
+        <Say>We did not receive a response. Goodbye.</Say>
+        <Hangup/>
       `)
     }
 
     // =============================================
-    // NO SCREENER: Normal missed call flow
+    // NO SCREENER: Normal missed call flow (only when call screener is off)
     // =============================================
-    if (callStatus === 'ringing' || callStatus === 'no-answer' || callStatus === 'busy') {
-      const existingConversation = await db.conversation.findFirst({
-        where: {
-          businessId: business.id,
-          callerPhone: from,
-          createdAt: {
-            gte: new Date(Date.now() - 24 * 60 * 60 * 1000),
-          },
-        },
-      })
-
-      if (!existingConversation) {
-        const conversation = await db.conversation.create({
-          data: {
+    if (!business.callScreenerEnabled) {
+      if (callStatus === 'ringing' || callStatus === 'no-answer' || callStatus === 'busy') {
+        const existingConversation = await db.conversation.findFirst({
+          where: {
             businessId: business.id,
             callerPhone: from,
-            status: 'active',
+            createdAt: {
+              gte: new Date(Date.now() - 24 * 60 * 60 * 1000),
+            },
           },
         })
 
-        console.log('📝 Created conversation:', conversation.id)
-        await sendInitialSMS(business, conversation, from)
-      } else {
-        console.log('📱 Existing conversation found, skipping SMS')
+        if (!existingConversation) {
+          const conversation = await db.conversation.create({
+            data: {
+              businessId: business.id,
+              callerPhone: from,
+              status: 'active',
+            },
+          })
+
+          console.log('📝 Created conversation:', conversation.id)
+          await sendInitialSMS(business, conversation, from)
+        } else {
+          console.log('📱 Existing conversation found, skipping SMS')
+        }
       }
     }
 
@@ -134,6 +152,13 @@ function twimlResponse(body: string) {
 }
 
 // ===========================================
+// HELPER: Normalize phone to digits only (E.164 comparison)
+// ===========================================
+function normalizePhone(phone: string): string {
+  return (phone ?? '').replace(/\D/g, '')
+}
+
+// ===========================================
 // HELPER: Escape XML special characters
 // ===========================================
 function escapeXml(str: string): string {
@@ -143,6 +168,24 @@ function escapeXml(str: string): string {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&apos;')
+}
+
+// ===========================================
+// HELPER: Sanitize greeting to plain ASCII for first SMS
+// Removes emojis, curly quotes, and special punctuation.
+// ===========================================
+function sanitizeGreetingToAscii(text: string): string {
+  return (
+    text
+      .replace(/[\u201c\u201d]/g, '"')
+      .replace(/[\u2018\u2019]/g, "'")
+      .replace(/[\u2013\u2014]/g, '-')
+      .replace(/[\u2026]/g, '...')
+      // Remove emoji and other non-ASCII
+      .replace(/[^\x00-\x7F]/g, '')
+      .replace(/\s+/g, ' ')
+      .trim()
+  )
 }
 
 // ===========================================
@@ -158,13 +201,19 @@ async function sendInitialSMS(
     process.env.TWILIO_AUTH_TOKEN!
   )
 
-  const greeting =
-    business.aiGreeting ||
-    `Hi! Sorry we missed your call at ${business.name}. I'm an automated assistant - how can I help you today?`
+  const defaultGreeting = `Sorry we missed your call at ${business.name}. How can we help?`.slice(0, 140)
+
+  let body: string
+  if (business.aiGreeting) {
+    const sanitized = sanitizeGreetingToAscii(business.aiGreeting)
+    body = sanitized.length > 0 ? sanitized.slice(0, 140) : defaultGreeting
+  } else {
+    body = defaultGreeting
+  }
 
   try {
     const message = await twilioClient.messages.create({
-      body: greeting,
+      body,
       from: business.twilioPhoneNumber!,
       to: callerPhone,
     })
@@ -173,7 +222,7 @@ async function sendInitialSMS(
       data: {
         conversationId: conversation.id,
         direction: 'outbound',
-        content: greeting,
+        content: body,
         twilioSid: message.sid,
         twilioStatus: message.status,
       },

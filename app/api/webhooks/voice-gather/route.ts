@@ -20,9 +20,9 @@ export async function POST(request: NextRequest) {
     const businessId = searchParams.get('businessId')
     const digits = formData.get('Digits') as string | null
     const callSid = formData.get('CallSid') as string
-    const from = formData.get('From') as string
+    const callerPhone = (formData.get('From') as string) ?? ''
 
-    console.log('🔢 Gather callback:', { businessId, digits, callSid, from })
+    console.log('🔢 Gather callback:', { businessId, digits, callSid, callerPhone })
 
     if (!businessId) {
       return twimlResponse(`<Say>An error occurred. Goodbye.</Say>`)
@@ -37,47 +37,34 @@ export async function POST(request: NextRequest) {
     }
 
     // =============================================
-    // CALLER PRESSED 1 → REAL PERSON
+    // CALLER PRESSED 1 → DIAL BUSINESS OWNER
     // =============================================
     if (digits === '1') {
-      console.log('✅ Caller passed IVR screening:', from)
+      console.log('✅ Caller passed IVR screening:', callerPhone)
 
-      // Log as passed
       await db.screenedCall.create({
         data: {
           businessId: business.id,
-          callerPhone: from,
+          callerPhone,
           callSid,
           result: 'passed',
         },
       })
 
-      // If business has a forwarding number, ring it first
       if (business.forwardingNumber) {
-        console.log('📞 Dialing business owner:', business.forwardingNumber)
-
         const baseUrl = process.env.NEXT_PUBLIC_APP_URL || process.env.VERCEL_URL
         const protocol = baseUrl?.includes('localhost') ? 'http' : 'https'
-        const dialCallbackUrl = `${protocol}://${baseUrl}/api/webhooks/voice-dial-status?businessId=${business.id}&callerPhone=${encodeURIComponent(from)}`
+        const dialCallbackUrl = `${protocol}://${baseUrl}/api/webhooks/voice-dial-status?businessId=${business.id}&callerPhone=${encodeURIComponent(callerPhone)}`
 
-        // Dial the owner's phone for 25 seconds
-        // If no answer → action URL fires → triggers SMS
-        // callerId is the caller's real number so the owner sees who's calling
         return twimlResponse(`
-          <Dial
-            action="${dialCallbackUrl}"
-            method="POST"
-            timeout="25"
-            callerId="${from}"
-          >
+          <Dial action="${dialCallbackUrl}" method="POST" timeout="25" callerId="${callerPhone}">
             <Number>${business.forwardingNumber}</Number>
           </Dial>
         `)
       }
 
-      // No forwarding number set — go straight to SMS flow
       console.log('⚠️ No forwarding number, going straight to SMS')
-      await triggerMissedCallSMS(business, from)
+      await triggerMissedCallSMS(business, callerPhone)
 
       return twimlResponse(`
         <Say voice="Polly.Joanna">Thank you. We are unable to take your call right now, but we will text you shortly to help with your request. Goodbye.</Say>
@@ -85,22 +72,20 @@ export async function POST(request: NextRequest) {
     }
 
     // =============================================
-    // WRONG DIGIT OR NO DIGIT → BLOCKED
+    // DIGITS !== "1" (null / empty / other) → BLOCKED
     // =============================================
-    console.log('🚫 Call screened out (pressed:', digits || 'nothing', ') from:', from)
-
     await db.screenedCall.create({
       data: {
         businessId: business.id,
-        callerPhone: from,
+        callerPhone,
         callSid,
         result: 'blocked',
       },
     })
 
-    return twimlResponse(`
-      <Say voice="Polly.Joanna">Goodbye.</Say>
-    `)
+    return twimlResponse(
+      '<Say voice="Polly.Joanna">Thanks for calling. Goodbye.</Say><Hangup />'
+    )
   } catch (error) {
     console.error('❌ Error in gather callback:', error)
     return twimlResponse(`<Say>An error occurred. Goodbye.</Say>`)
