@@ -69,14 +69,14 @@ export async function POST(request: NextRequest) {
           method: 'POST',
           callerId: business.twilioPhoneNumber!,
           timeout: 15,
-          machineDetection: 'Enable',
+          machineDetection: 'DetectMessageEnd',
           answerOnBridge: true,
         } as any)
         dial.number(
           {
             statusCallback: dialStatusUrl,
             statusCallbackMethod: 'POST',
-            statusCallbackEvent: 'initiated,ringing,answered,completed',
+            statusCallbackEvent: 'completed',
           } as any,
           business.forwardingNumber
         )
