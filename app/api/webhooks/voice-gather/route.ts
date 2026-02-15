@@ -10,7 +10,10 @@
 // 4. Wrong digit / no digit → blocked as spam
 
 import { NextRequest, NextResponse } from 'next/server'
+import twilio from 'twilio'
 import { db } from '@/lib/db'
+
+const xmlHeaders = { 'Content-Type': 'text/xml' as const }
 
 export async function POST(request: NextRequest) {
   try {
@@ -25,7 +28,10 @@ export async function POST(request: NextRequest) {
     console.log('🔢 Gather callback:', { businessId, digits, callSid, callerPhone })
 
     if (!businessId) {
-      return twimlResponse(`<Say>An error occurred. Goodbye.</Say>`)
+      const vr = new twilio.twiml.VoiceResponse()
+      vr.say('Thanks for calling. Goodbye.')
+      vr.hangup()
+      return new NextResponse(vr.toString(), { headers: xmlHeaders })
     }
 
     const business = await db.business.findUnique({
@@ -33,7 +39,10 @@ export async function POST(request: NextRequest) {
     })
 
     if (!business) {
-      return twimlResponse(`<Say>An error occurred. Goodbye.</Say>`)
+      const vr = new twilio.twiml.VoiceResponse()
+      vr.say('Thanks for calling. Goodbye.')
+      vr.hangup()
+      return new NextResponse(vr.toString(), { headers: xmlHeaders })
     }
 
     // =============================================
@@ -51,27 +60,40 @@ export async function POST(request: NextRequest) {
         },
       })
 
-      if (business.forwardingNumber) {
-        const dialCallerId = business.twilioPhoneNumber
-        if (dialCallerId == null) {
-          return twimlResponse(
-            '<Say voice="Polly.Joanna">Call forwarding is not configured. Goodbye.</Say><Hangup />'
-          )
-        }
+      if (business.forwardingNumber && business.twilioPhoneNumber) {
         const dialStatusUrl = `${request.nextUrl.origin}/api/webhooks/voice-dial-status?businessId=${business.id}&callerPhone=${encodeURIComponent(callerPhone)}`
-        return twimlResponse(`
-          <Dial statusCallback="${dialStatusUrl}" statusCallbackMethod="POST" statusCallbackEvent="completed" timeout="25" callerId="${dialCallerId}">
-            <Number>${business.forwardingNumber}</Number>
-          </Dial>
-        `)
+        const vr = new twilio.twiml.VoiceResponse()
+        const dial = vr.dial({
+          callerId: business.twilioPhoneNumber,
+          timeout: 25,
+        })
+        dial.number(
+          {
+            statusCallback: dialStatusUrl,
+            statusCallbackMethod: 'POST',
+            statusCallbackEvent: ['initiated', 'ringing', 'answered', 'completed'],
+          },
+          business.forwardingNumber
+        )
+        return new NextResponse(vr.toString(), { headers: xmlHeaders })
+      }
+
+      if (business.forwardingNumber && !business.twilioPhoneNumber) {
+        const vr = new twilio.twiml.VoiceResponse()
+        vr.say({ voice: 'Polly.Joanna' }, 'Call forwarding is not configured. Goodbye.')
+        vr.hangup()
+        return new NextResponse(vr.toString(), { headers: xmlHeaders })
       }
 
       console.log('⚠️ No forwarding number, going straight to SMS')
       await triggerMissedCallSMS(business, callerPhone)
 
-      return twimlResponse(`
-        <Say voice="Polly.Joanna">Thank you. We are unable to take your call right now, but we will text you shortly to help with your request. Goodbye.</Say>
-      `)
+      const vr = new twilio.twiml.VoiceResponse()
+      vr.say(
+        { voice: 'Polly.Joanna' },
+        'Thank you. We are unable to take your call right now, but we will text you shortly to help with your request. Goodbye.'
+      )
+      return new NextResponse(vr.toString(), { headers: xmlHeaders })
     }
 
     // =============================================
@@ -86,31 +108,22 @@ export async function POST(request: NextRequest) {
       },
     })
 
-    return twimlResponse(
-      '<Say voice="Polly.Joanna">Thanks for calling. Goodbye.</Say><Hangup />'
-    )
+    const vr = new twilio.twiml.VoiceResponse()
+    vr.say('Thanks for calling. Goodbye.')
+    vr.hangup()
+    return new NextResponse(vr.toString(), { headers: xmlHeaders })
   } catch (error) {
     console.error('❌ Error in gather callback:', error)
-    return twimlResponse(`<Say>An error occurred. Goodbye.</Say>`)
+    const vr = new twilio.twiml.VoiceResponse()
+    vr.say('An error occurred. Goodbye.')
+    return new NextResponse(vr.toString(), { headers: xmlHeaders })
   }
-}
-
-// ===========================================
-// HELPERS
-// ===========================================
-
-function twimlResponse(body: string) {
-  return new NextResponse(
-    `<?xml version="1.0" encoding="UTF-8"?><Response>${body}</Response>`,
-    { headers: { 'Content-Type': 'text/xml' } }
-  )
 }
 
 async function triggerMissedCallSMS(
   business: { id: string; name: string; aiGreeting: string | null; twilioPhoneNumber: string | null },
   callerPhone: string
 ) {
-  const twilio = require('twilio')
   const twilioClient = twilio(
     process.env.TWILIO_ACCOUNT_SID!,
     process.env.TWILIO_AUTH_TOKEN!

@@ -13,6 +13,8 @@ import type { Business } from '@prisma/client'
 import { db } from '@/lib/db'
 import twilio from 'twilio'
 
+const VoiceResponse = twilio.twiml.VoiceResponse
+
 export async function POST(request: NextRequest) {
   try {
     const formData = await request.formData()
@@ -57,9 +59,9 @@ export async function POST(request: NextRequest) {
 
     if (!business) {
       console.log('⚠️ No business found for phone number:', to)
-      return twimlResponse(`
-        <Say>Sorry, this number is not configured. Please try again later.</Say>
-      `)
+      const vr = new VoiceResponse()
+      vr.say('Sorry, this number is not configured. Please try again later.')
+      return xmlResponse(vr)
     }
 
     // =============================================
@@ -78,7 +80,9 @@ export async function POST(request: NextRequest) {
             result: 'blocked',
           },
         })
-        return twimlResponse(`<Reject />`)
+        const vr = new VoiceResponse()
+        vr.reject()
+        return xmlResponse(vr)
       }
     }
 
@@ -98,13 +102,17 @@ export async function POST(request: NextRequest) {
 
       // Gather waits for 1 digit, times out after 8 seconds
       // If no input → falls through to the <Say> message and <Hangup/>
-      return twimlResponse(`
-        <Gather numDigits="1" timeout="8" action="${gatherActionUrl}" method="POST">
-          <Say>${escapeXml(screenerMessage)}</Say>
-        </Gather>
-        <Say>We did not receive a response. Goodbye.</Say>
-        <Hangup/>
-      `)
+      const vr = new VoiceResponse()
+      const gather = vr.gather({
+        numDigits: 1,
+        timeout: 8,
+        action: gatherActionUrl,
+        method: 'POST',
+      })
+      gather.say(screenerMessage)
+      vr.say('We did not receive a response. Goodbye.')
+      vr.hangup()
+      return xmlResponse(vr)
     }
 
     // =============================================
@@ -139,25 +147,24 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    return twimlResponse(`
-      <Say>Sorry, we are unable to take your call right now. We will text you shortly to help with your request.</Say>
-    `)
+    const vr = new VoiceResponse()
+    vr.say('Sorry, we are unable to take your call right now. We will text you shortly to help with your request.')
+    return xmlResponse(vr)
   } catch (error) {
     console.error('❌ Error handling voice webhook:', error)
-    return twimlResponse(`
-      <Say>An error occurred. Please try again later.</Say>
-    `)
+    const vr = new VoiceResponse()
+    vr.say('An error occurred. Please try again later.')
+    return xmlResponse(vr)
   }
 }
 
 // ===========================================
-// HELPER: Build TwiML response
+// HELPER: Return TwiML from VoiceResponse with Content-Type text/xml
 // ===========================================
-function twimlResponse(body: string) {
-  return new NextResponse(
-    `<?xml version="1.0" encoding="UTF-8"?><Response>${body}</Response>`,
-    { headers: { 'Content-Type': 'text/xml' } }
-  )
+function xmlResponse(vr: InstanceType<typeof VoiceResponse>) {
+  return new NextResponse(vr.toString(), {
+    headers: { 'Content-Type': 'text/xml' },
+  })
 }
 
 // ===========================================
@@ -165,18 +172,6 @@ function twimlResponse(body: string) {
 // ===========================================
 function normalizePhone(phone: string): string {
   return (phone ?? '').replace(/\D/g, '')
-}
-
-// ===========================================
-// HELPER: Escape XML special characters
-// ===========================================
-function escapeXml(str: string): string {
-  return str
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&apos;')
 }
 
 // ===========================================
