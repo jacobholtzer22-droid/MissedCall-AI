@@ -67,13 +67,17 @@ export async function POST(request: NextRequest) {
         const dial = vr.dial({
           callerId: business.twilioPhoneNumber!,
           timeout: 15,
-          statusCallback: dialStatusUrl,
-          statusCallbackMethod: 'POST',
-          statusCallbackEvent: 'initiated,ringing,answered,completed',
           machineDetection: 'Enable',
           answerOnBridge: true,
-        } as any);
-        dial.number(business.forwardingNumber!)
+        } as any)
+        dial.number(
+          {
+            statusCallback: dialStatusUrl,
+            statusCallbackMethod: 'POST',
+            statusCallbackEvent: 'initiated,ringing,answered,completed',
+          } as any,
+          business.forwardingNumber
+        )
         return new NextResponse(vr.toString(), { headers: xmlHeaders })
       }
 
