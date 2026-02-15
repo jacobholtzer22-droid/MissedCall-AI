@@ -46,6 +46,15 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    console.log("✅ Matched business", {
+      found: !!business,
+      businessId: business?.id,
+      businessName: business?.name,
+      twilioPhoneNumber: business?.twilioPhoneNumber,
+      callScreenerEnabled: business?.callScreenerEnabled,
+      spamFilterEnabled: business?.spamFilterEnabled
+    });
+
     if (!business) {
       console.log('⚠️ No business found for phone number:', to)
       return twimlResponse(`
