@@ -23,7 +23,8 @@ export async function POST(request: NextRequest) {
     const businessId = searchParams.get('businessId')
     const digits = formData.get('Digits') as string | null
     const callSid = formData.get('CallSid') as string
-    const callerPhone = (formData.get('From') as string) ?? ''
+    const rawCallerPhone = (formData.get("From") as string) ?? "";
+    const callerPhone = rawCallerPhone.trim();
 
     console.log('🔢 Gather callback:', { businessId, digits, callSid, callerPhone })
 
