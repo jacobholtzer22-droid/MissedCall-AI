@@ -65,6 +65,8 @@ export async function POST(request: NextRequest) {
         const dialStatusUrl = `${request.nextUrl.origin}/api/webhooks/voice-dial-status?businessId=${business.id}&callerPhone=${encodeURIComponent(callerPhone)}`
         const vr = new twilio.twiml.VoiceResponse()
         const dial = vr.dial({
+          action: `${request.nextUrl.origin}/api/webhooks/voice-after-dial`,
+          method: 'POST',
           callerId: business.twilioPhoneNumber!,
           timeout: 15,
           machineDetection: 'Enable',
