@@ -69,7 +69,7 @@ export async function POST(request: NextRequest) {
           timeout: 15,
           statusCallback: dialStatusUrl,
           statusCallbackMethod: 'POST',
-          statusCallbackEvent: 'initiated ringing answered completed',
+          statusCallbackEvent: 'initiated,ringing,answered,completed',
           machineDetection: 'Enable',
           answerOnBridge: true,
         } as any);
