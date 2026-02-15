@@ -110,9 +110,16 @@ model Conversation {
   // Caller info
   callerPhone           String                          // +1234567890
   callerName            String?                         // Gathered during conversation
-  
+  callSid               String?   @unique               // Twilio Call SID (parent voice call)
+
+  // Dial outcome (from voice-dial-status callback)
+  dialCallStatus        String?                         // completed, no-answer, busy, failed, canceled
+  answeredBy            String?                         // human, machine, fax, unknown
+  durationSeconds       Int?                            // Dial leg duration in seconds
+  callEndedAt           DateTime?                       // When the dial attempt ended
+
   // Conversation state
-  status                String    @default("active")    // active, completed, appointment_booked, no_response
+  status                String    @default("active")    // active, completed, appointment_booked, no_response, screening
   
   // AI-generated summary of the conversation
   summary               String?   @db.Text

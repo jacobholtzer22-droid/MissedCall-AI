@@ -62,7 +62,8 @@ export async function POST(request: NextRequest) {
       })
 
       if (business.forwardingNumber && business.twilioPhoneNumber) {
-        const dialStatusUrl = `${request.nextUrl.origin}/api/webhooks/voice-dial-status?businessId=${business.id}&callerPhone=${encodeURIComponent(callerPhone)}`
+        const parentCallSid = (request.nextUrl.searchParams.get('callSid') ?? formData.get('CallSid')) as string
+        const dialStatusUrl = `${request.nextUrl.origin}/api/webhooks/voice-dial-status?businessId=${business.id}&callerPhone=${encodeURIComponent(callerPhone)}&callSid=${encodeURIComponent(parentCallSid)}`
         const vr = new twilio.twiml.VoiceResponse()
         const dial = vr.dial({
           action: `${request.nextUrl.origin}/api/webhooks/voice-after-dial`,

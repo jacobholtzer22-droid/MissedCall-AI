@@ -90,7 +90,33 @@ export async function POST(request: NextRequest) {
     // LAYER 2: IVR Call Screener ("Press 1")
     // =============================================
     if (business.callScreenerEnabled) {
-      console.log('🛡️ Call screener active, sending IVR prompt')
+      const parentCallSid = (formData.get('CallSid') as string) ?? callSid
+      const callerPhone = (formData.get('From') as string) ?? from
+      console.log('🛡️ Call screener active, sending IVR prompt', {
+        callSid: parentCallSid,
+        callerPhone,
+        businessId: business.id,
+      })
+
+      // Call logging: create/upsert conversation for dashboard (parent CallSid = unique key)
+      const conversation = await db.conversation.upsert({
+        where: { callSid: parentCallSid },
+        create: {
+          businessId: business.id,
+          callerPhone,
+          status: 'screening',
+          callSid: parentCallSid,
+        },
+        update: {
+          callerPhone,
+          status: 'screening',
+        },
+      })
+      console.log('📋 Conversation upserted for dashboard (screening)', {
+        conversationId: conversation.id,
+        callSid: parentCallSid,
+        status: conversation.status,
+      })
 
       // Custom message or default
       const screenerMessage =
@@ -98,7 +124,7 @@ export async function POST(request: NextRequest) {
         `Thank you for calling ${business.name}. To be connected, please press 1.`
 
       // Build the callback URL for when they press a digit (absolute URL from request origin)
-      const gatherActionUrl = `${request.nextUrl.origin}/api/webhooks/voice-gather?businessId=${business.id}`
+      const gatherActionUrl = `${request.nextUrl.origin}/api/webhooks/voice-gather?businessId=${business.id}&callSid=${encodeURIComponent(parentCallSid)}`
 
       // Gather waits for 1 digit, times out after 8 seconds
       // If no input → falls through to the <Say> message and <Hangup/>
