@@ -52,12 +52,11 @@ export async function POST(request: NextRequest) {
       })
 
       if (business.forwardingNumber) {
-        const baseUrl = process.env.NEXT_PUBLIC_APP_URL || process.env.VERCEL_URL
-        const protocol = baseUrl?.includes('localhost') ? 'http' : 'https'
-        const dialCallbackUrl = `${protocol}://${baseUrl}/api/webhooks/voice-dial-status?businessId=${business.id}&callerPhone=${encodeURIComponent(callerPhone)}`
+        const dialStatusUrl = `${request.nextUrl.origin}/api/webhooks/voice-dial-status?businessId=${business.id}&callerPhone=${encodeURIComponent(callerPhone)}`
 
+        const dialCallerId = business.twilioPhoneNumber ?? callerPhone
         return twimlResponse(`
-          <Dial action="${dialCallbackUrl}" method="POST" timeout="25" callerId="${callerPhone}">
+          <Dial statusCallback="${dialStatusUrl}" statusCallbackMethod="POST" statusCallbackEvent="completed" timeout="25" callerId="${dialCallerId}">
             <Number>${business.forwardingNumber}</Number>
           </Dial>
         `)

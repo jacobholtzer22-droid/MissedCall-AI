@@ -84,8 +84,8 @@ export async function POST(request: NextRequest) {
         business.callScreenerMessage ||
         `Thank you for calling ${business.name}. To be connected, please press 1.`
 
-      // Build the callback URL for when they press a digit
-      const gatherActionUrl = `/api/webhooks/voice-gather?businessId=${business.id}`
+      // Build the callback URL for when they press a digit (absolute URL from request origin)
+      const gatherActionUrl = `${request.nextUrl.origin}/api/webhooks/voice-gather?businessId=${business.id}`
 
       // Gather waits for 1 digit, times out after 8 seconds
       // If no input → falls through to the <Say> message and <Hangup/>
