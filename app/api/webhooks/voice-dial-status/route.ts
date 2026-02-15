@@ -28,7 +28,7 @@ export async function POST(request: NextRequest) {
 
     if (!businessId || !callerPhone) {
       console.error('❌ Missing businessId or callerPhone in dial callback')
-      return twimlResponse(`<Say>Goodbye.</Say>`)
+      return new NextResponse("", { status: 200 })
     }
 
     const business = await db.business.findUnique({
@@ -37,7 +37,7 @@ export async function POST(request: NextRequest) {
 
     if (!business) {
       console.error('❌ Business not found:', businessId)
-      return twimlResponse(`<Say>Goodbye.</Say>`)
+      return new NextResponse("", { status: 200 })
     }
 
     // =============================================
@@ -45,7 +45,7 @@ export async function POST(request: NextRequest) {
     // =============================================
     if (dialCallStatus === 'completed') {
       console.log('✅ Owner answered the call, no SMS needed')
-      return twimlResponse(`<Hangup />`)
+      return new NextResponse("", { status: 200 })
     }
 
     // =============================================
@@ -53,7 +53,7 @@ export async function POST(request: NextRequest) {
     // =============================================
     if (!TRIGGER_STATUSES.includes(dialCallStatus as (typeof TRIGGER_STATUSES)[number])) {
       console.log('📵 Dial status not in trigger set (status:', dialCallStatus, '), skipping SMS')
-      return twimlResponse(`<Hangup />`)
+      return new NextResponse("", { status: 200 })
     }
 
     // =============================================
@@ -83,7 +83,7 @@ export async function POST(request: NextRequest) {
 
     if (durationSeconds === null) {
       console.log('📵 Could not determine call duration, skipping SMS (treat as below threshold)')
-      return twimlResponse(`<Hangup />`)
+      return new NextResponse("", { status: 200 })
     }
 
     if (durationSeconds < MIN_DURATION_SECONDS) {
@@ -94,7 +94,7 @@ export async function POST(request: NextRequest) {
         MIN_DURATION_SECONDS,
         's), skipping SMS'
       )
-      return twimlResponse(`<Hangup />`)
+      return new NextResponse("", { status: 200 })
     }
 
     // =============================================
@@ -159,19 +159,9 @@ export async function POST(request: NextRequest) {
       console.log('📱 Existing conversation found, skipping SMS')
     }
 
-    // Tell the caller we'll text them
-    return twimlResponse(`
-      <Say voice="Polly.Joanna">Sorry, no one is available right now. We will text you shortly to help with your request. Goodbye.</Say>
-    `)
+    return new NextResponse("", { status: 200 })
   } catch (error) {
     console.error('❌ Error in dial status callback:', error)
-    return twimlResponse(`<Say>An error occurred. Goodbye.</Say>`)
+    return new NextResponse("", { status: 200 })
   }
-}
-
-function twimlResponse(body: string) {
-  return new NextResponse(
-    `<?xml version="1.0" encoding="UTF-8"?><Response>${body}</Response>`,
-    { headers: { 'Content-Type': 'text/xml' } }
-  )
 }

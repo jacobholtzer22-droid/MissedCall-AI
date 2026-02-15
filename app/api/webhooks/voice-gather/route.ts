@@ -52,10 +52,13 @@ export async function POST(request: NextRequest) {
       })
 
       if (business.forwardingNumber) {
+        const dialCallerId = business.twilioPhoneNumber
+        if (dialCallerId == null) {
+          return twimlResponse(
+            '<Say voice="Polly.Joanna">Call forwarding is not configured. Goodbye.</Say><Hangup />'
+          )
+        }
         const dialStatusUrl = `${request.nextUrl.origin}/api/webhooks/voice-dial-status?businessId=${business.id}&callerPhone=${encodeURIComponent(callerPhone)}`
-
-        const hasValidCallerPhone = callerPhone && String(callerPhone).trim().length > 0
-        const dialCallerId = hasValidCallerPhone ? callerPhone : (business.twilioPhoneNumber ?? callerPhone)
         return twimlResponse(`
           <Dial statusCallback="${dialStatusUrl}" statusCallbackMethod="POST" statusCallbackEvent="completed" timeout="25" callerId="${dialCallerId}">
             <Number>${business.forwardingNumber}</Number>
