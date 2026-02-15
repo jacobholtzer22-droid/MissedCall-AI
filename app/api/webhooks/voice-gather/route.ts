@@ -69,7 +69,7 @@ export async function POST(request: NextRequest) {
           method: 'POST',
           callerId: business.twilioPhoneNumber!,
           timeout: 15,
-          machineDetection: 'DetectMessageEnd',
+          machineDetection: 'Enable',
           answerOnBridge: true,
         } as any)
         dial.number(

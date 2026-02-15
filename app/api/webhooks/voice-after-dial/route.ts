@@ -13,7 +13,7 @@ const xmlHeaders = { 'Content-Type': 'text/xml' as const }
 
 export async function POST() {
   const vr = new twilio.twiml.VoiceResponse()
-  vr.say('Sorry we missed your call. We will send you a text message shortly.')
+  vr.say("We're sorry we can't get to the phone right now. You should receive a text message shortly.")
   vr.hangup()
   return new NextResponse(vr.toString(), { headers: xmlHeaders })
 }
