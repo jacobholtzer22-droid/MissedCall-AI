@@ -10,12 +10,50 @@ import { MessageSquare, Calendar } from 'lucide-react'
 import { formatRelativeTime, formatPhoneNumber } from '@/lib/utils'
 import Link from 'next/link'
 
-async function getConversations(businessId: string) {
+const STATUS_TABS: { value: string; label: string }[] = [
+  { value: 'all', label: 'All' },
+  { value: 'active', label: 'Active' },
+  { value: 'appointment_booked', label: 'Booked' },
+  { value: 'no_response', label: 'No response' },
+  { value: 'needs_review', label: 'Needs review' },
+  { value: 'completed', label: 'Completed' },
+  { value: 'spam_blocked', label: 'Spam blocked' },
+  { value: 'screening_blocked', label: 'Screening blocked' }
+]
+
+function getStatusLabel(status: string): string {
+  const map: Record<string, string> = {
+    active: 'Active',
+    appointment_booked: 'Booked',
+    no_response: 'No response',
+    needs_review: 'Needs review',
+    completed: 'Completed',
+    spam_blocked: 'Spam blocked',
+    screening_blocked: 'Screening blocked'
+  }
+  return map[status] ?? status.replace(/_/g, ' ')
+}
+
+async function getStatusCounts(businessId: string): Promise<Record<string, number>> {
+  const rows = await db.conversation.groupBy({
+    by: ['status'],
+    where: { businessId },
+    _count: { status: true }
+  })
+  const counts: Record<string, number> = {}
+  for (const row of rows) {
+    counts[row.status] = row._count.status
+  }
+  return counts
+}
+
+async function getConversations(businessId: string, statusParam?: string | null) {
+  const where: { businessId: string; status?: string } = { businessId }
+  if (statusParam && statusParam !== 'all') {
+    where.status = statusParam
+  }
   const conversations = await db.conversation.findMany({
-    where: {
-      businessId,
-      status: { in: ['no_response', 'screening_blocked', 'spam_blocked'] }
-    },
+    where,
     orderBy: { lastMessageAt: 'desc' },
     include: {
       messages: {
@@ -25,11 +63,14 @@ async function getConversations(businessId: string) {
       appointment: true
     }
   })
-  
   return conversations
 }
 
-export default async function ConversationsPage() {
+export default async function ConversationsPage({
+  searchParams
+}: {
+  searchParams: Promise<{ status?: string }>
+}) {
   const { userId } = await auth()
   if (!userId) redirect('/sign-in')
 
@@ -40,7 +81,13 @@ export default async function ConversationsPage() {
 
   if (!user?.business) redirect('/onboarding')
 
-  const conversations = await getConversations(user.business.id)
+  const { status: statusParam } = await searchParams
+  const [conversations, statusCounts] = await Promise.all([
+    getConversations(user.business.id, statusParam),
+    getStatusCounts(user.business.id)
+  ])
+  const totalCount = Object.values(statusCounts).reduce((a, b) => a + b, 0)
+  const currentStatus = statusParam && statusParam !== 'all' ? statusParam : 'all'
 
   return (
     <div className="space-y-6">
@@ -52,24 +99,41 @@ export default async function ConversationsPage() {
         </p>
       </div>
 
-      {/* Stats bar */}
+      {/* Status filter tabs */}
+      <div className="flex flex-wrap gap-1 border-b border-gray-200 pb-2">
+        {STATUS_TABS.map(({ value, label }) => (
+          <Link
+            key={value}
+            href={value === 'all' ? '/dashboard/conversations' : `/dashboard/conversations?status=${value}`}
+            className={`px-3 py-2 rounded-lg text-sm font-medium transition ${
+              currentStatus === value
+                ? 'bg-gray-900 text-white'
+                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+            }`}
+          >
+            {label}
+          </Link>
+        ))}
+      </div>
+
+      {/* Stats bar - counts from ALL conversations */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <MiniStat 
           label="Total" 
-          value={conversations.length} 
+          value={totalCount} 
         />
         <MiniStat 
           label="Active" 
-          value={conversations.filter(c => c.status === 'active').length}
+          value={statusCounts.active ?? 0}
           highlight 
         />
         <MiniStat 
           label="Appointments" 
-          value={conversations.filter(c => c.status === 'appointment_booked').length} 
+          value={statusCounts.appointment_booked ?? 0} 
         />
         <MiniStat 
           label="No Response" 
-          value={conversations.filter(c => c.status === 'no_response').length} 
+          value={statusCounts.no_response ?? 0} 
         />
       </div>
 
@@ -98,6 +162,8 @@ export default async function ConversationsPage() {
                     <div className={`w-3 h-3 rounded-full flex-shrink-0 ${
                       conversation.status === 'active' ? 'bg-green-500' : 
                       conversation.status === 'appointment_booked' ? 'bg-blue-500' :
+                      conversation.status === 'spam_blocked' ? 'bg-red-500' :
+                      conversation.status === 'screening_blocked' ? 'bg-amber-500' :
                       'bg-gray-300'
                     }`} />
                     
@@ -132,11 +198,15 @@ export default async function ConversationsPage() {
                         ? 'bg-blue-100 text-blue-700'
                         : conversation.status === 'completed'
                         ? 'bg-gray-100 text-gray-600'
-                        : 'bg-yellow-100 text-yellow-700'
+                        : conversation.status === 'no_response' || conversation.status === 'needs_review'
+                        ? 'bg-yellow-100 text-yellow-700'
+                        : conversation.status === 'spam_blocked'
+                        ? 'bg-red-100 text-red-700'
+                        : conversation.status === 'screening_blocked'
+                        ? 'bg-amber-100 text-amber-700'
+                        : 'bg-gray-100 text-gray-600'
                     }`}>
-                      {conversation.status === 'active' ? 'Active' : 
-                       conversation.status === 'appointment_booked' ? 'Booked' : 
-                       conversation.status === 'completed' ? 'Completed' : 'No response'}
+                      {getStatusLabel(conversation.status)}
                     </span>
                   </div>
                 </div>
