@@ -12,7 +12,10 @@ import Link from 'next/link'
 
 async function getConversations(businessId: string) {
   const conversations = await db.conversation.findMany({
-    where: { businessId },
+    where: {
+      businessId,
+      status: { in: ['no_response', 'screening_blocked', 'spam_blocked'] }
+    },
     orderBy: { lastMessageAt: 'desc' },
     include: {
       messages: {

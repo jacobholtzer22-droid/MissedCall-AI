@@ -21,8 +21,8 @@ export async function POST(request: NextRequest) {
     const { searchParams } = new URL(request.url)
 
     const businessId = searchParams.get('businessId')
+    const callSid = (searchParams.get('callSid') ?? formData.get('CallSid')) as string
     const digits = formData.get('Digits') as string | null
-    const callSid = formData.get('CallSid') as string
     const rawCallerPhone = (formData.get("From") as string) ?? "";
     const callerPhone = rawCallerPhone.trim();
 
@@ -103,8 +103,14 @@ export async function POST(request: NextRequest) {
     }
 
     // =============================================
-    // DIGITS !== "1" (null / empty / other) → BLOCKED
+    // DIGITS missing or !== "1" → BLOCKED (no input / wrong key / timeout)
     // =============================================
+    if (callSid) {
+      await db.conversation.updateMany({
+        where: { callSid },
+        data: { status: 'screening_blocked' },
+      })
+    }
     await db.screenedCall.create({
       data: {
         businessId: business.id,

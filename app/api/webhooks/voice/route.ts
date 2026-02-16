@@ -126,14 +126,15 @@ export async function POST(request: NextRequest) {
       // Build the callback URL for when they press a digit (absolute URL from request origin)
       const gatherActionUrl = `${request.nextUrl.origin}/api/webhooks/voice-gather?businessId=${business.id}&callSid=${encodeURIComponent(parentCallSid)}`
 
-      // Gather waits for 1 digit, times out after 8 seconds
-      // If no input → falls through to the <Say> message and <Hangup/>
+      // Gather waits for 1 digit, times out after 8 seconds.
+      // actionOnEmptyResult: true → Twilio POSTs to action URL even when no digits (timeout).
       const vr = new VoiceResponse()
       const gather = vr.gather({
         numDigits: 1,
         timeout: 8,
         action: gatherActionUrl,
         method: 'POST',
+        actionOnEmptyResult: true,
       })
       gather.say(screenerMessage)
       vr.say('We did not receive a response. Goodbye.')

@@ -130,6 +130,14 @@ export async function POST(request: NextRequest) {
     const shouldTriggerSms = isTriggerStatus || isCompletedMachine
 
     if (!shouldTriggerSms) {
+      const isCompletedNotMachine =
+        dialCallStatus === 'completed' && !answeredBy.includes('machine')
+      if (callRecord && isCompletedNotMachine) {
+        await db.conversation.update({
+          where: { id: callRecord.id },
+          data: { status: 'completed' },
+        })
+      }
       console.log(
         '📵 Not triggering SMS (status:',
         dialCallStatus,
@@ -206,6 +214,11 @@ export async function POST(request: NextRequest) {
       conversationForSms = { id: created.id }
       console.log('📝 Created conversation for SMS:', conversationForSms.id)
     }
+
+    await db.conversation.update({
+      where: { id: conversationForSms.id },
+      data: { status: 'no_response' },
+    })
 
     const twilioClient = twilio(
       process.env.TWILIO_ACCOUNT_SID!,
