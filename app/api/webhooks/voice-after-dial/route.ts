@@ -6,9 +6,9 @@
 // Called after a dial attempt (e.g. no answer). Returns TwiML to play
 // a short message and hang up. No DB writes.
 //
-// If the dial was completed and answered by a human/person,
+// If the dial was completed and had duration > 0 (call was answered),
 // we just hang up without playing the "sorry" message.
-// Empty AnsweredBy is not treated as human; all other cases play the sorry message then hang up.
+// Otherwise we play the sorry message then hang up.
 
 import { NextRequest, NextResponse } from 'next/server'
 import twilio from 'twilio'
@@ -18,15 +18,21 @@ const xmlHeaders = { 'Content-Type': 'text/xml' as const }
 export async function POST(request: NextRequest) {
   const formData = await request.formData()
   const dialCallStatus = (formData.get('DialCallStatus') as string) ?? ''
-  const answeredBy = String(formData.get('AnsweredBy') ?? '').toLowerCase()
+  const rawDuration =
+    (formData.get('DialCallDuration') as string) ??
+    (formData.get('Duration') as string) ??
+    ''
 
-  const completed = dialCallStatus === 'completed'
-  const answeredByHuman =
-    completed && (answeredBy.includes('human') || answeredBy.includes('person'))
+  const durationSeconds = (() => {
+    const n = parseInt(rawDuration, 10)
+    return Number.isNaN(n) ? 0 : n
+  })()
 
   const vr = new twilio.twiml.VoiceResponse()
 
-  if (answeredByHuman) {
+  const silentHangup = dialCallStatus === 'completed' && durationSeconds > 0
+
+  if (silentHangup) {
     vr.hangup()
   } else {
     vr.say("We're sorry we can't get to the phone right now. You should receive a text message shortly.")
