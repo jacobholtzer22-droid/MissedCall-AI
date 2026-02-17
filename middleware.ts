@@ -6,7 +6,12 @@ const isProtectedRoute = createRouteMatcher([
   '/settings(.*)',
 ])
 
+const isPublicApiRoute = createRouteMatcher([
+  '/api/webhooks/(.*)',
+])
+
 export default clerkMiddleware(async (auth, request) => {
+  if (isPublicApiRoute(request)) return
   if (isProtectedRoute(request)) {
     await auth.protect()
   }
