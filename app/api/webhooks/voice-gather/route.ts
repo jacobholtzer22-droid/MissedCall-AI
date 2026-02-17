@@ -68,7 +68,7 @@ export async function POST(request: NextRequest) {
         const dial = vr.dial({
           action: `${request.nextUrl.origin}/api/webhooks/voice-after-dial`,
           method: 'POST',
-          callerId: business.twilioPhoneNumber!,
+          callerId: callerPhone,
           timeout: 15,
           machineDetection: 'Enable',
           answerOnBridge: true,

@@ -53,6 +53,7 @@ model Business {
   spamFilterEnabled     Boolean   @default(false)       // Premium feature - spam call filtering
   callScreenerEnabled   Boolean   @default(false)
   callScreenerMessage   String?
+  missedCallAiEnabled   Boolean   @default(true)        // Send AI SMS after missed call
   
   // Timestamps
   createdAt             DateTime  @default(now())
@@ -63,8 +64,24 @@ model Business {
   conversations         Conversation[]
   appointments          Appointment[]
   screenedCalls         ScreenedCall[]
+  blockedNumbers        BlockedNumber[]
 
   @@index([stripeCustomerId])
+}
+
+// ===========================================
+// BLOCKED NUMBER - Numbers that don't get MissedCall AI SMS
+// ===========================================
+model BlockedNumber {
+  id          String   @id @default(cuid())
+  businessId  String
+  business    Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  phoneNumber String
+  label       String?
+  createdAt   DateTime @default(now())
+
+  @@unique([businessId, phoneNumber])
+  @@index([businessId])
 }
 
 // ===========================================

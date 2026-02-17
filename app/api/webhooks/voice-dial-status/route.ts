@@ -6,10 +6,9 @@
 // Twilio hits this AFTER the <Dial> attempt ends.
 // 1) Update or create call record (Conversation) by parent callSid with dial outcome.
 // 2) If owner answered (completed, not machine) → do nothing, call was handled.
-// 3) If no-answer/busy/failed OR (completed + AnsweredBy contains "machine"), AND duration >= 8s → trigger MissedCall AI SMS.
+// 3) no-answer/busy/failed always trigger MissedCall AI SMS (no duration check).
+// 4) completed + AnsweredBy contains "machine" (or "unknown") triggers SMS only if duration >= 2s.
 // SMS is associated with the same parent callSid record.
-
-const MIN_DURATION_SECONDS = 8
 
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
@@ -48,6 +47,23 @@ export async function POST(request: NextRequest) {
 
     if (!business) {
       console.error('❌ Business not found:', businessId)
+      return new NextResponse('', { status: 200 })
+    }
+
+    if (business.missedCallAiEnabled === false) {
+      console.log('📵 MissedCall AI is disabled for this business, skipping SMS')
+      return new NextResponse('', { status: 200 })
+    }
+
+    const blocked = await db.blockedNumber.findFirst({
+      where: { businessId: business.id, phoneNumber: callerPhone },
+    })
+    if (blocked) {
+      console.log('📵 Caller is on blocked list for this business, skipping SMS', {
+        businessId: business.id,
+        callerPhone,
+        label: blocked.label ?? '(no label)',
+      })
       return new NextResponse('', { status: 200 })
     }
 
@@ -148,25 +164,25 @@ export async function POST(request: NextRequest) {
       return new NextResponse('', { status: 200 })
     }
 
-    if (durationSeconds === null) {
-      console.log(
-        '📵 Could not determine call duration, skipping SMS (treat as below threshold)'
-      )
-      return new NextResponse('', { status: 200 })
-    }
-
-    const isMachine =
-      answeredBy.includes('machine') || answeredBy.includes('unknown')
-    const minDuration = isMachine ? 2 : MIN_DURATION_SECONDS
-    if (durationSeconds < minDuration) {
-      console.log(
-        '📵 Call duration below minimum (',
-        durationSeconds,
-        's <',
-        minDuration,
-        's), skipping SMS'
-      )
-      return new NextResponse('', { status: 200 })
+    // Only apply minimum duration for completed + machine; no-answer/busy/failed always get SMS.
+    if (isCompletedMachine) {
+      if (durationSeconds === null) {
+        console.log(
+          '📵 Could not determine call duration, skipping SMS (treat as below threshold)'
+        )
+        return new NextResponse('', { status: 200 })
+      }
+      const minDuration = 2
+      if (durationSeconds < minDuration) {
+        console.log(
+          '📵 Call duration below minimum (',
+          durationSeconds,
+          's <',
+          minDuration,
+          's), skipping SMS'
+        )
+        return new NextResponse('', { status: 200 })
+      }
     }
 
     // =============================================

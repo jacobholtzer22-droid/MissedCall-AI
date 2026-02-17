@@ -35,6 +35,7 @@ export async function PATCH(
       'monthlyFee',
       'callScreenerEnabled',
       'callScreenerMessage',
+      'missedCallAiEnabled',
     ]
 
     const data: Record<string, unknown> = {}

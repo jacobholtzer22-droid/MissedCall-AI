@@ -21,6 +21,7 @@ interface Business {
   monthlyFee: number | null
   subscriptionStatus: string
   spamFilterEnabled: boolean
+  missedCallAiEnabled: boolean
   callScreenerEnabled: boolean
   callScreenerMessage: string | null
   createdAt: string
@@ -33,6 +34,14 @@ interface Business {
   }
 }
 
+interface BlockedNumber {
+  id: string
+  businessId: string
+  phoneNumber: string
+  label: string | null
+  createdAt: string
+}
+
 export default function AdminDashboard() {
   const { user, isLoaded } = useUser()
   const router = useRouter()
@@ -43,6 +52,11 @@ export default function AdminDashboard() {
   const [editData, setEditData] = useState<any>({})
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState('')
+  const [blockedNumbers, setBlockedNumbers] = useState<BlockedNumber[]>([])
+  const [newBlockedPhone, setNewBlockedPhone] = useState('')
+  const [newBlockedLabel, setNewBlockedLabel] = useState('')
+  const [blockedNumbersLoading, setBlockedNumbersLoading] = useState(false)
+  const [addingBlocked, setAddingBlocked] = useState(false)
 
   useEffect(() => {
     if (isLoaded) {
@@ -66,6 +80,21 @@ export default function AdminDashboard() {
     }
   }
 
+  async function fetchBlockedNumbers(businessId: string) {
+    setBlockedNumbersLoading(true)
+    try {
+      const res = await fetch(`/api/admin/businesses/${businessId}/blocked-numbers`)
+      if (res.ok) {
+        const data = await res.json()
+        setBlockedNumbers(data.blockedNumbers || [])
+      }
+    } catch (err) {
+      console.error('Failed to fetch blocked numbers:', err)
+    } finally {
+      setBlockedNumbersLoading(false)
+    }
+  }
+
   function startEdit(business: Business) {
     setSelectedBusiness(business)
     setEditMode(true)
@@ -81,6 +110,7 @@ export default function AdminDashboard() {
       aiContext: business.aiContext || '',
       subscriptionStatus: business.subscriptionStatus,
       spamFilterEnabled: business.spamFilterEnabled,
+      missedCallAiEnabled: business.missedCallAiEnabled,
       servicesOffered: business.servicesOffered
         ? JSON.stringify(business.servicesOffered, null, 2)
         : '[]',
@@ -89,6 +119,49 @@ export default function AdminDashboard() {
         : '{}',
     })
     setMessage('')
+    setNewBlockedPhone('')
+    setNewBlockedLabel('')
+    fetchBlockedNumbers(business.id)
+  }
+
+  async function addBlockedNumber() {
+    if (!selectedBusiness || !newBlockedPhone.trim()) return
+    setAddingBlocked(true)
+    try {
+      const res = await fetch(`/api/admin/businesses/${selectedBusiness.id}/blocked-numbers`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          phoneNumber: newBlockedPhone.trim(),
+          label: newBlockedLabel.trim() || null,
+        }),
+      })
+      if (res.ok) {
+        setNewBlockedPhone('')
+        setNewBlockedLabel('')
+        fetchBlockedNumbers(selectedBusiness.id)
+      } else {
+        const err = await res.json()
+        setMessage(`❌ Blocked number: ${err.error || 'Failed to add'}`)
+      }
+    } catch (err) {
+      setMessage('❌ Failed to add blocked number')
+    } finally {
+      setAddingBlocked(false)
+    }
+  }
+
+  async function removeBlockedNumber(blockedId: string) {
+    if (!selectedBusiness) return
+    try {
+      const res = await fetch(
+        `/api/admin/businesses/${selectedBusiness.id}/blocked-numbers?id=${encodeURIComponent(blockedId)}`,
+        { method: 'DELETE' }
+      )
+      if (res.ok) fetchBlockedNumbers(selectedBusiness.id)
+    } catch (err) {
+      console.error('Failed to remove blocked number:', err)
+    }
   }
 
   async function saveChanges() {
@@ -128,6 +201,7 @@ export default function AdminDashboard() {
           aiContext: editData.aiContext || null,
           subscriptionStatus: editData.subscriptionStatus,
           spamFilterEnabled: editData.spamFilterEnabled,
+          missedCallAiEnabled: editData.missedCallAiEnabled,
           servicesOffered,
           businessHours,
         }),
@@ -409,6 +483,67 @@ export default function AdminDashboard() {
                 <input type="checkbox" checked={editData.spamFilterEnabled} onChange={e => setEditData({...editData, spamFilterEnabled: e.target.checked})} className="w-5 h-5 rounded" />
                 <span className="text-sm text-gray-300">Enable Spam Filtering (Premium Feature)</span>
               </label>
+
+              <label className="flex items-center gap-3 cursor-pointer">
+                <input type="checkbox" checked={editData.missedCallAiEnabled} onChange={e => setEditData({...editData, missedCallAiEnabled: e.target.checked})} className="w-5 h-5 rounded" />
+                <span className="text-sm text-gray-300">Enable MissedCall AI (SMS after missed call)</span>
+              </label>
+
+              {/* Blocked numbers */}
+              <Field
+                label="Blocked numbers"
+                hint="These callers will not receive MissedCall AI SMS. Use E.164 format (e.g. +15551234567)."
+              >
+                <div className="space-y-3">
+                  <div className="flex flex-wrap gap-2">
+                    <input
+                      type="text"
+                      value={newBlockedPhone}
+                      onChange={e => setNewBlockedPhone(e.target.value)}
+                      placeholder="+15551234567"
+                      className="flex-1 min-w-[140px] bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 text-white placeholder-gray-600 text-sm"
+                    />
+                    <input
+                      type="text"
+                      value={newBlockedLabel}
+                      onChange={e => setNewBlockedLabel(e.target.value)}
+                      placeholder="Label (e.g. Mom)"
+                      className="w-32 bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 text-white placeholder-gray-600 text-sm"
+                    />
+                    <button
+                      type="button"
+                      onClick={addBlockedNumber}
+                      disabled={addingBlocked || !newBlockedPhone.trim()}
+                      className="px-4 py-2 bg-gray-700 hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg text-sm font-medium transition"
+                    >
+                      {addingBlocked ? 'Adding...' : 'Add'}
+                    </button>
+                  </div>
+                  {blockedNumbersLoading ? (
+                    <p className="text-sm text-gray-500">Loading blocked numbers...</p>
+                  ) : blockedNumbers.length === 0 ? (
+                    <p className="text-sm text-gray-500">No blocked numbers.</p>
+                  ) : (
+                    <ul className="divide-y divide-gray-800 rounded-lg border border-gray-800 overflow-hidden">
+                      {blockedNumbers.map(bn => (
+                        <li key={bn.id} className="flex items-center justify-between gap-2 bg-gray-800/50 px-3 py-2 text-sm">
+                          <span className="text-gray-300">
+                            {bn.phoneNumber}
+                            {bn.label ? <span className="text-gray-500 ml-2">({bn.label})</span> : null}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => removeBlockedNumber(bn.id)}
+                            className="text-red-400 hover:text-red-300 text-xs font-medium"
+                          >
+                            Remove
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              </Field>
 
               {/* Setup Fee */}
               <Field label="Setup Fee">
