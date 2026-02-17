@@ -65,6 +65,10 @@ export default async function ConversationDetailPage({ params }: { params: Promi
         </span>
       </div>
 
+      {conversation.dialCallStatus != null && conversation.dialCallStatus !== '' && (
+        <p className="text-sm text-gray-500">Call Screened ✓ then Missed</p>
+      )}
+
       {conversation.status === 'needs_review' && (
         <div className="bg-red-50 border border-red-200 rounded-lg p-4 flex items-start space-x-3">
           <AlertTriangle className="h-5 w-5 text-red-600 flex-shrink-0 mt-0.5" />
@@ -83,7 +87,11 @@ export default async function ConversationDetailPage({ params }: { params: Promi
           
           <div className="p-6 space-y-4 max-h-[600px] overflow-y-auto">
             {conversation.messages.length === 0 ? (
-              <p className="text-center text-gray-500 py-8">No messages yet</p>
+              <p className="text-center text-gray-500 py-8">
+                {conversation.business.missedCallAiEnabled === false
+                  ? 'Screening Only - No AI Follow-up'
+                  : 'No messages yet'}
+              </p>
             ) : (
               conversation.messages.map((message) => (
                 <div key={message.id} className={`flex ${message.direction === 'outbound' ? 'justify-end' : 'justify-start'}`}>

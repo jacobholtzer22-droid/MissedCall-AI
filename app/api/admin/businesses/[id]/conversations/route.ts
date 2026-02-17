@@ -22,7 +22,11 @@ export async function GET(
     })
 
     const conversations = await db.conversation.findMany({
-      where: { businessId: id },
+      where: {
+        businessId: id,
+        status: { in: ['active', 'no_response', 'completed'] },
+        messages: { some: {} },
+      },
       orderBy: { lastMessageAt: 'desc' },
       include: {
         messages: {

@@ -10,15 +10,12 @@ import { MessageSquare, Calendar } from 'lucide-react'
 import { formatRelativeTime, formatPhoneNumber } from '@/lib/utils'
 import Link from 'next/link'
 
+// Only show real SMS follow-up conversations (active, no_response, completed)
 const STATUS_TABS: { value: string; label: string }[] = [
   { value: 'all', label: 'All' },
   { value: 'active', label: 'Active' },
-  { value: 'appointment_booked', label: 'Booked' },
   { value: 'no_response', label: 'No response' },
-  { value: 'needs_review', label: 'Needs review' },
   { value: 'completed', label: 'Completed' },
-  { value: 'spam_blocked', label: 'Spam blocked' },
-  { value: 'screening_blocked', label: 'Screening blocked' }
 ]
 
 function getStatusLabel(status: string): string {
@@ -34,11 +31,17 @@ function getStatusLabel(status: string): string {
   return map[status] ?? status.replace(/_/g, ' ')
 }
 
+const CONVERSATION_LIST_STATUSES = ['active', 'no_response', 'completed'] as const
+
 async function getStatusCounts(businessId: string): Promise<Record<string, number>> {
   const rows = await db.conversation.groupBy({
     by: ['status'],
-    where: { businessId },
-    _count: { status: true }
+    where: {
+      businessId,
+      status: { in: [...CONVERSATION_LIST_STATUSES] },
+      messages: { some: {} },
+    },
+    _count: { status: true },
   })
   const counts: Record<string, number> = {}
   for (const row of rows) {
@@ -48,8 +51,12 @@ async function getStatusCounts(businessId: string): Promise<Record<string, numbe
 }
 
 async function getConversations(businessId: string, statusParam?: string | null) {
-  const where: { businessId: string; status?: string } = { businessId }
-  if (statusParam && statusParam !== 'all') {
+  const where: Parameters<typeof db.conversation.findMany>[0]['where'] = {
+    businessId,
+    status: { in: [...CONVERSATION_LIST_STATUSES] },
+    messages: { some: {} },
+  }
+  if (statusParam && statusParam !== 'all' && CONVERSATION_LIST_STATUSES.includes(statusParam as (typeof CONVERSATION_LIST_STATUSES)[number])) {
     where.status = statusParam
   }
   const conversations = await db.conversation.findMany({
@@ -116,7 +123,7 @@ export default async function ConversationsPage({
         ))}
       </div>
 
-      {/* Stats bar - counts from ALL conversations */}
+      {/* Stats bar - counts from real SMS conversations only */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <MiniStat 
           label="Total" 
@@ -128,12 +135,12 @@ export default async function ConversationsPage({
           highlight 
         />
         <MiniStat 
-          label="Appointments" 
-          value={statusCounts.appointment_booked ?? 0} 
-        />
-        <MiniStat 
           label="No Response" 
           value={statusCounts.no_response ?? 0} 
+        />
+        <MiniStat 
+          label="Completed" 
+          value={statusCounts.completed ?? 0} 
         />
       </div>
 
@@ -180,8 +187,17 @@ export default async function ConversationsPage({
                           </span>
                         )}
                       </div>
+                      {/* First status line: call went through screener then was missed */}
+                      {conversation.dialCallStatus != null && conversation.dialCallStatus !== '' && (
+                        <p className="text-xs text-gray-500 mt-0.5">
+                          Call Screened ✓ then Missed
+                        </p>
+                      )}
                       <p className="text-sm text-gray-500 truncate max-w-md">
-                        {conversation.messages[0]?.content || 'No messages yet'}
+                        {conversation.messages[0]?.content ||
+                          (user.business.missedCallAiEnabled === false
+                            ? 'Screening Only - No AI Follow-up'
+                            : 'No messages yet')}
                       </p>
                     </div>
                   </div>
