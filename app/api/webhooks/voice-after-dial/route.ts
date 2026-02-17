@@ -35,7 +35,7 @@ export async function POST(request: NextRequest) {
   if (silentHangup) {
     vr.hangup()
   } else {
-    vr.say("We're sorry we can't get to the phone right now. You should receive a text message shortly.")
+    vr.say("We missed your call but we'll text you shortly to help with your request. Goodbye.")
     vr.hangup()
   }
 

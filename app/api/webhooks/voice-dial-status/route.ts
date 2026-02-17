@@ -23,7 +23,7 @@ export async function POST(request: NextRequest) {
     const parentCallSid = searchParams.get('callSid')
     const businessId = searchParams.get('businessId')
     const callerPhone = searchParams.get('callerPhone')
-    const dialCallStatus = formData.get('DialCallStatus') as string
+    const dialCallStatus = (formData.get('DialCallStatus') || formData.get('CallStatus')) as string
     const childCallSid = formData.get('CallSid') as string // Twilio sends the dialed leg's SID in body
     const answeredBy = String(formData.get('AnsweredBy') ?? '').toLowerCase()
 
