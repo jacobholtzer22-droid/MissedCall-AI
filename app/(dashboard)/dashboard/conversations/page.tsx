@@ -5,6 +5,7 @@
 
 import { auth } from '@clerk/nextjs/server'
 import { redirect } from 'next/navigation'
+import { Prisma } from '@prisma/client'
 import { db } from '@/lib/db'
 import { MessageSquare, Calendar } from 'lucide-react'
 import { formatRelativeTime, formatPhoneNumber } from '@/lib/utils'
@@ -51,7 +52,7 @@ async function getStatusCounts(businessId: string): Promise<Record<string, numbe
 }
 
 async function getConversations(businessId: string, statusParam?: string | null) {
-  const where: Parameters<typeof db.conversation.findMany>[0]['where'] = {
+  const where: Prisma.ConversationWhereInput = {
     businessId,
     status: { in: [...CONVERSATION_LIST_STATUSES] },
     messages: { some: {} },
