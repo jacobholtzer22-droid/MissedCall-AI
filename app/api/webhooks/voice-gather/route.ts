@@ -73,7 +73,7 @@ export async function POST(request: NextRequest) {
           {
             statusCallback: dialStatusUrl,
             statusCallbackMethod: 'POST',
-            statusCallbackEvent: 'completed',
+            statusCallbackEvent: ['completed'],
           },
           business.forwardingNumber
         )
