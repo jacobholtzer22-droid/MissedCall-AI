@@ -86,9 +86,10 @@ function parseVCard(text: string): ParsedContact[] {
     const fnMatch = card.match(/^FN[^:]*:(.+)$/im)
     const name = fnMatch ? fnMatch[1].trim() : undefined
     // Extract all TEL fields
-    const telMatches = card.matchAll(/^TEL[^:]*:(.+)$/gim)
-    for (const match of telMatches) {
-      const phone = normalizePhone(match[1].trim())
+    const telRegex = /^TEL[^:]*:(.+)$/gim
+    let telMatch: RegExpExecArray | null
+    while ((telMatch = telRegex.exec(card)) !== null) {
+      const phone = normalizePhone(telMatch[1].trim())
       if (phone) {
         results.push({ phone, name })
       }
