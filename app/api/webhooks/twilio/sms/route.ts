@@ -119,9 +119,22 @@ export async function POST(request: NextRequest) {
     // Generate AI response
     const aiResponse = await generateAIResponse(business, conversation, body)
 
+    // Strip tags from AI response once — used for SMS send + email preview
+    const cleanResponse = aiResponse
+      .replace(/\[APPOINTMENT_BOOKED:.*?\]/g, '')
+      .replace(/\[NAME_CAPTURED:.*?\]/g, '')
+      .replace(/\[HUMAN_NEEDED\]/g, '')
+      .trim()
+
+    // Build message preview for emails: all saved messages + current AI reply
+    const messagePreview = [
+      ...conversation.messages.map((m: any) => ({ direction: m.direction, content: m.content })),
+      { direction: 'outbound', content: cleanResponse },
+    ]
+
     // Check if appointment was booked
     const appointmentMatch = aiResponse.match(/\[APPOINTMENT_BOOKED: name="([^"]+)", service="([^"]+)", datetime="([^"]+)"(?:, notes="([^"]*)")?\]/)
-    
+
     if (appointmentMatch) {
       const [, name, service, datetime, notes] = appointmentMatch
 
@@ -152,7 +165,7 @@ export async function POST(request: NextRequest) {
 
       console.log('📅 Appointment booked:', { name, service, datetime })
 
-      // Email owner
+      // Email owner with full context
       const ownerUser = await db.user.findFirst({
         where: { businessId: business.id, role: 'owner' },
         select: { email: true },
@@ -166,11 +179,13 @@ export async function POST(request: NextRequest) {
           service,
           datetime,
           notes,
+          missedCallAt: conversation.createdAt,
+          messages: messagePreview,
         })
       }
     }
 
-    // Check if caller gave their name for the first time
+    // Check if caller gave their name for the first time (qualified lead)
     const nameCapMatch = aiResponse.match(/\[NAME_CAPTURED: name="([^"]+)"\]/)
     if (nameCapMatch && !conversation.callerName) {
       const capturedName = nameCapMatch[1]
@@ -180,7 +195,7 @@ export async function POST(request: NextRequest) {
       })
       console.log('👤 Caller name captured:', capturedName)
 
-      // Email owner with lead info
+      // Email owner with full context
       const ownerUser = await db.user.findFirst({
         where: { businessId: business.id, role: 'owner' },
         select: { email: true },
@@ -191,16 +206,12 @@ export async function POST(request: NextRequest) {
           businessName: business.name,
           callerName: capturedName,
           callerPhone: from,
+          missedCallAt: conversation.createdAt,
+          messages: messagePreview,
+          serviceRequested: conversation.serviceRequested,
         })
       }
     }
-
-    // Clean AI response (remove any tags)
-    const cleanResponse = aiResponse
-      .replace(/\[APPOINTMENT_BOOKED:.*?\]/g, '')
-      .replace(/\[NAME_CAPTURED:.*?\]/g, '')
-      .replace(/\[HUMAN_NEEDED\]/g, '')
-      .trim()
 
     // Check if human needed
     if (aiResponse.includes('[HUMAN_NEEDED]')) {
