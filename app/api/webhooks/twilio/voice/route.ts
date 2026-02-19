@@ -65,6 +65,21 @@ export async function POST(request: NextRequest) {
 
     // Handle the call - send SMS on ringing, no-answer, or busy
     if (callStatus === 'ringing' || callStatus === 'no-answer' || callStatus === 'busy') {
+      // Don't text callers who are already in the client's personal contacts
+      const blocked = await db.blockedNumber.findFirst({
+        where: { businessId: business.id, phoneNumber: from },
+      })
+      if (blocked) {
+        console.log('📵 Caller is on exclusion list, skipping SMS:', from)
+        return new NextResponse(
+          `<?xml version="1.0" encoding="UTF-8"?>
+          <Response>
+            <Say>Sorry, we are unable to take your call right now.</Say>
+          </Response>`,
+          { headers: { 'Content-Type': 'text/xml' } }
+        )
+      }
+
       // Check if we already have a conversation with this caller recently
       const existingConversation = await db.conversation.findFirst({
         where: {
