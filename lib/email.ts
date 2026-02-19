@@ -1,9 +1,20 @@
-import { Resend } from 'resend'
-
-const resend = new Resend(process.env.RESEND_API_KEY!)
-
-const FROM_EMAIL = process.env.EMAIL_FROM || 'notifications@missedcallai.com'
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://app.missedcallai.com'
+const FROM_EMAIL = 'MissedCall AI <onboarding@resend.dev>'
+
+async function sendEmail(to: string, subject: string, html: string) {
+  if (!process.env.RESEND_API_KEY) {
+    console.log('⚠️ RESEND_API_KEY not set, skipping email')
+    return
+  }
+  await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${process.env.RESEND_API_KEY}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ from: FROM_EMAIL, to, subject, html }),
+  })
+}
 
 // =============================================
 // Email: New lead (caller gave their name)
@@ -20,11 +31,10 @@ export async function sendLeadCapturedEmail({
   callerPhone: string
 }) {
   try {
-    await resend.emails.send({
-      from: FROM_EMAIL,
-      to: ownerEmail,
-      subject: `New Lead: ${callerName} texted ${businessName}`,
-      html: `
+    await sendEmail(
+      ownerEmail,
+      `New Lead: ${callerName} texted ${businessName}`,
+      `
         <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 24px;">
           <h2 style="color: #1a1a1a; margin-bottom: 4px;">New Lead Identified</h2>
           <p style="color: #555; margin-top: 4px;">Someone gave their information during a text conversation at <strong>${businessName}</strong>.</p>
@@ -48,8 +58,8 @@ export async function sendLeadCapturedEmail({
 
           <p style="color: #aaa; font-size: 11px; margin-top: 24px;">Sent by MissedCall AI</p>
         </div>
-      `,
-    })
+      `
+    )
     console.log('📧 Lead captured email sent to:', ownerEmail)
   } catch (error) {
     console.error('❌ Failed to send lead captured email:', error)
@@ -77,11 +87,10 @@ export async function sendAppointmentBookedEmail({
   notes?: string | null
 }) {
   try {
-    await resend.emails.send({
-      from: FROM_EMAIL,
-      to: ownerEmail,
-      subject: `New Appointment: ${customerName} - ${service}`,
-      html: `
+    await sendEmail(
+      ownerEmail,
+      `New Appointment: ${customerName} - ${service}`,
+      `
         <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 24px;">
           <h2 style="color: #1a1a1a; margin-bottom: 4px;">New Appointment Booked</h2>
           <p style="color: #555; margin-top: 4px;">An appointment was just booked via text at <strong>${businessName}</strong>.</p>
@@ -119,8 +128,8 @@ export async function sendAppointmentBookedEmail({
 
           <p style="color: #aaa; font-size: 11px; margin-top: 24px;">Sent by MissedCall AI</p>
         </div>
-      `,
-    })
+      `
+    )
     console.log('📧 Appointment booked email sent to:', ownerEmail)
   } catch (error) {
     console.error('❌ Failed to send appointment booked email:', error)
