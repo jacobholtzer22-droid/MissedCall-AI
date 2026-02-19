@@ -50,13 +50,14 @@ function buildConversationHtml(messages: MessagePreview[]): string {
 }
 
 // =============================================
-// Email: Qualified lead (caller gave their name + we have their number)
+// Email: New Lead! (caller gave name + contact info)
 // =============================================
 export async function sendLeadCapturedEmail({
   ownerEmail,
   businessName,
   callerName,
   callerPhone,
+  callerEmail,
   missedCallAt,
   messages,
   serviceRequested,
@@ -65,6 +66,7 @@ export async function sendLeadCapturedEmail({
   businessName: string
   callerName: string
   callerPhone: string
+  callerEmail?: string | null
   missedCallAt: Date
   messages: MessagePreview[]
   serviceRequested?: string | null
@@ -75,13 +77,13 @@ export async function sendLeadCapturedEmail({
 
     await sendEmail(
       ownerEmail,
-      `New Lead: ${callerName} called ${businessName}`,
+      `New Lead! ${callerName} — ${businessName}`,
       `
         <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; color: #1a1a1a;">
 
           <div style="margin-bottom: 24px;">
-            <h2 style="margin: 0 0 4px 0; font-size: 20px;">New Qualified Lead</h2>
-            <p style="margin: 0; color: #6b7280; font-size: 14px;">Someone identified themselves during a text conversation at <strong>${businessName}</strong>.</p>
+            <h2 style="margin: 0 0 4px 0; font-size: 20px;">New Lead!</h2>
+            <p style="margin: 0; color: #6b7280; font-size: 14px;">A qualified lead came in via text at <strong>${businessName}</strong>.</p>
           </div>
 
           <div style="background: #f9fafb; border-radius: 8px; padding: 16px; margin-bottom: 20px;">
@@ -94,6 +96,11 @@ export async function sendLeadCapturedEmail({
                 <td style="padding: 6px 0; color: #6b7280; font-size: 13px;">Phone</td>
                 <td style="padding: 6px 0; font-weight: 600; font-size: 14px;">${callerPhone}</td>
               </tr>
+              ${callerEmail ? `
+              <tr>
+                <td style="padding: 6px 0; color: #6b7280; font-size: 13px;">Email</td>
+                <td style="padding: 6px 0; font-weight: 600; font-size: 14px;">${callerEmail}</td>
+              </tr>` : ''}
               <tr>
                 <td style="padding: 6px 0; color: #6b7280; font-size: 13px;">Missed call</td>
                 <td style="padding: 6px 0; font-size: 14px;">${formatDateTime(missedCallAt)}</td>

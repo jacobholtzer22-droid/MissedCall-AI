@@ -185,15 +185,16 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Check if caller gave their name for the first time (qualified lead)
-    const nameCapMatch = aiResponse.match(/\[NAME_CAPTURED: name="([^"]+)"\]/)
+    // Check if caller gave their name + contact info (qualified lead)
+    const nameCapMatch = aiResponse.match(/\[NAME_CAPTURED: name="([^"]+)"(?:, email="([^"]*)")?\]/)
     if (nameCapMatch && !conversation.callerName) {
       const capturedName = nameCapMatch[1]
+      const capturedEmail = nameCapMatch[2] || null
       await db.conversation.update({
         where: { id: conversation.id },
         data: { callerName: capturedName },
       })
-      console.log('👤 Caller name captured:', capturedName)
+      console.log('👤 Qualified lead captured:', { name: capturedName, email: capturedEmail, phone: from })
 
       // Email owner with full context
       const ownerUser = await db.user.findFirst({
@@ -206,6 +207,7 @@ export async function POST(request: NextRequest) {
           businessName: business.name,
           callerName: capturedName,
           callerPhone: from,
+          callerEmail: capturedEmail,
           missedCallAt: conversation.createdAt,
           messages: messagePreview,
           serviceRequested: conversation.serviceRequested,
@@ -253,8 +255,9 @@ GOALS:
 1. Be helpful, friendly, and brief (SMS should be under 160 chars when possible)
 2. Understand what they need
 3. If they want an appointment: get their name, service needed, and preferred date/time
-4. Answer questions about the business
-5. If you can't help or they're upset, flag for human follow-up
+4. Try to get their full name and email so the business can follow up
+5. Answer questions about the business
+6. If you can't help or they're upset, flag for human follow-up
 
 BUSINESS INFO:
 - Name: ${business.name}
@@ -268,9 +271,16 @@ RULES:
 - Don't make up information
 - If someone seems upset or you can't help, add [HUMAN_NEEDED] at the end
 
-WHEN YOU LEARN THE CALLER'S NAME FOR THE FIRST TIME:
-Add this EXACT tag at the end of your message (only the very first time they give their name, never again after that):
+LEAD CAPTURE — IMPORTANT:
+A "qualified lead" means the caller has given you their FULL NAME (first and last) AND at least one piece of contact info:
+  - Their email address (ideal — always try to ask for it naturally)
+  - OR their phone number stated explicitly in conversation (we already have it from caller ID, but if they type it out that also counts)
+Do NOT emit the tag if you only have a first name with no contact info.
+Once — and ONLY once — you have their full name AND contact info, add this tag at the END of your message:
 [NAME_CAPTURED: name="John Smith"]
+If they also gave their email, include it:
+[NAME_CAPTURED: name="John Smith", email="john@example.com"]
+Never emit this tag more than once per conversation.
 
 WHEN BOOKING IS CONFIRMED (you have name + service + date/time):
 Add this EXACT tag at the end of your message:
@@ -279,8 +289,10 @@ Add this EXACT tag at the end of your message:
 Example conversation:
 User: "Hi I need to schedule a cleaning"
 Assistant: "Hi! I'd be happy to help schedule a cleaning. What's your name?"
-User: "Sarah Johnson" 
-Assistant: "Thanks Sarah! When works best for you? We have openings this week."
+User: "Sarah Johnson"
+Assistant: "Thanks Sarah! What's the best email to reach you at?"
+User: "sarah@gmail.com"
+Assistant: "Got it! When works best for you? We have openings this week. [NAME_CAPTURED: name="Sarah Johnson", email="sarah@gmail.com"]"
 User: "Thursday at 2pm"
 Assistant: "Perfect! I've got you down for a teeth cleaning on Thursday at 2pm. See you then! [APPOINTMENT_BOOKED: name="Sarah Johnson", service="Teeth Cleaning", datetime="2024-01-18 14:00", notes=""]"`
 
