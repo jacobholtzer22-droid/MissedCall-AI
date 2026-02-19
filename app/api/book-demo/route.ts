@@ -16,7 +16,7 @@ export async function POST(request: NextRequest) {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          from: 'MissedCall AI <onboarding@resend.dev>',
+          from: 'MissedCall AI <notifications@alignandacquire.com>',
           to: process.env.YOUR_EMAIL,
           subject: `New Demo Request: ${business}`,
           html: `
