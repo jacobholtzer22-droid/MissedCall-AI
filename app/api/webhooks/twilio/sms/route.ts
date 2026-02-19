@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import twilio from 'twilio'
 import Anthropic from '@anthropic-ai/sdk'
+import { sendLeadCapturedEmail, sendAppointmentBookedEmail } from '@/lib/email'
 
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY!,
@@ -9,7 +10,7 @@ const anthropic = new Anthropic({
 
 // SAFEGUARD SETTINGS
 const MAX_MESSAGES_PER_CONVERSATION = 20
-const CONVERSATION_TIMEOUT_HOURS = 24
+const CONVERSATION_TIMEOUT_HOURS = 72
 const SPAM_WINDOW_SECONDS = 30
 
 export async function POST(request: NextRequest) {
@@ -123,7 +124,7 @@ export async function POST(request: NextRequest) {
     
     if (appointmentMatch) {
       const [, name, service, datetime, notes] = appointmentMatch
-      
+
       // Create appointment
       await db.appointment.create({
         data: {
@@ -141,7 +142,7 @@ export async function POST(request: NextRequest) {
       // Update conversation
       await db.conversation.update({
         where: { id: conversation.id },
-        data: { 
+        data: {
           status: 'appointment_booked',
           callerName: name,
           intent: 'book_appointment',
@@ -150,11 +151,54 @@ export async function POST(request: NextRequest) {
       })
 
       console.log('📅 Appointment booked:', { name, service, datetime })
+
+      // Email owner
+      const ownerUser = await db.user.findFirst({
+        where: { businessId: business.id, role: 'owner' },
+        select: { email: true },
+      })
+      if (ownerUser?.email) {
+        await sendAppointmentBookedEmail({
+          ownerEmail: ownerUser.email,
+          businessName: business.name,
+          customerName: name,
+          customerPhone: from,
+          service,
+          datetime,
+          notes,
+        })
+      }
+    }
+
+    // Check if caller gave their name for the first time
+    const nameCapMatch = aiResponse.match(/\[NAME_CAPTURED: name="([^"]+)"\]/)
+    if (nameCapMatch && !conversation.callerName) {
+      const capturedName = nameCapMatch[1]
+      await db.conversation.update({
+        where: { id: conversation.id },
+        data: { callerName: capturedName },
+      })
+      console.log('👤 Caller name captured:', capturedName)
+
+      // Email owner with lead info
+      const ownerUser = await db.user.findFirst({
+        where: { businessId: business.id, role: 'owner' },
+        select: { email: true },
+      })
+      if (ownerUser?.email) {
+        await sendLeadCapturedEmail({
+          ownerEmail: ownerUser.email,
+          businessName: business.name,
+          callerName: capturedName,
+          callerPhone: from,
+        })
+      }
     }
 
     // Clean AI response (remove any tags)
     const cleanResponse = aiResponse
       .replace(/\[APPOINTMENT_BOOKED:.*?\]/g, '')
+      .replace(/\[NAME_CAPTURED:.*?\]/g, '')
       .replace(/\[HUMAN_NEEDED\]/g, '')
       .trim()
 
@@ -212,6 +256,10 @@ RULES:
 - Be warm and natural, not robotic
 - Don't make up information
 - If someone seems upset or you can't help, add [HUMAN_NEEDED] at the end
+
+WHEN YOU LEARN THE CALLER'S NAME FOR THE FIRST TIME:
+Add this EXACT tag at the end of your message (only the very first time they give their name, never again after that):
+[NAME_CAPTURED: name="John Smith"]
 
 WHEN BOOKING IS CONFIRMED (you have name + service + date/time):
 Add this EXACT tag at the end of your message:

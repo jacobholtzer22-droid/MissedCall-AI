@@ -152,7 +152,7 @@ export async function POST(request: NextRequest) {
             businessId: business.id,
             callerPhone: from,
             createdAt: {
-              gte: new Date(Date.now() - 24 * 60 * 60 * 1000),
+              gte: new Date(Date.now() - 72 * 60 * 60 * 1000),
             },
           },
         })
