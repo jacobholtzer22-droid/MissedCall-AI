@@ -157,17 +157,13 @@ export default function HomePage() {
                 Whether you need an AI to handle missed calls or a website that actually converts, let's talk.
               </p>
               <div className="flex flex-col sm:flex-row gap-4 justify-center">
-                <Link href="/sign-up" className="bg-white text-gray-900 px-8 py-4 rounded-xl text-lg font-semibold hover:bg-gray-100 transition inline-flex items-center justify-center">
+                <Link href="/missedcall-ai#book-demo" className="bg-white text-gray-900 px-10 py-5 rounded-xl text-xl font-bold hover:bg-gray-100 transition inline-flex items-center justify-center shadow-xl">
+                  <MessageSquare className="mr-2 h-6 w-6" />
+                  Get Started
+                </Link>
+                <Link href="/sign-up" className="bg-white/10 backdrop-blur-sm text-white border border-white/30 px-8 py-4 rounded-xl text-lg font-semibold hover:bg-white/20 transition inline-flex items-center justify-center">
                   <UserPlus className="mr-2 h-5 w-5" />
-                  Sign Up — Get Started
-                </Link>
-                <Link href="/missedcall-ai#book-demo" className="bg-white/10 backdrop-blur-sm text-white border border-white/30 px-8 py-4 rounded-xl text-lg font-semibold hover:bg-white/20 transition inline-flex items-center justify-center">
-                  <MessageSquare className="mr-2 h-5 w-5" />
-                  Demo MissedCall AI
-                </Link>
-                <Link href="/websites#contact" className="bg-white/10 backdrop-blur-sm text-white border border-white/30 px-8 py-4 rounded-xl text-lg font-semibold hover:bg-white/20 transition inline-flex items-center justify-center">
-                  <Globe className="mr-2 h-5 w-5" />
-                  Get a Website Quote
+                  Sign Up for Dashboard
                 </Link>
               </div>
             </div>

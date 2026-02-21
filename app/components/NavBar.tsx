@@ -16,12 +16,15 @@ export function NavBar() {
             <Link href="/missedcall-ai" className="text-gray-400 hover:text-white transition hidden sm:inline">MissedCall AI</Link>
             <Link href="/websites" className="text-gray-400 hover:text-white transition hidden sm:inline">Websites</Link>
           </div>
-          <div className="relative flex items-center space-x-4">
+          <div className="relative flex items-center space-x-3">
             <NavMenu />
-            <Link href="/sign-in" className="text-gray-400 hover:text-white transition hidden sm:inline">
+            <Link href="/sign-in" className="text-gray-400 hover:text-white transition hidden sm:inline text-sm">
               Sign In
             </Link>
-            <Link href="/sign-up" className="bg-white text-gray-900 px-4 py-2 rounded-lg hover:bg-gray-200 transition font-medium">
+            <Link href="/sign-up" className="text-gray-300 hover:text-white border border-white/20 hover:border-white/40 px-3 py-1.5 rounded-lg transition text-sm font-medium hidden sm:inline-flex items-center">
+              Sign Up
+            </Link>
+            <Link href="/missedcall-ai#book-demo" className="bg-gradient-to-r from-blue-500 to-purple-500 hover:from-blue-400 hover:to-purple-400 text-white px-5 py-2.5 rounded-lg transition font-semibold text-base shadow-lg shadow-blue-500/25">
               Get Started
             </Link>
           </div>
