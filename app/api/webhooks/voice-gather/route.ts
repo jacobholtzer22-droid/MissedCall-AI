@@ -112,7 +112,7 @@ async function triggerMissedCallSMS(
   business: { id: string; name: string; aiGreeting: string | null; telnyxPhoneNumber: string | null },
   callerPhone: string
 ) {
-  const telnyxClient = new Telnyx(process.env.TELNYX_API_KEY!)
+  const telnyxClient = new Telnyx({ apiKey: process.env.TELNYX_API_KEY! })
 
   // Check for existing conversation
   const existingConversation = await db.conversation.findFirst({

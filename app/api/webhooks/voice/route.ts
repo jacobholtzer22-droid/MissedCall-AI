@@ -225,7 +225,7 @@ async function sendInitialSMS(
   conversation: { id: string },
   callerPhone: string
 ) {
-  const telnyxClient = new Telnyx(process.env.TELNYX_API_KEY!)
+  const telnyxClient = new Telnyx({ apiKey: process.env.TELNYX_API_KEY! })
 
   const defaultGreeting = `Sorry we missed your call at ${business.name}. How can we help?`.slice(0, 140)
 

@@ -243,7 +243,7 @@ Assistant: "Perfect! I've got you down for a teeth cleaning on Thursday at 2pm. 
 }
 
 async function sendSMS(business: any, to: string, message: string) {
-  const telnyxClient = new Telnyx(process.env.TELNYX_API_KEY!)
+  const telnyxClient = new Telnyx({ apiKey: process.env.TELNYX_API_KEY! })
   await telnyxClient.messages.create({
     from: business.telnyxPhoneNumber!,
     to: to,
@@ -252,7 +252,7 @@ async function sendSMS(business: any, to: string, message: string) {
 }
 
 async function sendSMSAndLog(business: any, conversationId: string, to: string, message: string) {
-  const telnyxClient = new Telnyx(process.env.TELNYX_API_KEY!)
+  const telnyxClient = new Telnyx({ apiKey: process.env.TELNYX_API_KEY! })
 
   try {
     const smsMessage = await telnyxClient.messages.create({

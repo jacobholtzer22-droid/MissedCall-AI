@@ -122,7 +122,7 @@ async function sendInitialSMS(
   conversation: { id: string },
   callerPhone: string
 ) {
-  const telnyxClient = new Telnyx(process.env.TELNYX_API_KEY!)
+  const telnyxClient = new Telnyx({ apiKey: process.env.TELNYX_API_KEY! })
 
   const greeting = business.aiGreeting ||
     `Hi! Sorry we missed your call at ${business.name}. I'm an automated assistant - how can I help you today?`
