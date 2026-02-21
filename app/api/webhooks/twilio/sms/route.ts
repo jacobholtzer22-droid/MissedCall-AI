@@ -17,8 +17,8 @@ export async function POST(request: NextRequest) {
     const body = await request.json()
 
     const messageSid = body.data?.payload?.id as string
-    const from = body.data?.payload?.from as string
-    const to = body.data?.payload?.to as string
+    const from = (body.data?.payload?.from?.phone_number ?? body.data?.payload?.from) as string
+    const to = (body.data?.payload?.to?.[0]?.phone_number ?? body.data?.payload?.to) as string
     const text = body.data?.payload?.text as string
 
     console.log('💬 Incoming SMS:', { messageSid, from, to, text })
