@@ -146,6 +146,31 @@ export async function POST(request: NextRequest) {
     // NO SCREENER: Normal missed call flow (only when call screener is off)
     // =============================================
     if (!business.callScreenerEnabled) {
+      // If a forwarding number is configured, forward the call to the owner
+      // with the original caller's number shown as the caller ID so the owner
+      // can see who is calling instead of the Twilio number.
+      if (business.forwardingNumber && business.twilioPhoneNumber) {
+        const dialStatusUrl = `${request.nextUrl.origin}/api/webhooks/voice-dial-status?businessId=${business.id}&callerPhone=${encodeURIComponent(from)}&callSid=${encodeURIComponent(callSid)}`
+        const vr = new VoiceResponse()
+        const dial = vr.dial({
+          callerId: from,
+          timeout: 20,
+          action: request.nextUrl.origin + '/api/webhooks/voice-after-dial',
+          method: 'POST',
+        })
+        dial.number(
+          {
+            statusCallback: dialStatusUrl,
+            statusCallbackMethod: 'POST',
+            statusCallbackEvent: ['completed'],
+          },
+          business.forwardingNumber
+        )
+        console.log('📞 Forwarding call to owner with caller ID:', from)
+        return xmlResponse(vr)
+      }
+
+      // No forwarding number — go straight to missed call SMS
       if (callStatus === 'ringing' || callStatus === 'no-answer' || callStatus === 'busy') {
         const existingConversation = await db.conversation.findFirst({
           where: {
