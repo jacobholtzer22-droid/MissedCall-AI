@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import twilio from 'twilio'
+import Telnyx from 'telnyx'
 import Anthropic from '@anthropic-ai/sdk'
 
 const anthropic = new Anthropic({
@@ -14,18 +14,18 @@ const SPAM_WINDOW_SECONDS = 30
 
 export async function POST(request: NextRequest) {
   try {
-    const formData = await request.formData()
-    
-    const messageSid = formData.get('MessageSid') as string
-    const from = formData.get('From') as string
-    const to = formData.get('To') as string
-    const body = formData.get('Body') as string
-    
-    console.log('💬 Incoming SMS:', { messageSid, from, to, body })
+    const body = await request.json()
+
+    const messageSid = body.data?.payload?.id as string
+    const from = body.data?.payload?.from as string
+    const to = body.data?.payload?.to as string
+    const text = body.data?.payload?.text as string
+
+    console.log('💬 Incoming SMS:', { messageSid, from, to, text })
 
     // Find business
     const business = await db.business.findFirst({
-      where: { twilioPhoneNumber: to },
+      where: { telnyxPhoneNumber: to },
     })
 
     if (!business) {
@@ -35,7 +35,7 @@ export async function POST(request: NextRequest) {
 
     // Check for STOP/unsubscribe
     const stopWords = ['stop', 'unsubscribe', 'cancel', 'quit']
-    if (stopWords.includes(body.toLowerCase().trim())) {
+    if (stopWords.includes(text.toLowerCase().trim())) {
       console.log('🛑 User requested STOP')
       await sendSMS(business, from, "You've been unsubscribed. Reply START to resubscribe.")
       return new NextResponse('OK', { status: 200 })
@@ -67,9 +67,9 @@ export async function POST(request: NextRequest) {
     }
 
     // SAFEGUARD: Check for spam (same message within 30 seconds)
-    const recentMessage = conversation.messages.find(m => 
-      m.direction === 'inbound' && 
-      m.content === body &&
+    const recentMessage = conversation.messages.find(m =>
+      m.direction === 'inbound' &&
+      m.content === text &&
       new Date(m.createdAt).getTime() > Date.now() - SPAM_WINDOW_SECONDS * 1000
     )
     if (recentMessage) {
@@ -85,7 +85,7 @@ export async function POST(request: NextRequest) {
         where: { id: conversation.id },
         data: { status: 'completed', summary: 'Conversation ended - message limit reached' }
       })
-      await sendSMS(business, from, `Thanks for chatting! For further assistance, please call us directly at ${business.twilioPhoneNumber}. A team member will be happy to help!`)
+      await sendSMS(business, from, `Thanks for chatting! For further assistance, please call us directly at ${business.telnyxPhoneNumber}. A team member will be happy to help!`)
       return new NextResponse('OK', { status: 200 })
     }
 
@@ -94,8 +94,8 @@ export async function POST(request: NextRequest) {
       data: {
         conversationId: conversation.id,
         direction: 'inbound',
-        content: body,
-        twilioSid: messageSid,
+        content: text,
+        telnyxSid: messageSid,
       }
     })
 
@@ -116,14 +116,14 @@ export async function POST(request: NextRequest) {
     }
 
     // Generate AI response
-    const aiResponse = await generateAIResponse(business, conversation, body)
+    const aiResponse = await generateAIResponse(business, conversation, text)
 
     // Check if appointment was booked
     const appointmentMatch = aiResponse.match(/\[APPOINTMENT_BOOKED: name="([^"]+)", service="([^"]+)", datetime="([^"]+)"(?:, notes="([^"]*)")?\]/)
-    
+
     if (appointmentMatch) {
       const [, name, service, datetime, notes] = appointmentMatch
-      
+
       // Create appointment
       await db.appointment.create({
         data: {
@@ -141,7 +141,7 @@ export async function POST(request: NextRequest) {
       // Update conversation
       await db.conversation.update({
         where: { id: conversation.id },
-        data: { 
+        data: {
           status: 'appointment_booked',
           callerName: name,
           intent: 'book_appointment',
@@ -186,7 +186,7 @@ async function generateAIResponse(
   conversation: any,
   latestMessage: string
 ): Promise<string> {
-  
+
   const conversationHistory = conversation.messages.map((msg: any) => ({
     role: msg.direction === 'inbound' ? 'user' : 'assistant' as const,
     content: msg.content
@@ -220,7 +220,7 @@ Add this EXACT tag at the end of your message:
 Example conversation:
 User: "Hi I need to schedule a cleaning"
 Assistant: "Hi! I'd be happy to help schedule a cleaning. What's your name?"
-User: "Sarah Johnson" 
+User: "Sarah Johnson"
 Assistant: "Thanks Sarah! When works best for you? We have openings this week."
 User: "Thursday at 2pm"
 Assistant: "Perfect! I've got you down for a teeth cleaning on Thursday at 2pm. See you then! [APPOINTMENT_BOOKED: name="Sarah Johnson", service="Teeth Cleaning", datetime="2024-01-18 14:00", notes=""]"`
@@ -243,22 +243,22 @@ Assistant: "Perfect! I've got you down for a teeth cleaning on Thursday at 2pm. 
 }
 
 async function sendSMS(business: any, to: string, message: string) {
-  const twilioClient = twilio(process.env.TWILIO_ACCOUNT_SID!, process.env.TWILIO_AUTH_TOKEN!)
-  await twilioClient.messages.create({
-    body: message,
-    from: business.twilioPhoneNumber!,
+  const telnyxClient = new Telnyx(process.env.TELNYX_API_KEY!)
+  await telnyxClient.messages.create({
+    from: business.telnyxPhoneNumber!,
     to: to,
+    text: message,
   })
 }
 
 async function sendSMSAndLog(business: any, conversationId: string, to: string, message: string) {
-  const twilioClient = twilio(process.env.TWILIO_ACCOUNT_SID!, process.env.TWILIO_AUTH_TOKEN!)
-  
+  const telnyxClient = new Telnyx(process.env.TELNYX_API_KEY!)
+
   try {
-    const smsMessage = await twilioClient.messages.create({
-      body: message,
-      from: business.twilioPhoneNumber!,
+    const smsMessage = await telnyxClient.messages.create({
+      from: business.telnyxPhoneNumber!,
       to: to,
+      text: message,
     })
 
     await db.message.create({
@@ -266,12 +266,12 @@ async function sendSMSAndLog(business: any, conversationId: string, to: string, 
         conversationId: conversationId,
         direction: 'outbound',
         content: message,
-        twilioSid: smsMessage.sid,
-        twilioStatus: smsMessage.status,
+        telnyxSid: (smsMessage as any).data?.id ?? null,
+        telnyxStatus: (smsMessage as any).data?.to?.[0]?.status ?? 'sent',
       }
     })
 
-    console.log('📤 Sent AI response:', smsMessage.sid)
+    console.log('📤 Sent AI response:', (smsMessage as any).data?.id)
   } catch (error) {
     console.error('❌ Error sending SMS:', error)
   }

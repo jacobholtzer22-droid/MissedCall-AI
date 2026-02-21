@@ -1,5 +1,5 @@
 // ===========================================
-// TWILIO VOICE WEBHOOK (UPDATED)
+// TELNYX VOICE WEBHOOK (UPDATED)
 // ===========================================
 // Path: app/api/webhooks/voice/route.ts
 //
@@ -11,38 +11,36 @@
 import { NextRequest, NextResponse } from 'next/server'
 import type { Business } from '@prisma/client'
 import { db } from '@/lib/db'
-import twilio from 'twilio'
-
-const VoiceResponse = twilio.twiml.VoiceResponse
+import Telnyx from 'telnyx'
 
 export async function POST(request: NextRequest) {
   try {
-    const formData = await request.formData()
+    const body = await request.json()
 
-    const callSid = formData.get('CallSid') as string
-    const callStatus = formData.get('CallStatus') as string
-    const from = formData.get('From') as string
-    const to = formData.get('To') as string
-    const direction = formData.get('Direction') as string
+    const callSid = body.data?.payload?.call_control_id as string
+    const callStatus = body.data?.payload?.state as string
+    const from = body.data?.payload?.from as string
+    const to = body.data?.payload?.to as string
+    const direction = body.data?.payload?.direction as string
 
     console.log('📞 Incoming call webhook:', { callSid, callStatus, from, to, direction })
 
     // Find which business owns this phone number (normalize for formatting differences)
     let business: Business | null = await db.business.findFirst({
-      where: { twilioPhoneNumber: to },
+      where: { telnyxPhoneNumber: to },
     })
     if (!business) {
       const toDigits = normalizePhone(to)
       if (toDigits) {
         const candidates = await db.business.findMany({
-          where: { twilioPhoneNumber: { not: null } },
+          where: { telnyxPhoneNumber: { not: null } },
         })
         const byDigits = candidates.filter(
-          (b) => b.twilioPhoneNumber && normalizePhone(b.twilioPhoneNumber) === toDigits
+          (b) => b.telnyxPhoneNumber && normalizePhone(b.telnyxPhoneNumber) === toDigits
         )
         if (byDigits.length === 1) business = byDigits[0]
         else if (byDigits.length > 1) {
-          const e164First = byDigits.find((b) => b.twilioPhoneNumber?.startsWith('+'))
+          const e164First = byDigits.find((b) => b.telnyxPhoneNumber?.startsWith('+'))
           business = e164First ?? byDigits[0]
         }
       }
@@ -52,25 +50,23 @@ export async function POST(request: NextRequest) {
       found: !!business,
       businessId: business?.id,
       businessName: business?.name,
-      twilioPhoneNumber: business?.twilioPhoneNumber,
+      telnyxPhoneNumber: business?.telnyxPhoneNumber,
       callScreenerEnabled: business?.callScreenerEnabled,
       spamFilterEnabled: business?.spamFilterEnabled
     });
 
     if (!business) {
       console.log('⚠️ No business found for phone number:', to)
-      const vr = new VoiceResponse()
-      vr.say('Sorry, this number is not configured. Please try again later.')
-      return xmlResponse(vr)
+      return xmlResponse('<Response><Say>Sorry, this number is not configured. Please try again later.</Say></Response>')
     }
 
     // =============================================
-    // LAYER 1: Twilio Lookup spam filter (existing)
+    // LAYER 1: Spam filter (heuristics-based)
     // =============================================
     if (business.spamFilterEnabled) {
       const isSpam = await isSpamCall(from)
       if (isSpam) {
-        console.log('🚫 Spam call detected by lookup filter:', from)
+        console.log('🚫 Spam call detected by filter:', from)
         // Log it as a screened call too so it shows in stats
         await db.screenedCall.create({
           data: {
@@ -80,9 +76,7 @@ export async function POST(request: NextRequest) {
             result: 'blocked',
           },
         })
-        const vr = new VoiceResponse()
-        vr.reject()
-        return xmlResponse(vr)
+        return xmlResponse('<Response><Reject /></Response>')
       }
     }
 
@@ -90,8 +84,8 @@ export async function POST(request: NextRequest) {
     // LAYER 2: IVR Call Screener ("Press 1")
     // =============================================
     if (business.callScreenerEnabled) {
-      const parentCallSid = (formData.get('CallSid') as string) ?? callSid
-      const callerPhone = (formData.get('From') as string) ?? from
+      const parentCallSid = callSid
+      const callerPhone = from
       console.log('🛡️ Call screener active, sending IVR prompt', {
         callSid: parentCallSid,
         callerPhone,
@@ -127,19 +121,15 @@ export async function POST(request: NextRequest) {
       const gatherActionUrl = `${request.nextUrl.origin}/api/webhooks/voice-gather?businessId=${business.id}&callSid=${encodeURIComponent(parentCallSid)}`
 
       // Gather waits for 1 digit, times out after 8 seconds.
-      // actionOnEmptyResult: true → Twilio POSTs to action URL even when no digits (timeout).
-      const vr = new VoiceResponse()
-      const gather = vr.gather({
-        numDigits: 1,
-        timeout: 8,
-        action: gatherActionUrl,
-        method: 'POST',
-        actionOnEmptyResult: true,
-      })
-      gather.say(screenerMessage)
-      vr.say('We did not receive a response. Goodbye.')
-      vr.hangup()
-      return xmlResponse(vr)
+      return xmlResponse(
+        `<Response>
+          <Gather numDigits="1" timeout="8" action="${gatherActionUrl}" method="POST" actionOnEmptyResult="true">
+            <Say>${escapeXml(screenerMessage)}</Say>
+          </Gather>
+          <Say>We did not receive a response. Goodbye.</Say>
+          <Hangup />
+        </Response>`
+      )
     }
 
     // =============================================
@@ -174,24 +164,32 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    const vr = new VoiceResponse()
-    vr.say('Sorry, we are unable to take your call right now. We will text you shortly to help with your request.')
-    return xmlResponse(vr)
+    return xmlResponse('<Response><Say>Sorry, we are unable to take your call right now. We will text you shortly to help with your request.</Say></Response>')
   } catch (error) {
     console.error('❌ Error handling voice webhook:', error)
-    const vr = new VoiceResponse()
-    vr.say('An error occurred. Please try again later.')
-    return xmlResponse(vr)
+    return xmlResponse('<Response><Say>An error occurred. Please try again later.</Say></Response>')
   }
 }
 
 // ===========================================
-// HELPER: Return TwiML from VoiceResponse with Content-Type text/xml
+// HELPER: Return XML response with Content-Type text/xml
 // ===========================================
-function xmlResponse(vr: InstanceType<typeof VoiceResponse>) {
-  return new NextResponse(vr.toString(), {
+function xmlResponse(xml: string) {
+  return new NextResponse(`<?xml version="1.0" encoding="UTF-8"?>${xml}`, {
     headers: { 'Content-Type': 'text/xml' },
   })
+}
+
+// ===========================================
+// HELPER: Escape XML special characters
+// ===========================================
+function escapeXml(text: string): string {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;')
 }
 
 // ===========================================
@@ -223,50 +221,47 @@ function sanitizeGreetingToAscii(text: string): string {
 // Send the initial SMS when a call is missed
 // ===========================================
 async function sendInitialSMS(
-  business: { id: string; name: string; aiGreeting: string | null; twilioPhoneNumber: string | null },
+  business: { id: string; name: string; aiGreeting: string | null; telnyxPhoneNumber: string | null },
   conversation: { id: string },
   callerPhone: string
 ) {
-  const twilioClient = twilio(
-    process.env.TWILIO_ACCOUNT_SID!,
-    process.env.TWILIO_AUTH_TOKEN!
-  )
+  const telnyxClient = new Telnyx(process.env.TELNYX_API_KEY!)
 
   const defaultGreeting = `Sorry we missed your call at ${business.name}. How can we help?`.slice(0, 140)
 
-  let body: string
+  let text: string
   if (business.aiGreeting) {
     const sanitized = sanitizeGreetingToAscii(business.aiGreeting)
-    body = sanitized.length > 0 ? sanitized.slice(0, 140) : defaultGreeting
+    text = sanitized.length > 0 ? sanitized.slice(0, 140) : defaultGreeting
   } else {
-    body = defaultGreeting
+    text = defaultGreeting
   }
 
   try {
-    const message = await twilioClient.messages.create({
-      body,
-      from: business.twilioPhoneNumber!,
+    const message = await telnyxClient.messages.create({
+      from: business.telnyxPhoneNumber!,
       to: callerPhone,
+      text,
     })
 
     await db.message.create({
       data: {
         conversationId: conversation.id,
         direction: 'outbound',
-        content: body,
-        twilioSid: message.sid,
-        twilioStatus: message.status,
+        content: text,
+        telnyxSid: (message as any).data?.id ?? null,
+        telnyxStatus: (message as any).data?.to?.[0]?.status ?? 'sent',
       },
     })
 
-    console.log('📤 Sent initial SMS:', message.sid)
+    console.log('📤 Sent initial SMS:', (message as any).data?.id)
   } catch (error) {
     console.error('❌ Error sending SMS:', error)
   }
 }
 
 // ===========================================
-// Twilio Lookup spam check (existing logic)
+// Spam check (heuristics only)
 // ===========================================
 async function isSpamCall(phone: string): Promise<boolean> {
   const tollFreePatterns = ['+1833', '+1844', '+1855', '+1866', '+1877', '+1888', '+1800']
@@ -287,28 +282,6 @@ async function isSpamCall(phone: string): Promise<boolean> {
       console.log('🚫 Blocked invalid area code:', phone)
       return true
     }
-  }
-
-  try {
-    const twilioClient = twilio(
-      process.env.TWILIO_ACCOUNT_SID!,
-      process.env.TWILIO_AUTH_TOKEN!
-    )
-
-    const lookup = await twilioClient.lookups.v2
-      .phoneNumbers(phone)
-      .fetch({ fields: 'line_type_intelligence' })
-
-    const lineType = lookup.lineTypeIntelligence?.type
-
-    if (lineType === 'voip' || lineType === 'tollFree' || lineType === 'premium' || lineType === 'personal') {
-      console.log(`🚫 Blocked ${lineType} number:`, phone)
-      return true
-    }
-
-    console.log(`✅ Passed spam filter (${lineType}):`, phone)
-  } catch (error) {
-    console.log('⚠️ Lookup failed, allowing call:', phone)
   }
 
   return false

@@ -1,9 +1,9 @@
 // ===========================================
-// TWILIO DIAL STATUS CALLBACK
+// TELNYX DIAL STATUS CALLBACK
 // ===========================================
 // Path: app/api/webhooks/voice-dial-status/route.ts
 //
-// Twilio hits this AFTER the <Dial> attempt ends.
+// Telnyx hits this AFTER the <Dial> attempt ends.
 // 1) Update or create call record (Conversation) by parent callSid with dial outcome.
 // 2) If owner answered (completed, not machine) → do nothing, call was handled.
 // 3) no-answer/busy/failed always trigger MissedCall AI SMS (no duration check).
@@ -12,20 +12,20 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import twilio from 'twilio'
+import Telnyx from 'telnyx'
 
 export async function POST(request: NextRequest) {
   try {
-    const formData = await request.formData()
+    const body = await request.json()
     const { searchParams } = new URL(request.url)
 
     // 1) Parent call SID from query (set by voice-gather when building status callback URL)
     const parentCallSid = searchParams.get('callSid')
     const businessId = searchParams.get('businessId')
     const callerPhone = searchParams.get('callerPhone')
-    const dialCallStatus = (formData.get('DialCallStatus') || formData.get('CallStatus')) as string
-    const childCallSid = formData.get('CallSid') as string // Twilio sends the dialed leg's SID in body
-    const answeredBy = String(formData.get('AnsweredBy') ?? '').toLowerCase()
+    const dialCallStatus = (body.data?.payload?.state ?? body.data?.payload?.hangup_cause) as string
+    const childCallSid = body.data?.payload?.call_control_id as string
+    const answeredBy = String(body.data?.payload?.answered_by ?? '').toLowerCase()
 
     console.log('📞 Dial status callback:', {
       parentCallSid,
@@ -67,32 +67,12 @@ export async function POST(request: NextRequest) {
       return new NextResponse('', { status: 200 })
     }
 
-    // Resolve duration (used for both call record and SMS threshold)
+    // Resolve duration from JSON payload
     let durationSeconds: number | null = null
-    const durationFromForm =
-      formData.get('DialCallDuration') ?? formData.get('Duration')
-    if (durationFromForm != null && durationFromForm !== '') {
-      const parsed = parseInt(String(durationFromForm), 10)
+    const durationFromPayload = body.data?.payload?.duration_secs ?? body.data?.payload?.duration
+    if (durationFromPayload != null && durationFromPayload !== '') {
+      const parsed = parseInt(String(durationFromPayload), 10)
       if (!Number.isNaN(parsed) && parsed >= 0) durationSeconds = parsed
-    }
-    if (
-      durationSeconds === null &&
-      childCallSid &&
-      process.env.TWILIO_ACCOUNT_SID &&
-      process.env.TWILIO_AUTH_TOKEN
-    ) {
-      try {
-        const twilioClient = twilio(
-          process.env.TWILIO_ACCOUNT_SID,
-          process.env.TWILIO_AUTH_TOKEN
-        )
-        const call = await twilioClient.calls(childCallSid).fetch()
-        const d =
-          call.duration != null ? parseInt(String(call.duration), 10) : NaN
-        if (!Number.isNaN(d) && d >= 0) durationSeconds = d
-      } catch (err) {
-        console.error('❌ Failed to fetch call duration from Twilio API:', err)
-      }
     }
 
     const endedAt = new Date()
@@ -236,19 +216,16 @@ export async function POST(request: NextRequest) {
       data: { status: 'no_response' },
     })
 
-    const twilioClient = twilio(
-      process.env.TWILIO_ACCOUNT_SID!,
-      process.env.TWILIO_AUTH_TOKEN!
-    )
+    const telnyxClient = new Telnyx(process.env.TELNYX_API_KEY!)
     const greeting =
       business.aiGreeting ||
       `Hi! Sorry we missed your call at ${business.name}. I'm an automated assistant - how can I help you today?`
 
     try {
-      const message = await twilioClient.messages.create({
-        body: greeting,
-        from: business.twilioPhoneNumber!,
+      const message = await telnyxClient.messages.create({
+        from: business.telnyxPhoneNumber!,
         to: callerPhone,
+        text: greeting,
       })
 
       await db.message.create({
@@ -256,12 +233,12 @@ export async function POST(request: NextRequest) {
           conversationId: conversationForSms.id,
           direction: 'outbound',
           content: greeting,
-          twilioSid: message.sid,
-          twilioStatus: message.status,
+          telnyxSid: (message as any).data?.id ?? null,
+          telnyxStatus: (message as any).data?.to?.[0]?.status ?? 'sent',
         },
       })
 
-      console.log('📤 Sent MissedCall AI SMS after missed dial:', message.sid)
+      console.log('📤 Sent MissedCall AI SMS after missed dial:', (message as any).data?.id)
     } catch (error) {
       console.error('❌ Error sending SMS:', error)
     }

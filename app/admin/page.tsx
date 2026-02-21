@@ -9,7 +9,7 @@ interface Business {
   id: string
   name: string
   slug: string
-  twilioPhoneNumber: string | null
+  telnyxPhoneNumber: string | null
   timezone: string
   businessHours: any
   servicesOffered: any
@@ -100,7 +100,7 @@ export default function AdminDashboard() {
     setEditMode(true)
     setEditData({
       name: business.name,
-      twilioPhoneNumber: business.twilioPhoneNumber || '',
+      telnyxPhoneNumber: business.telnyxPhoneNumber || '',
       timezone: business.timezone,
       adminNotes: business.adminNotes || '',
       setupFee: business.setupFee ?? '',
@@ -191,7 +191,7 @@ export default function AdminDashboard() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           name: editData.name,
-          twilioPhoneNumber: editData.twilioPhoneNumber || null,
+          telnyxPhoneNumber: editData.telnyxPhoneNumber || null,
           timezone: editData.timezone,
           adminNotes: editData.adminNotes || null,
           setupFee: editData.setupFee !== '' && editData.setupFee != null ? parseFloat(String(editData.setupFee)) : null,
@@ -306,9 +306,9 @@ export default function AdminDashboard() {
 
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-4 text-sm">
                     <div>
-                      <span className="text-gray-500">Twilio Number</span>
-                      <p className={business.twilioPhoneNumber ? 'text-green-400' : 'text-red-400'}>
-                        {business.twilioPhoneNumber || 'NOT ASSIGNED'}
+                      <span className="text-gray-500">Telnyx Number</span>
+                      <p className={business.telnyxPhoneNumber ? 'text-green-400' : 'text-red-400'}>
+                        {business.telnyxPhoneNumber || 'NOT ASSIGNED'}
                       </p>
                     </div>
                     <div>
@@ -435,15 +435,15 @@ export default function AdminDashboard() {
                 />
               </Field>
 
-              {/* Twilio Number */}
+              {/* Telnyx Number */}
               <Field
-                label="Twilio Phone Number"
-                hint="Buy in Twilio console, paste here. Format: +1XXXXXXXXXX"
+                label="Telnyx Phone Number"
+                hint="Buy in Telnyx portal, paste here. Format: +1XXXXXXXXXX"
               >
                 <input
                   type="text"
-                  value={editData.twilioPhoneNumber}
-                  onChange={e => setEditData({ ...editData, twilioPhoneNumber: e.target.value })}
+                  value={editData.telnyxPhoneNumber}
+                  onChange={e => setEditData({ ...editData, telnyxPhoneNumber: e.target.value })}
                   placeholder="+18335551234"
                   className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-white placeholder-gray-600"
                 />

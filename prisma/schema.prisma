@@ -18,34 +18,34 @@ datasource db {
 // ===========================================
 model Business {
   id                    String    @id @default(cuid())
-  
+
   // Basic info
   name                  String                          // "Smith Dental"
   slug                  String    @unique               // "smith-dental" (for URLs)
-  
-  // Twilio phone number provisioned for this business
-  twilioPhoneNumber     String?   @unique
+
+  // Telnyx phone number provisioned for this business
+  telnyxPhoneNumber     String?   @unique
   forwardingNumber      String?                         // Owner's real phone number to ring first
-  
+
   // Business details
   timezone              String    @default("America/New_York")
   businessHours         Json?                           // { monday: { open: "09:00", close: "17:00" }, ... }
   servicesOffered       Json?                           // ["cleaning", "filling", "crown", ...]
-  
+
   // AI customization
   aiGreeting            String?                         // Custom first message
   aiInstructions        String?   @db.Text              // Custom personality/rules for the AI
   aiContext             String?   @db.Text              // Business context (what they do, policies, etc.)
-  
+
   // Calendar integration
   googleCalendarId      String?
   googleRefreshToken    String?
-  
+
   // Billing
   stripeCustomerId      String?   @unique
   stripeSubscriptionId  String?
   subscriptionStatus    String    @default("trialing")  // trialing, active, past_due, canceled
-  
+
   // Admin tracking
   adminNotes            String?   @db.Text              // Private notes only Jacob sees
   setupFee              Float?                           // What they paid upfront
@@ -54,11 +54,11 @@ model Business {
   callScreenerEnabled   Boolean   @default(false)
   callScreenerMessage   String?
   missedCallAiEnabled   Boolean   @default(true)        // Send AI SMS after missed call
-  
+
   // Timestamps
   createdAt             DateTime  @default(now())
   updatedAt             DateTime  @updatedAt
-  
+
   // Relationships
   users                 User[]
   conversations         Conversation[]
@@ -89,27 +89,27 @@ model BlockedNumber {
 // ===========================================
 model User {
   id                    String    @id @default(cuid())
-  
+
   // Clerk integration
   clerkId               String    @unique               // Clerk's user ID
-  
+
   // User info (synced from Clerk)
   email                 String
   firstName             String?
   lastName              String?
   imageUrl              String?
-  
+
   // Role within the business
   role                  String    @default("owner")     // owner, admin, staff
-  
+
   // Which business they belong to
   businessId            String
   business              Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  
+
   // Timestamps
   createdAt             DateTime  @default(now())
   updatedAt             DateTime  @updatedAt
-  
+
   @@index([clerkId])
   @@index([businessId])
 }
@@ -119,15 +119,15 @@ model User {
 // ===========================================
 model Conversation {
   id                    String    @id @default(cuid())
-  
+
   // Which business this belongs to
   businessId            String
   business              Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  
+
   // Caller info
   callerPhone           String                          // +1234567890
   callerName            String?                         // Gathered during conversation
-  callSid               String?   @unique               // Twilio Call SID (parent voice call)
+  callSid               String?   @unique               // Call control ID (parent voice call)
 
   // Dial outcome (from voice-dial-status callback)
   dialCallStatus        String?                         // completed, no-answer, busy, failed, canceled
@@ -137,23 +137,23 @@ model Conversation {
 
   // Conversation state
   status                String    @default("active")    // active, completed, appointment_booked, no_response, screening
-  
+
   // AI-generated summary of the conversation
   summary               String?   @db.Text
-  
+
   // What the caller needed (extracted by AI)
   intent                String?                         // "book_appointment", "question", "emergency", etc.
   serviceRequested      String?                         // "teeth cleaning", "oil change", etc.
-  
+
   // Timestamps
   createdAt             DateTime  @default(now())
   updatedAt             DateTime  @updatedAt
   lastMessageAt         DateTime  @default(now())
-  
+
   // Relationships
   messages              Message[]
   appointment           Appointment?
-  
+
   @@index([businessId])
   @@index([callerPhone])
   @@index([status])
@@ -165,22 +165,22 @@ model Conversation {
 // ===========================================
 model Message {
   id                    String    @id @default(cuid())
-  
+
   // Which conversation this belongs to
   conversationId        String
   conversation          Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
-  
+
   // Message details
   direction             String                          // "inbound" (from caller) or "outbound" (from AI)
   content               String    @db.Text              // The actual message text
-  
-  // Twilio tracking
-  twilioSid             String?                         // Twilio message SID for tracking
-  twilioStatus          String?                         // sent, delivered, failed, etc.
-  
+
+  // Telnyx tracking
+  telnyxSid             String?                         // Telnyx message ID for tracking
+  telnyxStatus          String?                         // sent, delivered, failed, etc.
+
   // Timestamps
   createdAt             DateTime  @default(now())
-  
+
   @@index([conversationId])
   @@index([createdAt])
 }
@@ -190,62 +190,62 @@ model Message {
 // ===========================================
 model Appointment {
   id                    String    @id @default(cuid())
-  
+
   // Relationships
   businessId            String
   business              Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  
+
   conversationId        String    @unique               // One appointment per conversation
   conversation          Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
-  
+
   // Customer info
   customerName          String
   customerPhone         String
   customerEmail         String?
-  
+
   // Appointment details
   serviceType           String                          // "teeth cleaning", "haircut", etc.
   scheduledAt           DateTime                        // When the appointment is
   duration              Int       @default(60)          // Duration in minutes
   notes                 String?   @db.Text              // Any special notes/requests
-  
+
   // Calendar integration
   googleCalendarEventId String?
-  
+
   // Status tracking
   status                String    @default("confirmed") // confirmed, cancelled, completed, no_show
-  
+
   // Reminders
   reminderSentAt        DateTime?
-  
+
   // Timestamps
   createdAt             DateTime  @default(now())
   updatedAt             DateTime  @updatedAt
-  
+
   @@index([businessId])
   @@index([scheduledAt])
   @@index([status])
 }
 
 // ===========================================
-// PHONE NUMBER POOL - Available Twilio numbers
+// PHONE NUMBER POOL - Available Telnyx numbers
 // ===========================================
 model PhoneNumber {
   id                    String    @id @default(cuid())
-  
+
   phoneNumber           String    @unique               // +1234567890
-  twilioSid             String    @unique               // Twilio phone number SID
-  
+  telnyxSid             String    @unique               // Telnyx phone number SID
+
   // Assignment
   assignedToBusinessId  String?                         // Which business is using this (null = available)
-  
+
   // Status
   status                String    @default("available") // available, assigned, released
-  
+
   // Timestamps
   createdAt             DateTime  @default(now())
   updatedAt             DateTime  @updatedAt
-  
+
   @@index([status])
 }
 

@@ -74,7 +74,7 @@ export default async function SettingsPage() {
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Phone Number</label>
-              <input type="text" value={business.twilioPhoneNumber || 'Not assigned'} disabled className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-gray-500" />
+              <input type="text" value={business.telnyxPhoneNumber || 'Not assigned'} disabled className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-gray-500" />
             </div>
           </div>
         </div>
@@ -121,7 +121,7 @@ export default async function SettingsPage() {
             <h4 className="font-medium text-blue-900 mb-2">Call Forwarding Setup</h4>
             <p className="text-sm text-blue-800 mb-3">To capture missed calls, set up call forwarding from your business line:</p>
             <ol className="text-sm text-blue-800 space-y-1 list-decimal list-inside">
-              <li>On your business phone, dial <strong>*71{business.twilioPhoneNumber || '[your number]'}</strong></li>
+              <li>On your business phone, dial <strong>*71{business.telnyxPhoneNumber || '[your number]'}</strong></li>
               <li>Wait for confirmation tone</li>
               <li>Unanswered calls will now forward to your AI assistant</li>
             </ol>

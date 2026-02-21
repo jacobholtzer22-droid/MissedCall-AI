@@ -1,5 +1,5 @@
 // ===========================================
-// TWILIO VOICE GATHER CALLBACK (WITH DIAL)
+// TELNYX VOICE GATHER CALLBACK (WITH DIAL)
 // ===========================================
 // Path: app/api/webhooks/voice-gather/route.ts
 //
@@ -10,29 +10,30 @@
 // 4. Wrong digit / no digit → blocked as spam
 
 import { NextRequest, NextResponse } from 'next/server'
-import twilio from 'twilio'
+import Telnyx from 'telnyx'
 import { db } from '@/lib/db'
 
 const xmlHeaders = { 'Content-Type': 'text/xml' as const }
 
+function xmlResponse(xml: string): NextResponse {
+  return new NextResponse(`<?xml version="1.0" encoding="UTF-8"?>${xml}`, { headers: xmlHeaders })
+}
+
 export async function POST(request: NextRequest) {
   try {
-    const formData = await request.formData()
+    const body = await request.json()
     const { searchParams } = new URL(request.url)
 
     const businessId = searchParams.get('businessId')
-    const callSid = (searchParams.get('callSid') ?? formData.get('CallSid')) as string
-    const digits = formData.get('Digits') as string | null
-    const rawCallerPhone = (formData.get("From") as string) ?? "";
-    const callerPhone = rawCallerPhone.trim();
+    const callSid = (searchParams.get('callSid') ?? body.data?.payload?.call_control_id) as string
+    const digits = body.data?.payload?.digits as string | null
+    const rawCallerPhone = (body.data?.payload?.from as string) ?? ""
+    const callerPhone = rawCallerPhone.trim()
 
     console.log('🔢 Gather callback:', { businessId, digits, callSid, callerPhone })
 
     if (!businessId) {
-      const vr = new twilio.twiml.VoiceResponse()
-      vr.say('Thanks for calling. Goodbye.')
-      vr.hangup()
-      return new NextResponse(vr.toString(), { headers: xmlHeaders })
+      return xmlResponse('<Response><Say>Thanks for calling. Goodbye.</Say><Hangup /></Response>')
     }
 
     const business = await db.business.findUnique({
@@ -40,10 +41,7 @@ export async function POST(request: NextRequest) {
     })
 
     if (!business) {
-      const vr = new twilio.twiml.VoiceResponse()
-      vr.say('Thanks for calling. Goodbye.')
-      vr.hangup()
-      return new NextResponse(vr.toString(), { headers: xmlHeaders })
+      return xmlResponse('<Response><Say>Thanks for calling. Goodbye.</Say><Hangup /></Response>')
     }
 
     // =============================================
@@ -61,43 +59,28 @@ export async function POST(request: NextRequest) {
         },
       })
 
-      if (business.forwardingNumber && business.twilioPhoneNumber) {
-        const parentCallSid = (request.nextUrl.searchParams.get('callSid') ?? formData.get('CallSid')) as string
+      if (business.forwardingNumber && business.telnyxPhoneNumber) {
+        const parentCallSid = (request.nextUrl.searchParams.get('callSid') ?? body.data?.payload?.call_control_id) as string
         const dialStatusUrl = `${request.nextUrl.origin}/api/webhooks/voice-dial-status?businessId=${business.id}&callerPhone=${encodeURIComponent(callerPhone)}&callSid=${encodeURIComponent(parentCallSid)}`
-        const vr = new twilio.twiml.VoiceResponse()
-        const dial = vr.dial({
-          callerId: callerPhone,
-          timeout: 15,
-          action: request.nextUrl.origin + '/api/webhooks/voice-after-dial',
-          method: 'POST',
-        })
-        dial.number(
-          {
-            statusCallback: dialStatusUrl,
-            statusCallbackMethod: 'POST',
-            statusCallbackEvent: ['completed'],
-          },
-          business.forwardingNumber
+        return xmlResponse(
+          `<Response>
+            <Dial callerId="${callerPhone}" timeout="15" action="${request.nextUrl.origin}/api/webhooks/voice-after-dial" method="POST">
+              <Number statusCallback="${dialStatusUrl}" statusCallbackMethod="POST" statusCallbackEvent="completed">${business.forwardingNumber}</Number>
+            </Dial>
+          </Response>`
         )
-        return new NextResponse(vr.toString(), { headers: xmlHeaders })
       }
 
-      if (business.forwardingNumber && !business.twilioPhoneNumber) {
-        const vr = new twilio.twiml.VoiceResponse()
-        vr.say({ voice: 'Polly.Joanna' }, 'Call forwarding is not configured. Goodbye.')
-        vr.hangup()
-        return new NextResponse(vr.toString(), { headers: xmlHeaders })
+      if (business.forwardingNumber && !business.telnyxPhoneNumber) {
+        return xmlResponse('<Response><Say voice="Polly.Joanna">Call forwarding is not configured. Goodbye.</Say><Hangup /></Response>')
       }
 
       console.log('⚠️ No forwarding number, going straight to SMS')
       await triggerMissedCallSMS(business, callerPhone)
 
-      const vr = new twilio.twiml.VoiceResponse()
-      vr.say(
-        { voice: 'Polly.Joanna' },
-        'Thank you. We are unable to take your call right now, but we will text you shortly to help with your request. Goodbye.'
+      return xmlResponse(
+        '<Response><Say voice="Polly.Joanna">Thank you. We are unable to take your call right now, but we will text you shortly to help with your request. Goodbye.</Say></Response>'
       )
-      return new NextResponse(vr.toString(), { headers: xmlHeaders })
     }
 
     // =============================================
@@ -118,26 +101,18 @@ export async function POST(request: NextRequest) {
       },
     })
 
-    const vr = new twilio.twiml.VoiceResponse()
-    vr.say('Thanks for calling. Goodbye.')
-    vr.hangup()
-    return new NextResponse(vr.toString(), { headers: xmlHeaders })
+    return xmlResponse('<Response><Say>Thanks for calling. Goodbye.</Say><Hangup /></Response>')
   } catch (error) {
     console.error('❌ Error in gather callback:', error)
-    const vr = new twilio.twiml.VoiceResponse()
-    vr.say('An error occurred. Goodbye.')
-    return new NextResponse(vr.toString(), { headers: xmlHeaders })
+    return xmlResponse('<Response><Say>An error occurred. Goodbye.</Say></Response>')
   }
 }
 
 async function triggerMissedCallSMS(
-  business: { id: string; name: string; aiGreeting: string | null; twilioPhoneNumber: string | null },
+  business: { id: string; name: string; aiGreeting: string | null; telnyxPhoneNumber: string | null },
   callerPhone: string
 ) {
-  const twilioClient = twilio(
-    process.env.TWILIO_ACCOUNT_SID!,
-    process.env.TWILIO_AUTH_TOKEN!
-  )
+  const telnyxClient = new Telnyx(process.env.TELNYX_API_KEY!)
 
   // Check for existing conversation
   const existingConversation = await db.conversation.findFirst({
@@ -168,10 +143,10 @@ async function triggerMissedCallSMS(
     `Hi! Sorry we missed your call at ${business.name}. I'm an automated assistant - how can I help you today?`
 
   try {
-    const message = await twilioClient.messages.create({
-      body: greeting,
-      from: business.twilioPhoneNumber!,
+    const message = await telnyxClient.messages.create({
+      from: business.telnyxPhoneNumber!,
       to: callerPhone,
+      text: greeting,
     })
 
     await db.message.create({
@@ -179,12 +154,12 @@ async function triggerMissedCallSMS(
         conversationId: conversation.id,
         direction: 'outbound',
         content: greeting,
-        twilioSid: message.sid,
-        twilioStatus: message.status,
+        telnyxSid: (message as any).data?.id ?? null,
+        telnyxStatus: (message as any).data?.to?.[0]?.status ?? 'sent',
       },
     })
 
-    console.log('📤 Sent MissedCall AI SMS:', message.sid)
+    console.log('📤 Sent MissedCall AI SMS:', (message as any).data?.id)
   } catch (error) {
     console.error('❌ Error sending SMS:', error)
   }

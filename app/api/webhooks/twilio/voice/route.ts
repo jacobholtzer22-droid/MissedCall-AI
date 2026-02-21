@@ -1,31 +1,31 @@
 // ===========================================
-// TWILIO VOICE WEBHOOK
+// TELNYX VOICE WEBHOOK
 // ===========================================
-// This endpoint is called by Twilio when a call comes in
+// This endpoint is called by Telnyx when a call comes in
 // We detect missed calls and trigger the SMS follow-up
 
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import twilio from 'twilio'
+import Telnyx from 'telnyx'
 
-// Twilio sends POST requests to this endpoint
+// Telnyx sends POST requests with JSON to this endpoint
 export async function POST(request: NextRequest) {
   try {
-    // Parse the form data from Twilio
-    const formData = await request.formData()
-    
+    // Parse the JSON body from Telnyx
+    const body = await request.json()
+
     // Extract call information
-    const callSid = formData.get('CallSid') as string
-    const callStatus = formData.get('CallStatus') as string
-    const from = formData.get('From') as string           // Caller's phone number
-    const to = formData.get('To') as string               // Your Twilio number
-    const direction = formData.get('Direction') as string
-    
+    const callSid = body.data?.payload?.call_control_id as string
+    const callStatus = body.data?.payload?.state as string
+    const from = body.data?.payload?.from as string           // Caller's phone number
+    const to = body.data?.payload?.to as string               // Your Telnyx number
+    const direction = body.data?.payload?.direction as string
+
     console.log('📞 Incoming call webhook:', { callSid, callStatus, from, to, direction })
 
     // Find which business owns this phone number
     const business = await db.business.findFirst({
-      where: { twilioPhoneNumber: to }
+      where: { telnyxPhoneNumber: to }
     })
 
     if (!business) {
@@ -95,7 +95,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Return TwiML response
+    // Return XML response
     return new NextResponse(
       `<?xml version="1.0" encoding="UTF-8"?>
       <Response>
@@ -118,23 +118,20 @@ export async function POST(request: NextRequest) {
 
 // Send the initial SMS when a call is missed
 async function sendInitialSMS(
-  business: { id: string; name: string; aiGreeting: string | null; twilioPhoneNumber: string | null },
+  business: { id: string; name: string; aiGreeting: string | null; telnyxPhoneNumber: string | null },
   conversation: { id: string },
   callerPhone: string
 ) {
-  const twilioClient = twilio(
-    process.env.TWILIO_ACCOUNT_SID!,
-    process.env.TWILIO_AUTH_TOKEN!
-  )
+  const telnyxClient = new Telnyx(process.env.TELNYX_API_KEY!)
 
-  const greeting = business.aiGreeting || 
+  const greeting = business.aiGreeting ||
     `Hi! Sorry we missed your call at ${business.name}. I'm an automated assistant - how can I help you today?`
 
   try {
-    const message = await twilioClient.messages.create({
-      body: greeting,
-      from: business.twilioPhoneNumber!,
+    const message = await telnyxClient.messages.create({
+      from: business.telnyxPhoneNumber!,
       to: callerPhone,
+      text: greeting,
     })
 
     await db.message.create({
@@ -142,12 +139,12 @@ async function sendInitialSMS(
         conversationId: conversation.id,
         direction: 'outbound',
         content: greeting,
-        twilioSid: message.sid,
-        twilioStatus: message.status,
+        telnyxSid: (message as any).data?.id ?? null,
+        telnyxStatus: (message as any).data?.to?.[0]?.status ?? 'sent',
       }
     })
 
-    console.log('📤 Sent initial SMS:', message.sid)
+    console.log('📤 Sent initial SMS:', (message as any).data?.id)
   } catch (error) {
     console.error('❌ Error sending SMS:', error)
   }
@@ -175,29 +172,6 @@ async function isSpamCall(phone: string): Promise<boolean> {
       console.log('🚫 Blocked invalid area code:', phone)
       return true
     }
-  }
-
-  // 4. Use Twilio Lookup to check line type (costs $0.005 per lookup)
-  try {
-    const twilioClient = twilio(
-      process.env.TWILIO_ACCOUNT_SID!,
-      process.env.TWILIO_AUTH_TOKEN!
-    )
-
-    const lookup = await twilioClient.lookups.v2
-      .phoneNumbers(phone)
-      .fetch({ fields: 'line_type_intelligence' })
-
-    const lineType = lookup.lineTypeIntelligence?.type
-
-    if (lineType === 'voip' || lineType === 'tollFree' || lineType === 'premium' || lineType === 'personal') {
-      console.log(`🚫 Blocked ${lineType} number:`, phone)
-      return true
-    }
-
-    console.log(`✅ Passed spam filter (${lineType}):`, phone)
-  } catch (error) {
-    console.log('⚠️ Lookup failed, allowing call:', phone)
   }
 
   return false

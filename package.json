@@ -33,7 +33,7 @@
     "react-dom": "^18.3.1",
     "tailwind-merge": "^2.6.0",
     "tailwindcss-animate": "^1.0.7",
-    "twilio": "^5.4.3"
+    "telnyx": "^5.37.1"
   },
   "devDependencies": {
     "@types/node": "^22.10.5",

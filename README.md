@@ -5,7 +5,7 @@ Turn missed calls into booked appointments with AI-powered SMS conversations.
 ## What This Does
 
 When a business misses a call:
-1. **Detects the missed call** via Twilio
+1. **Detects the missed call** via Telnyx
 2. **Sends an immediate text** to the caller
 3. **Has an AI conversation** to understand what they need
 4. **Books appointments** directly into the calendar
@@ -16,7 +16,7 @@ When a business misses a call:
 - **Framework**: Next.js 14 (App Router)
 - **Database**: PostgreSQL (via Neon)
 - **Auth**: Clerk
-- **SMS/Voice**: Twilio
+- **SMS/Voice**: Telnyx
 - **AI**: Claude (Anthropic)
 - **Styling**: Tailwind CSS
 - **Hosting**: Vercel
@@ -51,10 +51,10 @@ DATABASE_URL=postgresql://xxxxx
 # Anthropic (from https://console.anthropic.com)
 ANTHROPIC_API_KEY=sk-ant-xxxxx
 
-# Twilio (from https://console.twilio.com)
-TWILIO_ACCOUNT_SID=ACxxxxx
-TWILIO_AUTH_TOKEN=xxxxx
-TWILIO_PHONE_NUMBER=+1xxxxxxxxxx
+# Telnyx (from https://portal.telnyx.com)
+TELNYX_API_KEY=KEYxxxxx
+TELNYX_PUBLIC_KEY=xxxxx
+TELNYX_PHONE_NUMBER=+1xxxxxxxxxx
 ```
 
 ### 3. Set Up the Database
@@ -75,9 +75,9 @@ npm run dev
 
 Open [http://localhost:3000](http://localhost:3000) to see your app.
 
-### 5. Set Up Twilio Webhooks (for testing)
+### 5. Set Up Telnyx Webhooks (for testing)
 
-For local development, you'll need a tunnel so Twilio can reach your computer.
+For local development, you'll need a tunnel so Telnyx can reach your computer.
 Install ngrok (or use a similar tool):
 
 ```bash
@@ -88,8 +88,8 @@ brew install ngrok  # on Mac
 ngrok http 3000
 ```
 
-Then configure your Twilio phone number's webhooks:
-- **Voice webhook**: `https://your-ngrok-url.ngrok.io/api/webhooks/twilio/voice`
+Then configure your Telnyx phone number's webhooks:
+- **Voice webhook**: `https://your-ngrok-url.ngrok.io/api/webhooks/voice`
 - **SMS webhook**: `https://your-ngrok-url.ngrok.io/api/webhooks/twilio/sms`
 
 ## Project Structure
@@ -105,7 +105,7 @@ missedcall-ai/
 │   │   └── settings/        # Business settings
 │   ├── api/
 │   │   └── webhooks/
-│   │       └── twilio/      # Twilio webhook handlers
+│   │       └── twilio/      # Telnyx webhook handlers (SMS + voice)
 │   ├── layout.tsx           # Root layout
 │   └── page.tsx             # Landing page
 ├── lib/
@@ -122,7 +122,7 @@ missedcall-ai/
 Defines all database tables: businesses, users, conversations, messages, appointments.
 
 ### `app/api/webhooks/twilio/voice/route.ts`
-Receives incoming call notifications from Twilio. Detects missed calls and triggers the initial SMS.
+Receives incoming call notifications from Telnyx. Detects missed calls and triggers the initial SMS.
 
 ### `app/api/webhooks/twilio/sms/route.ts`
 Receives incoming text messages. Sends them to Claude AI for a response and sends the reply back.
@@ -154,7 +154,7 @@ npm run db:generate
 
 ### Post-Deployment
 
-1. Update your Twilio webhooks to use your Vercel URL
+1. Update your Telnyx webhooks to use your Vercel URL
 2. Update `NEXT_PUBLIC_APP_URL` in Vercel environment variables
 
 ## Next Steps (What We'll Build)
