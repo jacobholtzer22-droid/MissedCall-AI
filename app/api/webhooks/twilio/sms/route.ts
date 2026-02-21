@@ -244,7 +244,7 @@ Assistant: "Perfect! I've got you down for a teeth cleaning on Thursday at 2pm. 
 
 async function sendSMS(business: any, to: string, message: string) {
   const telnyxClient = new Telnyx({ apiKey: process.env.TELNYX_API_KEY! })
-  await telnyxClient.messages.create({
+  await telnyxClient.messages.send({
     from: business.telnyxPhoneNumber!,
     to: to,
     text: message,
@@ -255,7 +255,7 @@ async function sendSMSAndLog(business: any, conversationId: string, to: string, 
   const telnyxClient = new Telnyx({ apiKey: process.env.TELNYX_API_KEY! })
 
   try {
-    const smsMessage = await telnyxClient.messages.create({
+    const smsMessage = await telnyxClient.messages.send({
       from: business.telnyxPhoneNumber!,
       to: to,
       text: message,

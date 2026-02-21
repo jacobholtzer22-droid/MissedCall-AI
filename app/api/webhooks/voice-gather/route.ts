@@ -143,7 +143,7 @@ async function triggerMissedCallSMS(
     `Hi! Sorry we missed your call at ${business.name}. I'm an automated assistant - how can I help you today?`
 
   try {
-    const message = await telnyxClient.messages.create({
+    const message = await telnyxClient.messages.send({
       from: business.telnyxPhoneNumber!,
       to: callerPhone,
       text: greeting,

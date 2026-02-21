@@ -238,7 +238,7 @@ async function sendInitialSMS(
   }
 
   try {
-    const message = await telnyxClient.messages.create({
+    const message = await telnyxClient.messages.send({
       from: business.telnyxPhoneNumber!,
       to: callerPhone,
       text,
