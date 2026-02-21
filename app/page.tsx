@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import { MessageSquare, Globe, ArrowRight, Code } from 'lucide-react'
+import { MessageSquare, Globe, ArrowRight, Code, UserPlus } from 'lucide-react'
 import { Logo } from './components/Logo'
 
 export default function HomePage() {
@@ -157,7 +157,11 @@ export default function HomePage() {
                 Whether you need an AI to handle missed calls or a website that actually converts, let's talk.
               </p>
               <div className="flex flex-col sm:flex-row gap-4 justify-center">
-                <Link href="/missedcall-ai#book-demo" className="bg-white text-gray-900 px-8 py-4 rounded-xl text-lg font-semibold hover:bg-gray-100 transition inline-flex items-center justify-center">
+                <Link href="/sign-up" className="bg-white text-gray-900 px-8 py-4 rounded-xl text-lg font-semibold hover:bg-gray-100 transition inline-flex items-center justify-center">
+                  <UserPlus className="mr-2 h-5 w-5" />
+                  Sign Up — Get Started
+                </Link>
+                <Link href="/missedcall-ai#book-demo" className="bg-white/10 backdrop-blur-sm text-white border border-white/30 px-8 py-4 rounded-xl text-lg font-semibold hover:bg-white/20 transition inline-flex items-center justify-center">
                   <MessageSquare className="mr-2 h-5 w-5" />
                   Demo MissedCall AI
                 </Link>
