@@ -49,7 +49,7 @@ export async function POST(request: NextRequest) {
     // =============================================
     // INCOMING CALL
     // =============================================
-    if (eventType === 'call.initiated' && direction === 'inbound') {
+    if (eventType === 'call.initiated' && (direction === 'inbound' || direction === 'incoming')) {
       const business = await findBusiness(to)
 
       if (!business) {
