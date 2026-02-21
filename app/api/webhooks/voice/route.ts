@@ -139,10 +139,24 @@ export async function POST(request: NextRequest) {
         })
 
         if (business.forwardingNumber) {
+          // Mark conversation as waiting for the forwarded call so we can detect
+          // later whether a human answered or voicemail picked up.
+          await db.conversation.updateMany({
+            where: { callSid: callControlId },
+            data: { status: 'forwarding' },
+          })
+
+          // Transfer with AMD so Telnyx fires call.machine.detection.ended.
+          // The client_state is attached to the B-leg (outbound call to forwardingNumber)
+          // so subsequent B-leg events carry businessId/callerPhone.
+          const fwdState = toB64({ businessId, callerPhone, forwarding: true })
           await telnyx.calls.actions.transfer(callControlId, {
             to: business.forwardingNumber,
             from: callerPhone,
-          })
+            answering_machine_detection: 'detect',
+            client_state: fwdState,
+            timeout_secs: 30,
+          } as any)
         } else {
           // No forwarding number — send SMS and say goodbye
           await sendMissedCallSMS(telnyx, business, callControlId, callerPhone)
@@ -171,7 +185,70 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({}, { status: 200 })
     }
 
-    // Acknowledge all other events (call.answered, call.hangup, etc.)
+    // =============================================
+    // AMD RESULT — voicemail detected on forwarded call
+    // =============================================
+    if (eventType === 'call.machine.detection.ended') {
+      const { businessId: amdBizId, callerPhone: amdCaller, forwarding } = state
+
+      if (forwarding && amdBizId && amdCaller) {
+        const result = payload?.result as string // 'human' | 'machine' | 'not_sure'
+        console.log('🤖 AMD result:', result, 'for', amdCaller)
+
+        if (result === 'human') {
+          // Real person answered — mark conversation so hangup handler won't send SMS
+          await db.conversation.updateMany({
+            where: { businessId: amdBizId, callerPhone: amdCaller, status: 'forwarding' },
+            data: { status: 'active' },
+          })
+          console.log('✅ Human answered forwarded call, call proceeding')
+        } else {
+          // Voicemail (or unknown) — hang up and send SMS
+          console.log('📵 Voicemail detected, hanging up forwarded call and sending SMS')
+          const bizForAmd = await db.business.findUnique({ where: { id: amdBizId } })
+          if (bizForAmd) {
+            await sendMissedCallSMS(telnyx, bizForAmd, callControlId, amdCaller)
+          }
+          try {
+            await telnyx.calls.actions.hangup(callControlId, {})
+          } catch {}
+        }
+      }
+
+      return NextResponse.json({}, { status: 200 })
+    }
+
+    // =============================================
+    // HANGUP on a forwarded B-leg (no-answer / timeout / caller gave up)
+    // =============================================
+    if (eventType === 'call.hangup') {
+      const { businessId: hupBizId, callerPhone: hupCaller, forwarding: hupFwd } = state
+
+      if (hupFwd && hupBizId && hupCaller) {
+        // Find the conversation (created during screener with the A-leg callSid).
+        // If status is still 'forwarding', the forwarding number was never answered
+        // by a human — send the missed-call SMS.
+        const conv = await db.conversation.findFirst({
+          where: {
+            businessId: hupBizId,
+            callerPhone: hupCaller,
+            status: 'forwarding',
+          },
+        })
+
+        if (conv) {
+          console.log('📵 Forwarded call not answered, sending SMS to', hupCaller)
+          const bizForHup = await db.business.findUnique({ where: { id: hupBizId } })
+          if (bizForHup) {
+            await sendMissedCallSMS(telnyx, bizForHup, callControlId, hupCaller)
+          }
+        }
+      }
+
+      return NextResponse.json({}, { status: 200 })
+    }
+
+    // Acknowledge all other events (call.answered, etc.)
     return NextResponse.json({}, { status: 200 })
   } catch (error) {
     console.error('❌ Error handling voice webhook:', error)
