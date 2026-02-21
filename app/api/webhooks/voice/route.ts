@@ -39,7 +39,7 @@ export async function POST(request: NextRequest) {
     const telnyx = new Telnyx({ apiKey: process.env.TELNYX_API_KEY! })
 
     // Decode client_state (base64 JSON used to carry data across events)
-    let state: { businessId?: string; callerPhone?: string } = {}
+    let state: { businessId?: string; callerPhone?: string; forwarding?: boolean } = {}
     if (rawClientState) {
       try {
         state = JSON.parse(Buffer.from(rawClientState, 'base64').toString())
