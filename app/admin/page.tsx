@@ -10,6 +10,7 @@ interface Business {
   name: string
   slug: string
   telnyxPhoneNumber: string | null
+  forwardingNumber: string | null
   timezone: string
   businessHours: any
   servicesOffered: any
@@ -101,6 +102,7 @@ export default function AdminDashboard() {
     setEditData({
       name: business.name,
       telnyxPhoneNumber: business.telnyxPhoneNumber || '',
+      forwardingNumber: business.forwardingNumber || '',
       timezone: business.timezone,
       adminNotes: business.adminNotes || '',
       setupFee: business.setupFee ?? '',
@@ -192,6 +194,7 @@ export default function AdminDashboard() {
         body: JSON.stringify({
           name: editData.name,
           telnyxPhoneNumber: editData.telnyxPhoneNumber || null,
+          forwardingNumber: editData.forwardingNumber || null,
           timezone: editData.timezone,
           adminNotes: editData.adminNotes || null,
           setupFee: editData.setupFee !== '' && editData.setupFee != null ? parseFloat(String(editData.setupFee)) : null,
@@ -309,6 +312,12 @@ export default function AdminDashboard() {
                       <span className="text-gray-500">Telnyx Number</span>
                       <p className={business.telnyxPhoneNumber ? 'text-green-400' : 'text-red-400'}>
                         {business.telnyxPhoneNumber || 'NOT ASSIGNED'}
+                      </p>
+                    </div>
+                    <div>
+                      <span className="text-gray-500">Forwarding Number</span>
+                      <p className={business.forwardingNumber ? 'text-gray-300' : 'text-gray-500'}>
+                        {business.forwardingNumber || 'Not set'}
                       </p>
                     </div>
                     <div>
@@ -445,6 +454,20 @@ export default function AdminDashboard() {
                   value={editData.telnyxPhoneNumber}
                   onChange={e => setEditData({ ...editData, telnyxPhoneNumber: e.target.value })}
                   placeholder="+18335551234"
+                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-white placeholder-gray-600"
+                />
+              </Field>
+
+              {/* Forwarding Number */}
+              <Field
+                label="Forwarding Number"
+                hint="Owner's real phone number — the AI rings this first before taking over. Format: +1XXXXXXXXXX"
+              >
+                <input
+                  type="text"
+                  value={editData.forwardingNumber}
+                  onChange={e => setEditData({ ...editData, forwardingNumber: e.target.value })}
+                  placeholder="+13095551234"
                   className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-white placeholder-gray-600"
                 />
               </Field>
