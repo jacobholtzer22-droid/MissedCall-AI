@@ -21,6 +21,8 @@ import { db } from '@/lib/db'
 import Telnyx from 'telnyx'
 
 const VOICE = 'AWS.Polly.Joanna'
+const DEFAULT_VOICE_MESSAGE =
+  "We're sorry we can't get to the phone right now. You should receive a text message shortly."
 
 export async function POST(request: NextRequest) {
   try {
@@ -97,8 +99,7 @@ export async function POST(request: NextRequest) {
         // Normal missed call: speak message and send SMS
         await sendMissedCallSMS(telnyx, business, callControlId, from)
         await telnyx.calls.actions.speak(callControlId, {
-          payload:
-            'Sorry we missed your call. We have sent you a text message to help with your request. Goodbye.',
+          payload: business.missedCallVoiceMessage || DEFAULT_VOICE_MESSAGE,
           voice: VOICE,
         })
       }
@@ -161,8 +162,7 @@ export async function POST(request: NextRequest) {
           // No forwarding number — send SMS and say goodbye
           await sendMissedCallSMS(telnyx, business, callControlId, callerPhone)
           await telnyx.calls.actions.speak(callControlId, {
-            payload:
-              'Thank you. We are unable to take your call right now but we will text you shortly to help. Goodbye.',
+            payload: business.missedCallVoiceMessage || DEFAULT_VOICE_MESSAGE,
             voice: VOICE,
           })
         }
@@ -220,8 +220,7 @@ export async function POST(request: NextRequest) {
             if (aLegCallControlId) {
               try {
                 await telnyx.calls.actions.speak(aLegCallControlId, {
-                  payload:
-                    'Sorry we missed your call. We have sent you a text message to assist you. Goodbye.',
+                  payload: bizForAmd.missedCallVoiceMessage || DEFAULT_VOICE_MESSAGE,
                   voice: VOICE,
                 })
               } catch {}
@@ -254,8 +253,7 @@ export async function POST(request: NextRequest) {
             if (hupALeg) {
               try {
                 await telnyx.calls.actions.speak(hupALeg, {
-                  payload:
-                    'Sorry we missed your call. We have sent you a text message to assist you. Goodbye.',
+                  payload: bizForHup.missedCallVoiceMessage || DEFAULT_VOICE_MESSAGE,
                   voice: VOICE,
                 })
               } catch {}
@@ -281,8 +279,7 @@ export async function POST(request: NextRequest) {
           if (biz) {
             await sendMissedCallSMS(telnyx, biz, callControlId, bfCaller)
             await telnyx.calls.actions.speak(callControlId, {
-              payload:
-                'Sorry we missed your call. We have sent you a text message to assist you. Goodbye.',
+              payload: biz.missedCallVoiceMessage || DEFAULT_VOICE_MESSAGE,
               voice: VOICE,
             })
           }
