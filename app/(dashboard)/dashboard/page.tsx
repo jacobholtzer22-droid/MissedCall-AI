@@ -120,10 +120,17 @@ export default async function DashboardPage() {
   const { userId } = await auth()
   if (!userId) redirect('/sign-in')
 
-  const user = await db.user.findUnique({
-    where: { clerkId: userId },
-    include: { business: true }
-  })
+  let user: Awaited<ReturnType<typeof db.user.findUnique>> & { business?: any } | null = null
+  try {
+    user = await db.user.findUnique({
+      where: { clerkId: userId },
+      include: { business: true }
+    })
+  } catch (err) {
+    console.error('Dashboard page: failed to query user/business from DB:', err)
+    // Layout will show the DB error UI; throw here so the error boundary catches it
+    throw err
+  }
 
   if (!user?.business) redirect('/onboarding')
 

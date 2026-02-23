@@ -21,10 +21,29 @@ export default async function DashboardLayout({ children }: { children: React.Re
     redirect('/sign-in')
   }
 
-  const user = await db.user.findUnique({
-    where: { clerkId: userId },
-    include: { business: true }
-  })
+  let user: Awaited<ReturnType<typeof db.user.findUnique>> & { business?: any } | null = null
+  try {
+    user = await db.user.findUnique({
+      where: { clerkId: userId },
+      include: { business: true }
+    })
+  } catch (err) {
+    console.error('Dashboard layout: failed to query user/business from DB:', err)
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center p-8 max-w-md">
+          <h1 className="text-xl font-bold text-gray-900 mb-2">Database unavailable</h1>
+          <p className="text-gray-600">
+            We&apos;re having trouble connecting to the database. This is usually a temporary issue —
+            please try again in a moment or contact support.
+          </p>
+          <a href="/dashboard" className="mt-4 inline-block px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition">
+            Retry
+          </a>
+        </div>
+      </div>
+    )
+  }
 
   if (!user || !user.business) {
     redirect('/onboarding')
