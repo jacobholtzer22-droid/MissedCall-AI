@@ -18,8 +18,11 @@ export function NavBar() {
           </div>
           <div className="relative flex items-center space-x-4">
             <NavMenu />
-            <Link href="/dashboard" className="text-gray-400 hover:text-white transition hidden sm:inline">
+            <Link href="/sign-in" className="text-gray-400 hover:text-white transition hidden sm:inline">
               Sign In
+            </Link>
+            <Link href="/sign-up" className="text-gray-400 hover:text-white transition hidden sm:inline">
+              Sign Up
             </Link>
             <Link href="/#contact" className="bg-white text-gray-900 px-4 py-2 rounded-lg hover:bg-gray-200 transition font-medium">
               Get Started
