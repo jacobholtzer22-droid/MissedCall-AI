@@ -27,28 +27,28 @@ export async function GET() {
             conversations: true,
             appointments: true,
             users: true,
-            screenedCalls: true,  // <-- NEW: total screened calls
           },
         },
       },
     })
 
     // Get blocked counts per business (last 30 days)
-    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
-
-    const blockedCounts = await db.screenedCall.groupBy({
-      by: ['businessId'],
-      where: {
-        result: 'blocked',
-        createdAt: { gte: thirtyDaysAgo },
-      },
-      _count: true,
-    })
-
-    // Map blocked counts to business IDs for easy lookup
-    const blockedMap = new Map(
-      blockedCounts.map((b) => [b.businessId, b._count])
-    )
+    // Wrapped in its own try-catch so a missing table/column doesn't crash the whole endpoint
+    let blockedMap = new Map<string, number>()
+    try {
+      const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
+      const blockedCounts = await db.screenedCall.groupBy({
+        by: ['businessId'],
+        where: {
+          result: 'blocked',
+          createdAt: { gte: thirtyDaysAgo },
+        },
+        _count: true,
+      })
+      blockedMap = new Map(blockedCounts.map((b) => [b.businessId, b._count]))
+    } catch (err) {
+      console.error('Admin: Failed to fetch blocked call counts (non-fatal):', err)
+    }
 
     // Attach blocked count to each business
     const businessesWithStats = businesses.map((biz) => ({

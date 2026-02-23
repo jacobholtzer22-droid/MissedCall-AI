@@ -5,98 +5,114 @@ import { Phone, MessageSquare, Calendar, TrendingUp, ArrowRight, ShieldCheck, He
 import Link from 'next/link'
 import { formatRelativeTime, formatPhoneNumber } from '@/lib/utils'
 
+const DEFAULT_STATS = {
+  totalConversations: 0,
+  todayConversations: 0,
+  activeConversations: 0,
+  weeklyAppointments: 0,
+  totalMessages: 0,
+  responseRate: 0,
+  recentConversations: [] as any[],
+  callsSaved: 0,
+  topServices: [] as { service: string; count: number }[],
+  commonQuestions: [] as string[],
+}
+
 async function getDashboardStats(businessId: string) {
   const now = new Date()
   const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate())
   const weekStart = new Date(todayStart)
   weekStart.setDate(weekStart.getDate() - 7)
-  const monthStart = new Date(todayStart)
-  monthStart.setDate(monthStart.getDate() - 30)
 
-  const [
-    totalConversations,
-    todayConversations,
-    activeConversations,
-    weeklyAppointments,
-    totalMessages,
-    recentConversations,
-    conversationsWithReplies,
-    allConversationsWithService,
-    recentInboundMessages
-  ] = await Promise.all([
-    db.conversation.count({ where: { businessId } }),
-    db.conversation.count({ where: { businessId, createdAt: { gte: todayStart } } }),
-    db.conversation.count({ where: { businessId, status: 'active' } }),
-    db.appointment.count({ where: { businessId, createdAt: { gte: weekStart } } }),
-    db.message.count({ where: { direction: 'outbound', conversation: { businessId } } }),
-    db.conversation.findMany({
-      where: { businessId },
-      take: 5,
-      orderBy: { lastMessageAt: 'desc' },
-      include: { messages: { take: 1, orderBy: { createdAt: 'desc' } } }
-    }),
-    // Calls Saved - conversations where customer actually replied
-    db.conversation.count({
-      where: { businessId, messages: { some: { direction: 'inbound' } } }
-    }),
-    // Top Services - get all conversations with serviceRequested
-    db.conversation.findMany({
-      where: { businessId, serviceRequested: { not: null } },
-      select: { serviceRequested: true },
-      orderBy: { createdAt: 'desc' },
-      take: 100
-    }),
-    // Common Questions - get recent inbound messages
-    db.message.findMany({
-      where: { 
-        direction: 'inbound',
-        conversation: { businessId }
-      },
-      select: { content: true },
-      orderBy: { createdAt: 'desc' },
-      take: 50
+  try {
+    const [
+      totalConversations,
+      todayConversations,
+      activeConversations,
+      weeklyAppointments,
+      totalMessages,
+      recentConversations,
+      conversationsWithReplies,
+      allConversationsWithService,
+      recentInboundMessages
+    ] = await Promise.all([
+      db.conversation.count({ where: { businessId } }),
+      db.conversation.count({ where: { businessId, createdAt: { gte: todayStart } } }),
+      db.conversation.count({ where: { businessId, status: 'active' } }),
+      db.appointment.count({ where: { businessId, createdAt: { gte: weekStart } } }),
+      db.message.count({ where: { direction: 'outbound', conversation: { businessId } } }),
+      db.conversation.findMany({
+        where: { businessId },
+        take: 5,
+        orderBy: { createdAt: 'desc' },
+        include: { messages: { take: 1, orderBy: { createdAt: 'desc' } } }
+      }),
+      // Calls Saved - conversations where customer actually replied
+      db.conversation.count({
+        where: { businessId, messages: { some: { direction: 'inbound' } } }
+      }),
+      // Top Services - get all conversations with serviceRequested
+      db.conversation.findMany({
+        where: { businessId, serviceRequested: { not: null } },
+        select: { serviceRequested: true },
+        orderBy: { createdAt: 'desc' },
+        take: 100
+      }),
+      // Common Questions - get recent inbound messages
+      db.message.findMany({
+        where: {
+          direction: 'inbound',
+          conversation: { businessId }
+        },
+        select: { content: true },
+        orderBy: { createdAt: 'desc' },
+        take: 50
+      })
+    ])
+
+    const responseRate = totalConversations > 0
+      ? Math.round((conversationsWithReplies / totalConversations) * 100)
+      : 0
+
+    // Calculate top requested services
+    const serviceCounts: Record<string, number> = {}
+    allConversationsWithService.forEach(conv => {
+      if (conv.serviceRequested) {
+        const service = conv.serviceRequested.toLowerCase().trim()
+        serviceCounts[service] = (serviceCounts[service] || 0) + 1
+      }
     })
-  ])
+    const topServices = Object.entries(serviceCounts)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5)
+      .map(([service, count]) => ({ service, count }))
 
-  const responseRate = totalConversations > 0 
-    ? Math.round((conversationsWithReplies / totalConversations) * 100) 
-    : 0
+    // Extract common questions from inbound messages
+    const questionKeywords = ['how', 'what', 'when', 'where', 'can', 'do you', 'is there', 'price', 'cost', 'available', 'open', 'hour', 'appointment', 'book', 'schedule']
+    const questions: string[] = []
+    recentInboundMessages.forEach(msg => {
+      const content = msg.content.toLowerCase()
+      if (questionKeywords.some(kw => content.includes(kw)) && msg.content.length < 200) {
+        questions.push(msg.content)
+      }
+    })
+    const commonQuestions = questions.slice(0, 5)
 
-  // Calculate top requested services
-  const serviceCounts: Record<string, number> = {}
-  allConversationsWithService.forEach(conv => {
-    if (conv.serviceRequested) {
-      const service = conv.serviceRequested.toLowerCase().trim()
-      serviceCounts[service] = (serviceCounts[service] || 0) + 1
+    return {
+      totalConversations,
+      todayConversations,
+      activeConversations,
+      weeklyAppointments,
+      totalMessages,
+      responseRate,
+      recentConversations,
+      callsSaved: conversationsWithReplies,
+      topServices,
+      commonQuestions
     }
-  })
-  const topServices = Object.entries(serviceCounts)
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 5)
-    .map(([service, count]) => ({ service, count }))
-
-  // Extract common questions from inbound messages
-  const questionKeywords = ['how', 'what', 'when', 'where', 'can', 'do you', 'is there', 'price', 'cost', 'available', 'open', 'hour', 'appointment', 'book', 'schedule']
-  const questions: string[] = []
-  recentInboundMessages.forEach(msg => {
-    const content = msg.content.toLowerCase()
-    if (questionKeywords.some(kw => content.includes(kw)) && msg.content.length < 200) {
-      questions.push(msg.content)
-    }
-  })
-  const commonQuestions = questions.slice(0, 5)
-
-  return { 
-    totalConversations, 
-    todayConversations, 
-    activeConversations, 
-    weeklyAppointments, 
-    totalMessages, 
-    responseRate, 
-    recentConversations,
-    callsSaved: conversationsWithReplies,
-    topServices,
-    commonQuestions
+  } catch (error) {
+    console.error('Failed to load dashboard stats:', error)
+    return DEFAULT_STATS
   }
 }
 
@@ -218,7 +234,7 @@ export default async function DashboardPage() {
                     </div>
                   </div>
                   <div className="text-right">
-                    <p className="text-sm text-gray-500">{formatRelativeTime(conversation.lastMessageAt)}</p>
+                    <p className="text-sm text-gray-500">{formatRelativeTime(conversation.lastMessageAt ?? conversation.createdAt)}</p>
                     <span className={`text-xs px-2 py-1 rounded-full ${conversation.status === 'active' ? 'bg-green-100 text-green-700' : conversation.status === 'appointment_booked' ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-600'}`}>
                       {conversation.status === 'active' ? 'Active' : conversation.status === 'appointment_booked' ? 'Booked' : conversation.status === 'completed' ? 'Completed' : 'No response'}
                     </span>

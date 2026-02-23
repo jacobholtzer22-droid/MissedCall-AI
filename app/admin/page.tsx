@@ -71,10 +71,16 @@ export default function AdminDashboard() {
         router.push('/dashboard')
         return
       }
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        setMessage(`❌ Failed to load clients: ${err.error || `Server error (${res.status})`}`)
+        return
+      }
       const data = await res.json()
       setBusinesses(data.businesses || [])
     } catch (err) {
       console.error('Failed to fetch businesses:', err)
+      setMessage('❌ Network error loading clients. Please refresh.')
     } finally {
       setLoading(false)
     }
@@ -251,6 +257,13 @@ export default function AdminDashboard() {
       </div>
 
       <div className="max-w-7xl mx-auto px-6 py-8">
+        {/* Global error/info message */}
+        {message && !editMode && (
+          <div className="mb-6 px-4 py-3 rounded-lg bg-gray-800 border border-gray-700 text-sm font-medium">
+            {message}
+          </div>
+        )}
+
         {/* Stats Row */}
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4 mb-8">
           <StatCard label="Total Clients" value={businesses.length} />
