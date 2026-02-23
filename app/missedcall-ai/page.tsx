@@ -273,11 +273,13 @@ export default function LandingPage() {
                 <span className="text-xs text-gray-500 block">A product by Align & Acquire</span>
               </div>
             </div>
-            <div className="flex space-x-8 mb-4 md:mb-0">
+            <div className="flex flex-wrap justify-center gap-x-8 gap-y-2 mb-4 md:mb-0">
               <a href="#how-it-works" className="text-gray-500 hover:text-white transition">How It Works</a>
               <a href="#roi-calculator" className="text-gray-500 hover:text-white transition">ROI Calculator</a>
               <a href="#faq" className="text-gray-500 hover:text-white transition">FAQ</a>
               <a href="#book-demo" className="text-gray-500 hover:text-white transition">Make a Specialized Plan</a>
+              <Link href="/privacy" className="text-gray-500 hover:text-white transition">Privacy Policy</Link>
+              <Link href="/terms" className="text-gray-500 hover:text-white transition">Terms & Conditions</Link>
             </div>
             <p className="text-gray-500">© {new Date().getFullYear()} Align & Acquire. All rights reserved.</p>
           </div>

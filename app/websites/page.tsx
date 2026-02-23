@@ -330,10 +330,12 @@ export default function WebsitesPage() {
               <Logo size="xs" />
               <span className="font-bold">Align & Acquire</span>
             </div>
-            <div className="flex space-x-8 mb-4 md:mb-0">
+            <div className="flex flex-wrap justify-center gap-x-8 gap-y-2 mb-4 md:mb-0">
               <Link href="/" className="text-gray-500 hover:text-white transition">Home</Link>
               <Link href="/missedcall-ai" className="text-gray-500 hover:text-white transition">MissedCall AI</Link>
               <Link href="/websites" className="text-gray-500 hover:text-white transition">Websites</Link>
+              <Link href="/privacy" className="text-gray-500 hover:text-white transition">Privacy Policy</Link>
+              <Link href="/terms" className="text-gray-500 hover:text-white transition">Terms & Conditions</Link>
             </div>
             <p className="text-gray-500">© {new Date().getFullYear()} Align & Acquire. All rights reserved.</p>
           </div>

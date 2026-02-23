@@ -90,7 +90,7 @@ ngrok http 3000
 
 Then configure your Telnyx phone number's webhooks:
 - **Voice webhook**: `https://your-ngrok-url.ngrok.io/api/webhooks/voice`
-- **SMS webhook**: `https://your-ngrok-url.ngrok.io/api/webhooks/twilio/sms`
+- **SMS webhook**: `https://your-ngrok-url.ngrok.io/api/webhooks/sms`
 
 ## Project Structure
 
@@ -104,8 +104,7 @@ missedcall-ai/
 │   │   ├── appointments/    # View appointments
 │   │   └── settings/        # Business settings
 │   ├── api/
-│   │   └── webhooks/
-│   │       └── twilio/      # Telnyx webhook handlers (SMS + voice)
+│   │   └── webhooks/        # Telnyx webhook handlers (voice, sms, etc.)
 │   ├── layout.tsx           # Root layout
 │   └── page.tsx             # Landing page
 ├── lib/
@@ -121,11 +120,11 @@ missedcall-ai/
 ### `prisma/schema.prisma`
 Defines all database tables: businesses, users, conversations, messages, appointments.
 
-### `app/api/webhooks/twilio/voice/route.ts`
-Receives incoming call notifications from Telnyx. Detects missed calls and triggers the initial SMS.
+### `app/api/webhooks/voice/route.ts`
+Receives incoming call notifications from Telnyx (Call Control API). Handles answer, speak, gather, transfer; detects missed calls and triggers the initial SMS.
 
-### `app/api/webhooks/twilio/sms/route.ts`
-Receives incoming text messages. Sends them to Claude AI for a response and sends the reply back.
+### `app/api/webhooks/sms/route.ts`
+Receives incoming Telnyx SMS events (`message.received`, `message.finalized`). Sends messages to Claude AI and replies via Telnyx.
 
 ### `middleware.ts`
 Protects dashboard routes - only logged-in users can access them.
