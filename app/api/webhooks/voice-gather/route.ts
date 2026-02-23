@@ -64,7 +64,7 @@ export async function POST(request: NextRequest) {
         const dialStatusUrl = `${request.nextUrl.origin}/api/webhooks/voice-dial-status?businessId=${business.id}&callerPhone=${encodeURIComponent(callerPhone)}&callSid=${encodeURIComponent(parentCallSid)}`
         return xmlResponse(
           `<Response>
-            <Dial callerId="${callerPhone}" timeout="15" action="${request.nextUrl.origin}/api/webhooks/voice-after-dial" method="POST">
+            <Dial callerId="${callerPhone}" timeout="15" action="${request.nextUrl.origin}/api/webhooks/voice-after-dial?businessId=${business.id}" method="POST">
               <Number statusCallback="${dialStatusUrl}" statusCallbackMethod="POST" statusCallbackEvent="completed">${business.forwardingNumber}</Number>
             </Dial>
           </Response>`

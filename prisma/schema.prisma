@@ -54,6 +54,7 @@ model Business {
   spamFilterEnabled     Boolean   @default(false)       // Premium feature - spam call filtering
   callScreenerEnabled   Boolean   @default(false)
   callScreenerMessage   String?
+  missedCallVoiceMessage String?  @default("We're sorry we can't get to the phone right now. You should receive a text message shortly.")
   missedCallAiEnabled   Boolean   @default(true)        // Send AI SMS after missed call
 
   // Timestamps

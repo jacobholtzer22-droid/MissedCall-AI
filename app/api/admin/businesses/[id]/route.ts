@@ -35,6 +35,7 @@ export async function PATCH(
       'monthlyFee',
       'callScreenerEnabled',
       'callScreenerMessage',
+      'missedCallVoiceMessage',
       'missedCallAiEnabled',
     ]
 
