@@ -62,9 +62,11 @@ export async function POST(request: NextRequest) {
       if (business.forwardingNumber && business.telnyxPhoneNumber) {
         const parentCallSid = (request.nextUrl.searchParams.get('callSid') ?? body.data?.payload?.call_control_id) as string
         const dialStatusUrl = `${request.nextUrl.origin}/api/webhooks/voice-dial-status?businessId=${business.id}&callerPhone=${encodeURIComponent(callerPhone)}&callSid=${encodeURIComponent(parentCallSid)}`
+        const actionUrl = `${request.nextUrl.origin}/api/webhooks/voice-after-dial?businessId=${business.id}`
+        console.log('Dial action URL:', actionUrl)
         return xmlResponse(
           `<Response>
-            <Dial callerId="${callerPhone}" timeout="15" action="${request.nextUrl.origin}/api/webhooks/voice-after-dial?businessId=${business.id}" method="POST">
+            <Dial callerId="${callerPhone}" timeout="15" action="${actionUrl}" method="POST">
               <Number statusCallback="${dialStatusUrl}" statusCallbackMethod="POST" statusCallbackEvent="completed">${business.forwardingNumber}</Number>
             </Dial>
           </Response>`

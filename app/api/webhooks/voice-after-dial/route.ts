@@ -19,6 +19,7 @@ const DEFAULT_VOICE_MESSAGE =
   "We're sorry we can't get to the phone right now. You should receive a text message shortly."
 
 export async function POST(request: NextRequest) {
+  console.log('voice-after-dial URL:', request.nextUrl.toString())
   const body = await request.json()
   const businessId = request.nextUrl.searchParams.get('businessId')
   const dialCallStatus = (body.data?.payload?.state as string) ?? ''
@@ -38,6 +39,7 @@ export async function POST(request: NextRequest) {
       where: { id: businessId },
       select: { missedCallVoiceMessage: true },
     })
+    console.log('Business lookup:', { businessId, found: !!business, message: business?.missedCallVoiceMessage })
     const custom = business?.missedCallVoiceMessage?.trim()
     if (custom) sayMessage = custom
   }
