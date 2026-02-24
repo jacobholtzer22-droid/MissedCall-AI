@@ -2,6 +2,7 @@ import Link from 'next/link'
 import Image from 'next/image'
 import { ArrowRight, ExternalLink, Globe, Code, Smartphone, Palette, ShoppingCart, Calendar } from 'lucide-react'
 import { Logo } from '@/app/components/Logo'
+import WebsiteQuoteForm from '@/app/components/WebsiteQuoteForm'
 
 type Project = {
   title: string
@@ -238,83 +239,7 @@ export default function WebsitesPage() {
                 <p className="text-blue-100 text-lg">Tell us about your business and we'll put together a custom quote.</p>
               </div>
               <div className="bg-gray-900/80 backdrop-blur-sm rounded-2xl p-8 border border-white/10">
-                <form action="/api/book-demo" method="POST" className="space-y-4">
-                  <div className="grid md:grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-300 mb-1">Your Name</label>
-                      <input
-                        type="text"
-                        name="name"
-                        required
-                        placeholder="John Smith"
-                        className="w-full px-4 py-3 bg-gray-800 border border-white/10 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-300 mb-1">Business Name</label>
-                      <input
-                        type="text"
-                        name="business"
-                        required
-                        placeholder="Smith's Auto Shop"
-                        className="w-full px-4 py-3 bg-gray-800 border border-white/10 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      />
-                    </div>
-                  </div>
-                  <div className="grid md:grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-300 mb-1">Email</label>
-                      <input
-                        type="email"
-                        name="email"
-                        required
-                        placeholder="john@email.com"
-                        className="w-full px-4 py-3 bg-gray-800 border border-white/10 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-300 mb-1">Phone</label>
-                      <input
-                        type="tel"
-                        name="phone"
-                        required
-                        placeholder="(555) 123-4567"
-                        className="w-full px-4 py-3 bg-gray-800 border border-white/10 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      />
-                    </div>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-300 mb-1">What do you need?</label>
-                    <select
-                      name="businessType"
-                      required
-                      className="w-full px-4 py-3 bg-gray-800 border border-white/10 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    >
-                      <option value="">Select...</option>
-                      <option value="new-website">New Website</option>
-                      <option value="redesign">Website Redesign</option>
-                      <option value="ecommerce">E-Commerce Store</option>
-                      <option value="booking">Booking System</option>
-                      <option value="web-app">Web Application</option>
-                      <option value="other">Something Else</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-300 mb-1">Tell us more (optional)</label>
-                    <textarea
-                      name="message"
-                      rows={3}
-                      placeholder="Describe your project..."
-                      className="w-full px-4 py-3 bg-gray-800 border border-white/10 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
-                  </div>
-                  <button
-                    type="submit"
-                    className="w-full bg-white text-gray-900 py-4 rounded-lg text-lg font-semibold hover:bg-gray-200 transition"
-                  >
-                    Get a Free Quote
-                  </button>
-                </form>
+                <WebsiteQuoteForm />
                 <p className="text-center text-sm text-gray-400 mt-4">We'll respond within 24 hours with a custom quote.</p>
               </div>
             </div>
