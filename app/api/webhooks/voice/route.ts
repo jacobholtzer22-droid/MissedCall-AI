@@ -143,11 +143,12 @@ export async function POST(request: NextRequest) {
         })
 
         if (business.forwardingNumber) {
-          // Mark conversation as waiting for the forwarded call so we can detect
-          // later whether a human answered or voicemail picked up.
+          // Mark conversation as waiting for the forwarded call and persist the
+          // A-leg call_control_id so the hangup handler can speak back to the caller
+          // even if Telnyx doesn't return client_state on the B-leg hangup event.
           await db.conversation.updateMany({
             where: { callSid: callControlId },
-            data: { status: 'forwarding' },
+            data: { status: 'forwarding', aLegCallControlId: callControlId },
           })
 
           // Transfer with AMD so Telnyx fires call.machine.detection.ended.
@@ -249,34 +250,72 @@ export async function POST(request: NextRequest) {
     // HANGUP on a forwarded B-leg (no-answer / timeout)
     // =============================================
     if (eventType === 'call.hangup') {
-      console.log('📴 Hangup handler:', { callControlId: payload?.call_control_id, from, to, direction: payload?.direction, hangupCause: payload?.hangup_cause, hangupSource: payload?.hangup_source })
+      const hangupCause = payload?.hangup_cause as string | undefined
+      const hangupSource = payload?.hangup_source as string | undefined
+      console.log('📴 Hangup handler ENTRY:', {
+        callControlId: payload?.call_control_id,
+        from,
+        to,
+        direction: payload?.direction,
+        hangupCause,
+        hangupSource,
+        hasClientState: !!rawClientState,
+        stateFromClientState: JSON.stringify(state),
+      })
+
       const { businessId: hupBizId, callerPhone: hupCaller, forwarding: hupFwd, aLegCallControlId: hupALeg } = state
 
+      console.log('📴 Hangup decoded state:', { hupBizId, hupCaller, hupFwd, hupALeg })
+
+      // Primary path: client_state carried the forwarding flag
+      let conv: Awaited<ReturnType<typeof db.conversation.findFirst>> = null
+
       if (hupFwd && hupBizId && hupCaller) {
-        // If status is still 'forwarding', no human answered — send SMS and speak to caller
-        const conv = await db.conversation.findFirst({
+        console.log('📴 Hangup: client_state indicates forwarded B-leg, looking up conversation…')
+        conv = await db.conversation.findFirst({
           where: { businessId: hupBizId, callerPhone: hupCaller, status: 'forwarding' },
         })
+      }
 
+      // Fallback: client_state was missing/empty — search for any conversation in
+      // 'forwarding' status whose aLegCallControlId is stored in the DB.
+      if (!conv) {
+        console.log('📴 Hangup: no conv from client_state path, trying DB fallback lookup…')
+        conv = await db.conversation.findFirst({
+          where: { status: 'forwarding', aLegCallControlId: { not: null } },
+          orderBy: { updatedAt: 'desc' },
+        })
         if (conv) {
-          console.log('📵 Forwarded call timed out, notifying caller on A-leg:', hupCaller)
-          await db.conversation.update({ where: { id: conv.id }, data: { status: 'active' } })
-          const bizForHup = await db.business.findUnique({ where: { id: hupBizId } })
-          if (bizForHup) {
-            const targetLeg = hupALeg || callControlId
-            await sendMissedCallSMS(telnyx, bizForHup, targetLeg, hupCaller)
-            if (hupALeg) {
-              try {
-                const hupMsg = bizForHup.missedCallVoiceMessage || DEFAULT_VOICE_MESSAGE
-                console.log('🔊 About to speak missed call message on A-leg:', { callControlId: hupALeg, message: hupMsg })
-                await telnyx.calls.actions.speak(hupALeg, {
-                  payload: hupMsg,
-                  voice: VOICE,
-                })
-              } catch {}
-            }
-          }
+          console.log('📴 Hangup: DB fallback found conversation:', conv.id, 'aLeg:', conv.aLegCallControlId)
         }
+      }
+
+      if (conv) {
+        // Resolve the A-leg call_control_id: prefer DB record, then client_state, then current callControlId
+        const aLeg = conv.aLegCallControlId || hupALeg || callControlId
+        const callerPhone = hupCaller || conv.callerPhone
+
+        console.log('📵 Forwarded call ended (cause: %s), notifying caller on A-leg: %s (aLeg: %s)', hangupCause, callerPhone, aLeg)
+
+        await db.conversation.update({ where: { id: conv.id }, data: { status: 'active' } })
+        const bizForHup = await db.business.findUnique({ where: { id: conv.businessId } })
+        if (bizForHup) {
+          await sendMissedCallSMS(telnyx, bizForHup, aLeg, callerPhone)
+          try {
+            const hupMsg = bizForHup.missedCallVoiceMessage || DEFAULT_VOICE_MESSAGE
+            console.log('🔊 About to speak missed call message on A-leg:', { callControlId: aLeg, message: hupMsg })
+            await telnyx.calls.actions.speak(aLeg, {
+              payload: hupMsg,
+              voice: VOICE,
+            })
+          } catch (speakErr) {
+            console.error('❌ Failed to speak on A-leg:', speakErr)
+          }
+        } else {
+          console.log('📴 Hangup: no business found for conv:', conv.id)
+        }
+      } else {
+        console.log('📴 Hangup: no forwarding conversation found — this is a normal hangup, skipping missed-call branch.')
       }
 
       return NextResponse.json({}, { status: 200 })
