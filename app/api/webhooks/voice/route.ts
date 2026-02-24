@@ -36,6 +36,7 @@ export async function POST(request: NextRequest) {
     const digits = payload?.digits as string | undefined
     const rawClientState = payload?.client_state as string | undefined
 
+    console.log('📨 Event received:', eventType, 'callControlId:', payload?.call_control_id, 'legId:', payload?.leg_id)
     console.log('📞 Voice webhook:', { eventType, callControlId, from, to, direction })
 
     const telnyx = new Telnyx({ apiKey: process.env.TELNYX_API_KEY! })
@@ -98,8 +99,10 @@ export async function POST(request: NextRequest) {
       } else {
         // Normal missed call: speak message and send SMS
         await sendMissedCallSMS(telnyx, business, callControlId, from)
+        const normalMsg = business.missedCallVoiceMessage || DEFAULT_VOICE_MESSAGE
+        console.log('🔊 About to speak missed call message on A-leg:', { callControlId, message: normalMsg })
         await telnyx.calls.actions.speak(callControlId, {
-          payload: business.missedCallVoiceMessage || DEFAULT_VOICE_MESSAGE,
+          payload: normalMsg,
           voice: VOICE,
         })
       }
@@ -161,8 +164,10 @@ export async function POST(request: NextRequest) {
         } else {
           // No forwarding number — send SMS and say goodbye
           await sendMissedCallSMS(telnyx, business, callControlId, callerPhone)
+          const noFwdMsg = business.missedCallVoiceMessage || DEFAULT_VOICE_MESSAGE
+          console.log('🔊 About to speak missed call message on A-leg:', { callControlId, message: noFwdMsg })
           await telnyx.calls.actions.speak(callControlId, {
-            payload: business.missedCallVoiceMessage || DEFAULT_VOICE_MESSAGE,
+            payload: noFwdMsg,
             voice: VOICE,
           })
         }
@@ -195,6 +200,8 @@ export async function POST(request: NextRequest) {
         const result = payload?.result as string // 'human' | 'machine' (standard detect mode)
         console.log('🤖 AMD result:', result, 'for', amdCaller)
 
+        console.log('🤖 AMD full payload:', JSON.stringify(payload))
+
         if (result === 'human') {
           await db.conversation.updateMany({
             where: { businessId: amdBizId, callerPhone: amdCaller, status: 'forwarding' },
@@ -221,8 +228,10 @@ export async function POST(request: NextRequest) {
             // Play the missed-call voice message on the A-leg (original caller)
             if (aLegCallControlId) {
               try {
+                const amdMsg = bizForAmd.missedCallVoiceMessage || DEFAULT_VOICE_MESSAGE
+                console.log('🔊 About to speak missed call message on A-leg:', { callControlId: aLegCallControlId, message: amdMsg })
                 await telnyx.calls.actions.speak(aLegCallControlId, {
-                  payload: bizForAmd.missedCallVoiceMessage || DEFAULT_VOICE_MESSAGE,
+                  payload: amdMsg,
                   voice: VOICE,
                 })
               } catch {}
@@ -240,6 +249,7 @@ export async function POST(request: NextRequest) {
     // HANGUP on a forwarded B-leg (no-answer / timeout)
     // =============================================
     if (eventType === 'call.hangup') {
+      console.log('📴 Hangup handler:', { callControlId: payload?.call_control_id, from, to, direction: payload?.direction, hangupCause: payload?.hangup_cause, hangupSource: payload?.hangup_source })
       const { businessId: hupBizId, callerPhone: hupCaller, forwarding: hupFwd, aLegCallControlId: hupALeg } = state
 
       if (hupFwd && hupBizId && hupCaller) {
@@ -257,8 +267,10 @@ export async function POST(request: NextRequest) {
             await sendMissedCallSMS(telnyx, bizForHup, targetLeg, hupCaller)
             if (hupALeg) {
               try {
+                const hupMsg = bizForHup.missedCallVoiceMessage || DEFAULT_VOICE_MESSAGE
+                console.log('🔊 About to speak missed call message on A-leg:', { callControlId: hupALeg, message: hupMsg })
                 await telnyx.calls.actions.speak(hupALeg, {
-                  payload: bizForHup.missedCallVoiceMessage || DEFAULT_VOICE_MESSAGE,
+                  payload: hupMsg,
                   voice: VOICE,
                 })
               } catch {}
@@ -274,6 +286,7 @@ export async function POST(request: NextRequest) {
     // BRIDGING FAILED — forwarding number didn't answer (A-leg fallback)
     // =============================================
     if (eventType === 'call.bridging.failed') {
+      console.log('🚫 Bridge failed:', JSON.stringify(payload))
       const { businessId: bfBizId, callerPhone: bfCaller } = state
       if (bfBizId && bfCaller) {
         const conv = await db.conversation.findFirst({
@@ -284,8 +297,10 @@ export async function POST(request: NextRequest) {
           const biz = await db.business.findUnique({ where: { id: bfBizId } })
           if (biz) {
             await sendMissedCallSMS(telnyx, biz, callControlId, bfCaller)
+            const bfMsg = biz.missedCallVoiceMessage || DEFAULT_VOICE_MESSAGE
+            console.log('🔊 About to speak missed call message on A-leg:', { callControlId, message: bfMsg })
             await telnyx.calls.actions.speak(callControlId, {
-              payload: biz.missedCallVoiceMessage || DEFAULT_VOICE_MESSAGE,
+              payload: bfMsg,
               voice: VOICE,
             })
           }
