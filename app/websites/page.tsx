@@ -23,7 +23,7 @@ const projects: Project[] = [
     description: 'Educational platform that helps users turn passive content into durable memory. Full authentication system with user accounts.',
     image1: '/images/portfolio/learning-logs-1.png',
     image2: '/images/portfolio/learning-logs-2.png',
-    url: 'https://learning-log-app-kimu.vercel.app/',
+    url: 'https://learning-log-app.vercel.app/',
     features: ['User Authentication', 'Dashboard', 'Progress Tracking', 'Responsive Design'],
     imagesSeparate: true,
     imageCompact: true,
