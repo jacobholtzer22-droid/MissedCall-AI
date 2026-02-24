@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import { MessageSquare, Globe, ArrowRight, Code } from 'lucide-react'
 import { Logo } from './components/Logo'
+import ContactForm from './components/ContactForm'
 
 export default function HomePage() {
   return (
@@ -65,6 +66,26 @@ export default function HomePage() {
                 </div>
               </div>
             </Link>
+          </div>
+        </div>
+      </section>
+
+      {/* Contact Form */}
+      <section className="relative z-10 py-20">
+        <div className="container mx-auto px-6">
+          <div className="max-w-2xl mx-auto">
+            <div className="text-center mb-10">
+              <h2 className="text-4xl font-bold mb-3">Get in Touch</h2>
+              <p className="text-gray-400 text-lg">
+                Have a question or ready to get started? Drop us a message.
+              </p>
+            </div>
+            <div className="relative">
+              <div className="absolute inset-0 bg-gradient-to-r from-blue-600/20 to-purple-600/20 rounded-2xl blur-2xl"></div>
+              <div className="relative">
+                <ContactForm />
+              </div>
+            </div>
           </div>
         </div>
       </section>
