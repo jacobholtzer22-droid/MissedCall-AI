@@ -192,31 +192,33 @@ export async function POST(request: NextRequest) {
       const { businessId: amdBizId, callerPhone: amdCaller, forwarding, aLegCallControlId } = state
 
       if (forwarding && amdBizId && amdCaller) {
-        const result = payload?.result as string // 'human' | 'machine' | 'not_sure'
+        const result = payload?.result as string // 'human' | 'machine' (standard detect mode)
         console.log('🤖 AMD result:', result, 'for', amdCaller)
 
         if (result === 'human') {
-          // Real person answered — mark handled so hangup handler skips it
           await db.conversation.updateMany({
             where: { businessId: amdBizId, callerPhone: amdCaller, status: 'forwarding' },
             data: { status: 'active' },
           })
           console.log('✅ Human answered forwarded call, call proceeding')
         } else {
-          // Voicemail — hang up B-leg before caller hears it, then notify caller via A-leg
-          console.log('📵 Voicemail detected — hanging up B-leg, notifying caller on A-leg')
-          // Mark handled so call.hangup won't double-send
+          // Machine / voicemail detected (owner declined or didn't answer in time)
+          console.log('📵 Machine/voicemail detected — hanging up B-leg, notifying caller on A-leg')
+
+          // Mark as handled BEFORE hanging up so the resulting call.hangup event won't double-send
           await db.conversation.updateMany({
             where: { businessId: amdBizId, callerPhone: amdCaller, status: 'forwarding' },
             data: { status: 'active' },
           })
+
+          // Hang up the B-leg IMMEDIATELY to cut off voicemail audio
+          try { await telnyx.calls.actions.hangup(callControlId, {}) } catch {}
+
           const bizForAmd = await db.business.findUnique({ where: { id: amdBizId } })
           if (bizForAmd) {
             const targetLeg = aLegCallControlId || callControlId
-            await sendMissedCallSMS(telnyx, bizForAmd, targetLeg, amdCaller)
-            // Hang up the B-leg (voicemail)
-            try { await telnyx.calls.actions.hangup(callControlId, {}) } catch {}
-            // Speak to the caller still on the A-leg
+
+            // Play the missed-call voice message on the A-leg (original caller)
             if (aLegCallControlId) {
               try {
                 await telnyx.calls.actions.speak(aLegCallControlId, {
@@ -225,6 +227,8 @@ export async function POST(request: NextRequest) {
                 })
               } catch {}
             }
+
+            await sendMissedCallSMS(telnyx, bizForAmd, targetLeg, amdCaller)
           }
         }
       }
@@ -246,6 +250,7 @@ export async function POST(request: NextRequest) {
 
         if (conv) {
           console.log('📵 Forwarded call timed out, notifying caller on A-leg:', hupCaller)
+          await db.conversation.update({ where: { id: conv.id }, data: { status: 'active' } })
           const bizForHup = await db.business.findUnique({ where: { id: hupBizId } })
           if (bizForHup) {
             const targetLeg = hupALeg || callControlId
@@ -275,6 +280,7 @@ export async function POST(request: NextRequest) {
           where: { businessId: bfBizId, callerPhone: bfCaller, status: 'forwarding' },
         })
         if (conv) {
+          await db.conversation.update({ where: { id: conv.id }, data: { status: 'active' } })
           const biz = await db.business.findUnique({ where: { id: bfBizId } })
           if (biz) {
             await sendMissedCallSMS(telnyx, biz, callControlId, bfCaller)
