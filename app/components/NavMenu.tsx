@@ -2,12 +2,13 @@
 
 import Link from 'next/link'
 import { useState } from 'react'
-import { Menu, X, Home, MessageSquare, Globe, Calculator, Calendar, ImageIcon } from 'lucide-react'
+import { Menu, X, Home, MessageSquare, Globe, Calculator, Calendar, ImageIcon, DollarSign } from 'lucide-react'
 
 const navItems = [
   { href: '/', label: 'Home', icon: Home },
   { href: '/missedcall-ai', label: 'MissedCall AI', icon: MessageSquare },
   { href: '/websites', label: 'Websites', icon: Globe },
+  { href: '/pricing', label: 'Pricing & Services', icon: DollarSign },
   { href: '/missedcall-ai#roi-calculator', label: 'ROI Calculator', icon: Calculator },
   { href: '/websites#portfolio', label: 'Our Work', icon: ImageIcon },
   { href: '/missedcall-ai#book-demo', label: 'Book a Meeting', icon: Calendar },

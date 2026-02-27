@@ -15,6 +15,7 @@ export function NavBar() {
             <Link href="/" className="text-gray-400 hover:text-white transition hidden sm:inline">Home</Link>
             <Link href="/missedcall-ai" className="text-gray-400 hover:text-white transition hidden sm:inline">MissedCall AI</Link>
             <Link href="/websites" className="text-gray-400 hover:text-white transition hidden sm:inline">Websites</Link>
+            <Link href="/pricing" className="text-gray-400 hover:text-white transition hidden sm:inline">Pricing & Services</Link>
           </div>
           <div className="relative flex items-center space-x-4">
             <NavMenu />

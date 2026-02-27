@@ -203,6 +203,7 @@ export default function HomePage() {
             <div className="flex flex-wrap justify-center gap-x-8 gap-y-2 mb-4 md:mb-0">
               <Link href="/missedcall-ai" className="text-gray-500 hover:text-white transition">MissedCall AI</Link>
               <Link href="/websites" className="text-gray-500 hover:text-white transition">Websites</Link>
+              <Link href="/pricing" className="text-gray-500 hover:text-white transition">Pricing</Link>
               <Link href="/privacy" className="text-gray-500 hover:text-white transition">Privacy Policy</Link>
               <Link href="/terms" className="text-gray-500 hover:text-white transition">Terms & Conditions</Link>
             </div>
