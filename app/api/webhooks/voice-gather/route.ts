@@ -45,8 +45,6 @@ export async function POST(request: NextRequest) {
     // =============================================
     // CALLER PRESSED 1 → SEND MISSED-CALL SMS
     // =============================================
-    // No bridge/transfer: the call only reaches Telnyx because the owner's
-    // carrier already forwarded it, so ringing the owner again would loop.
     if (digits === '1') {
       console.log('✅ Caller passed IVR screening:', callerPhone)
 
