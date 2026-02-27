@@ -5,7 +5,12 @@
 // Telnyx sends JSON; we respond 200 and make separate API calls
 // to control the call (answer, speak, gather, transfer, hangup).
 //
-// Event flow — normal missed call (no screener):
+// Event flow — with forwarding number (no screener):
+//   call.initiated  → answer → transfer to forwardingNumber (AMD enabled, 25s timeout)
+//   Owner answers (AMD=human) → calls bridged, no SMS
+//   Owner doesn't answer      → call.hangup / AMD=machine → speak "we'll text you" + SMS
+//
+// Event flow — no forwarding number (no screener):
 //   call.initiated  → answer → speak "we'll text you" → sendMissedCallSMS
 //   call.speak.ended → hangup
 //
@@ -96,8 +101,25 @@ export async function POST(request: NextRequest) {
           timeout_millis: 8000,
           valid_digits: '0123456789',
         })
+      } else if (business.forwardingNumber) {
+        // Try to reach the business owner first before falling back to missed-call SMS
+        await db.conversation.upsert({
+          where: { callSid: callControlId },
+          create: { businessId: business.id, callerPhone: from, status: 'forwarding', callSid: callControlId, aLegCallControlId: callControlId },
+          update: { callerPhone: from, status: 'forwarding', aLegCallControlId: callControlId },
+        })
+
+        const fwdState = toB64({ businessId: business.id, callerPhone: from, forwarding: true, aLegCallControlId: callControlId })
+        console.log('📞 Transferring to owner:', business.forwardingNumber, 'caller:', from)
+        await telnyx.calls.actions.transfer(callControlId, {
+          to: business.forwardingNumber,
+          from: from,
+          answering_machine_detection: 'detect',
+          client_state: fwdState,
+          timeout_secs: 25,
+        } as any)
       } else {
-        // Normal missed call: speak message and send SMS
+        // No forwarding number configured — play missed-call message and send SMS immediately
         await sendMissedCallSMS(telnyx, business, callControlId, from)
         const normalMsg = business.missedCallVoiceMessage || DEFAULT_VOICE_MESSAGE
         console.log('🔊 About to speak missed call message on A-leg:', { callControlId, message: normalMsg })
