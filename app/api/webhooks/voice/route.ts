@@ -7,8 +7,9 @@
 //
 // Event flow — with forwarding number (no screener):
 //   call.initiated  → answer → transfer to forwardingNumber (AMD enabled, 25s timeout)
-//   Owner answers (AMD=human) → calls bridged, no SMS
-//   Owner doesn't answer      → call.hangup / AMD=machine → speak "we'll text you" + SMS
+//   call.answered (B-leg)     → mark callConnected=true
+//   AMD=human                 → calls bridged, no SMS
+//   AMD=machine / call.hangup (B-leg, not connected) → speak "we'll text you" + SMS
 //
 // Event flow — no forwarding number (no screener):
 //   call.initiated  → answer → speak "we'll text you" → sendMissedCallSMS
@@ -16,9 +17,10 @@
 //
 // Event flow — IVR screener:
 //   call.initiated  → answer → gatherUsingSpeak "press 1"
-//   call.gather.ended (digit=1)  → transfer to forwardingNumber (or SMS if none)
-//   call.gather.ended (other)    → speak "goodbye"
-//   call.speak.ended             → hangup
+//   call.gather.ended (digit=1) + forwardingNumber → transfer to owner
+//   call.gather.ended (digit=1) + no fwd           → SMS immediately
+//   call.gather.ended (other)                      → speak "goodbye"
+//   call.speak.ended                               → hangup
 
 import { NextRequest, NextResponse } from 'next/server'
 import type { Business } from '@prisma/client'
@@ -46,8 +48,12 @@ export async function POST(request: NextRequest) {
 
     const telnyx = new Telnyx({ apiKey: process.env.TELNYX_API_KEY! })
 
-    // Decode client_state (base64 JSON used to carry data across events)
-    let state: { businessId?: string; callerPhone?: string; forwarding?: boolean; aLegCallControlId?: string } = {}
+    let state: {
+      businessId?: string
+      callerPhone?: string
+      forwarding?: boolean
+      aLegCallControlId?: string
+    } = {}
     if (rawClientState) {
       try {
         state = JSON.parse(Buffer.from(rawClientState, 'base64').toString())
@@ -68,7 +74,6 @@ export async function POST(request: NextRequest) {
 
       console.log('✅ Matched business:', business.name)
 
-      // Spam filter
       if (business.spamFilterEnabled && isSpamCall(from)) {
         console.log('🚫 Spam call blocked:', from)
         await db.screenedCall.create({
@@ -78,13 +83,10 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({}, { status: 200 })
       }
 
-      // Encode businessId and callerPhone into client_state for subsequent events
       const clientState = toB64({ businessId: business.id, callerPhone: from })
-
       await telnyx.calls.actions.answer(callControlId, { client_state: clientState } as any)
 
       if (business.callScreenerEnabled) {
-        // IVR screener: gather a digit
         await db.conversation.upsert({
           where: { callSid: callControlId },
           create: { businessId: business.id, callerPhone: from, status: 'screening', callSid: callControlId },
@@ -102,14 +104,25 @@ export async function POST(request: NextRequest) {
           valid_digits: '0123456789',
         })
       } else if (business.forwardingNumber) {
-        // Try to reach the business owner first before falling back to missed-call SMS
+        // Transfer to the owner's phone (B-leg). AMD will distinguish human vs voicemail.
         await db.conversation.upsert({
           where: { callSid: callControlId },
-          create: { businessId: business.id, callerPhone: from, status: 'forwarding', callSid: callControlId, aLegCallControlId: callControlId },
+          create: {
+            businessId: business.id,
+            callerPhone: from,
+            status: 'forwarding',
+            callSid: callControlId,
+            aLegCallControlId: callControlId,
+          },
           update: { callerPhone: from, status: 'forwarding', aLegCallControlId: callControlId },
         })
 
-        const fwdState = toB64({ businessId: business.id, callerPhone: from, forwarding: true, aLegCallControlId: callControlId })
+        const fwdState = toB64({
+          businessId: business.id,
+          callerPhone: from,
+          forwarding: true,
+          aLegCallControlId: callControlId,
+        })
         console.log('📞 Transferring to owner:', business.forwardingNumber, 'caller:', from)
         await telnyx.calls.actions.transfer(callControlId, {
           to: business.forwardingNumber,
@@ -119,7 +132,7 @@ export async function POST(request: NextRequest) {
           timeout_secs: 25,
         } as any)
       } else {
-        // No forwarding number configured — play missed-call message and send SMS immediately
+        // No forwarding number — play missed-call message and send SMS immediately
         await sendMissedCallSMS(telnyx, business, callControlId, from)
         const normalMsg = business.missedCallVoiceMessage || DEFAULT_VOICE_MESSAGE
         console.log('🔊 About to speak missed call message on A-leg:', { callControlId, message: normalMsg })
@@ -165,37 +178,35 @@ export async function POST(request: NextRequest) {
         })
 
         if (business.forwardingNumber) {
-          // Mark conversation as waiting for the forwarded call and persist the
-          // A-leg call_control_id so the hangup handler can speak back to the caller
-          // even if Telnyx doesn't return client_state on the B-leg hangup event.
+          // Transfer to owner after passing screener
           await db.conversation.updateMany({
             where: { callSid: callControlId },
             data: { status: 'forwarding', aLegCallControlId: callControlId },
           })
 
-          // Transfer with AMD so Telnyx fires call.machine.detection.ended.
-          // aLegCallControlId is stored in the B-leg state so that when the forwarded
-          // call fails (voicemail or timeout) we can speak back to the waiting caller.
-          const fwdState = toB64({ businessId, callerPhone, forwarding: true, aLegCallControlId: callControlId })
+          const fwdState = toB64({
+            businessId,
+            callerPhone,
+            forwarding: true,
+            aLegCallControlId: callControlId,
+          })
           await telnyx.calls.actions.transfer(callControlId, {
             to: business.forwardingNumber,
             from: callerPhone,
             answering_machine_detection: 'detect',
             client_state: fwdState,
-            timeout_secs: 18, // Hang up before most carrier voicemails answer (~20-25 s)
+            timeout_secs: 18,
           } as any)
         } else {
-          // No forwarding number — send SMS and say goodbye
           await sendMissedCallSMS(telnyx, business, callControlId, callerPhone)
-          const noFwdMsg = business.missedCallVoiceMessage || DEFAULT_VOICE_MESSAGE
-          console.log('🔊 About to speak missed call message on A-leg:', { callControlId, message: noFwdMsg })
+          const missedMsg = business.missedCallVoiceMessage || DEFAULT_VOICE_MESSAGE
+          console.log('🔊 About to speak missed call message on A-leg:', { callControlId, message: missedMsg })
           await telnyx.calls.actions.speak(callControlId, {
-            payload: noFwdMsg,
+            payload: missedMsg,
             voice: VOICE,
           })
         }
       } else {
-        // Wrong digit or timeout — blocked
         console.log('🚫 Caller blocked (wrong digit/timeout):', callerPhone)
         await db.conversation.updateMany({
           where: { callSid: callControlId },
@@ -214,41 +225,58 @@ export async function POST(request: NextRequest) {
     }
 
     // =============================================
+    // B-LEG ANSWERED — owner's phone picked up
+    // =============================================
+    // Fires for BOTH human and machine answers, before AMD completes.
+    // We mark callConnected=true as an early signal. If AMD later
+    // determines it was a machine, the AMD handler resets it and
+    // sends SMS itself. This closes the race window where call.hangup
+    // could arrive before call.machine.detection.ended.
+    if (eventType === 'call.answered' && state.forwarding) {
+      const { businessId: ansBizId, callerPhone: ansCaller } = state
+      if (ansBizId && ansCaller) {
+        console.log('📞 B-leg answered for', ansCaller, '— marking callConnected=true')
+        await db.conversation.updateMany({
+          where: { businessId: ansBizId, callerPhone: ansCaller, status: 'forwarding' },
+          data: { callConnected: true },
+        })
+      }
+      return NextResponse.json({}, { status: 200 })
+    }
+
+    // =============================================
     // AMD RESULT — voicemail detected on forwarded B-leg
     // =============================================
     if (eventType === 'call.machine.detection.ended') {
       const { businessId: amdBizId, callerPhone: amdCaller, forwarding, aLegCallControlId } = state
 
       if (forwarding && amdBizId && amdCaller) {
-        const result = payload?.result as string // 'human' | 'machine' (standard detect mode)
+        const result = payload?.result as string
         console.log('🤖 AMD result:', result, 'for', amdCaller)
-
         console.log('🤖 AMD full payload:', JSON.stringify(payload))
 
         if (result === 'human') {
+          // Owner answered — keep callConnected=true, update status so hangup won't trigger SMS
           await db.conversation.updateMany({
             where: { businessId: amdBizId, callerPhone: amdCaller, status: 'forwarding' },
-            data: { status: 'active' },
+            data: { callConnected: true, status: 'active' },
           })
           console.log('✅ Human answered forwarded call, call proceeding')
         } else {
-          // Machine / voicemail detected (owner declined or didn't answer in time)
+          // Machine/voicemail — reset callConnected, hangup B-leg, notify caller
           console.log('📵 Machine/voicemail detected — hanging up B-leg, notifying caller on A-leg')
 
-          // Mark as handled BEFORE hanging up so the resulting call.hangup event won't double-send
           await db.conversation.updateMany({
             where: { businessId: amdBizId, callerPhone: amdCaller, status: 'forwarding' },
-            data: { status: 'active' },
+            data: { callConnected: false, status: 'active' },
           })
 
-          // Hang up the B-leg IMMEDIATELY to cut off voicemail audio
           try { await telnyx.calls.actions.hangup(callControlId, {}) } catch {}
 
           const bizForAmd = await db.business.findUnique({ where: { id: amdBizId } })
           if (bizForAmd) {
             const targetLeg = aLegCallControlId || callControlId
 
-            // Play the missed-call voice message on the A-leg (original caller)
             if (aLegCallControlId) {
               try {
                 const amdMsg = bizForAmd.missedCallVoiceMessage || DEFAULT_VOICE_MESSAGE
@@ -273,51 +301,51 @@ export async function POST(request: NextRequest) {
     // =============================================
     if (eventType === 'call.hangup') {
       const hangupCause = payload?.hangup_cause as string | undefined
-      const hangupSource = payload?.hangup_source as string | undefined
-      console.log('📴 Hangup handler ENTRY:', {
+      console.log('📴 Hangup:', {
         callControlId: payload?.call_control_id,
         from,
         to,
         direction: payload?.direction,
         hangupCause,
-        hangupSource,
         hasClientState: !!rawClientState,
-        stateFromClientState: JSON.stringify(state),
+        state: JSON.stringify(state),
       })
 
       const { businessId: hupBizId, callerPhone: hupCaller, forwarding: hupFwd, aLegCallControlId: hupALeg } = state
 
-      console.log('📴 Hangup decoded state:', { hupBizId, hupCaller, hupFwd, hupALeg })
-
-      // Primary path: client_state carried the forwarding flag
       let conv: Awaited<ReturnType<typeof db.conversation.findFirst>> = null
 
+      // Primary: client_state says this was a forwarded B-leg
       if (hupFwd && hupBizId && hupCaller) {
-        console.log('📴 Hangup: client_state indicates forwarded B-leg, looking up conversation…')
         conv = await db.conversation.findFirst({
           where: { businessId: hupBizId, callerPhone: hupCaller, status: 'forwarding' },
         })
       }
 
-      // Fallback: client_state was missing/empty — search for any conversation in
-      // 'forwarding' status whose aLegCallControlId is stored in the DB.
+      // Fallback: client_state missing — look for any in-progress forwarding conversation
       if (!conv) {
-        console.log('📴 Hangup: no conv from client_state path, trying DB fallback lookup…')
         conv = await db.conversation.findFirst({
           where: { status: 'forwarding', aLegCallControlId: { not: null } },
           orderBy: { updatedAt: 'desc' },
         })
         if (conv) {
-          console.log('📴 Hangup: DB fallback found conversation:', conv.id, 'aLeg:', conv.aLegCallControlId)
+          console.log('📴 Hangup: DB fallback found conversation:', conv.id)
         }
       }
 
       if (conv) {
-        // Resolve the A-leg call_control_id: prefer DB record, then client_state, then current callControlId
+        // B-leg was answered (callConnected=true) → owner handled the call, no SMS needed
+        if (conv.callConnected) {
+          console.log('✅ B-leg was connected (callConnected=true) — skipping missed-call SMS')
+          await db.conversation.update({ where: { id: conv.id }, data: { status: 'completed' } })
+          return NextResponse.json({}, { status: 200 })
+        }
+
+        // B-leg was NOT answered → missed call, send SMS
         const aLeg = conv.aLegCallControlId || hupALeg || callControlId
         const callerPhone = hupCaller || conv.callerPhone
 
-        console.log('📵 Forwarded call ended (cause: %s), notifying caller on A-leg: %s (aLeg: %s)', hangupCause, callerPhone, aLeg)
+        console.log('📵 Forwarded call ended without connect (cause: %s), notifying caller (aLeg: %s)', hangupCause, aLeg)
 
         await db.conversation.update({ where: { id: conv.id }, data: { status: 'active' } })
         const bizForHup = await db.business.findUnique({ where: { id: conv.businessId } })
@@ -333,18 +361,16 @@ export async function POST(request: NextRequest) {
           } catch (speakErr) {
             console.error('❌ Failed to speak on A-leg:', speakErr)
           }
-        } else {
-          console.log('📴 Hangup: no business found for conv:', conv.id)
         }
       } else {
-        console.log('📴 Hangup: no forwarding conversation found — this is a normal hangup, skipping missed-call branch.')
+        console.log('📴 Normal hangup — no forwarding conversation found, skipping.')
       }
 
       return NextResponse.json({}, { status: 200 })
     }
 
     // =============================================
-    // BRIDGING FAILED — forwarding number didn't answer (A-leg fallback)
+    // BRIDGING FAILED — forwarding number unreachable
     // =============================================
     if (eventType === 'call.bridging.failed') {
       console.log('🚫 Bridge failed:', JSON.stringify(payload))
@@ -370,7 +396,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({}, { status: 200 })
     }
 
-    // Acknowledge all other events (call.answered, etc.)
+    // Acknowledge all other events
     return NextResponse.json({}, { status: 200 })
   } catch (error) {
     console.error('❌ Error handling voice webhook:', error)
@@ -407,7 +433,6 @@ async function sendMissedCallSMS(
   callControlId: string,
   callerPhone: string
 ) {
-  // Reuse existing conversation (e.g. from screening) or create new
   let conversation = await db.conversation.findFirst({
     where: {
       OR: [
@@ -422,7 +447,6 @@ async function sendMissedCallSMS(
   })
 
   if (conversation) {
-    // Check if SMS already sent
     const alreadySent = await db.message.findFirst({
       where: { conversationId: conversation.id, direction: 'outbound' },
     })
@@ -439,7 +463,6 @@ async function sendMissedCallSMS(
         data: { businessId: business.id, callerPhone, callSid: callControlId, status: 'active' },
       })
     } catch {
-      // Unique constraint on callSid — find the existing one
       conversation = await db.conversation.findFirst({ where: { callSid: callControlId } })
       if (!conversation) return
     }

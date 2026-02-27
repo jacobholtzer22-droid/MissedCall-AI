@@ -1,13 +1,11 @@
 // ===========================================
-// TELNYX VOICE GATHER CALLBACK (WITH DIAL)
+// TELNYX VOICE GATHER CALLBACK
 // ===========================================
 // Path: app/api/webhooks/voice-gather/route.ts
 //
 // Flow:
-// 1. Caller presses 1 → dial the business owner's real phone
-// 2. Owner picks up → normal phone call, done
-// 3. Owner doesn't pick up → status callback triggers MissedCall AI SMS
-// 4. Wrong digit / no digit → blocked as spam
+// 1. Caller presses 1 → send missed-call SMS, play goodbye message
+// 2. Wrong digit / no digit → blocked as spam
 
 import { NextRequest, NextResponse } from 'next/server'
 import Telnyx from 'telnyx'
@@ -45,8 +43,10 @@ export async function POST(request: NextRequest) {
     }
 
     // =============================================
-    // CALLER PRESSED 1 → DIAL BUSINESS OWNER
+    // CALLER PRESSED 1 → SEND MISSED-CALL SMS
     // =============================================
+    // No bridge/transfer: the call only reaches Telnyx because the owner's
+    // carrier already forwarded it, so ringing the owner again would loop.
     if (digits === '1') {
       console.log('✅ Caller passed IVR screening:', callerPhone)
 
@@ -59,25 +59,6 @@ export async function POST(request: NextRequest) {
         },
       })
 
-      if (business.forwardingNumber && business.telnyxPhoneNumber) {
-        const parentCallSid = (request.nextUrl.searchParams.get('callSid') ?? body.data?.payload?.call_control_id) as string
-        const dialStatusUrl = `${request.nextUrl.origin}/api/webhooks/voice-dial-status?businessId=${business.id}&callerPhone=${encodeURIComponent(callerPhone)}&callSid=${encodeURIComponent(parentCallSid)}`
-        const actionUrl = `${request.nextUrl.origin}/api/webhooks/voice-after-dial?businessId=${business.id}`
-        console.log('Dial action URL:', actionUrl)
-        return xmlResponse(
-          `<Response>
-            <Dial callerId="${callerPhone}" timeout="15" action="${actionUrl}" method="POST">
-              <Number statusCallback="${dialStatusUrl}" statusCallbackMethod="POST" statusCallbackEvent="completed">${business.forwardingNumber}</Number>
-            </Dial>
-          </Response>`
-        )
-      }
-
-      if (business.forwardingNumber && !business.telnyxPhoneNumber) {
-        return xmlResponse('<Response><Say voice="Polly.Joanna">Call forwarding is not configured. Goodbye.</Say><Hangup /></Response>')
-      }
-
-      console.log('⚠️ No forwarding number, going straight to SMS')
       await triggerMissedCallSMS(business, callerPhone)
 
       return xmlResponse(

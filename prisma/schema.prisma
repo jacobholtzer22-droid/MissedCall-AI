@@ -131,6 +131,7 @@ model Conversation {
   callerName            String?                         // Gathered during conversation
   callSid               String?   @unique               // Call control ID (parent voice call)
   aLegCallControlId     String?                           // A-leg call_control_id stored when forwarding
+  callConnected         Boolean   @default(false)         // True when B-leg (owner) answered — prevents missed-call SMS
 
   // Dial outcome (from voice-dial-status callback)
   dialCallStatus        String?                         // completed, no-answer, busy, failed, canceled
