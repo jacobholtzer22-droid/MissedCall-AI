@@ -571,9 +571,9 @@ export default function AdminDashboard() {
 
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-4 text-sm">
                     <div>
-                      <span className="text-gray-500">Telnyx Number</span>
-                      <p className={business.telnyxPhoneNumber ? 'text-green-400' : 'text-red-400'}>
-                        {business.telnyxPhoneNumber || 'NOT ASSIGNED'}
+                      <span className="text-gray-500">Telnyx Number (telnyxPhoneNumber)</span>
+                      <p className={business.telnyxPhoneNumber ? 'text-green-400 font-mono text-xs' : 'text-red-400'}>
+                        {business.telnyxPhoneNumber ? `"${business.telnyxPhoneNumber}"` : 'NOT ASSIGNED'}
                       </p>
                     </div>
                     <div>

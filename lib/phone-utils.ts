@@ -20,6 +20,19 @@ export function normalizePhoneNumber(phone: string): string {
 }
 
 /**
+ * Normalize a phone number to E.164 format (+1XXXXXXXXXX for US).
+ * Use this when storing or comparing with external APIs like Telnyx.
+ */
+export function normalizeToE164(phone: string | undefined | null): string {
+  if (!phone || typeof phone !== 'string') return ''
+  const digits = phone.replace(/\D/g, '')
+  if (digits.length === 10) return `+1${digits}`
+  if (digits.length === 11 && digits.startsWith('1')) return `+${digits}`
+  if (digits.length >= 10) return `+1${digits.slice(-10)}`
+  return ''
+}
+
+/**
  * Check if two phone numbers refer to the same number (normalized comparison).
  */
 export function phonesMatch(a: string, b: string): boolean {

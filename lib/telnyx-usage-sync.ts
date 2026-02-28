@@ -5,21 +5,19 @@
 // from Telnyx Detail Record Search API, stores costs per business.
 
 import { db } from '@/lib/db'
+import { normalizeToE164 } from '@/lib/phone-utils'
 
 const TELNYX_API_BASE = 'https://api.telnyx.com/v2'
 
-/** Normalize phone for comparison - strip to digits, handle US +1 */
-function normalizeForMatch(phone: string | undefined): string {
-  if (!phone) return ''
-  const digits = phone.replace(/\D/g, '')
-  if (digits.length === 11 && digits.startsWith('1')) return digits.slice(1)
-  return digits
+/** Normalize phone to E.164 for comparison - same format Telnyx returns */
+function normalizePhoneNumber(phone: string | undefined | null): string {
+  return normalizeToE164(phone ?? '')
 }
 
-function phonesMatch(a: string, b: string): boolean {
-  const na = normalizeForMatch(a)
-  const nb = normalizeForMatch(b)
-  if (na.length >= 10 && nb.length >= 10) return na.slice(-10) === nb.slice(-10)
+function phonesMatchE164(a: string, b: string): boolean {
+  const na = normalizePhoneNumber(a)
+  const nb = normalizePhoneNumber(b)
+  if (!na || !nb) return false
   return na === nb
 }
 
@@ -35,6 +33,8 @@ interface TelnyxDetailRecord {
   finished_at?: string
   cli?: string
   cld?: string
+  from?: string
+  to?: string
   direction?: string
   call_sec?: number
   billed_sec?: number
@@ -98,13 +98,19 @@ async function fetchAllDetailRecords(
   return all
 }
 
-/** Get business ID for a record by matching phone number */
+/** Get business ID for a record by matching phone number.
+ * Telnyx uses cli/cld for CDR (calls) and from/to for MDR (messaging).
+ * Business number can be either sender or receiver, so check all four. */
 async function getBusinessIdForRecord(
   record: TelnyxDetailRecord,
-  recordType: 'sms' | 'call'
+  _recordType: 'sms' | 'call'
 ): Promise<string | null> {
-  const cli = record.cli ?? ''
-  const cld = record.cld ?? ''
+  const recordPhones = [
+    record.cli,
+    record.cld,
+    record.from,
+    record.to,
+  ].filter((p): p is string => !!p && typeof p === 'string')
 
   const businesses = await db.business.findMany({
     where: { telnyxPhoneNumber: { not: null } },
@@ -114,7 +120,9 @@ async function getBusinessIdForRecord(
   for (const b of businesses) {
     const tn = b.telnyxPhoneNumber
     if (!tn) continue
-    if (phonesMatch(cli, tn) || phonesMatch(cld, tn)) return b.id
+    for (const recordPhone of recordPhones) {
+      if (phonesMatchE164(recordPhone, tn)) return b.id
+    }
   }
   return null
 }
