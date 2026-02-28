@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation'
 import { CallScreenerCard } from './components/CallScreenerCard'
 import { EmbedCodeSection } from '@/app/components/EmbedCodeSection'
 import { parseContactFile } from '@/lib/import-contacts'
-import { DEFAULT_BUSINESS_HOURS } from '@/lib/google-calendar'
+import { DEFAULT_BUSINESS_HOURS } from '@/lib/business-hours'
 
 interface Business {
   id: string

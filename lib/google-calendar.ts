@@ -2,11 +2,14 @@
 // GOOGLE CALENDAR HELPERS
 // ===========================================
 // Token refresh, OAuth, and Calendar API helpers
+// Server-only: uses Node.js modules (googleapis) - never import in client components
 
+import 'server-only'
 import { google } from 'googleapis'
 import { addMinutes } from 'date-fns'
 import { TZDate } from '@date-fns/tz'
 import { db } from '@/lib/db'
+import { DEFAULT_BUSINESS_HOURS } from '@/lib/business-hours'
 
 const SCOPES = ['https://www.googleapis.com/auth/calendar']
 const REDIRECT_URI = process.env.GOOGLE_REDIRECT_URI!
@@ -89,16 +92,8 @@ export async function getCalendarClient(businessId: string) {
   return google.calendar({ version: 'v3', auth: oauth2 })
 }
 
-// Default business hours: Mon-Fri 9am-5pm
-export const DEFAULT_BUSINESS_HOURS: Record<string, { open: string; close: string } | null> = {
-  monday: { open: '09:00', close: '17:00' },
-  tuesday: { open: '09:00', close: '17:00' },
-  wednesday: { open: '09:00', close: '17:00' },
-  thursday: { open: '09:00', close: '17:00' },
-  friday: { open: '09:00', close: '17:00' },
-  saturday: null,
-  sunday: null,
-}
+// Re-export for server-side consumers that already import from this file
+export { DEFAULT_BUSINESS_HOURS } from '@/lib/business-hours'
 
 export function parseBusinessHours(hours: unknown): Record<string, { open: string; close: string } | null> {
   if (!hours || typeof hours !== 'object') return DEFAULT_BUSINESS_HOURS
