@@ -1,9 +1,10 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { useUser } from '@clerk/nextjs'
 import { useRouter } from 'next/navigation'
 import { CallScreenerCard } from './components/CallScreenerCard'
+import { parseContactFile } from '@/lib/import-contacts'
 
 interface Business {
   id: string
@@ -93,6 +94,12 @@ export default function AdminDashboard() {
   const [usageLoading, setUsageLoading] = useState<Record<string, boolean>>({})
   const [refreshLoading, setRefreshLoading] = useState(false)
   const [refreshFeedback, setRefreshFeedback] = useState<string | null>(null)
+  const [importModalOpen, setImportModalOpen] = useState(false)
+  const [importPreview, setImportPreview] = useState<{ total: number; newCount: number; duplicateCount: number; contacts: { phoneNumber: string; name: string | null }[] } | null>(null)
+  const [importProgress, setImportProgress] = useState(0)
+  const [importing, setImporting] = useState(false)
+  const [importError, setImportError] = useState<string | null>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   async function refreshUsageData(businessId: string) {
     setRefreshLoading(true)
@@ -296,16 +303,117 @@ export default function AdminDashboard() {
     }
   }
 
-  async function removeContact(contactId: string) {
-    if (!selectedBusiness) return
+  async function handleImportFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file || !selectedBusiness) return
+    const ext = (file.name.split('.').pop() ?? '').toLowerCase()
+    if (!['csv', 'xlsx', 'xls'].includes(ext)) {
+      setMessage('❌ Please select a .csv, .xlsx, or .xls file')
+      return
+    }
+    if (file.size > 50 * 1024 * 1024) {
+      setMessage('❌ File must be under 50MB')
+      return
+    }
+    setImportError(null)
+    setImportPreview(null)
+    setImportModalOpen(true)
     try {
+      const { contacts: parsed } = await parseContactFile(file)
+      const existingPhones = new Set(contacts.map((c) => c.phoneNumber))
+      const newContacts = parsed.filter((p) => !existingPhones.has(p.phoneNumber))
+      const duplicateCount = parsed.length - newContacts.length
+      setImportPreview({
+        total: parsed.length,
+        newCount: newContacts.length,
+        duplicateCount,
+        contacts: newContacts,
+      })
+    } catch (err) {
+      setImportError(err instanceof Error ? err.message : 'Failed to parse file')
+    }
+    e.target.value = ''
+  }
+
+  async function handleImportConfirm() {
+    if (!selectedBusiness || !importPreview || importPreview.newCount === 0) {
+      setImportModalOpen(false)
+      setImportPreview(null)
+      return
+    }
+    setImporting(true)
+    setImportProgress(0)
+    setImportError(null)
+    const BATCH_SIZE = 100
+    const batches: { phoneNumber: string; name: string | null }[][] = []
+    for (let i = 0; i < importPreview.contacts.length; i += BATCH_SIZE) {
+      batches.push(importPreview.contacts.slice(i, i + BATCH_SIZE))
+    }
+    let done = 0
+    try {
+      for (const batch of batches) {
+        const res = await fetch(`/api/admin/businesses/${selectedBusiness.id}/contacts/bulk`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ contacts: batch }),
+        })
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}))
+          throw new Error(data.error || 'Import failed')
+        }
+        done += 1
+        setImportProgress(Math.round((done / batches.length) * 100))
+      }
+      setMessage(`✅ Imported ${importPreview.newCount} contacts`)
+      fetchContacts(selectedBusiness.id)
+      setImportModalOpen(false)
+      setImportPreview(null)
+    } catch (err) {
+      setImportError(err instanceof Error ? err.message : 'Import failed')
+    } finally {
+      setImporting(false)
+      setImportProgress(0)
+    }
+  }
+
+  function closeImportModal() {
+    if (!importing) {
+      setImportModalOpen(false)
+      setImportPreview(null)
+      setImportError(null)
+    }
+  }
+
+  async function removeContact(contact: Contact) {
+    if (!selectedBusiness) return
+    // Optimistic update: remove from UI immediately
+    setContacts(prev => prev.filter(c => c.id !== contact.id))
+    try {
+      const params = new URLSearchParams({ id: contact.id })
       const res = await fetch(
-        `/api/admin/businesses/${selectedBusiness.id}/contacts?id=${encodeURIComponent(contactId)}`,
+        `/api/admin/businesses/${selectedBusiness.id}/contacts?${params}`,
         { method: 'DELETE' }
       )
-      if (res.ok) fetchContacts(selectedBusiness.id)
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        setMessage(`❌ Failed to remove: ${data.error || 'Unknown error'}`)
+        fetchContacts(selectedBusiness.id) // Revert on failure
+      } else if (data.deleted === 0) {
+        // Fallback: try delete by phone number
+        const phoneParams = new URLSearchParams({ phoneNumber: contact.phoneNumber })
+        const retry = await fetch(
+          `/api/admin/businesses/${selectedBusiness.id}/contacts?${phoneParams}`,
+          { method: 'DELETE' }
+        )
+        if (!retry.ok) {
+          setMessage('❌ Failed to remove contact')
+          fetchContacts(selectedBusiness.id)
+        }
+      }
     } catch (err) {
       console.error('Failed to remove contact:', err)
+      setMessage('❌ Failed to remove contact')
+      fetchContacts(selectedBusiness.id) // Revert on error
     }
   }
 
@@ -749,7 +857,7 @@ export default function AdminDashboard() {
                 hint="Callers in this list will NOT receive MissedCall AI SMS. Add people the client already knows. Any format: +1 (555) 123-4567, 555-123-4567, etc."
               >
                 <div className="space-y-3">
-                  <div className="flex flex-wrap gap-2">
+                  <div className="flex flex-wrap gap-2 items-center">
                     <input
                       type="text"
                       value={newContactPhone}
@@ -772,6 +880,21 @@ export default function AdminDashboard() {
                     >
                       {addingContact ? 'Adding...' : 'Add'}
                     </button>
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept=".csv,.xlsx,.xls"
+                      className="hidden"
+                      onChange={handleImportFile}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => fileInputRef.current?.click()}
+                      disabled={contactsLoading}
+                      className="px-4 py-2 bg-amber-600 hover:bg-amber-700 disabled:opacity-50 rounded-lg text-sm font-medium transition"
+                    >
+                      Import Contacts
+                    </button>
                   </div>
                   {contactsLoading ? (
                     <p className="text-sm text-gray-500">Loading contacts...</p>
@@ -787,7 +910,7 @@ export default function AdminDashboard() {
                           </span>
                           <button
                             type="button"
-                            onClick={() => removeContact(c.id)}
+                            onClick={() => removeContact(c)}
                             className="text-red-400 hover:text-red-300 text-xs font-medium"
                           >
                             Remove
@@ -921,6 +1044,57 @@ export default function AdminDashboard() {
                 className="px-6 bg-gray-800 hover:bg-gray-700 rounded-lg py-3 font-medium transition"
               >
                 Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Import Contacts Modal */}
+      {importModalOpen && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+          <div className="bg-gray-900 border border-gray-700 rounded-2xl max-w-md w-full p-6">
+            <h2 className="text-xl font-bold mb-4">Import Contacts</h2>
+            {importError && (
+              <p className="text-red-400 text-sm mb-4">{importError}</p>
+            )}
+            {!importPreview ? (
+              <p className="text-gray-400">Parsing file...</p>
+            ) : (
+              <>
+                <p className="text-gray-300 mb-4">
+                  Found {importPreview.total} phone numbers.{' '}
+                  <span className="text-green-400">{importPreview.newCount} are new</span>,{' '}
+                  <span className="text-amber-400">{importPreview.duplicateCount} are duplicates</span> that will be skipped.
+                </p>
+                {importing && (
+                  <div className="mb-4">
+                    <div className="h-2 bg-gray-800 rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-amber-600 transition-all duration-300"
+                        style={{ width: `${importProgress}%` }}
+                      />
+                    </div>
+                    <p className="text-sm text-gray-500 mt-1">{importProgress}% complete</p>
+                  </div>
+                )}
+              </>
+            )}
+            <div className="flex gap-3 mt-6">
+              {importPreview && importPreview.newCount > 0 && !importing && (
+                <button
+                  onClick={handleImportConfirm}
+                  className="flex-1 bg-amber-600 hover:bg-amber-700 rounded-lg py-3 font-medium transition"
+                >
+                  Import {importPreview.newCount} Contacts
+                </button>
+              )}
+              <button
+                onClick={closeImportModal}
+                disabled={importing}
+                className="px-6 bg-gray-800 hover:bg-gray-700 disabled:opacity-50 rounded-lg py-3 font-medium transition"
+              >
+                {importPreview && importPreview.newCount === 0 && !importError ? 'Close' : importing ? 'Importing...' : 'Cancel'}
               </button>
             </div>
           </div>

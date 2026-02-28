@@ -92,19 +92,27 @@ export async function DELETE(
   const businessId = context.params.id
   const { searchParams } = new URL(request.url)
   const contactId = searchParams.get('id')
+  const phoneNumber = searchParams.get('phoneNumber')
 
-  if (!contactId) {
+  if (!contactId && !phoneNumber) {
     return NextResponse.json(
-      { error: 'Query parameter id is required' },
+      { error: 'Query parameter id or phoneNumber is required' },
       { status: 400 }
     )
   }
 
   try {
-    await db.contact.deleteMany({
-      where: { id: contactId, businessId },
-    })
-    return NextResponse.json({ ok: true })
+    const where: { id?: string; phoneNumber?: string; businessId: string } = {
+      businessId,
+    }
+    if (contactId) {
+      where.id = contactId
+    } else if (phoneNumber) {
+      where.phoneNumber = normalizePhoneNumber(phoneNumber)
+    }
+
+    const result = await db.contact.deleteMany({ where })
+    return NextResponse.json({ ok: true, deleted: result.count })
   } catch (error) {
     console.error('Admin: Failed to remove contact:', error)
     return NextResponse.json(
