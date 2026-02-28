@@ -32,6 +32,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import type { Business } from '@prisma/client'
 import { db } from '@/lib/db'
 import Telnyx from 'telnyx'
+import { checkCooldown, recordMessageSent, logCooldownSkip } from '@/lib/sms-cooldown'
+import { isExistingContact, logContactSkip } from '@/lib/contacts-check'
 
 const VOICE = 'AWS.Polly.Joanna'
 const DEFAULT_VOICE_MESSAGE =
@@ -451,10 +453,41 @@ async function handleForwardingFallback(
 
 async function sendMissedCallSMS(
   telnyx: InstanceType<typeof Telnyx>,
-  business: { id: string; name: string; aiGreeting: string | null; telnyxPhoneNumber: string | null },
+  business: { id: string; name: string; aiGreeting: string | null; telnyxPhoneNumber: string | null; smsCooldownDays?: number | null },
   callControlId: string,
   callerPhone: string
 ) {
+  // 0. Check blocked list first
+  const blocked = await db.blockedNumber.findFirst({
+    where: { businessId: business.id, phoneNumber: callerPhone },
+  })
+  if (blocked) {
+    await db.cooldownSkipLog.create({
+      data: {
+        businessId: business.id,
+        phoneNumber: callerPhone,
+        reason: 'blocked',
+        lastMessageSent: new Date(0),
+        messageType: 'missed_call',
+      },
+    })
+    return
+  }
+
+  // 1. Check contacts first — skip if caller is in client's address book
+  const isContact = await isExistingContact(business.id, callerPhone)
+  if (isContact) {
+    await logContactSkip(business.id, callerPhone, 'missed_call')
+    return
+  }
+
+  // 2. Check cooldown — skip if we recently sent to this number
+  const cooldown = await checkCooldown(business.id, callerPhone, business)
+  if (!cooldown.allowed && cooldown.lastMessageSent) {
+    await logCooldownSkip(business.id, callerPhone, cooldown.lastMessageSent, 'missed_call')
+    return
+  }
+
   let conversation = await db.conversation.findFirst({
     where: {
       OR: [
@@ -516,6 +549,7 @@ async function sendMissedCallSMS(
       },
     })
 
+    await recordMessageSent(business.id, callerPhone)
     console.log('📤 Sent initial SMS:', (message as any).data?.id)
   } catch (err) {
     console.error('❌ Failed to send SMS:', err)

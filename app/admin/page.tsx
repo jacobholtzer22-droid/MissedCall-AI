@@ -43,6 +43,31 @@ interface BlockedNumber {
   createdAt: string
 }
 
+interface Contact {
+  id: string
+  businessId: string
+  phoneNumber: string
+  name: string | null
+  createdAt: string
+}
+
+interface UsageData {
+  sms: { thisWeek: number; allTime: number }
+  missedCallSmsTriggered: number
+  skips: { cooldown: number; existingContact: number; blocked: number; total: number }
+  moneySaved: number
+  cost: {
+    smsThisWeek: number
+    callThisWeek: number
+    totalThisWeek: number
+    smsAllTime: number
+    callAllTime: number
+    totalAllTime: number
+  }
+  skipLogs: { id: string; phoneNumber: string; reason: string; attemptedAt: string; lastMessageSent: string; messageType: string | null }[]
+  recentMessages: { id: string; direction: string; content: string; createdAt: string; callerPhone: string; callerName: string | null; cost: number | null }[]
+}
+
 export default function AdminDashboard() {
   const { user, isLoaded } = useUser()
   const router = useRouter()
@@ -58,6 +83,66 @@ export default function AdminDashboard() {
   const [newBlockedLabel, setNewBlockedLabel] = useState('')
   const [blockedNumbersLoading, setBlockedNumbersLoading] = useState(false)
   const [addingBlocked, setAddingBlocked] = useState(false)
+  const [contacts, setContacts] = useState<Contact[]>([])
+  const [newContactPhone, setNewContactPhone] = useState('')
+  const [newContactName, setNewContactName] = useState('')
+  const [contactsLoading, setContactsLoading] = useState(false)
+  const [addingContact, setAddingContact] = useState(false)
+  const [expandedUsageId, setExpandedUsageId] = useState<string | null>(null)
+  const [usageData, setUsageData] = useState<Record<string, UsageData | null>>({})
+  const [usageLoading, setUsageLoading] = useState<Record<string, boolean>>({})
+  const [refreshLoading, setRefreshLoading] = useState(false)
+  const [refreshFeedback, setRefreshFeedback] = useState<string | null>(null)
+
+  async function refreshUsageData(businessId: string) {
+    setRefreshLoading(true)
+    setRefreshFeedback(null)
+    try {
+      const syncRes = await fetch('/api/admin/usage/sync?dateRange=last_90_days', {
+        method: 'POST',
+      })
+      const syncData = await syncRes.json()
+      if (!syncRes.ok) {
+        setRefreshFeedback(`❌ Sync failed: ${syncData.error || 'Unknown error'}`)
+        return
+      }
+      const res = await fetch(`/api/admin/businesses/${businessId}/usage`)
+      if (res.ok) {
+        const data = await res.json()
+        setUsageData((prev) => ({ ...prev, [businessId]: data }))
+        const m = syncData.mdrsProcessed ?? 0
+        const c = syncData.cdrsProcessed ?? 0
+        setRefreshFeedback(`✅ Synced ${m} SMS + ${c} call records from Telnyx`)
+      }
+    } catch (err) {
+      setRefreshFeedback('❌ Failed to refresh usage')
+      console.error(err)
+    } finally {
+      setRefreshLoading(false)
+    }
+  }
+
+  async function toggleUsage(businessId: string) {
+    if (expandedUsageId === businessId) {
+      setExpandedUsageId(null)
+      return
+    }
+    setExpandedUsageId(businessId)
+    if (!usageData[businessId] && !usageLoading[businessId]) {
+      setUsageLoading((prev) => ({ ...prev, [businessId]: true }))
+      try {
+        const res = await fetch(`/api/admin/businesses/${businessId}/usage`)
+        if (res.ok) {
+          const data = await res.json()
+          setUsageData((prev) => ({ ...prev, [businessId]: data }))
+        }
+      } catch (err) {
+        console.error('Failed to fetch usage:', err)
+      } finally {
+        setUsageLoading((prev) => ({ ...prev, [businessId]: false }))
+      }
+    }
+  }
 
   useEffect(() => {
     if (isLoaded) {
@@ -96,6 +181,21 @@ export default function AdminDashboard() {
     }
   }
 
+  async function fetchContacts(businessId: string) {
+    setContactsLoading(true)
+    try {
+      const res = await fetch(`/api/admin/businesses/${businessId}/contacts`)
+      if (res.ok) {
+        const data = await res.json()
+        setContacts(data.contacts || [])
+      }
+    } catch (err) {
+      console.error('Failed to fetch contacts:', err)
+    } finally {
+      setContactsLoading(false)
+    }
+  }
+
   function startEdit(business: Business) {
     setSelectedBusiness(business)
     setEditMode(true)
@@ -123,7 +223,10 @@ export default function AdminDashboard() {
     setMessage('')
     setNewBlockedPhone('')
     setNewBlockedLabel('')
+    setNewContactPhone('')
+    setNewContactName('')
     fetchBlockedNumbers(business.id)
+    fetchContacts(business.id)
   }
 
   async function addBlockedNumber() {
@@ -163,6 +266,46 @@ export default function AdminDashboard() {
       if (res.ok) fetchBlockedNumbers(selectedBusiness.id)
     } catch (err) {
       console.error('Failed to remove blocked number:', err)
+    }
+  }
+
+  async function addContact() {
+    if (!selectedBusiness || !newContactPhone.trim()) return
+    setAddingContact(true)
+    try {
+      const res = await fetch(`/api/admin/businesses/${selectedBusiness.id}/contacts`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          phoneNumber: newContactPhone.trim(),
+          name: newContactName.trim() || null,
+        }),
+      })
+      if (res.ok) {
+        setNewContactPhone('')
+        setNewContactName('')
+        fetchContacts(selectedBusiness.id)
+      } else {
+        const err = await res.json()
+        setMessage(`❌ Contact: ${err.error || 'Failed to add'}`)
+      }
+    } catch (err) {
+      setMessage('❌ Failed to add contact')
+    } finally {
+      setAddingContact(false)
+    }
+  }
+
+  async function removeContact(contactId: string) {
+    if (!selectedBusiness) return
+    try {
+      const res = await fetch(
+        `/api/admin/businesses/${selectedBusiness.id}/contacts?id=${encodeURIComponent(contactId)}`,
+        { method: 'DELETE' }
+      )
+      if (res.ok) fetchContacts(selectedBusiness.id)
+    } catch (err) {
+      console.error('Failed to remove contact:', err)
     }
   }
 
@@ -390,9 +533,31 @@ export default function AdminDashboard() {
                       }}
                     />
                   </div>
+
+                  {/* Usage & Cost section */}
+                  {expandedUsageId === business.id && (
+                    <div className="mt-6 pt-6 border-t border-gray-800">
+                      {usageLoading[business.id] ? (
+                        <p className="text-gray-500 text-sm">Loading usage...</p>
+                      ) : usageData[business.id] ? (
+                        <UsagePanel
+                          data={usageData[business.id]!}
+                          onRefresh={() => refreshUsageData(business.id)}
+                          refreshLoading={refreshLoading}
+                          refreshFeedback={refreshFeedback}
+                        />
+                      ) : null}
+                    </div>
+                  )}
                 </div>
 
-                <div className="flex gap-2 ml-4">
+                <div className="flex flex-wrap gap-2 ml-4">
+                  <a
+                    href={`/api/admin/view-as?businessId=${business.id}`}
+                    className="px-4 py-2 bg-amber-600 hover:bg-amber-700 rounded-lg text-sm font-medium transition"
+                  >
+                    View as Client
+                  </a>
                   <button
                     onClick={() => startEdit(business)}
                     className="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg text-sm font-medium transition"
@@ -405,6 +570,16 @@ export default function AdminDashboard() {
                   >
                     View Conversations
                   </a>
+                  <button
+                    onClick={() => toggleUsage(business.id)}
+                    className={`px-4 py-2 rounded-lg text-sm font-medium transition ${
+                      expandedUsageId === business.id
+                        ? 'bg-green-600 hover:bg-green-700'
+                        : 'bg-gray-800 hover:bg-gray-700'
+                    }`}
+                  >
+                    {expandedUsageId === business.id ? 'Hide Usage' : 'Usage & Cost'}
+                  </button>
                 </div>
               </div>
             </div>
@@ -568,6 +743,62 @@ export default function AdminDashboard() {
                 </div>
               </Field>
 
+              {/* Existing contacts (address book) - skip automated SMS to these */}
+              <Field
+                label="Existing contacts (address book)"
+                hint="Callers in this list will NOT receive MissedCall AI SMS. Add people the client already knows. Any format: +1 (555) 123-4567, 555-123-4567, etc."
+              >
+                <div className="space-y-3">
+                  <div className="flex flex-wrap gap-2">
+                    <input
+                      type="text"
+                      value={newContactPhone}
+                      onChange={e => setNewContactPhone(e.target.value)}
+                      placeholder="+1 (555) 123-4567"
+                      className="flex-1 min-w-[140px] bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 text-white placeholder-gray-600 text-sm"
+                    />
+                    <input
+                      type="text"
+                      value={newContactName}
+                      onChange={e => setNewContactName(e.target.value)}
+                      placeholder="Name (optional)"
+                      className="w-32 bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 text-white placeholder-gray-600 text-sm"
+                    />
+                    <button
+                      type="button"
+                      onClick={addContact}
+                      disabled={addingContact || !newContactPhone.trim()}
+                      className="px-4 py-2 bg-gray-700 hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg text-sm font-medium transition"
+                    >
+                      {addingContact ? 'Adding...' : 'Add'}
+                    </button>
+                  </div>
+                  {contactsLoading ? (
+                    <p className="text-sm text-gray-500">Loading contacts...</p>
+                  ) : contacts.length === 0 ? (
+                    <p className="text-sm text-gray-500">No contacts. Add people the client already knows to skip automated texts.</p>
+                  ) : (
+                    <ul className="divide-y divide-gray-800 rounded-lg border border-gray-800 overflow-hidden">
+                      {contacts.map(c => (
+                        <li key={c.id} className="flex items-center justify-between gap-2 bg-gray-800/50 px-3 py-2 text-sm">
+                          <span className="text-gray-300">
+                            {c.phoneNumber}
+                            {c.name ? <span className="text-gray-500 ml-2">({c.name})</span> : null}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => removeContact(c.id)}
+                            className="text-red-400 hover:text-red-300 text-xs font-medium"
+                          >
+                            Remove
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              </Field>
+
               {/* Setup Fee */}
               <Field label="Setup Fee">
                 <input
@@ -695,6 +926,179 @@ export default function AdminDashboard() {
           </div>
         </div>
       )}
+    </div>
+  )
+}
+
+function UsagePanel({
+  data,
+  onRefresh,
+  refreshLoading,
+  refreshFeedback,
+}: {
+  data: UsageData
+  onRefresh: () => void
+  refreshLoading: boolean
+  refreshFeedback?: string | null
+}) {
+  const formatPhone = (p: string) => {
+    const d = p.replace(/\D/g, '')
+    if (d.length === 10) return `(${d.slice(0, 3)}) ${d.slice(3, 6)}-${d.slice(6)}`
+    if (d.length === 11 && d[0] === '1') return `(${d.slice(1, 4)}) ${d.slice(4, 7)}-${d.slice(7)}`
+    return p
+  }
+  const skipReasonLabel: Record<string, string> = {
+    cooldown: 'Cooldown',
+    existing_contact: 'Existing contact',
+    blocked: 'Blocked list',
+  }
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between flex-wrap gap-2">
+        <h3 className="text-lg font-semibold text-gray-200">Usage & Cost</h3>
+        <div className="flex items-center gap-2">
+          {refreshFeedback && (
+            <span className="text-sm text-gray-400">{refreshFeedback}</span>
+          )}
+          <button
+          type="button"
+          onClick={onRefresh}
+          disabled={refreshLoading}
+          className="px-4 py-2 bg-amber-600 hover:bg-amber-700 disabled:opacity-50 rounded-lg text-sm font-medium transition"
+        >
+          {refreshLoading ? 'Syncing…' : 'Refresh Usage'}
+        </button>
+        </div>
+      </div>
+      {/* Stats row */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-4">
+        <div className="bg-gray-800/50 rounded-lg p-3">
+          <p className="text-xs text-gray-500">SMS sent (week)</p>
+          <p className="text-xl font-bold text-white">{data.sms.thisWeek}</p>
+        </div>
+        <div className="bg-gray-800/50 rounded-lg p-3">
+          <p className="text-xs text-gray-500">SMS sent (all time)</p>
+          <p className="text-xl font-bold text-white">{data.sms.allTime}</p>
+        </div>
+        <div className="bg-gray-800/50 rounded-lg p-3">
+          <p className="text-xs text-gray-500">Missed-call SMS</p>
+          <p className="text-xl font-bold text-white">{data.missedCallSmsTriggered}</p>
+        </div>
+        <div className="bg-gray-800/50 rounded-lg p-3">
+          <p className="text-xs text-gray-500">Skipped (cooldown)</p>
+          <p className="text-xl font-bold text-amber-400">{data.skips.cooldown}</p>
+        </div>
+        <div className="bg-gray-800/50 rounded-lg p-3">
+          <p className="text-xs text-gray-500">Skipped (contact)</p>
+          <p className="text-xl font-bold text-blue-400">{data.skips.existingContact}</p>
+        </div>
+        <div className="bg-gray-800/50 rounded-lg p-3">
+          <p className="text-xs text-gray-500">Skipped (blocked)</p>
+          <p className="text-xl font-bold text-red-400">{data.skips.blocked}</p>
+        </div>
+        <div className="bg-gray-800/50 rounded-lg p-3">
+          <p className="text-xs text-gray-500">Money saved</p>
+          <p className="text-xl font-bold text-green-400">${data.moneySaved.toFixed(2)}</p>
+        </div>
+      </div>
+      {/* Cost panel - real Telnyx MDR/CDR data */}
+      <div className="bg-gray-800/50 rounded-xl p-4 border border-gray-700">
+        <h4 className="text-sm font-medium text-gray-300 mb-3">Cost Overview (from Telnyx MDR/CDR)</h4>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <div>
+            <p className="text-xs text-gray-500">This week</p>
+            <p className="font-bold text-white">${data.cost.totalThisWeek.toFixed(2)}</p>
+            <p className="text-xs text-gray-400">SMS: ${data.cost.smsThisWeek.toFixed(2)} · Calls: ${data.cost.callThisWeek.toFixed(2)}</p>
+          </div>
+          <div>
+            <p className="text-xs text-gray-500">All time</p>
+            <p className="font-bold text-white">${data.cost.totalAllTime.toFixed(2)}</p>
+            <p className="text-xs text-gray-400">SMS: ${data.cost.smsAllTime.toFixed(2)} · Calls: ${data.cost.callAllTime.toFixed(2)}</p>
+          </div>
+        </div>
+        <p className="text-xs text-gray-500 mt-2">Synced from Telnyx. Click Refresh Usage to fetch latest.</p>
+      </div>
+      {/* Skip logs */}
+      <div className="space-y-2">
+        <h4 className="text-sm font-medium text-gray-300">Skip Logs — every skipped message with reason</h4>
+        <div className="bg-gray-800/30 rounded-lg border border-gray-800 overflow-hidden max-h-48 overflow-y-auto">
+          {data.skipLogs.length === 0 ? (
+            <p className="p-4 text-gray-500 text-sm">No skips recorded yet</p>
+          ) : (
+            <table className="w-full text-sm">
+              <thead className="bg-gray-900/50 sticky top-0">
+                <tr>
+                  <th className="text-left px-3 py-2 text-gray-400">Time</th>
+                  <th className="text-left px-3 py-2 text-gray-400">Phone</th>
+                  <th className="text-left px-3 py-2 text-gray-400">Reason</th>
+                  <th className="text-left px-3 py-2 text-gray-400">Type</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.skipLogs.map((log) => (
+                  <tr key={log.id} className="border-t border-gray-800/50">
+                    <td className="px-3 py-2 text-gray-300 whitespace-nowrap">
+                      {new Date(log.attemptedAt).toLocaleString()}
+                    </td>
+                    <td className="px-3 py-2 text-gray-300">{formatPhone(log.phoneNumber)}</td>
+                    <td className="px-3 py-2">
+                      <span className={`px-2 py-0.5 rounded text-xs ${
+                        log.reason === 'cooldown' ? 'bg-amber-500/20 text-amber-400' :
+                        log.reason === 'existing_contact' ? 'bg-blue-500/20 text-blue-400' :
+                        log.reason === 'blocked' ? 'bg-red-500/20 text-red-400' :
+                        'bg-gray-500/20 text-gray-400'
+                      }`}>
+                        {skipReasonLabel[log.reason] ?? log.reason}
+                      </span>
+                    </td>
+                    <td className="px-3 py-2 text-gray-500">{log.messageType ?? '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      </div>
+      {/* Recent message activity */}
+      <div className="space-y-2">
+        <h4 className="text-sm font-medium text-gray-300">Recent Message Activity</h4>
+        <div className="bg-gray-800/30 rounded-lg border border-gray-800 overflow-hidden max-h-48 overflow-y-auto">
+          {data.recentMessages.length === 0 ? (
+            <p className="p-4 text-gray-500 text-sm">No messages yet</p>
+          ) : (
+            <table className="w-full text-sm">
+              <thead className="bg-gray-900/50 sticky top-0">
+                <tr>
+                  <th className="text-left px-3 py-2 text-gray-400">Time</th>
+                  <th className="text-left px-3 py-2 text-gray-400">From</th>
+                  <th className="text-left px-3 py-2 text-gray-400">Dir</th>
+                  <th className="text-left px-3 py-2 text-gray-400">Content</th>
+                  <th className="text-right px-3 py-2 text-gray-400">Cost</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.recentMessages.map((m) => (
+                  <tr key={m.id} className="border-t border-gray-800/50">
+                    <td className="px-3 py-2 text-gray-300 whitespace-nowrap">
+                      {new Date(m.createdAt).toLocaleString()}
+                    </td>
+                    <td className="px-3 py-2 text-gray-300">{formatPhone(m.callerPhone)}</td>
+                    <td className="px-3 py-2">
+                      <span className={m.direction === 'outbound' ? 'text-blue-400' : 'text-gray-400'}>
+                        {m.direction === 'outbound' ? 'Out' : 'In'}
+                      </span>
+                    </td>
+                    <td className="px-3 py-2 text-gray-400 max-w-xs truncate">{m.content}</td>
+                    <td className="px-3 py-2 text-right text-gray-400">
+                      {m.cost != null ? `$${m.cost.toFixed(4)}` : '—'}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      </div>
     </div>
   )
 }

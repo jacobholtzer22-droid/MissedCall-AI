@@ -3,6 +3,7 @@ import { UserButton } from '@clerk/nextjs'
 import { redirect } from 'next/navigation'
 import { auth } from '@clerk/nextjs/server'
 import { db } from '@/lib/db'
+import { getBusinessForDashboard } from '@/lib/get-business-for-dashboard'
 import { LayoutDashboard, MessageSquare, Calendar, Settings, FlaskConical } from 'lucide-react'
 import { Logo } from '@/app/components/Logo'
 
@@ -26,11 +27,11 @@ export default async function DashboardLayout({ children }: { children: React.Re
     include: { business: true }
   })
 
-  if (!user || !user.business) {
+  const { business, isAdminViewAs } = await getBusinessForDashboard(userId, user?.business ?? null)
+
+  if (!business) {
     redirect('/onboarding')
   }
-
-  const business = user.business
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -62,8 +63,8 @@ export default async function DashboardLayout({ children }: { children: React.Re
           <div className="flex items-center space-x-3">
             <UserButton afterSignOutUrl="/" />
             <div className="min-w-0">
-              <p className="text-sm font-medium text-gray-900 truncate">{user.firstName || user.email}</p>
-              <p className="text-xs text-gray-500 truncate">{user.email}</p>
+              <p className="text-sm font-medium text-gray-900 truncate">{user?.firstName || user?.email || 'Admin'}</p>
+              <p className="text-xs text-gray-500 truncate">{user?.email ?? ''}</p>
             </div>
           </div>
         </div>
@@ -92,6 +93,17 @@ export default async function DashboardLayout({ children }: { children: React.Re
       </header>
 
       <main className="lg:pl-64 pt-[168px] lg:pt-16">
+        {isAdminViewAs && (
+          <div className="bg-amber-500/90 text-amber-950 px-4 py-2 text-center text-sm font-medium flex items-center justify-center gap-3 mb-4">
+            <span>Viewing as client: {business.name}</span>
+            <a
+              href="/api/admin/view-as?exit=1"
+              className="underline font-semibold hover:no-underline"
+            >
+              Exit view
+            </a>
+          </div>
+        )}
         <div className="p-6 lg:p-8">{children}</div>
       </main>
     </div>

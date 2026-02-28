@@ -1,6 +1,7 @@
 import { auth } from '@clerk/nextjs/server'
 import { redirect } from 'next/navigation'
 import { db } from '@/lib/db'
+import { getBusinessForDashboard } from '@/lib/get-business-for-dashboard'
 import { Phone, MessageSquare, Calendar, TrendingUp, ArrowRight, ShieldCheck, HelpCircle, Wrench } from 'lucide-react'
 import Link from 'next/link'
 import { formatRelativeTime, formatPhoneNumber } from '@/lib/utils'
@@ -109,9 +110,10 @@ export default async function DashboardPage() {
     include: { business: true }
   })
 
-  if (!user?.business) redirect('/onboarding')
+  const { business } = await getBusinessForDashboard(userId, user?.business ?? null)
+  if (!business) redirect('/onboarding')
 
-  const stats = await getDashboardStats(user.business.id)
+  const stats = await getDashboardStats(business.id)
 
   return (
     <div className="space-y-8">

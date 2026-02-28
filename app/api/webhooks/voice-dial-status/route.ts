@@ -13,6 +13,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import Telnyx from 'telnyx'
+import { checkCooldown, recordMessageSent, logCooldownSkip } from '@/lib/sms-cooldown'
+import { isExistingContact, logContactSkip } from '@/lib/contacts-check'
 
 export async function POST(request: NextRequest) {
   try {
@@ -59,11 +61,28 @@ export async function POST(request: NextRequest) {
       where: { businessId: business.id, phoneNumber: callerPhone },
     })
     if (blocked) {
+      await db.cooldownSkipLog.create({
+        data: {
+          businessId: business.id,
+          phoneNumber: callerPhone,
+          reason: 'blocked',
+          lastMessageSent: new Date(0),
+          messageType: 'missed_call_dial_status',
+        },
+      })
       console.log('📵 Caller is on blocked list for this business, skipping SMS', {
         businessId: business.id,
         callerPhone,
         label: blocked.label ?? '(no label)',
       })
+      return new NextResponse('', { status: 200 })
+    }
+
+    // Check contacts — skip if caller is in client's address book
+    const isContact = await isExistingContact(business.id, callerPhone)
+    if (isContact) {
+      await logContactSkip(business.id, callerPhone, 'missed_call_dial_status')
+      console.log('📇 Caller is existing contact, skipping SMS:', { businessId: business.id, callerPhone })
       return new NextResponse('', { status: 200 })
     }
 
@@ -216,6 +235,13 @@ export async function POST(request: NextRequest) {
       data: { status: 'no_response' },
     })
 
+    // Cooldown check (contacts already checked above)
+    const cooldown = await checkCooldown(business.id, callerPhone, business)
+    if (!cooldown.allowed && cooldown.lastMessageSent) {
+      await logCooldownSkip(business.id, callerPhone, cooldown.lastMessageSent, 'missed_call_dial_status')
+      return new NextResponse('', { status: 200 })
+    }
+
     const telnyxClient = new Telnyx({ apiKey: process.env.TELNYX_API_KEY! })
     const greeting =
       business.aiGreeting ||
@@ -238,6 +264,7 @@ export async function POST(request: NextRequest) {
         },
       })
 
+      await recordMessageSent(business.id, callerPhone)
       console.log('📤 Sent MissedCall AI SMS after missed dial:', (message as any).data?.id)
     } catch (error) {
       console.error('❌ Error sending SMS:', error)

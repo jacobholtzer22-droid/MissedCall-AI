@@ -1,6 +1,7 @@
 import { auth } from '@clerk/nextjs/server'
 import { redirect } from 'next/navigation'
 import { db } from '@/lib/db'
+import { getBusinessForDashboard } from '@/lib/get-business-for-dashboard'
 import { Calendar, Clock, User, Phone } from 'lucide-react'
 import { formatPhoneNumber } from '@/lib/utils'
 
@@ -13,10 +14,11 @@ export default async function AppointmentsPage() {
     include: { business: true }
   })
 
-  if (!user?.business) redirect('/onboarding')
+  const { business } = await getBusinessForDashboard(userId, user?.business ?? null)
+  if (!business) redirect('/onboarding')
 
   const appointments = await db.appointment.findMany({
-    where: { businessId: user.business.id },
+    where: { businessId: business.id },
     orderBy: { scheduledAt: 'desc' },
     include: { conversation: true }
   })

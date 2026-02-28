@@ -1,6 +1,7 @@
 import { auth } from '@clerk/nextjs/server'
 import { redirect, notFound } from 'next/navigation'
 import { db } from '@/lib/db'
+import { getBusinessForDashboard } from '@/lib/get-business-for-dashboard'
 import { Phone, ArrowLeft, Calendar, User, Clock, AlertTriangle } from 'lucide-react'
 import Link from 'next/link'
 import { formatPhoneNumber } from '@/lib/utils'
@@ -16,7 +17,8 @@ export default async function ConversationDetailPage({ params }: { params: Promi
     include: { business: true }
   })
 
-  if (!user?.business) redirect('/onboarding')
+  const { business } = await getBusinessForDashboard(userId, user?.business ?? null)
+  if (!business) redirect('/onboarding')
 
   const conversation = await db.conversation.findUnique({
     where: { id },
@@ -28,7 +30,7 @@ export default async function ConversationDetailPage({ params }: { params: Promi
   })
 
   // Make sure conversation belongs to this business
-  if (!conversation || conversation.businessId !== user.business.id) {
+  if (!conversation || conversation.businessId !== business.id) {
     notFound()
   }
 

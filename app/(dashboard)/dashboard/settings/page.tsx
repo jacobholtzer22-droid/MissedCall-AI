@@ -1,6 +1,8 @@
 import { auth } from '@clerk/nextjs/server'
 import { redirect } from 'next/navigation'
+import { cookies } from 'next/headers'
 import { db } from '@/lib/db'
+import { getBusinessForDashboard } from '@/lib/get-business-for-dashboard'
 import { Building, Bot, Phone } from 'lucide-react'
 import { revalidatePath } from 'next/cache'
 
@@ -13,15 +15,19 @@ export default async function SettingsPage() {
     include: { business: true }
   })
 
-  if (!user?.business) redirect('/onboarding')
-
-  const business = user.business
+  const { business, isAdminViewAs } = await getBusinessForDashboard(userId, user?.business ?? null)
+  if (!business) redirect('/onboarding')
 
   async function saveSettings(formData: FormData) {
     'use server'
 
     const { userId } = await auth()
     if (!userId) throw new Error('Not authenticated')
+
+    const cookieStore = await cookies()
+    if (cookieStore.get('adminViewAs')?.value) {
+      throw new Error('Cannot save settings while viewing as another client')
+    }
 
     const user = await db.user.findUnique({
       where: { clerkId: userId },
@@ -60,6 +66,11 @@ export default async function SettingsPage() {
         <p className="text-gray-500 mt-1">Configure your business profile and AI assistant</p>
       </div>
 
+      {isAdminViewAs && (
+        <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 text-amber-800 text-sm">
+          You are viewing as a client. Changes cannot be saved in this mode.
+        </div>
+      )}
       <form action={saveSettings} className="space-y-6">
         <div className="bg-white rounded-xl border border-gray-200 p-6">
           <div className="flex items-start space-x-4 mb-4">
@@ -139,7 +150,7 @@ export default async function SettingsPage() {
         </div>
 
         <div className="flex justify-end">
-          <button type="submit" className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition font-medium">Save Changes</button>
+          <button type="submit" disabled={isAdminViewAs} className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition font-medium disabled:opacity-50 disabled:cursor-not-allowed">Save Changes</button>
         </div>
       </form>
     </div>

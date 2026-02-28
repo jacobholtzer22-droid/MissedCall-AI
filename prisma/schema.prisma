@@ -56,6 +56,7 @@ model Business {
   callScreenerMessage   String?
   missedCallVoiceMessage String?  @default("We're sorry we can't get to the phone right now. You should receive a text message shortly.")
   missedCallAiEnabled   Boolean   @default(true)        // Send AI SMS after missed call
+  smsCooldownDays       Int?                            // Cooldown period in days (null = use env SMS_COOLDOWN_DAYS or default 7)
 
   // Timestamps
   createdAt             DateTime  @default(now())
@@ -67,8 +68,51 @@ model Business {
   appointments          Appointment[]
   screenedCalls         ScreenedCall[]
   blockedNumbers        BlockedNumber[]
+  contacts              Contact[]
+  contactCooldowns      ContactCooldown[]
+  cooldownSkipLogs      CooldownSkipLog[]
+  telnyxUsageRecords    TelnyxUsageRecord[]
 
   @@index([stripeCustomerId])
+}
+
+// ===========================================
+// TELNYX USAGE RECORD - Cached MDR/CDR cost data per business
+// Stores actual Telnyx charges from Detail Record Search API
+// ===========================================
+model TelnyxUsageRecord {
+  id              String   @id @default(cuid())
+  businessId      String
+  business        Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  recordType      String   // "sms" | "call"
+  telnyxRecordId  String   @unique               // Telnyx MDR uuid or CDR id
+  cost            Float    @default(0)           // USD amount charged by Telnyx
+
+  occurredAt      DateTime
+  metadata        Json?    // { durationSeconds?, from?, to?, direction?, ... }
+
+  createdAt       DateTime @default(now())
+
+  @@index([businessId])
+  @@index([businessId, recordType])
+  @@index([occurredAt])
+}
+
+// ===========================================
+// CONTACT - Client's address book; skip automated SMS to existing contacts
+// Numbers here are people the business already knows (no wasted texts)
+// ===========================================
+model Contact {
+  id          String   @id @default(cuid())
+  businessId  String
+  business    Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  phoneNumber String   // Stored in normalized form for matching
+  name        String?
+  createdAt   DateTime @default(now())
+
+  @@unique([businessId, phoneNumber])
+  @@index([businessId])
 }
 
 // ===========================================
@@ -181,6 +225,7 @@ model Message {
   // Telnyx tracking
   telnyxSid             String?                         // Telnyx message ID for tracking
   telnyxStatus          String?                         // sent, delivered, failed, etc.
+  cost                  Float?                          // Actual cost from Telnyx MDR (USD)
 
   // Timestamps
   createdAt             DateTime  @default(now())
@@ -251,6 +296,42 @@ model PhoneNumber {
   updatedAt             DateTime  @updatedAt
 
   @@index([status])
+}
+
+// ===========================================
+// CONTACT COOLDOWN - Tracks last automated message per phone number
+// Used to enforce SMS cooldown (e.g. don't send to same number within 7 days)
+// ===========================================
+model ContactCooldown {
+  id              String   @id @default(cuid())
+  businessId      String
+  business        Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  phoneNumber     String
+  lastMessageSent DateTime
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([businessId, phoneNumber])
+  @@index([businessId])
+  @@index([phoneNumber])
+}
+
+// ===========================================
+// COOLDOWN SKIP LOG - Tracks when messages are skipped due to cooldown
+// For analytics / cost savings reporting
+// ===========================================
+model CooldownSkipLog {
+  id              String   @id @default(cuid())
+  businessId      String
+  business        Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  phoneNumber     String
+  reason          String   @default("cooldown")
+  attemptedAt     DateTime @default(now())
+  lastMessageSent DateTime
+  messageType     String?                          // "missed_call", "ai_followup", etc.
+
+  @@index([businessId])
+  @@index([attemptedAt])
 }
 
 // ===========================================

@@ -7,6 +7,7 @@ import { auth } from '@clerk/nextjs/server'
 import { redirect } from 'next/navigation'
 import { Prisma } from '@prisma/client'
 import { db } from '@/lib/db'
+import { getBusinessForDashboard } from '@/lib/get-business-for-dashboard'
 import { MessageSquare, Calendar } from 'lucide-react'
 import { formatRelativeTime, formatPhoneNumber } from '@/lib/utils'
 import Link from 'next/link'
@@ -87,12 +88,13 @@ export default async function ConversationsPage({
     include: { business: true }
   })
 
-  if (!user?.business) redirect('/onboarding')
+  const { business } = await getBusinessForDashboard(userId, user?.business ?? null)
+  if (!business) redirect('/onboarding')
 
   const { status: statusParam } = await searchParams
   const [conversations, statusCounts] = await Promise.all([
-    getConversations(user.business.id, statusParam),
-    getStatusCounts(user.business.id)
+    getConversations(business.id, statusParam),
+    getStatusCounts(business.id)
   ])
   const totalCount = Object.values(statusCounts).reduce((a, b) => a + b, 0)
   const currentStatus = statusParam && statusParam !== 'all' ? statusParam : 'all'
@@ -196,7 +198,7 @@ export default async function ConversationsPage({
                       )}
                       <p className="text-sm text-gray-500 truncate max-w-md">
                         {conversation.messages[0]?.content ||
-                          (user.business.missedCallAiEnabled === false
+                          (business.missedCallAiEnabled === false
                             ? 'Screening Only - No AI Follow-up'
                             : 'No messages yet')}
                       </p>

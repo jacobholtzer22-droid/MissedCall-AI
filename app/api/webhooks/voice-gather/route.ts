@@ -10,6 +10,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import Telnyx from 'telnyx'
 import { db } from '@/lib/db'
+import { checkCooldown, recordMessageSent, logCooldownSkip } from '@/lib/sms-cooldown'
+import { isExistingContact, logContactSkip } from '@/lib/contacts-check'
 
 const xmlHeaders = { 'Content-Type': 'text/xml' as const }
 
@@ -90,9 +92,40 @@ export async function POST(request: NextRequest) {
 }
 
 async function triggerMissedCallSMS(
-  business: { id: string; name: string; aiGreeting: string | null; telnyxPhoneNumber: string | null },
+  business: { id: string; name: string; aiGreeting: string | null; telnyxPhoneNumber: string | null; smsCooldownDays?: number | null },
   callerPhone: string
 ) {
+  // 0. Check blocked list first
+  const blocked = await db.blockedNumber.findFirst({
+    where: { businessId: business.id, phoneNumber: callerPhone },
+  })
+  if (blocked) {
+    await db.cooldownSkipLog.create({
+      data: {
+        businessId: business.id,
+        phoneNumber: callerPhone,
+        reason: 'blocked',
+        lastMessageSent: new Date(0),
+        messageType: 'missed_call',
+      },
+    })
+    return
+  }
+
+  // 1. Check contacts first — skip if caller is in client's address book
+  const isContact = await isExistingContact(business.id, callerPhone)
+  if (isContact) {
+    await logContactSkip(business.id, callerPhone, 'missed_call')
+    return
+  }
+
+  // 2. Check cooldown — skip if we recently sent to this number
+  const cooldown = await checkCooldown(business.id, callerPhone, business)
+  if (!cooldown.allowed && cooldown.lastMessageSent) {
+    await logCooldownSkip(business.id, callerPhone, cooldown.lastMessageSent, 'missed_call')
+    return
+  }
+
   const telnyxClient = new Telnyx({ apiKey: process.env.TELNYX_API_KEY! })
 
   // Check for existing conversation
@@ -140,6 +173,7 @@ async function triggerMissedCallSMS(
       },
     })
 
+    await recordMessageSent(business.id, callerPhone)
     console.log('📤 Sent MissedCall AI SMS:', (message as any).data?.id)
   } catch (error) {
     console.error('❌ Error sending SMS:', error)
