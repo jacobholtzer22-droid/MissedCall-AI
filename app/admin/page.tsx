@@ -1172,7 +1172,7 @@ function UsagePanel({
   const [testTelnyxResult, setTestTelnyxResult] = useState<{
     totalCount: number
     records: { from: string; to: string; direction: string; cost: string; created_at: string }[]
-    raw?: unknown
+    raw?: Record<string, unknown>
     error?: string
   } | null>(null)
 
@@ -1413,7 +1413,7 @@ function UsagePanel({
                 <details className="mt-4">
                   <summary className="text-sm text-gray-400 cursor-pointer hover:text-gray-300">Raw API response</summary>
                   <pre className="mt-2 p-3 bg-gray-950 rounded text-xs text-gray-400 overflow-x-auto max-h-64 overflow-y-auto">
-                    {JSON.stringify(testTelnyxResult.raw, null, 2)}
+                    {JSON.stringify(testTelnyxResult.raw as Record<string, unknown>, null, 2)}
                   </pre>
                 </details>
               )}
