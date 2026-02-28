@@ -5,7 +5,7 @@ import { NavBar } from './NavBar'
 
 export function ConditionalNavBar() {
   const pathname = usePathname()
-  if (pathname?.startsWith('/dashboard') || pathname?.startsWith('/admin')) {
+  if (pathname?.startsWith('/dashboard') || pathname?.startsWith('/admin') || pathname?.includes('/embed')) {
     return null
   }
   return <NavBar />

@@ -4,6 +4,8 @@
 // Token refresh, OAuth, and Calendar API helpers
 
 import { google } from 'googleapis'
+import { addMinutes } from 'date-fns'
+import { TZDate } from '@date-fns/tz'
 import { db } from '@/lib/db'
 
 const SCOPES = ['https://www.googleapis.com/auth/calendar']
@@ -144,27 +146,140 @@ function slotOverlapsBusy(
   return false
 }
 
+/** Parse YYYY-MM-DD into year, month (1-12), day for TZDate (month 0-indexed in constructor) */
+function parseDateString(dateStr: string): { year: number; month: number; day: number } | null {
+  const m = dateStr.match(/^(\d{4})-(\d{2})-(\d{2})$/)
+  if (!m) return null
+  return { year: parseInt(m[1], 10), month: parseInt(m[2], 10) - 1, day: parseInt(m[3], 10) }
+}
+
+/**
+ * Availability logic: Business hours minus Google Calendar conflicts = available slots.
+ * All date logic uses the business's timezone.
+ * Accepts Date or YYYY-MM-DD strings. When given Dates, extracts date in UTC for consistency.
+ */
 export async function getAvailableSlots(
   businessId: string,
-  startDate: Date,
-  endDate: Date
+  startDate: Date | string,
+  endDate: Date | string
 ): Promise<TimeSlot[]> {
+  const startStr = typeof startDate === 'string' ? startDate.slice(0, 10) : startDate.toISOString().slice(0, 10)
+  const endStr = typeof endDate === 'string' ? endDate.slice(0, 10) : endDate.toISOString().slice(0, 10)
+  const result = await getAvailableSlotsInternal(businessId, startStr, endStr, false)
+  return result.slots
+}
+
+export interface AvailableSlotsDebug {
+  businessId: string
+  businessSlug?: string
+  calendarEnabled: boolean
+  googleCalendarConnected: boolean
+  tokensExist: boolean
+  businessHours: Record<string, { open: string; close: string } | null>
+  timezone: string
+  dateRangeQueried: { start: string; end: string }
+  timeMin: string
+  timeMax: string
+  googleCalendarBusyTimes: { start: string; end: string }[]
+  googleCalendarError?: string
+  slotsBeforeFiltering: number
+  slotsAfterPastFilter: number
+  finalSlotCount: number
+  finalSlots: TimeSlot[]
+}
+
+export async function getAvailableSlotsWithDebug(
+  businessId: string,
+  startStr: string,
+  endStr: string,
+  businessSlug?: string
+): Promise<{ slots: TimeSlot[]; debug: AvailableSlotsDebug }> {
+  const result = await getAvailableSlotsInternal(businessId, startStr, endStr, true, businessSlug)
+  return { slots: result.slots, debug: result.debug! }
+}
+
+async function getAvailableSlotsInternal(
+  businessId: string,
+  startStr: string,
+  endStr: string,
+  withDebug: boolean,
+  businessSlug?: string
+): Promise<{ slots: TimeSlot[]; debug?: AvailableSlotsDebug }> {
   const business = await db.business.findUnique({
     where: { id: businessId },
-    select: { businessHours: true, slotDurationMinutes: true, timezone: true, googleCalendarConnected: true },
+    select: {
+      businessHours: true,
+      slotDurationMinutes: true,
+      timezone: true,
+      googleCalendarConnected: true,
+      calendarEnabled: true,
+      googleAccessToken: true,
+      googleRefreshToken: true,
+    },
   })
-  if (!business?.googleCalendarConnected) return []
 
-  const hours = parseBusinessHours(business.businessHours)
-  const slotMins = business.slotDurationMinutes ?? 30
-  const tz = business.timezone ?? 'America/New_York'
+  const tz = business?.timezone ?? 'America/New_York'
+  const hours = parseBusinessHours(business?.businessHours)
+  const slotMins = business?.slotDurationMinutes ?? 30
+  const tokensExist = !!(business?.googleAccessToken || business?.googleRefreshToken)
 
-  const busy = await getBusyTimes(businessId, startDate, endDate)
+  const debug: AvailableSlotsDebug = {
+    businessId,
+    businessSlug,
+    calendarEnabled: !!business?.calendarEnabled,
+    googleCalendarConnected: !!business?.googleCalendarConnected,
+    tokensExist,
+    businessHours: hours,
+    timezone: tz,
+    dateRangeQueried: { start: startStr, end: endStr },
+    timeMin: '',
+    timeMax: '',
+    googleCalendarBusyTimes: [],
+    slotsBeforeFiltering: 0,
+    slotsAfterPastFilter: 0,
+    finalSlotCount: 0,
+    finalSlots: [],
+  }
+
+  if (!business?.googleCalendarConnected) {
+    return withDebug ? { slots: [], debug } : { slots: [] }
+  }
+
+  // Build timeMin/timeMax in business TZ: start-of-day to end-of-day for the date range
+  const startParsed = parseDateString(startStr)
+  const endParsed = parseDateString(endStr)
+  if (!startParsed || !endParsed) {
+    return withDebug ? { slots: [], debug } : { slots: [] }
+  }
+
+  const timeMinTZ = new TZDate(startParsed.year, startParsed.month, startParsed.day, 0, 0, 0, 0, tz)
+  const timeMaxTZ = new TZDate(endParsed.year, endParsed.month, endParsed.day, 23, 59, 59, 999, tz)
+  const timeMin = timeMinTZ.toISOString()!
+  const timeMax = timeMaxTZ.toISOString()!
+
+  debug.timeMin = timeMin
+  debug.timeMax = timeMax
+
+  let busy: { start: string; end: string }[] = []
+  let googleCalendarError: string | undefined
+
+  try {
+    busy = await getBusyTimesWithRange(businessId, timeMin, timeMax)
+    debug.googleCalendarBusyTimes = busy
+  } catch (err) {
+    googleCalendarError = err instanceof Error ? err.message : String(err)
+    debug.googleCalendarError = googleCalendarError
+  }
+
   const slots: TimeSlot[] = []
-  const cursor = new Date(startDate)
-  cursor.setHours(0, 0, 0, 0)
+  const now = new Date()
+  let slotsBeforeFiltering = 0
+  let slotsAfterPastFilter = 0
 
-  while (cursor <= endDate) {
+  const cursor = new TZDate(startParsed.year, startParsed.month, startParsed.day, 0, 0, 0, 0, tz)
+  const endCursor = new TZDate(endParsed.year, endParsed.month, endParsed.day, 23, 59, 59, 999, tz)
+
+  while (cursor <= endCursor) {
     const dayName = DAY_NAMES[cursor.getDay()]
     const dayHours = hours[dayName]
     if (!dayHours) {
@@ -174,27 +289,59 @@ export async function getAvailableSlots(
 
     const [openH, openM] = dayHours.open.split(':').map(Number)
     const [closeH, closeM] = dayHours.close.split(':').map(Number)
-    const dayStart = new Date(cursor)
-    dayStart.setHours(openH, openM, 0, 0)
-    const dayEnd = new Date(cursor)
-    dayEnd.setHours(closeH, closeM, 0, 0)
+    const dayStart = new TZDate(cursor.getFullYear(), cursor.getMonth(), cursor.getDate(), openH, openM, 0, 0, tz)
+    const dayEnd = new TZDate(cursor.getFullYear(), cursor.getMonth(), cursor.getDate(), closeH, closeM, 0, 0, tz)
 
-    let slotStart = new Date(dayStart)
-    while (slotStart < dayEnd) {
-      const slotEnd = new Date(slotStart.getTime() + slotMins * 60 * 1000)
-      if (slotEnd <= dayEnd && !slotOverlapsBusy(slotStart, slotEnd, busy) && slotStart >= new Date()) {
-        slots.push({
-          start: slotStart.toISOString(),
-          end: slotEnd.toISOString(),
-          display: slotStart.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }),
-        })
+    let slotStart = new Date(dayStart.getTime())
+    const dayEndMs = dayEnd.getTime()
+
+    while (slotStart.getTime() < dayEndMs) {
+      const slotEnd = addMinutes(slotStart, slotMins)
+      if (slotEnd.getTime() <= dayEndMs) {
+        slotsBeforeFiltering++
+        const overlapsBusy = slotOverlapsBusy(slotStart, slotEnd, busy)
+        const isPast = slotStart < now
+        if (!overlapsBusy && !isPast) {
+          slotsAfterPastFilter++
+          slots.push({
+            start: slotStart.toISOString(),
+            end: slotEnd.toISOString(),
+            display: slotStart.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }),
+          })
+        }
       }
       slotStart = slotEnd
     }
     cursor.setDate(cursor.getDate() + 1)
   }
 
-  return slots
+  debug.slotsBeforeFiltering = slotsBeforeFiltering
+  debug.slotsAfterPastFilter = slotsAfterPastFilter
+  debug.finalSlotCount = slots.length
+  debug.finalSlots = slots
+
+  return withDebug ? { slots, debug } : { slots }
+}
+
+/** Get busy times from Google Calendar freebusy API - used by getAvailableSlots */
+async function getBusyTimesWithRange(
+  businessId: string,
+  timeMin: string,
+  timeMax: string
+): Promise<{ start: string; end: string }[]> {
+  const calendar = await getCalendarClient(businessId)
+  if (!calendar) return []
+
+  const freeBusy = await calendar.freebusy.query({
+    requestBody: {
+      timeMin,
+      timeMax,
+      items: [{ id: 'primary' }],
+    },
+  })
+
+  const busy = freeBusy.data.calendars?.primary?.busy ?? []
+  return busy.map(b => ({ start: b.start!, end: b.end! }))
 }
 
 export async function getBusyTimes(
@@ -202,25 +349,9 @@ export async function getBusyTimes(
   startDate: Date,
   endDate: Date
 ): Promise<{ start: string; end: string }[]> {
-  const calendar = await getCalendarClient(businessId)
-  if (!calendar) return []
-
-  const business = await db.business.findUnique({
-    where: { id: businessId },
-    select: { timezone: true },
-  })
-  const tz = business?.timezone ?? 'America/New_York'
-
-  const freeBusy = await calendar.freebusy.query({
-    requestBody: {
-      timeMin: startDate.toISOString(),
-      timeMax: endDate.toISOString(),
-      items: [{ id: 'primary' }],
-    },
-  })
-
-  const busy = freeBusy.data.calendars?.primary?.busy ?? []
-  return busy.map(b => ({ start: b.start!, end: b.end! }))
+  const timeMin = startDate.toISOString()
+  const timeMax = endDate.toISOString()
+  return getBusyTimesWithRange(businessId, timeMin, timeMax)
 }
 
 export async function createCalendarEvent(

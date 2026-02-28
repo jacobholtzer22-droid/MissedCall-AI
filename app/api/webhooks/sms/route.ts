@@ -238,20 +238,20 @@ async function handleSmsBookingFlow(
   const hasBookingIntent = BOOKING_INTENT_WORDS.some(w => trimmed.includes(w))
   if (!hasBookingIntent || !business.calendarEnabled || !business.googleCalendarConnected) return false
 
-  // Fetch available slots for next 3 business days
-  const start = new Date()
-  start.setHours(0, 0, 0, 0)
-  const end = new Date(start)
-  let daysAdded = 0
-  let businessDays = 0
-  while (businessDays < 3 && daysAdded < 14) {
-    end.setDate(end.getDate() + 1)
-    daysAdded++
-    const day = end.getDay()
-    if (day !== 0 && day !== 6) businessDays++
-  }
+  const baseUrl =
+    process.env.NEXT_PUBLIC_APP_URL ??
+    (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'https://alignandacquire.com')
+  const bookingUrl = `${baseUrl}/book/${business.slug}`
 
-  const slots = await getAvailableSlots(business.id, start, end)
+  // Fetch available slots for next 14 days (use business TZ for correct dates)
+  const tz = business.timezone ?? 'America/New_York'
+  const now = new Date()
+  const startStr = now.toLocaleDateString('en-CA', { timeZone: tz }) // YYYY-MM-DD
+  const endDate = new Date(now)
+  endDate.setDate(endDate.getDate() + 14)
+  const endStr = endDate.toLocaleDateString('en-CA', { timeZone: tz })
+
+  const slots = await getAvailableSlots(business.id, startStr, endStr)
   const displaySlots = slots.slice(0, 8) // Max 8 slots for SMS
 
   if (displaySlots.length === 0) {
@@ -259,7 +259,7 @@ async function handleSmsBookingFlow(
       business,
       conversation.id,
       from,
-      "We don't have any availability in the next few days. Please call us to schedule!"
+      `Hi! You can book online here: ${bookingUrl}\n\nWe don't have any availability in the next few days. Please check the link for other dates or call us to schedule!`
     )
     return true
   }
@@ -267,9 +267,9 @@ async function handleSmsBookingFlow(
   const lines = displaySlots.map((s, i) => {
     const d = new Date(s.start)
     const dateStr = d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
-    return `${i + 1}. ${dateStr} at ${s.display}`
+    return `${i + 1}. ${dateStr} - ${s.display}`
   })
-  const msg = `Here are available times:\n${lines.join('\n')}\nReply with the number of your preferred slot.`
+  const msg = `Hi! You can book online here: ${bookingUrl}\n\nOr pick a time below:\n${lines.join('\n')}\n\nReply with a number to book!`
   await sendSMSAndLog(business, conversation.id, from, msg)
 
   await db.conversation.update({

@@ -4,6 +4,7 @@ import { useEffect, useState, useRef } from 'react'
 import { useUser } from '@clerk/nextjs'
 import { useRouter } from 'next/navigation'
 import { CallScreenerCard } from './components/CallScreenerCard'
+import { EmbedCodeSection } from '@/app/components/EmbedCodeSection'
 import { parseContactFile } from '@/lib/import-contacts'
 
 interface Business {
@@ -671,6 +672,16 @@ export default function AdminDashboard() {
                       }}
                     />
                   </div>
+
+                  {business.calendarEnabled && business.googleCalendarConnected && (
+                    <div className="mt-4">
+                      <EmbedCodeSection
+                        businessSlug={business.slug}
+                        baseUrl={process.env.NEXT_PUBLIC_APP_URL || (typeof window !== 'undefined' ? window.location.origin : 'https://alignandacquire.com')}
+                        variant="dark"
+                      />
+                    </div>
+                  )}
 
                   {/* Usage & Cost section */}
                   {expandedUsageId === business.id && (

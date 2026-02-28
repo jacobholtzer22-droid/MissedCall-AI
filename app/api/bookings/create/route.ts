@@ -11,6 +11,7 @@ import {
   createCalendarEvent,
   getAvailableSlots,
 } from '@/lib/google-calendar'
+import { notifyOwnerOnBookingCreated } from '@/lib/notify-owner'
 
 export async function POST(request: NextRequest) {
   try {
@@ -60,12 +61,10 @@ export async function POST(request: NextRequest) {
     const slotDuration = business.slotDurationMinutes ?? 60
     const endDate = new Date(startDate.getTime() + slotDuration * 60 * 1000)
 
-    // Verify slot is still available
-    const dayStart = new Date(startDate)
-    dayStart.setHours(0, 0, 0, 0)
-    const dayEnd = new Date(dayStart)
-    dayEnd.setHours(23, 59, 59, 999)
-    const availableSlots = await getAvailableSlots(business.id, dayStart, dayEnd)
+    // Verify slot is still available (use business TZ for date to avoid timezone mismatch)
+    const tz = business.timezone ?? 'America/New_York'
+    const dateStr = startDate.toLocaleDateString('en-CA', { timeZone: tz }) // YYYY-MM-DD
+    const availableSlots = await getAvailableSlots(business.id, dateStr, dateStr)
     const isAvailable = availableSlots.some(
       s => new Date(s.start).getTime() === startDate.getTime()
     )
@@ -131,6 +130,20 @@ export async function POST(request: NextRequest) {
       } catch (smsErr) {
         console.error('Failed to send confirmation SMS:', smsErr)
       }
+    }
+
+    // Notify business owner (SMS + email)
+    try {
+      await notifyOwnerOnBookingCreated(business, {
+        id: appointment.id,
+        customerName: customerName.trim(),
+        customerPhone: customerPhone.trim(),
+        customerEmail: customerEmail?.trim() || null,
+        serviceType: serviceType.trim(),
+        scheduledAt: startDate,
+      })
+    } catch (notifyErr) {
+      console.error('Failed to notify owner of new booking:', notifyErr)
     }
 
     return NextResponse.json({

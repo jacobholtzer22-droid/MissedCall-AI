@@ -3,7 +3,8 @@ import { redirect } from 'next/navigation'
 import { cookies } from 'next/headers'
 import { db } from '@/lib/db'
 import { getBusinessForDashboard } from '@/lib/get-business-for-dashboard'
-import { Building, Bot, Phone, Calendar, CheckCircle, ExternalLink } from 'lucide-react'
+import { Building, Bot, Phone, Calendar, CheckCircle, ExternalLink, Bell } from 'lucide-react'
+import { EmbedCodeSection } from '@/app/components/EmbedCodeSection'
 import { revalidatePath } from 'next/cache'
 
 export default async function SettingsPage({
@@ -50,6 +51,10 @@ export default async function SettingsPage({
     const aiInstructions = formData.get('aiInstructions') as string
     const aiContext = formData.get('aiContext') as string
     const missedCallVoiceMessage = formData.get('missedCallVoiceMessage') as string
+    const ownerEmail = (formData.get('ownerEmail') as string)?.trim() || null
+    const ownerPhone = (formData.get('ownerPhone') as string)?.trim() || null
+    const notifyBySms = formData.get('notifyBySms') === 'on'
+    const notifyByEmail = formData.get('notifyByEmail') === 'on'
 
     await db.business.update({
       where: { id: user.business.id },
@@ -60,6 +65,10 @@ export default async function SettingsPage({
         aiInstructions: aiInstructions || null,
         aiContext: aiContext || null,
         missedCallVoiceMessage: missedCallVoiceMessage || null,
+        ownerEmail,
+        ownerPhone,
+        notifyBySms,
+        notifyByEmail,
       }
     })
 
@@ -154,20 +163,27 @@ export default async function SettingsPage({
           </div>
           <div className="ml-11 space-y-4">
             {business.googleCalendarConnected ? (
-              <div className="flex items-center gap-3 p-4 bg-green-50 border border-green-200 rounded-lg">
-                <CheckCircle className="h-5 w-5 text-green-600 shrink-0" />
-                <div>
-                  <p className="font-medium text-green-800">Calendar connected</p>
-                  <p className="text-sm text-green-700">Bookings sync to your Google Calendar. Booking page: /book/{business.slug}</p>
-                  <a
-                    href={`/book/${business.slug}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1 text-sm text-green-700 hover:text-green-800 mt-2"
-                  >
-                    View booking page <ExternalLink className="h-3 w-3" />
-                  </a>
+              <div className="space-y-4">
+                <div className="flex items-center gap-3 p-4 bg-green-50 border border-green-200 rounded-lg">
+                  <CheckCircle className="h-5 w-5 text-green-600 shrink-0" />
+                  <div>
+                    <p className="font-medium text-green-800">Calendar connected</p>
+                    <p className="text-sm text-green-700">Bookings sync to your Google Calendar. Booking page: /book/{business.slug}</p>
+                    <a
+                      href={`/book/${business.slug}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1 text-sm text-green-700 hover:text-green-800 mt-2"
+                    >
+                      View booking page <ExternalLink className="h-3 w-3" />
+                    </a>
+                  </div>
                 </div>
+                <EmbedCodeSection
+                  businessSlug={business.slug}
+                  baseUrl={process.env.NEXT_PUBLIC_APP_URL ?? (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'https://alignandacquire.com')}
+                  variant="light"
+                />
               </div>
             ) : (
               <a
@@ -183,6 +199,40 @@ export default async function SettingsPage({
                 Connect Google Calendar
               </a>
             )}
+          </div>
+        </div>
+        )}
+
+        {business.calendarEnabled && (
+        <div className="bg-white rounded-xl border border-gray-200 p-6">
+          <div className="flex items-start space-x-4 mb-4">
+            <div className="bg-blue-50 p-2 rounded-lg"><Bell className="h-5 w-5 text-blue-600" /></div>
+            <div>
+              <h2 className="text-lg font-semibold text-gray-900">Booking Notifications</h2>
+              <p className="text-sm text-gray-500">Get notified when appointments are booked or cancelled</p>
+            </div>
+          </div>
+          <div className="ml-11 space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Owner Email</label>
+              <input type="email" name="ownerEmail" defaultValue={business.ownerEmail ?? ''} placeholder="you@yourbusiness.com" className="w-full px-3 py-2 bg-white text-gray-900 border border-gray-200 rounded-lg placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+              <p className="text-xs text-gray-500 mt-1">Email address to receive booking and cancellation notifications.</p>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Owner Phone (optional)</label>
+              <input type="tel" name="ownerPhone" defaultValue={business.ownerPhone ?? ''} placeholder={business.forwardingNumber ?? '+1234567890'} className="w-full px-3 py-2 bg-white text-gray-900 border border-gray-200 rounded-lg placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+              <p className="text-xs text-gray-500 mt-1">SMS notifications go here. Leave blank to use your forwarding number.</p>
+            </div>
+            <div className="flex items-center gap-4">
+              <label className="flex items-center gap-2">
+                <input type="checkbox" name="notifyBySms" defaultChecked={business.notifyBySms ?? true} className="rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
+                <span className="text-sm font-medium text-gray-700">Notify by SMS</span>
+              </label>
+              <label className="flex items-center gap-2">
+                <input type="checkbox" name="notifyByEmail" defaultChecked={business.notifyByEmail ?? true} className="rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
+                <span className="text-sm font-medium text-gray-700">Notify by Email</span>
+              </label>
+            </div>
           </div>
         </div>
         )}

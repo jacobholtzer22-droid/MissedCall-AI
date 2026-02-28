@@ -61,6 +61,12 @@ model Business {
   missedCallAiEnabled   Boolean   @default(true)        // Send AI SMS after missed call
   smsCooldownDays       Int?                            // Cooldown period in days (null = use env SMS_COOLDOWN_DAYS or default 7)
 
+  // Owner notification preferences (booking created/cancelled)
+  ownerEmail            String?                         // Business owner email for notifications
+  ownerPhone            String?                         // Owner's phone for SMS (falls back to forwardingNumber)
+  notifyBySms           Boolean   @default(true)        // Send SMS to owner on booking events
+  notifyByEmail         Boolean   @default(true)        // Send email to owner on booking events
+
   // Timestamps
   createdAt             DateTime  @default(now())
   updatedAt             DateTime  @updatedAt

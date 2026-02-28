@@ -11,6 +11,23 @@ interface TimeSlot {
   display: string
 }
 
+interface SlotsDebug {
+  businessId: string
+  calendarEnabled: boolean
+  googleCalendarConnected: boolean
+  tokensExist: boolean
+  businessHours: Record<string, { open: string; close: string } | null>
+  timezone: string
+  dateRangeQueried: { start: string; end: string }
+  timeMin: string
+  timeMax: string
+  googleCalendarBusyTimes: { start: string; end: string }[]
+  googleCalendarError?: string
+  slotsBeforeFiltering: number
+  slotsAfterPastFilter: number
+  finalSlotCount: number
+}
+
 export default function BookingPage() {
   const params = useParams()
   const slug = params.businessSlug as string
@@ -22,6 +39,7 @@ export default function BookingPage() {
   const [slots, setSlots] = useState<TimeSlot[]>([])
   const [slotsLoading, setSlotsLoading] = useState(false)
   const [selectedSlot, setSelectedSlot] = useState<TimeSlot | null>(null)
+  const [slotsDebug, setSlotsDebug] = useState<SlotsDebug | null>(null)
 
   const [name, setName] = useState('')
   const [phone, setPhone] = useState('')
@@ -50,6 +68,7 @@ export default function BookingPage() {
   useEffect(() => {
     if (!slug || !selectedDate) {
       setSlots([])
+      setSlotsDebug(null)
       return
     }
     setSlotsLoading(true)
@@ -58,10 +77,12 @@ export default function BookingPage() {
       .then(res => res.json())
       .then(data => {
         setSlots(data.slots ?? [])
+        setSlotsDebug(data.debug ?? null)
         setSlotsLoading(false)
       })
       .catch(() => {
         setSlots([])
+        setSlotsDebug(null)
         setSlotsLoading(false)
       })
   }, [slug, selectedDate])
@@ -190,24 +211,48 @@ export default function BookingPage() {
                 {slotsLoading ? (
                   <p className="text-gray-500 text-sm">Loading...</p>
                 ) : slots.length === 0 ? (
-                  <p className="text-gray-500 text-sm">No availability on this date</p>
-                ) : (
-                  <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
-                    {slots.map(slot => (
-                      <button
-                        key={slot.start}
-                        type="button"
-                        onClick={() => setSelectedSlot(slot)}
-                        className={`px-3 py-2 rounded-lg text-sm font-medium transition ${
-                          selectedSlot?.start === slot.start
-                            ? 'bg-blue-600 text-white'
-                            : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                        }`}
-                      >
-                        {slot.display}
-                      </button>
-                    ))}
+                  <div>
+                    <p className="text-gray-500 text-sm">No availability on this date</p>
+                    {slotsDebug && (
+                      <details className="mt-4">
+                        <summary className="text-xs font-medium text-gray-500 cursor-pointer hover:text-gray-700">
+                          Debug info
+                        </summary>
+                        <pre className="mt-2 p-4 bg-gray-100 rounded-lg text-xs overflow-auto max-h-64">
+                          {JSON.stringify(slotsDebug, null, 2)}
+                        </pre>
+                      </details>
+                    )}
                   </div>
+                ) : (
+                  <>
+                    <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
+                      {slots.map(slot => (
+                        <button
+                          key={slot.start}
+                          type="button"
+                          onClick={() => setSelectedSlot(slot)}
+                          className={`px-3 py-2 rounded-lg text-sm font-medium transition ${
+                            selectedSlot?.start === slot.start
+                              ? 'bg-blue-600 text-white'
+                              : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                          }`}
+                        >
+                          {slot.display}
+                        </button>
+                      ))}
+                    </div>
+                    {slotsDebug && (
+                      <details className="mt-4">
+                        <summary className="text-xs font-medium text-gray-500 cursor-pointer hover:text-gray-700">
+                          Debug info
+                        </summary>
+                        <pre className="mt-2 p-4 bg-gray-100 rounded-lg text-xs overflow-auto max-h-64">
+                          {JSON.stringify(slotsDebug, null, 2)}
+                        </pre>
+                      </details>
+                    )}
+                  </>
                 )}
               </div>
             )}
