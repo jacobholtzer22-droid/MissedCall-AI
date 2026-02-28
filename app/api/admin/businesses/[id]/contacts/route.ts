@@ -90,7 +90,16 @@ export async function DELETE(
   if (!userId || userId !== ADMIN_USER_ID) return unauthorized()
 
   const businessId = context.params.id
-  const searchParams = request.nextUrl.searchParams
+  // DEBUG: log request details before any validation
+  const rawUrl = request.url
+  const searchParamsFromUrl = new URL(rawUrl).searchParams
+  console.log('[DELETE contacts] raw request.url:', rawUrl)
+  console.log('[DELETE contacts] request.nextUrl:', request.nextUrl?.href)
+  console.log('[DELETE contacts] query params:', Object.fromEntries(searchParamsFromUrl))
+  console.log('[DELETE contacts] id:', searchParamsFromUrl.get('id'))
+  console.log('[DELETE contacts] phoneNumber:', searchParamsFromUrl.get('phoneNumber'))
+
+  const searchParams = searchParamsFromUrl
   const contactId = searchParams.get('id')?.trim() || null
   const phoneNumber = searchParams.get('phoneNumber')?.trim() || null
 
