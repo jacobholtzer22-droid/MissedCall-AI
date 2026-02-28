@@ -1168,6 +1168,36 @@ function UsagePanel({
   refreshLoading: boolean
   refreshFeedback?: string | null
 }) {
+  const [testTelnyxLoading, setTestTelnyxLoading] = useState(false)
+  const [testTelnyxResult, setTestTelnyxResult] = useState<{
+    totalCount: number
+    records: { from: string; to: string; direction: string; cost: string; created_at: string }[]
+    raw?: unknown
+    error?: string
+  } | null>(null)
+
+  async function handleTestTelnyx() {
+    setTestTelnyxLoading(true)
+    setTestTelnyxResult(null)
+    try {
+      const res = await fetch('/api/admin/telnyx-test')
+      const json = await res.json()
+      if (!res.ok) {
+        setTestTelnyxResult({ totalCount: 0, records: [], error: json.error ?? 'Request failed', raw: json })
+        return
+      }
+      setTestTelnyxResult({
+        totalCount: json.totalCount ?? 0,
+        records: json.records ?? [],
+        raw: json.raw,
+      })
+    } catch (err) {
+      setTestTelnyxResult({ totalCount: 0, records: [], error: String(err) })
+    } finally {
+      setTestTelnyxLoading(false)
+    }
+  }
+
   const formatPhone = (p: string) => {
     const d = p.replace(/\D/g, '')
     if (d.length === 10) return `(${d.slice(0, 3)}) ${d.slice(3, 6)}-${d.slice(6)}`
@@ -1195,6 +1225,14 @@ function UsagePanel({
         >
           {refreshLoading ? 'Syncing…' : 'Refresh Usage'}
         </button>
+          <button
+            type="button"
+            onClick={handleTestTelnyx}
+            disabled={testTelnyxLoading}
+            className="px-4 py-2 bg-gray-600 hover:bg-gray-500 disabled:opacity-50 rounded-lg text-sm font-medium transition"
+          >
+            {testTelnyxLoading ? 'Testing…' : 'Test Telnyx API'}
+          </button>
         </div>
       </div>
       {/* Stats row */}
@@ -1326,6 +1364,63 @@ function UsagePanel({
           )}
         </div>
       </div>
+      {/* Telnyx API Test Modal */}
+      {testTelnyxResult && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={() => setTestTelnyxResult(null)}>
+          <div className="bg-gray-900 border border-gray-700 rounded-xl shadow-xl max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
+            <div className="p-4 border-b border-gray-700 flex items-center justify-between">
+              <h3 className="text-lg font-semibold text-white">Telnyx API Debug — Messaging Records (last 7 days)</h3>
+              <button onClick={() => setTestTelnyxResult(null)} className="text-gray-400 hover:text-white">✕</button>
+            </div>
+            <div className="p-4 overflow-y-auto flex-1">
+              {testTelnyxResult.error ? (
+                <p className="text-red-400 mb-4">Error: {testTelnyxResult.error}</p>
+              ) : (
+                <p className="text-gray-300 mb-4">
+                  <strong>Total records returned:</strong> {testTelnyxResult.totalCount}
+                </p>
+              )}
+              {testTelnyxResult.records && testTelnyxResult.records.length > 0 && (
+                <div className="mb-4 overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="text-left text-gray-400 border-b border-gray-700">
+                        <th className="py-2 pr-4">From</th>
+                        <th className="py-2 pr-4">To</th>
+                        <th className="py-2 pr-4">Direction</th>
+                        <th className="py-2 pr-4">Cost</th>
+                        <th className="py-2">Created</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {testTelnyxResult.records.map((r, i) => (
+                        <tr key={i} className="border-b border-gray-800/50">
+                          <td className="py-2 pr-4 text-gray-200 font-mono text-xs">{r.from}</td>
+                          <td className="py-2 pr-4 text-gray-200 font-mono text-xs">{r.to}</td>
+                          <td className="py-2 pr-4 text-gray-300">{r.direction}</td>
+                          <td className="py-2 pr-4 text-amber-400">{r.cost}</td>
+                          <td className="py-2 text-gray-400 text-xs">{r.created_at}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+              {testTelnyxResult.records?.length === 0 && !testTelnyxResult.error && (
+                <p className="text-gray-500 italic">No records returned from Telnyx.</p>
+              )}
+              {testTelnyxResult.raw && (
+                <details className="mt-4">
+                  <summary className="text-sm text-gray-400 cursor-pointer hover:text-gray-300">Raw API response</summary>
+                  <pre className="mt-2 p-3 bg-gray-950 rounded text-xs text-gray-400 overflow-x-auto max-h-64 overflow-y-auto">
+                    {JSON.stringify(testTelnyxResult.raw, null, 2)}
+                  </pre>
+                </details>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
