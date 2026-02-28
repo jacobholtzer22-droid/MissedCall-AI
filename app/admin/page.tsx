@@ -10,6 +10,8 @@ interface Business {
   id: string
   name: string
   slug: string
+  calendarEnabled?: boolean
+  googleCalendarConnected?: boolean
   telnyxPhoneNumber: string | null
   forwardingNumber: string | null
   timezone: string
@@ -213,6 +215,7 @@ export default function AdminDashboard() {
     setEditMode(true)
     setEditData({
       name: business.name,
+      calendarEnabled: business.calendarEnabled ?? false,
       telnyxPhoneNumber: business.telnyxPhoneNumber || '',
       forwardingNumber: business.forwardingNumber || '',
       timezone: business.timezone,
@@ -468,6 +471,7 @@ export default function AdminDashboard() {
           aiInstructions: editData.aiInstructions || null,
           aiContext: editData.aiContext || null,
           subscriptionStatus: editData.subscriptionStatus,
+          calendarEnabled: editData.calendarEnabled,
           spamFilterEnabled: editData.spamFilterEnabled,
           missedCallAiEnabled: editData.missedCallAiEnabled,
           servicesOffered,
@@ -597,6 +601,18 @@ export default function AdminDashboard() {
                       <span className="text-gray-500">Appointments</span>
                       <p className="text-gray-300">{business._count.appointments}</p>
                     </div>
+                    <div>
+                      <span className="text-gray-500">Online Booking</span>
+                      <p className={business.calendarEnabled ? 'text-green-400' : 'text-gray-500'}>
+                        {business.calendarEnabled ? 'Enabled' : 'Disabled'}
+                      </p>
+                    </div>
+                    <div>
+                      <span className="text-gray-500">Google Calendar</span>
+                      <p className={business.googleCalendarConnected ? 'text-green-400' : 'text-gray-500'}>
+                        {business.googleCalendarConnected ? 'Connected' : 'Not connected'}
+                      </p>
+                    </div>
                   </div>
 
                   <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mt-3 text-sm">
@@ -681,6 +697,14 @@ export default function AdminDashboard() {
                   >
                     View as Client
                   </a>
+                  {business.calendarEnabled && (
+                  <a
+                    href={`/api/auth/google?businessId=${business.id}`}
+                    className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 rounded-lg text-sm font-medium transition"
+                  >
+                    {business.googleCalendarConnected ? 'Reconnect Calendar' : 'Connect Calendar'}
+                  </a>
+                  )}
                   <button
                     onClick={() => startEdit(business)}
                     className="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg text-sm font-medium transition"
@@ -799,6 +823,11 @@ export default function AdminDashboard() {
                   <option value="canceled">Canceled</option>
                 </select>
               </Field>
+
+              <label className="flex items-center gap-3 cursor-pointer">
+                <input type="checkbox" checked={editData.calendarEnabled} onChange={e => setEditData({...editData, calendarEnabled: e.target.checked})} className="w-5 h-5 rounded" />
+                <span className="text-sm text-gray-300">Enable Online Booking (Google Calendar + /book page + SMS booking flow)</span>
+              </label>
 
               <label className="flex items-center gap-3 cursor-pointer">
                 <input type="checkbox" checked={editData.spamFilterEnabled} onChange={e => setEditData({...editData, spamFilterEnabled: e.target.checked})} className="w-5 h-5 rounded" />

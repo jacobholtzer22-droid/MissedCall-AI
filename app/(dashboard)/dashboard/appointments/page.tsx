@@ -4,6 +4,7 @@ import { db } from '@/lib/db'
 import { getBusinessForDashboard } from '@/lib/get-business-for-dashboard'
 import { Calendar, Clock, User, Phone } from 'lucide-react'
 import { formatPhoneNumber } from '@/lib/utils'
+import { CancelBookingButton } from './CancelBookingButton'
 
 export default async function AppointmentsPage() {
   const { userId } = await auth()
@@ -20,7 +21,7 @@ export default async function AppointmentsPage() {
   const appointments = await db.appointment.findMany({
     where: { businessId: business.id },
     orderBy: { scheduledAt: 'desc' },
-    include: { conversation: true }
+    include: { conversation: true },
   })
 
   const upcoming = appointments.filter(a => new Date(a.scheduledAt) >= new Date() && a.status === 'confirmed')
@@ -55,7 +56,7 @@ export default async function AppointmentsPage() {
               <h2 className="text-lg font-semibold text-gray-900 mb-4">Upcoming</h2>
               <div className="bg-white rounded-xl border border-gray-200 divide-y divide-gray-100">
                 {upcoming.map((appointment) => (
-                  <AppointmentCard key={appointment.id} appointment={appointment} />
+                  <AppointmentCard key={appointment.id} appointment={appointment} showCancel />
                 ))}
               </div>
             </div>
@@ -77,9 +78,16 @@ export default async function AppointmentsPage() {
   )
 }
 
-function AppointmentCard({ appointment }: { appointment: any }) {
+function AppointmentCard({
+  appointment,
+  showCancel,
+}: {
+  appointment: any
+  showCancel?: boolean
+}) {
   const date = new Date(appointment.scheduledAt)
-  
+  const isUpcoming = new Date(appointment.scheduledAt) >= new Date() && appointment.status === 'confirmed'
+
   return (
     <div className="px-6 py-4">
       <div className="flex items-center justify-between">
@@ -113,6 +121,11 @@ function AppointmentCard({ appointment }: { appointment: any }) {
           }`}>
             {appointment.status.charAt(0).toUpperCase() + appointment.status.slice(1)}
           </span>
+          {showCancel && isUpcoming && (
+            <div className="mt-2">
+              <CancelBookingButton appointmentId={appointment.id} />
+            </div>
+          )}
         </div>
       </div>
       {appointment.notes && (

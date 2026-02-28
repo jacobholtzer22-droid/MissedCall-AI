@@ -38,9 +38,12 @@ model Business {
   aiInstructions        String?   @db.Text              // Custom personality/rules for the AI
   aiContext             String?   @db.Text              // Business context (what they do, policies, etc.)
 
-  // Calendar integration
-  googleCalendarId      String?
-  googleRefreshToken    String?
+  // Calendar integration (optional per business)
+  calendarEnabled         Boolean   @default(false)
+  googleAccessToken       String?   @db.Text
+  googleRefreshToken      String?   @db.Text
+  googleCalendarConnected Boolean   @default(false)
+  slotDurationMinutes     Int       @default(30)   // Booking slot length (30 or 60)
 
   // Billing
   stripeCustomerId      String?   @unique
@@ -189,6 +192,9 @@ model Conversation {
   // AI-generated summary of the conversation
   summary               String?   @db.Text
 
+  // SMS booking flow state: { step, slotsSent?, selectedSlot?, ... }
+  bookingFlowState      Json?
+
   // What the caller needed (extracted by AI)
   intent                String?                         // "book_appointment", "question", "emergency", etc.
   serviceRequested      String?                         // "teeth cleaning", "oil change", etc.
@@ -244,8 +250,8 @@ model Appointment {
   businessId            String
   business              Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
 
-  conversationId        String    @unique               // One appointment per conversation
-  conversation          Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  conversationId        String?   @unique               // Null for web bookings
+  conversation          Conversation? @relation(fields: [conversationId], references: [id], onDelete: SetNull)
 
   // Customer info
   customerName          String

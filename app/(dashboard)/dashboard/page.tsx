@@ -21,6 +21,7 @@ async function getDashboardStats(businessId: string) {
     weeklyAppointments,
     totalMessages,
     recentConversations,
+    upcomingAppointments,
     conversationsWithReplies,
     allConversationsWithService,
     recentInboundMessages
@@ -35,6 +36,11 @@ async function getDashboardStats(businessId: string) {
       take: 5,
       orderBy: { lastMessageAt: 'desc' },
       include: { messages: { take: 1, orderBy: { createdAt: 'desc' } } }
+    }),
+    db.appointment.findMany({
+      where: { businessId, scheduledAt: { gte: now }, status: 'confirmed' },
+      orderBy: { scheduledAt: 'asc' },
+      take: 5,
     }),
     // Calls Saved - conversations where customer actually replied
     db.conversation.count({
@@ -95,6 +101,7 @@ async function getDashboardStats(businessId: string) {
     totalMessages, 
     responseRate, 
     recentConversations,
+    upcomingAppointments,
     callsSaved: conversationsWithReplies,
     topServices,
     commonQuestions
@@ -129,6 +136,36 @@ export default async function DashboardPage() {
         <StatCard title="Appointments Booked" value={stats.weeklyAppointments.toString()} description="This week" icon={Calendar} />
         <StatCard title="Response Rate" value={`${stats.responseRate}%`} description="Callers who replied" icon={TrendingUp} />
       </div>
+
+      {/* Upcoming Appointments */}
+      {stats.upcomingAppointments.length > 0 && (
+        <div className="bg-white rounded-xl border border-gray-200">
+          <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+            <h2 className="text-lg font-semibold text-gray-900">Upcoming Appointments</h2>
+            <Link href="/dashboard/appointments" className="text-sm text-blue-600 hover:text-blue-700 flex items-center">
+              View all<ArrowRight className="h-4 w-4 ml-1" />
+            </Link>
+          </div>
+          <div className="divide-y divide-gray-100">
+            {stats.upcomingAppointments.map((apt) => (
+              <div key={apt.id} className="px-6 py-4 flex items-center justify-between">
+                <div>
+                  <p className="font-medium text-gray-900">{apt.customerName}</p>
+                  <p className="text-sm text-gray-500">{apt.serviceType} · {formatPhoneNumber(apt.customerPhone)}</p>
+                </div>
+                <div className="text-right">
+                  <p className="font-medium text-gray-900">
+                    {new Date(apt.scheduledAt).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
+                  </p>
+                  <p className="text-sm text-gray-500">
+                    {new Date(apt.scheduledAt).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
+                  </p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Insights Row */}
       <div className="grid gap-6 md:grid-cols-2">

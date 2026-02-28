@@ -6,13 +6,16 @@
 //   message.finalized → delivery status update → log to DB
 
 import { NextRequest, NextResponse } from 'next/server'
+import { Prisma } from '@prisma/client'
 import { db } from '@/lib/db'
 import Telnyx from 'telnyx'
 import Anthropic from '@anthropic-ai/sdk'
+import { getAvailableSlots } from '@/lib/google-calendar'
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! })
 
 const MAX_MESSAGES_PER_CONVERSATION = 20
+const BOOKING_INTENT_WORDS = ['book', 'appointment', 'schedule', 'booking', 'reserve']
 const CONVERSATION_TIMEOUT_HOURS = 24
 const SPAM_WINDOW_SECONDS = 30
 
@@ -112,12 +115,16 @@ export async function POST(request: NextRequest) {
       })
       await db.conversation.update({ where: { id: conversation.id }, data: { lastMessageAt: new Date() } })
 
-      // Refresh with new message included
+      // Refresh with new message included and bookingFlowState
       conversation = await db.conversation.findUnique({
         where: { id: conversation.id },
         include: { messages: { orderBy: { createdAt: 'asc' } } },
       })
       if (!conversation) return new NextResponse('OK', { status: 200 })
+
+      // ── SMS BOOKING FLOW ─────────────────────────────────────────
+      const bookingHandled = await handleSmsBookingFlow(business, conversation, text, from)
+      if (bookingHandled) return new NextResponse('OK', { status: 200 })
 
       // AI response
       const aiResponse = await generateAIResponse(business, conversation, text)
@@ -170,6 +177,132 @@ export async function POST(request: NextRequest) {
     console.error('❌ Error handling SMS webhook:', error)
     return new NextResponse('Error', { status: 500 })
   }
+}
+
+// ── SMS Booking Flow ────────────────────────────────────────────────
+
+async function handleSmsBookingFlow(
+  business: any,
+  conversation: any,
+  text: string,
+  from: string
+): Promise<boolean> {
+  if (!business.calendarEnabled) return false
+
+  const trimmed = text?.toLowerCase().trim() || ''
+  const flowState = (conversation.bookingFlowState as {
+    step?: string
+    slots?: { start: string; end: string; display: string }[]
+  } | null) ?? {}
+
+  // Already in flow: user is selecting a slot
+  if (flowState.step === 'awaiting_slot' && flowState.slots?.length) {
+    const selectedSlot = parseSlotSelection(trimmed, flowState.slots)
+    if (selectedSlot) {
+      const baseUrl =
+        process.env.NEXT_PUBLIC_APP_URL ??
+        (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'https://alignandacquire.com')
+      const res = await fetch(`${baseUrl}/api/bookings/create`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          businessId: business.id,
+          customerName: conversation.callerName || 'Customer',
+          customerPhone: from,
+          serviceType: conversation.serviceRequested || 'Appointment',
+          slotStart: selectedSlot.start,
+          conversationId: conversation.id,
+        }),
+      })
+      if (res.ok) {
+        await db.conversation.update({
+          where: { id: conversation.id },
+          data: {
+            status: 'appointment_booked',
+            intent: 'book_appointment',
+            bookingFlowState: Prisma.DbNull,
+          },
+        })
+        console.log('📅 SMS booking confirmed (confirmation SMS sent by create API)')
+        return true
+      }
+    }
+    // Invalid selection - clear flow and let AI handle
+    await db.conversation.update({
+      where: { id: conversation.id },
+      data: { bookingFlowState: Prisma.DbNull },
+    })
+  }
+
+  // Detect booking intent (only if calendar/booking is enabled for this business)
+  const hasBookingIntent = BOOKING_INTENT_WORDS.some(w => trimmed.includes(w))
+  if (!hasBookingIntent || !business.calendarEnabled || !business.googleCalendarConnected) return false
+
+  // Fetch available slots for next 3 business days
+  const start = new Date()
+  start.setHours(0, 0, 0, 0)
+  const end = new Date(start)
+  let daysAdded = 0
+  let businessDays = 0
+  while (businessDays < 3 && daysAdded < 14) {
+    end.setDate(end.getDate() + 1)
+    daysAdded++
+    const day = end.getDay()
+    if (day !== 0 && day !== 6) businessDays++
+  }
+
+  const slots = await getAvailableSlots(business.id, start, end)
+  const displaySlots = slots.slice(0, 8) // Max 8 slots for SMS
+
+  if (displaySlots.length === 0) {
+    await sendSMSAndLog(
+      business,
+      conversation.id,
+      from,
+      "We don't have any availability in the next few days. Please call us to schedule!"
+    )
+    return true
+  }
+
+  const lines = displaySlots.map((s, i) => {
+    const d = new Date(s.start)
+    const dateStr = d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
+    return `${i + 1}. ${dateStr} at ${s.display}`
+  })
+  const msg = `Here are available times:\n${lines.join('\n')}\nReply with the number of your preferred slot.`
+  await sendSMSAndLog(business, conversation.id, from, msg)
+
+  await db.conversation.update({
+    where: { id: conversation.id },
+    data: {
+      bookingFlowState: JSON.parse(JSON.stringify({
+        step: 'awaiting_slot',
+        slots: displaySlots,
+        sentAt: new Date().toISOString(),
+      })),
+    },
+  })
+  return true
+}
+
+function parseSlotSelection(text: string, slots: { start: string; display: string }[]): { start: string } | null {
+  const num = parseInt(text.replace(/\D/g, ''), 10)
+  if (num >= 1 && num <= slots.length) {
+    return { start: slots[num - 1].start }
+  }
+  // Try matching time like "9:00" or "9am"
+  const timeMatch = text.match(/(\d{1,2})(?::(\d{2}))?\s*(am|pm)?/i)
+  if (timeMatch) {
+    let hour = parseInt(timeMatch[1], 10)
+    const min = timeMatch[2] ? parseInt(timeMatch[2], 10) : 0
+    const ampm = (timeMatch[3] || '').toLowerCase()
+    if (ampm === 'pm' && hour < 12) hour += 12
+    if (ampm === 'am' && hour === 12) hour = 0
+    const displayTarget = `${hour > 12 ? hour - 12 : hour}:${min.toString().padStart(2, '0')} ${ampm || (hour < 12 ? 'AM' : 'PM')}`
+    const found = slots.find(s => s.display.toLowerCase().replace(/\s/g, '') === displayTarget.toLowerCase().replace(/\s/g, ''))
+    if (found) return { start: found.start }
+  }
+  return null
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────

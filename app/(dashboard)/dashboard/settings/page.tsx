@@ -3,12 +3,20 @@ import { redirect } from 'next/navigation'
 import { cookies } from 'next/headers'
 import { db } from '@/lib/db'
 import { getBusinessForDashboard } from '@/lib/get-business-for-dashboard'
-import { Building, Bot, Phone } from 'lucide-react'
+import { Building, Bot, Phone, Calendar, CheckCircle, ExternalLink } from 'lucide-react'
 import { revalidatePath } from 'next/cache'
 
-export default async function SettingsPage() {
+export default async function SettingsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ google_connected?: string; google_error?: string }>
+}) {
   const { userId } = await auth()
   if (!userId) redirect('/sign-in')
+
+  const params = await searchParams
+  const googleConnected = params.google_connected === '1'
+  const googleError = params.google_error
 
   const user = await db.user.findUnique({
     where: { clerkId: userId },
@@ -71,6 +79,19 @@ export default async function SettingsPage() {
           You are viewing as a client. Changes cannot be saved in this mode.
         </div>
       )}
+      {googleConnected && (
+        <div className="bg-green-50 border border-green-200 rounded-lg p-4 text-green-800 text-sm">
+          Google Calendar connected successfully! Your booking page is ready.
+        </div>
+      )}
+      {googleError && (
+        <div className="bg-red-50 border border-red-200 rounded-lg p-4 text-red-800 text-sm">
+          {googleError === 'denied' && 'Google Calendar connection was cancelled.'}
+          {googleError === 'missing_params' && 'Invalid callback. Please try again.'}
+          {googleError === 'exchange_failed' && 'Failed to connect. Please try again.'}
+          {!['denied', 'missing_params', 'exchange_failed'].includes(googleError) && 'Something went wrong. Please try again.'}
+        </div>
+      )}
       <form action={saveSettings} className="space-y-6">
         <div className="bg-white rounded-xl border border-gray-200 p-6">
           <div className="flex items-start space-x-4 mb-4">
@@ -121,6 +142,50 @@ export default async function SettingsPage() {
             </div>
           </div>
         </div>
+
+        {business.calendarEnabled && (
+        <div className="bg-white rounded-xl border border-gray-200 p-6">
+          <div className="flex items-start space-x-4 mb-4">
+            <div className="bg-blue-50 p-2 rounded-lg"><Calendar className="h-5 w-5 text-blue-600" /></div>
+            <div>
+              <h2 className="text-lg font-semibold text-gray-900">Google Calendar</h2>
+              <p className="text-sm text-gray-500">Sync bookings with your calendar and enable online booking</p>
+            </div>
+          </div>
+          <div className="ml-11 space-y-4">
+            {business.googleCalendarConnected ? (
+              <div className="flex items-center gap-3 p-4 bg-green-50 border border-green-200 rounded-lg">
+                <CheckCircle className="h-5 w-5 text-green-600 shrink-0" />
+                <div>
+                  <p className="font-medium text-green-800">Calendar connected</p>
+                  <p className="text-sm text-green-700">Bookings sync to your Google Calendar. Booking page: /book/{business.slug}</p>
+                  <a
+                    href={`/book/${business.slug}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 text-sm text-green-700 hover:text-green-800 mt-2"
+                  >
+                    View booking page <ExternalLink className="h-3 w-3" />
+                  </a>
+                </div>
+              </div>
+            ) : (
+              <a
+                href={isAdminViewAs ? '#' : `/api/auth/google?businessId=${business.id}`}
+                className={`inline-flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition ${
+                  isAdminViewAs
+                    ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                    : 'bg-blue-600 text-white hover:bg-blue-700'
+                }`}
+                onClick={e => isAdminViewAs && e.preventDefault()}
+                aria-disabled={isAdminViewAs}
+              >
+                Connect Google Calendar
+              </a>
+            )}
+          </div>
+        </div>
+        )}
 
         <div className="bg-white rounded-xl border border-gray-200 p-6">
           <div className="flex items-start space-x-4 mb-4">
