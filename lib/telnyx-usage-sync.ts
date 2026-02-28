@@ -186,11 +186,21 @@ export async function syncTelnyxUsage(
               cli: record.cli,
               cld: record.cld,
               direction: record.direction,
-              status: record.status,
-              parts: record.parts,
+              status: String(record.status ?? ''),
+              parts: String(record.parts ?? ''),
             },
           },
-          update: { cost, occurredAt, metadata: { cli: record.cli, cld: record.cld, direction: record.direction, status: record.status, parts: record.parts } },
+          update: {
+            cost,
+            occurredAt,
+            metadata: {
+              cli: record.cli,
+              cld: record.cld,
+              direction: record.direction,
+              status: String(record.status ?? ''),
+              parts: String(record.parts ?? ''),
+            },
+          },
         })
         result.mdrsProcessed++
 
