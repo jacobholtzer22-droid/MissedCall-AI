@@ -158,19 +158,19 @@ export default function EmbedBookingPage() {
 
   if (loading) {
     return (
-      <div ref={containerRef} className="min-h-[200px] bg-white flex items-center justify-center p-6">
-        <div className="text-gray-500">Loading...</div>
+      <div ref={containerRef} className="min-h-[200px] flex items-center justify-center p-6" style={{ backgroundColor: '#ffffff' }}>
+        <div style={{ color: '#6b7280' }}>Loading...</div>
       </div>
     )
   }
 
   if (!calendarConnected || !businessName) {
     return (
-      <div ref={containerRef} className="bg-white p-6">
+      <div ref={containerRef} className="p-6" style={{ backgroundColor: '#ffffff' }}>
         <div className="max-w-md mx-auto text-center">
-          <Calendar className="h-12 w-12 text-gray-300 mx-auto mb-4" />
-          <h2 className="text-lg font-semibold text-gray-900 mb-2">Booking Not Available</h2>
-          <p className="text-gray-500 text-sm">
+          <Calendar className="h-12 w-12 mx-auto mb-4" style={{ color: '#d1d5db' }} />
+          <h2 className="text-lg font-semibold mb-2" style={{ color: '#111827' }}>Booking Not Available</h2>
+          <p className="text-sm" style={{ color: '#6b7280' }}>
             {businessName
               ? `${businessName} doesn't have online booking enabled. Please call or text to schedule.`
               : 'Business not found.'}
@@ -183,34 +183,37 @@ export default function EmbedBookingPage() {
   if (confirmation) {
     const d = new Date(confirmation.scheduledAt)
     return (
-      <div ref={containerRef} className="bg-white p-6">
+      <div ref={containerRef} className="p-6" style={{ backgroundColor: '#ffffff' }}>
         <div className="max-w-md mx-auto text-center">
           <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-6">
-            <CheckCircle className="h-10 w-10 text-green-600" />
+            <CheckCircle className="h-10 w-10" style={{ color: '#16a34a' }} />
           </div>
-          <h2 className="text-xl font-bold text-gray-900 mb-2">You're All Set!</h2>
-          <p className="text-gray-500 text-sm">
+          <h2 className="text-xl font-bold mb-2" style={{ color: '#111827' }}>You're All Set!</h2>
+          <p className="text-sm" style={{ color: '#6b7280' }}>
             Your {confirmation.serviceType} appointment with {businessName} is confirmed for{' '}
             {d.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })} at{' '}
             {d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}.
           </p>
-          <p className="text-sm text-gray-500 mt-2">You'll receive a confirmation text shortly.</p>
+          <p className="text-sm mt-2" style={{ color: '#6b7280' }}>You'll receive a confirmation text shortly.</p>
         </div>
       </div>
     )
   }
 
+  const inputStyle = { color: '#111827', backgroundColor: '#ffffff', border: '1px solid #d1d5db' } as const
+  const labelStyle = { color: '#374151' } as const
+
   return (
-    <div ref={containerRef} className="bg-white p-4 sm:p-6 md:p-8">
+    <div ref={containerRef} className="p-4 sm:p-6 md:p-8" style={{ backgroundColor: '#ffffff' }}>
       <div className="max-w-2xl mx-auto">
         <div className="text-center mb-6">
-          <h2 className="text-xl font-bold text-gray-900">Book with {businessName}</h2>
-          <p className="text-gray-500 text-sm mt-1">Select a date and time that works for you</p>
+          <h2 className="text-xl font-bold" style={{ color: '#111827' }}>Book with {businessName}</h2>
+          <p className="text-sm mt-1" style={{ color: '#6b7280' }}>Select a date and time that works for you</p>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-6">
           <div>
-            <label className="flex items-center gap-2 text-sm font-medium text-gray-700 mb-2">
+            <label className="flex items-center gap-2 text-sm font-medium mb-2" style={labelStyle}>
               <Calendar className="h-4 w-4" />
               Date
             </label>
@@ -220,20 +223,21 @@ export default function EmbedBookingPage() {
               onChange={e => setSelectedDate(e.target.value)}
               min={today}
               max={maxDate}
-              className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-gray-900 bg-white"
+              className="w-full px-4 py-3 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              style={inputStyle}
             />
           </div>
 
           {selectedDate && (
             <div>
-              <label className="flex items-center gap-2 text-sm font-medium text-gray-700 mb-2">
+              <label className="flex items-center gap-2 text-sm font-medium mb-2" style={labelStyle}>
                 <Clock className="h-4 w-4" />
                 Available Times
               </label>
               {slotsLoading ? (
-                <p className="text-gray-500 text-sm">Loading...</p>
+                <p className="text-sm" style={{ color: '#6b7280' }}>Loading...</p>
               ) : slots.length === 0 ? (
-                <p className="text-gray-500 text-sm">No availability on this date</p>
+                <p className="text-sm" style={{ color: '#6b7280' }}>No availability on this date</p>
               ) : (
                 <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
                   {slots.map(slot => (
@@ -244,8 +248,9 @@ export default function EmbedBookingPage() {
                       className={`px-3 py-2 rounded-lg text-sm font-medium transition ${
                         selectedSlot?.start === slot.start
                           ? 'bg-blue-600 text-white'
-                          : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                          : 'hover:bg-gray-200'
                       }`}
+                      style={selectedSlot?.start === slot.start ? undefined : { backgroundColor: '#f3f4f6', color: '#374151' }}
                     >
                       {slot.display}
                     </button>
@@ -255,9 +260,9 @@ export default function EmbedBookingPage() {
             </div>
           )}
 
-          <div className="border-t border-gray-100 pt-6 space-y-4">
+          <div className="border-t pt-6 space-y-4" style={{ borderColor: '#f3f4f6' }}>
             <div>
-              <label className="flex items-center gap-2 text-sm font-medium text-gray-700 mb-2">
+              <label className="flex items-center gap-2 text-sm font-medium mb-2" style={labelStyle}>
                 <User className="h-4 w-4" />
                 Your Name *
               </label>
@@ -267,11 +272,12 @@ export default function EmbedBookingPage() {
                 onChange={e => setName(e.target.value)}
                 required
                 placeholder="John Smith"
-                className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-gray-900 bg-white"
+                className="w-full px-4 py-3 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                style={inputStyle}
               />
             </div>
             <div>
-              <label className="flex items-center gap-2 text-sm font-medium text-gray-700 mb-2">
+              <label className="flex items-center gap-2 text-sm font-medium mb-2" style={labelStyle}>
                 <Phone className="h-4 w-4" />
                 Phone *
               </label>
@@ -281,11 +287,12 @@ export default function EmbedBookingPage() {
                 onChange={e => setPhone(e.target.value)}
                 required
                 placeholder="(555) 123-4567"
-                className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-gray-900 bg-white"
+                className="w-full px-4 py-3 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                style={inputStyle}
               />
             </div>
             <div>
-              <label className="flex items-center gap-2 text-sm font-medium text-gray-700 mb-2">
+              <label className="flex items-center gap-2 text-sm font-medium mb-2" style={labelStyle}>
                 <Mail className="h-4 w-4" />
                 Email
               </label>
@@ -294,11 +301,12 @@ export default function EmbedBookingPage() {
                 value={email}
                 onChange={e => setEmail(e.target.value)}
                 placeholder="john@example.com"
-                className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-gray-900 bg-white"
+                className="w-full px-4 py-3 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                style={inputStyle}
               />
             </div>
             <div>
-              <label className="flex items-center gap-2 text-sm font-medium text-gray-700 mb-2">
+              <label className="flex items-center gap-2 text-sm font-medium mb-2" style={labelStyle}>
                 <FileText className="h-4 w-4" />
                 Service / Description *
               </label>
@@ -308,13 +316,14 @@ export default function EmbedBookingPage() {
                 onChange={e => setService(e.target.value)}
                 required
                 placeholder="e.g. Teeth cleaning, Haircut"
-                className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-gray-900 bg-white"
+                className="w-full px-4 py-3 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                style={inputStyle}
               />
             </div>
           </div>
 
           {error && (
-            <div className="p-4 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm">
+            <div className="p-4 rounded-xl text-sm" style={{ backgroundColor: '#fef2f2', border: '1px solid #fecaca', color: '#b91c1c' }}>
               {error}
             </div>
           )}
@@ -322,7 +331,8 @@ export default function EmbedBookingPage() {
           <button
             type="submit"
             disabled={!selectedSlot || !name.trim() || !phone.trim() || !service.trim() || submitting}
-            className="w-full py-4 bg-blue-600 text-white font-semibold rounded-xl hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition"
+            className="w-full py-4 text-white font-semibold rounded-xl hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition"
+            style={{ backgroundColor: '#2563eb' }}
           >
             {submitting ? 'Booking...' : 'Confirm Booking'}
           </button>

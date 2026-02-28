@@ -113,14 +113,16 @@ export function parseBusinessHours(hours: unknown): Record<string, { open: strin
       if (typeof d.open === 'string' && typeof d.close === 'string') {
         result[day] = { open: d.open, close: d.close }
       } else {
-        result[day] = null
+        // Invalid format: fall back to default for this day
+        result[day] = DEFAULT_BUSINESS_HOURS[day]
       }
     } else {
-      result[day] = null
+      // Null/empty: use default for this day (Mon-Fri 9-5, Sat-Sun closed)
+      result[day] = DEFAULT_BUSINESS_HOURS[day]
     }
   }
 
-  return { ...DEFAULT_BUSINESS_HOURS, ...result }
+  return result
 }
 
 export interface TimeSlot {

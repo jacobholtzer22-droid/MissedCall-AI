@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation'
 import { CallScreenerCard } from './components/CallScreenerCard'
 import { EmbedCodeSection } from '@/app/components/EmbedCodeSection'
 import { parseContactFile } from '@/lib/import-contacts'
+import { DEFAULT_BUSINESS_HOURS } from '@/lib/google-calendar'
 
 interface Business {
   id: string
@@ -450,7 +451,8 @@ export default function AdminDashboard() {
         return
       }
       try {
-        businessHours = JSON.parse(editData.businessHours)
+        const raw = (editData.businessHours ?? '').trim()
+        businessHours = raw ? JSON.parse(raw) : DEFAULT_BUSINESS_HOURS
       } catch {
         setMessage('❌ Business Hours is not valid JSON')
         setSaving(false)
@@ -1113,14 +1115,31 @@ export default function AdminDashboard() {
               {/* Business Hours */}
               <Field
                 label="Business Hours (JSON)"
-                hint='Example: {"monday": {"open": "09:00", "close": "17:00"}, ...}'
+                hint='Example: {"monday": {"open": "09:00", "close": "17:00"}, ...} Mon-Fri 9-5, Sat-Sun closed if null/empty'
               >
-                <textarea
-                  value={editData.businessHours}
-                  onChange={e => setEditData({ ...editData, businessHours: e.target.value })}
-                  rows={4}
-                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-white font-mono text-sm"
-                />
+                <div className="flex flex-col gap-2">
+                  <div className="flex gap-2">
+                    <textarea
+                      value={editData.businessHours}
+                      onChange={e => setEditData({ ...editData, businessHours: e.target.value })}
+                      rows={4}
+                      className="flex-1 w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-white font-mono text-sm"
+                    />
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setEditData({
+                          ...editData,
+                          businessHours: JSON.stringify(DEFAULT_BUSINESS_HOURS, null, 2),
+                        })
+                      }
+                      className="self-start px-4 py-2 bg-amber-600 hover:bg-amber-700 rounded-lg text-sm font-medium shrink-0"
+                    >
+                      Set Default Hours
+                    </button>
+                  </div>
+                  <p className="text-xs text-gray-500">Default: Mon–Fri 9am–5pm, Sat–Sun closed</p>
+                </div>
               </Field>
             </div>
 

@@ -130,24 +130,24 @@ export default function BookingPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-gray-500">Loading...</div>
+      <div className="min-h-screen flex items-center justify-center" style={{ backgroundColor: '#f9fafb' }}>
+        <div style={{ color: '#374151' }}>Loading...</div>
       </div>
     )
   }
 
   if (!calendarConnected || !businessName) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-6">
-        <div className="bg-white rounded-2xl shadow-lg border border-gray-200 p-8 max-w-md text-center">
-          <Calendar className="h-12 w-12 text-gray-300 mx-auto mb-4" />
-          <h1 className="text-xl font-semibold text-gray-900 mb-2">Booking Not Available</h1>
-          <p className="text-gray-500 mb-6">
+      <div className="min-h-screen flex items-center justify-center p-6" style={{ backgroundColor: '#f9fafb' }}>
+        <div className="rounded-2xl shadow-lg border p-8 max-w-md text-center" style={{ backgroundColor: '#ffffff', borderColor: '#e5e7eb' }}>
+          <Calendar className="h-12 w-12 mx-auto mb-4" style={{ color: '#d1d5db' }} />
+          <h1 className="text-xl font-semibold mb-2" style={{ color: '#111827' }}>Booking Not Available</h1>
+          <p className="mb-6" style={{ color: '#374151' }}>
             {businessName
               ? `${businessName} doesn't have online booking enabled. Please call or text to schedule.`
               : 'Business not found.'}
           </p>
-          <Link href="/" className="text-blue-600 hover:text-blue-700 font-medium">
+          <Link href="/" className="font-medium" style={{ color: '#2563eb' }}>
             ← Back to home
           </Link>
         </div>
@@ -158,36 +158,39 @@ export default function BookingPage() {
   if (confirmation) {
     const d = new Date(confirmation.scheduledAt)
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-6">
-        <div className="bg-white rounded-2xl shadow-lg border border-gray-200 p-8 max-w-md text-center">
+      <div className="min-h-screen flex items-center justify-center p-6" style={{ backgroundColor: '#f9fafb' }}>
+        <div className="rounded-2xl shadow-lg border p-8 max-w-md text-center" style={{ backgroundColor: '#ffffff', borderColor: '#e5e7eb' }}>
           <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-6">
-            <CheckCircle className="h-10 w-10 text-green-600" />
+            <CheckCircle className="h-10 w-10" style={{ color: '#16a34a' }} />
           </div>
-          <h1 className="text-2xl font-bold text-gray-900 mb-2">You're All Set!</h1>
-          <p className="text-gray-500 mb-6">
+          <h1 className="text-2xl font-bold mb-2" style={{ color: '#111827' }}>You're All Set!</h1>
+          <p className="mb-6" style={{ color: '#374151' }}>
             Your {confirmation.serviceType} appointment with {businessName} is confirmed for{' '}
             {d.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })} at{' '}
             {d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}.
           </p>
-          <p className="text-sm text-gray-500">You'll receive a confirmation text shortly.</p>
+          <p className="text-sm" style={{ color: '#374151' }}>You'll receive a confirmation text shortly.</p>
         </div>
       </div>
     )
   }
 
+  const inputStyle = { color: '#111827', backgroundColor: '#ffffff', border: '1px solid #d1d5db' } as const
+  const labelStyle = { color: '#374151' } as const
+
   return (
-    <div className="min-h-screen bg-gray-50 py-12 px-4">
+    <div className="min-h-screen py-12 px-4" style={{ backgroundColor: '#f9fafb' }}>
       <div className="max-w-2xl mx-auto">
         <div className="text-center mb-8">
-          <h1 className="text-2xl font-bold text-gray-900">Book with {businessName}</h1>
-          <p className="text-gray-500 mt-1">Select a date and time that works for you</p>
+          <h1 className="text-2xl font-bold" style={{ color: '#111827' }}>Book with {businessName}</h1>
+          <p className="mt-1" style={{ color: '#6b7280' }}>Select a date and time that works for you</p>
         </div>
 
-        <div className="bg-white rounded-2xl shadow-lg border border-gray-200 overflow-hidden">
+        <div className="rounded-2xl shadow-lg overflow-hidden" style={{ backgroundColor: '#ffffff', border: '1px solid #e5e7eb' }}>
           <form onSubmit={handleSubmit} className="p-6 md:p-8 space-y-6">
             {/* Date picker */}
             <div>
-              <label className="flex items-center gap-2 text-sm font-medium text-gray-700 mb-2">
+              <label className="flex items-center gap-2 text-sm font-medium mb-2" style={labelStyle}>
                 <Calendar className="h-4 w-4" />
                 Date
               </label>
@@ -197,28 +200,29 @@ export default function BookingPage() {
                 onChange={e => setSelectedDate(e.target.value)}
                 min={today}
                 max={maxDate}
-                className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                className="w-full px-4 py-3 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                style={inputStyle}
               />
             </div>
 
             {/* Time slots */}
             {selectedDate && (
               <div>
-                <label className="flex items-center gap-2 text-sm font-medium text-gray-700 mb-2">
+                <label className="flex items-center gap-2 text-sm font-medium mb-2" style={labelStyle}>
                   <Clock className="h-4 w-4" />
                   Available Times
                 </label>
                 {slotsLoading ? (
-                  <p className="text-gray-500 text-sm">Loading...</p>
+                  <p className="text-sm" style={{ color: '#6b7280' }}>Loading...</p>
                 ) : slots.length === 0 ? (
                   <div>
-                    <p className="text-gray-500 text-sm">No availability on this date</p>
+                    <p className="text-sm" style={{ color: '#6b7280' }}>No availability on this date</p>
                     {slotsDebug && (
                       <details className="mt-4">
-                        <summary className="text-xs font-medium text-gray-500 cursor-pointer hover:text-gray-700">
+                        <summary className="text-xs font-medium cursor-pointer" style={{ color: '#6b7280' }}>
                           Debug info
                         </summary>
-                        <pre className="mt-2 p-4 bg-gray-100 rounded-lg text-xs overflow-auto max-h-64">
+                        <pre className="mt-2 p-4 rounded-lg text-xs overflow-auto max-h-64" style={{ backgroundColor: '#f3f4f6', color: '#111827' }}>
                           {JSON.stringify(slotsDebug, null, 2)}
                         </pre>
                       </details>
@@ -235,8 +239,9 @@ export default function BookingPage() {
                           className={`px-3 py-2 rounded-lg text-sm font-medium transition ${
                             selectedSlot?.start === slot.start
                               ? 'bg-blue-600 text-white'
-                              : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                              : 'hover:bg-gray-200'
                           }`}
+                          style={selectedSlot?.start === slot.start ? undefined : { backgroundColor: '#f3f4f6', color: '#374151' }}
                         >
                           {slot.display}
                         </button>
@@ -244,10 +249,10 @@ export default function BookingPage() {
                     </div>
                     {slotsDebug && (
                       <details className="mt-4">
-                        <summary className="text-xs font-medium text-gray-500 cursor-pointer hover:text-gray-700">
+                        <summary className="text-xs font-medium cursor-pointer" style={{ color: '#6b7280' }}>
                           Debug info
                         </summary>
-                        <pre className="mt-2 p-4 bg-gray-100 rounded-lg text-xs overflow-auto max-h-64">
+                        <pre className="mt-2 p-4 rounded-lg text-xs overflow-auto max-h-64" style={{ backgroundColor: '#f3f4f6', color: '#111827' }}>
                           {JSON.stringify(slotsDebug, null, 2)}
                         </pre>
                       </details>
@@ -258,9 +263,9 @@ export default function BookingPage() {
             )}
 
             {/* Customer form */}
-            <div className="border-t border-gray-100 pt-6 space-y-4">
+            <div className="border-t pt-6 space-y-4" style={{ borderColor: '#f3f4f6' }}>
               <div>
-                <label className="flex items-center gap-2 text-sm font-medium text-gray-700 mb-2">
+                <label className="flex items-center gap-2 text-sm font-medium mb-2" style={labelStyle}>
                   <User className="h-4 w-4" />
                   Your Name *
                 </label>
@@ -270,11 +275,12 @@ export default function BookingPage() {
                   onChange={e => setName(e.target.value)}
                   required
                   placeholder="John Smith"
-                  className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  className="w-full px-4 py-3 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  style={inputStyle}
                 />
               </div>
               <div>
-                <label className="flex items-center gap-2 text-sm font-medium text-gray-700 mb-2">
+                <label className="flex items-center gap-2 text-sm font-medium mb-2" style={labelStyle}>
                   <Phone className="h-4 w-4" />
                   Phone *
                 </label>
@@ -284,11 +290,12 @@ export default function BookingPage() {
                   onChange={e => setPhone(e.target.value)}
                   required
                   placeholder="(555) 123-4567"
-                  className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  className="w-full px-4 py-3 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  style={inputStyle}
                 />
               </div>
               <div>
-                <label className="flex items-center gap-2 text-sm font-medium text-gray-700 mb-2">
+                <label className="flex items-center gap-2 text-sm font-medium mb-2" style={labelStyle}>
                   <Mail className="h-4 w-4" />
                   Email
                 </label>
@@ -297,11 +304,12 @@ export default function BookingPage() {
                   value={email}
                   onChange={e => setEmail(e.target.value)}
                   placeholder="john@example.com"
-                  className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  className="w-full px-4 py-3 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  style={inputStyle}
                 />
               </div>
               <div>
-                <label className="flex items-center gap-2 text-sm font-medium text-gray-700 mb-2">
+                <label className="flex items-center gap-2 text-sm font-medium mb-2" style={labelStyle}>
                   <FileText className="h-4 w-4" />
                   Service / Description *
                 </label>
@@ -311,13 +319,14 @@ export default function BookingPage() {
                   onChange={e => setService(e.target.value)}
                   required
                   placeholder="e.g. Teeth cleaning, Haircut"
-                  className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  className="w-full px-4 py-3 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  style={inputStyle}
                 />
               </div>
             </div>
 
             {error && (
-              <div className="p-4 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm">
+              <div className="p-4 rounded-xl text-sm" style={{ backgroundColor: '#fef2f2', border: '1px solid #fecaca', color: '#b91c1c' }}>
                 {error}
               </div>
             )}
@@ -325,15 +334,16 @@ export default function BookingPage() {
             <button
               type="submit"
               disabled={!selectedSlot || !name.trim() || !phone.trim() || !service.trim() || submitting}
-              className="w-full py-4 bg-blue-600 text-white font-semibold rounded-xl hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition"
+              className="w-full py-4 text-white font-semibold rounded-xl hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition"
+              style={{ backgroundColor: '#2563eb' }}
             >
               {submitting ? 'Booking...' : 'Confirm Booking'}
             </button>
           </form>
         </div>
 
-        <p className="text-center text-sm text-gray-500 mt-6">
-          <Link href="/" className="text-blue-600 hover:text-blue-700">
+        <p className="text-center text-sm mt-6" style={{ color: '#6b7280' }}>
+          <Link href="/" style={{ color: '#2563eb' }}>
             ← Back to home
           </Link>
         </p>
