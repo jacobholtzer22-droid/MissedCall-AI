@@ -223,10 +223,10 @@ export async function POST(request: NextRequest) {
             aLegCallControlId: callControlId,
           })
 
-          const outboundCall = await (telnyx.calls as any).create({
+          const outboundCall = await telnyx.calls.dial({
             connection_id: connectionId,
             to: business.forwardingNumber,
-            from: state.callerPhone,
+            from: state.callerPhone!,
             answering_machine_detection: 'detect',
             timeout_secs: FORWARDING_TIMEOUT_SECS,
             client_state: bLegState,
