@@ -90,38 +90,47 @@ export async function DELETE(
   if (!userId || userId !== ADMIN_USER_ID) return unauthorized()
 
   const businessId = context.params.id
-  // DEBUG: log request details before any validation
-  const rawUrl = request.url
-  const searchParamsFromUrl = new URL(rawUrl).searchParams
-  console.log('[DELETE contacts] raw request.url:', rawUrl)
-  console.log('[DELETE contacts] request.nextUrl:', request.nextUrl?.href)
-  console.log('[DELETE contacts] query params:', Object.fromEntries(searchParamsFromUrl))
-  console.log('[DELETE contacts] id:', searchParamsFromUrl.get('id'))
-  console.log('[DELETE contacts] phoneNumber:', searchParamsFromUrl.get('phoneNumber'))
+  let body: { id?: string; phoneNumber?: string } = {}
+  try {
+    body = await request.json()
+  } catch {
+    return NextResponse.json(
+      { error: 'Request body must be valid JSON' },
+      { status: 400 }
+    )
+  }
 
-  const searchParams = searchParamsFromUrl
-  const contactId = searchParams.get('id')?.trim() || null
-  const phoneNumber = searchParams.get('phoneNumber')?.trim() || null
+  const contactId = typeof body.id === 'string' ? body.id.trim() || null : null
+  const phoneNumber = typeof body.phoneNumber === 'string' ? body.phoneNumber.trim() || null : null
 
   if (!contactId && !phoneNumber) {
     return NextResponse.json(
-      { error: 'Query parameter id or phoneNumber is required' },
+      { error: 'Request body must include id or phoneNumber' },
       { status: 400 }
     )
   }
 
   try {
-    const where: { id?: string; phoneNumber?: string; businessId: string } = {
-      businessId,
-    }
+    let deleted = 0
+
     if (contactId) {
-      where.id = contactId
-    } else if (phoneNumber) {
-      where.phoneNumber = normalizePhoneNumber(phoneNumber)
+      const result = await db.contact.deleteMany({
+        where: { businessId, id: contactId },
+      })
+      deleted = result.count
     }
 
-    const result = await db.contact.deleteMany({ where })
-    return NextResponse.json({ ok: true, deleted: result.count })
+    if (deleted === 0 && phoneNumber) {
+      const normalized = normalizePhoneNumber(phoneNumber)
+      if (normalized.length >= 10) {
+        const result = await db.contact.deleteMany({
+          where: { businessId, phoneNumber: normalized },
+        })
+        deleted = result.count
+      }
+    }
+
+    return NextResponse.json({ ok: true })
   } catch (error) {
     console.error('Admin: Failed to remove contact:', error)
     return NextResponse.json(

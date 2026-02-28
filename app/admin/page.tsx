@@ -196,12 +196,7 @@ export default function AdminDashboard() {
       const res = await fetch(`/api/admin/businesses/${businessId}/contacts`)
       if (res.ok) {
         const data = await res.json()
-        const contactsList = data.contacts || []
-        if (contactsList.length > 0) {
-          console.log('[fetchContacts] sample contact from API:', JSON.stringify(contactsList[0]))
-          console.log('[fetchContacts] sample contact keys:', Object.keys(contactsList[0]))
-        }
-        setContacts(contactsList)
+        setContacts(data.contacts || [])
       }
     } catch (err) {
       console.error('Failed to fetch contacts:', err)
@@ -395,21 +390,15 @@ export default function AdminDashboard() {
 
   async function removeContact(contact: Contact) {
     if (!selectedBusiness) return
-    // Support both standard and alternate field names from API
     const c = contact as unknown as Record<string, unknown>
     const id = (c.id ?? c._id) as string | undefined
     const phone = (c.phoneNumber ?? c.phone ?? c.phone_number) as string | undefined
-    // DEBUG: log contact object to verify field names
-    console.log('[removeContact] contact object:', JSON.stringify(contact))
-    console.log('[removeContact] contact keys:', Object.keys(contact))
-    console.log('[removeContact] resolved id:', id, 'phone:', phone)
     const hasId = typeof id === 'string' && id.trim().length > 0
     const hasPhone = typeof phone === 'string' && phone.trim().length > 0
     if (!hasId && !hasPhone) {
       setMessage('❌ Contact has no id or phone number')
       return
     }
-    // Optimistic update: remove from UI immediately (use resolved id/phone for alternate API field names)
     setContacts(prev => prev.filter(c => {
       const rec = c as unknown as Record<string, unknown>
       const cId = rec.id ?? rec._id
@@ -417,37 +406,25 @@ export default function AdminDashboard() {
       return (id == null || cId !== id) && (phone == null || cPhone !== phone)
     }))
     try {
-      const params = new URLSearchParams()
-      if (hasId) params.set('id', id!.trim())
-      else params.set('phoneNumber', phone!.trim())
-      const url = `/api/admin/businesses/${selectedBusiness.id}/contacts?${params.toString()}`
-      console.log('[removeContact] URL being called:', url)
       const res = await fetch(
-        url,
-        { method: 'DELETE' }
+        `/api/admin/businesses/${selectedBusiness.id}/contacts`,
+        {
+          method: 'DELETE',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            id: hasId ? id!.trim() : undefined,
+            phoneNumber: hasPhone ? phone!.trim() : undefined,
+          }),
+        }
       )
       const data = await res.json().catch(() => ({}))
       if (!res.ok) {
         setMessage(`❌ Failed to remove: ${data.error || 'Unknown error'}`)
-        fetchContacts(selectedBusiness.id) // Revert on failure
-        return
-      }
-      if (data.deleted === 0 && hasPhone && hasId) {
-        // Fallback: try delete by phone number if id didn't match
-        const phoneParams = new URLSearchParams({ phoneNumber: phone!.trim() })
-        const retry = await fetch(
-          `/api/admin/businesses/${selectedBusiness.id}/contacts?${phoneParams.toString()}`,
-          { method: 'DELETE' }
-        )
-        if (!retry.ok) {
-          setMessage('❌ Failed to remove contact')
-          fetchContacts(selectedBusiness.id)
-        }
+        fetchContacts(selectedBusiness.id)
       }
     } catch (err) {
-      console.error('Failed to remove contact:', err)
       setMessage('❌ Failed to remove contact')
-      fetchContacts(selectedBusiness.id) // Revert on error
+      fetchContacts(selectedBusiness.id)
     }
   }
 
