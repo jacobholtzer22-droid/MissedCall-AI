@@ -9,44 +9,20 @@ import { normalizeToE164 } from '@/lib/phone-utils'
 
 const TELNYX_API_BASE = 'https://api.telnyx.com/v2'
 
-/** Get start_date and end_date in ISO 8601 format for Telnyx Detail Records API.
- * The API uses filter[start_date] and filter[end_date], NOT filter[date_range]. */
-function getDateRangeBounds(dateRange: string): { start_date: string; end_date: string } {
-  const now = new Date()
-  const toISO = (d: Date) => d.toISOString()
-
+/** Map dateRange to filter[date_range] — same format as /api/admin/telnyx-test.
+ * "yesterday" not supported by Telnyx filter[date_range], use last_7_days. */
+function mapDateRangeToFilter(dateRange: string): string {
   switch (dateRange) {
-    case 'yesterday': {
-      const yesterday = new Date(now)
-      yesterday.setUTCDate(yesterday.getUTCDate() - 1)
-      const start = new Date(Date.UTC(yesterday.getUTCFullYear(), yesterday.getUTCMonth(), yesterday.getUTCDate(), 0, 0, 0, 0))
-      const end = new Date(Date.UTC(yesterday.getUTCFullYear(), yesterday.getUTCMonth(), yesterday.getUTCDate(), 23, 59, 59, 999))
-      return { start_date: toISO(start), end_date: toISO(end) }
-    }
-    case 'last_7_days': {
-      const start = new Date(now)
-      start.setUTCDate(start.getUTCDate() - 7)
-      start.setUTCHours(0, 0, 0, 0)
-      return { start_date: toISO(start), end_date: toISO(now) }
-    }
-    case 'last_30_days': {
-      const start = new Date(now)
-      start.setUTCDate(start.getUTCDate() - 30)
-      start.setUTCHours(0, 0, 0, 0)
-      return { start_date: toISO(start), end_date: toISO(now) }
-    }
-    case 'last_90_days': {
-      const start = new Date(now)
-      start.setUTCDate(start.getUTCDate() - 90)
-      start.setUTCHours(0, 0, 0, 0)
-      return { start_date: toISO(start), end_date: toISO(now) }
-    }
+    case 'yesterday':
+      return 'last_7_days'
+    case 'last_7_days':
+      return 'last_7_days'
+    case 'last_30_days':
+      return 'last_30_days'
+    case 'last_90_days':
+      return 'last_90_days'
     default:
-      // Fallback to last_90_days if unknown range
-      const start = new Date(now)
-      start.setUTCDate(start.getUTCDate() - 90)
-      start.setUTCHours(0, 0, 0, 0)
-      return { start_date: toISO(start), end_date: toISO(now) }
+      return 'last_7_days'
   }
 }
 
@@ -112,13 +88,11 @@ async function fetchTelnyx<T>(path: string): Promise<T> {
 }
 
 /** Fetch all pages of detail records.
- * Uses filter[start_date] and filter[end_date] (ISO 8601), NOT filter[date_range]. */
+ * Uses EXACT same API format as /api/admin/telnyx-test: filter[record_type], filter[date_range]. */
 async function fetchAllDetailRecords(
   recordType: 'messaging' | 'call-control',
-  dateRange: string
+  dateRangeFilter: string
 ): Promise<TelnyxDetailRecord[]> {
-  const { start_date, end_date } = getDateRangeBounds(dateRange)
-
   const all: TelnyxDetailRecord[] = []
   let page = 1
   let totalPages = 1
@@ -126,10 +100,9 @@ async function fetchAllDetailRecords(
   do {
     const params = new URLSearchParams({
       'filter[record_type]': recordType,
-      'filter[start_date]': start_date,
-      'filter[end_date]': end_date,
+      'filter[date_range]': dateRangeFilter,
       'page[number]': String(page),
-      'page[size]': '50',
+      'page[size]': '100',
       sort: '-created_at',
     })
     const res = await fetchTelnyx<TelnyxDetailRecordsResponse>(
@@ -141,6 +114,39 @@ async function fetchAllDetailRecords(
   } while (page <= totalPages)
 
   return all
+}
+
+/** Fetch with fallback: if last_90_days fails, try last_30_days, then last_7_days. */
+async function fetchWithFallback(
+  recordType: 'messaging' | 'call-control',
+  dateRangeFilter: string,
+  debugLog: string[]
+): Promise<TelnyxDetailRecord[]> {
+  const fallbacks: string[] = []
+  if (dateRangeFilter === 'last_90_days') {
+    fallbacks.push('last_30_days', 'last_7_days')
+  } else if (dateRangeFilter === 'last_30_days') {
+    fallbacks.push('last_7_days')
+  }
+
+  let lastError: Error | null = null
+  for (const filter of [dateRangeFilter, ...fallbacks]) {
+    try {
+      debugLog.push(`Telnyx API: fetching ${recordType} with filter[date_range]=${filter}`)
+      const records = await fetchAllDetailRecords(recordType, filter)
+      if (filter !== dateRangeFilter) {
+        debugLog.push(`  (fallback from ${dateRangeFilter} succeeded with ${filter})`)
+      }
+      return records
+    } catch (err) {
+      lastError = err instanceof Error ? err : new Error(String(err))
+      debugLog.push(`  filter[date_range]=${filter} failed: ${lastError.message}`)
+      if (fallbacks.length === 0 || filter === fallbacks[fallbacks.length - 1]) {
+        throw lastError
+      }
+    }
+  }
+  throw lastError ?? new Error('Fetch failed')
 }
 
 interface BusinessWithPhone {
@@ -228,9 +234,8 @@ export async function syncTelnyxUsage(
   }
 
   try {
-    debugLog.push(`=== SYNC START (dateRange: ${dateRange}) ===`)
-    const { start_date, end_date } = getDateRangeBounds(dateRange)
-    debugLog.push(`Telnyx API date filter: start_date=${start_date}, end_date=${end_date}`)
+    const dateRangeFilter = mapDateRangeToFilter(dateRange)
+    debugLog.push(`=== SYNC START (dateRange: ${dateRange}, filter[date_range]: ${dateRangeFilter}) ===`)
 
     const businesses = await db.business.findMany({
       where: { telnyxPhoneNumber: { not: null } },
@@ -245,12 +250,11 @@ export async function syncTelnyxUsage(
       }
     }
 
-    const [mdrRecords, cdrRecords] = await Promise.all([
-      fetchAllDetailRecords('messaging', dateRange),
-      fetchAllDetailRecords('call-control', dateRange),
-    ])
-
-    debugLog.push(`Fetched ${mdrRecords.length} MDR records, ${cdrRecords.length} CDR records from Telnyx API`)
+    // Run messaging first, then call-control — same order as test, uses filter[date_range]
+    const mdrRecords = await fetchWithFallback('messaging', dateRangeFilter, debugLog)
+    debugLog.push(`Fetched ${mdrRecords.length} MDR records from Telnyx API`)
+    const cdrRecords = await fetchWithFallback('call-control', dateRangeFilter, debugLog)
+    debugLog.push(`Fetched ${cdrRecords.length} CDR records from Telnyx API`)
 
     let mdrMatched = 0
     let mdrUnmatched = 0
