@@ -18,11 +18,15 @@
 // Event flow — IVR screener WITH forwarding number:
 //   call.initiated  → answer → gatherUsingSpeak "press 1"
 //   call.gather.ended (digit=1) → speak "please hold" → create B-leg to forwarding number
-//   B-leg call.answered                               → wait for AMD
-//   B-leg call.machine.detection.ended (human)        → bridge A+B legs, no SMS
-//   B-leg call.machine.detection.ended (machine)      → hangup B, speak msg on A, SMS
-//   B-leg call.hangup (not connected)                 → speak msg on A, SMS
-//   call.bridging.failed                              → speak msg on A, SMS
+//   B-leg call.answered         → bridge A+B legs immediately (no AMD)
+//   B-leg call.hangup (timeout/no-answer/not connected) → speak msg on A, SMS
+//   call.bridging.failed                                → speak msg on A, SMS
+//
+// NOTE: We intentionally do NOT use answering machine detection (AMD).
+// AMD produces false positives with Google Voice, carrier voicemail
+// greetings, and other systems that answer before the human does.
+// Instead we rely on a simple 25-second timeout: if nobody picks up
+// the B-leg rings out and the caller gets the missed-call message.
 
 import { NextRequest, NextResponse } from 'next/server'
 import type { Business } from '@prisma/client'
@@ -124,57 +128,28 @@ export async function POST(request: NextRequest) {
     }
 
     // =============================================
-    // B-LEG ANSWERED (forwarding calls only)
+    // B-LEG ANSWERED → BRIDGE IMMEDIATELY
     // =============================================
     if (eventType === 'call.answered' && state.isForwardingLeg) {
-      console.log('📞 Forwarding B-leg answered, waiting for AMD result:', {
+      console.log('📞 Forwarding B-leg answered, bridging immediately:', {
         bLegCallControlId: callControlId,
         aLegCallControlId: state.aLegCallControlId,
       })
 
-      if (state.aLegCallControlId) {
-        await db.conversation.updateMany({
-          where: { callSid: state.aLegCallControlId, status: 'forwarding' },
-          data: { answeredBy: 'pending_amd' },
+      try {
+        await (telnyx.calls.actions as any).bridge(callControlId, {
+          call_control_id: state.aLegCallControlId,
         })
-      }
 
-      return NextResponse.json({}, { status: 200 })
-    }
-
-    // =============================================
-    // MACHINE DETECTION ENDED (forwarding calls only)
-    // =============================================
-    if (eventType === 'call.machine.detection.ended' && state.isForwardingLeg) {
-      const result = (payload?.result as string)?.toLowerCase()
-      console.log('🤖 AMD result for forwarding call:', result, {
-        bLegCallControlId: callControlId,
-        aLegCallControlId: state.aLegCallControlId,
-      })
-
-      if (result === 'human' || result === 'human_residence' || result === 'human_business') {
-        console.log('✅ Human detected, bridging A-leg and B-leg')
-        try {
-          await (telnyx.calls.actions as any).bridge(callControlId, {
-            call_control_id: state.aLegCallControlId,
+        if (state.aLegCallControlId) {
+          await db.conversation.updateMany({
+            where: { callSid: state.aLegCallControlId, status: 'forwarding' },
+            data: { callConnected: true, status: 'completed', answeredBy: 'human' },
           })
-
-          if (state.aLegCallControlId) {
-            await db.conversation.updateMany({
-              where: { callSid: state.aLegCallControlId, status: 'forwarding' },
-              data: { callConnected: true, status: 'completed', answeredBy: 'human' },
-            })
-          }
-        } catch (err) {
-          console.error('❌ Failed to bridge calls:', err)
-          await handleForwardingFallback(telnyx, state, 'failed', 'human')
         }
-      } else {
-        console.log('📠 Machine/voicemail detected, cancelling forwarding')
-        try {
-          await telnyx.calls.actions.hangup(callControlId, {})
-        } catch {}
-        await handleForwardingFallback(telnyx, state, 'no-answer', 'machine')
+      } catch (err) {
+        console.error('❌ Failed to bridge calls:', err)
+        await handleForwardingFallback(telnyx, state, 'failed')
       }
 
       return NextResponse.json({}, { status: 200 })
@@ -227,7 +202,6 @@ export async function POST(request: NextRequest) {
             connection_id: connectionId,
             to: business.forwardingNumber,
             from: state.callerPhone!,
-            answering_machine_detection: 'detect',
             timeout_secs: FORWARDING_TIMEOUT_SECS,
             client_state: bLegState,
           })
