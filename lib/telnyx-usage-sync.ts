@@ -98,13 +98,20 @@ async function fetchAllDetailRecords(
   return all
 }
 
+interface BusinessWithPhone {
+  id: string
+  telnyxPhoneNumber: string | null
+}
+
 /** Get business ID for a record by matching phone number.
  * Telnyx uses cli/cld for CDR (calls) and from/to for MDR (messaging).
  * Business number can be either sender or receiver, so check all four. */
-async function getBusinessIdForRecord(
+function getBusinessIdForRecord(
   record: TelnyxDetailRecord,
-  _recordType: 'sms' | 'call'
-): Promise<string | null> {
+  recordType: 'sms' | 'call',
+  businesses: BusinessWithPhone[],
+  debugLog: string[]
+): string | null {
   const recordPhones = [
     record.cli,
     record.cld,
@@ -112,18 +119,23 @@ async function getBusinessIdForRecord(
     record.to,
   ].filter((p): p is string => !!p && typeof p === 'string')
 
-  const businesses = await db.business.findMany({
-    where: { telnyxPhoneNumber: { not: null } },
-    select: { id: true, telnyxPhoneNumber: true },
-  })
+  const fromVal = record.from ?? record.cli ?? '(none)'
+  const toVal = record.to ?? record.cld ?? '(none)'
 
   for (const b of businesses) {
     const tn = b.telnyxPhoneNumber
     if (!tn) continue
     for (const recordPhone of recordPhones) {
-      if (phonesMatchE164(recordPhone, tn)) return b.id
+      const bizNorm = normalizePhoneNumber(tn)
+      const recNorm = normalizePhoneNumber(recordPhone)
+      debugLog.push(`Comparing business number [${tn}] (normalized: ${bizNorm}) to record from [${fromVal}] to [${toVal}] (record phone: ${recordPhone}, normalized: ${recNorm})`)
+      if (phonesMatchE164(recordPhone, tn)) {
+        debugLog.push(`  ✓ MATCHED: record ${recordType} → business ${b.id} (${tn})`)
+        return b.id
+      }
     }
   }
+  debugLog.push(`  ✗ NO MATCH: record ${recordType} from [${fromVal}] to [${toVal}] - no business number matched`)
   return null
 }
 
@@ -151,6 +163,7 @@ export interface SyncResult {
   cdrsProcessed: number
   messagesUpdated: number
   errors: string[]
+  debugLog: string[]
 }
 
 /**
@@ -160,23 +173,54 @@ export interface SyncResult {
 export async function syncTelnyxUsage(
   dateRange: string = 'last_90_days'
 ): Promise<SyncResult> {
+  const debugLog: string[] = []
   const result: SyncResult = {
     mdrsProcessed: 0,
     cdrsProcessed: 0,
     messagesUpdated: 0,
     errors: [],
+    debugLog,
   }
 
   try {
+    debugLog.push(`=== SYNC START (dateRange: ${dateRange}) ===`)
+
+    const businesses = await db.business.findMany({
+      where: { telnyxPhoneNumber: { not: null } },
+      select: { id: true, telnyxPhoneNumber: true },
+    })
+    debugLog.push(`Businesses with telnyxPhoneNumber (exactly as stored in DB):`)
+    if (businesses.length === 0) {
+      debugLog.push('  (none - no businesses have telnyxPhoneNumber set)')
+    } else {
+      for (const b of businesses) {
+        debugLog.push(`  - business ${b.id}: telnyxPhoneNumber = "${b.telnyxPhoneNumber}" (typeof: ${typeof b.telnyxPhoneNumber})`)
+      }
+    }
+
     const [mdrRecords, cdrRecords] = await Promise.all([
       fetchAllDetailRecords('messaging', dateRange),
       fetchAllDetailRecords('call-control', dateRange),
     ])
 
+    debugLog.push(`Fetched ${mdrRecords.length} MDR records, ${cdrRecords.length} CDR records from Telnyx API`)
+
+    let mdrMatched = 0
+    let mdrUnmatched = 0
+    let cdrMatched = 0
+    let cdrUnmatched = 0
+
     for (const record of mdrRecords) {
+      const fromVal = record.from ?? '(none)'
+      const toVal = record.to ?? '(none)'
+      debugLog.push(`MDR record: from=[${fromVal}] to=[${toVal}] (uuid: ${record.uuid ?? '?'})`)
       try {
-        const businessId = await getBusinessIdForRecord(record, 'sms')
-        if (!businessId) continue
+        const businessId = getBusinessIdForRecord(record, 'sms', businesses, debugLog)
+        if (!businessId) {
+          mdrUnmatched++
+          continue
+        }
+        mdrMatched++
 
         const recordId = record.uuid ?? record.id ?? `mdr-${record.created_at}-${record.cli}-${record.cld}`
         const cost = parseCost(record.cost)
@@ -225,9 +269,16 @@ export async function syncTelnyxUsage(
     }
 
     for (const record of cdrRecords) {
+      const cliVal = record.cli ?? '(none)'
+      const cldVal = record.cld ?? '(none)'
+      debugLog.push(`CDR record: cli(from)=[${cliVal}] cld(to)=[${cldVal}] (id: ${record.id ?? '?'})`)
       try {
-        const businessId = await getBusinessIdForRecord(record, 'call')
-        if (!businessId) continue
+        const businessId = getBusinessIdForRecord(record, 'call', businesses, debugLog)
+        if (!businessId) {
+          cdrUnmatched++
+          continue
+        }
+        cdrMatched++
 
         const recordId =
           record.id ?? record.uuid ?? `cdr-${record.started_at ?? record.created_at}-${record.cli}-${record.cld}`
@@ -257,8 +308,13 @@ export async function syncTelnyxUsage(
         result.errors.push(`CDR ${record.id ?? '?'}: ${String(err)}`)
       }
     }
+
+    debugLog.push(`=== SYNC COMPLETE ===`)
+    debugLog.push(`Matched ${mdrMatched} MDR records, ${mdrUnmatched} MDR records unmatched`)
+    debugLog.push(`Matched ${cdrMatched} CDR records, ${cdrUnmatched} CDR records unmatched`)
   } catch (err) {
     result.errors.push(String(err))
+    debugLog.push(`SYNC ERROR: ${String(err)}`)
   }
 
   return result

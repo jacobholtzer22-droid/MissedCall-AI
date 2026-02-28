@@ -94,6 +94,7 @@ export default function AdminDashboard() {
   const [usageLoading, setUsageLoading] = useState<Record<string, boolean>>({})
   const [refreshLoading, setRefreshLoading] = useState(false)
   const [refreshFeedback, setRefreshFeedback] = useState<string | null>(null)
+  const [refreshDebugLog, setRefreshDebugLog] = useState<string[]>([])
   const [importModalOpen, setImportModalOpen] = useState(false)
   const [importPreview, setImportPreview] = useState<{ total: number; newCount: number; duplicateCount: number; contacts: { phoneNumber: string; name: string | null }[] } | null>(null)
   const [importProgress, setImportProgress] = useState(0)
@@ -106,6 +107,7 @@ export default function AdminDashboard() {
   async function refreshUsageData(businessId: string) {
     setRefreshLoading(true)
     setRefreshFeedback(null)
+    setRefreshDebugLog([])
     try {
       const syncRes = await fetch('/api/admin/usage/sync?dateRange=last_90_days', {
         method: 'POST',
@@ -115,6 +117,7 @@ export default function AdminDashboard() {
         setRefreshFeedback(`❌ Sync failed: ${syncData.error || 'Unknown error'}`)
         return
       }
+      setRefreshDebugLog(syncData.debugLog ?? [])
       const res = await fetch(`/api/admin/businesses/${businessId}/usage`)
       if (res.ok) {
         const data = await res.json()
@@ -664,6 +667,7 @@ export default function AdminDashboard() {
                           onRefresh={() => refreshUsageData(business.id)}
                           refreshLoading={refreshLoading}
                           refreshFeedback={refreshFeedback}
+                          refreshDebugLog={refreshDebugLog}
                         />
                       ) : null}
                     </div>
@@ -1162,11 +1166,13 @@ function UsagePanel({
   onRefresh,
   refreshLoading,
   refreshFeedback,
+  refreshDebugLog = [],
 }: {
   data: UsageData
   onRefresh: () => void
   refreshLoading: boolean
   refreshFeedback?: string | null
+  refreshDebugLog?: string[]
 }) {
   const [testTelnyxLoading, setTestTelnyxLoading] = useState(false)
   const [testTelnyxResult, setTestTelnyxResult] = useState<{
@@ -1235,6 +1241,27 @@ function UsagePanel({
           </button>
         </div>
       </div>
+      {/* Sync debug log */}
+      {refreshDebugLog.length > 0 && (
+        <div className="bg-gray-900/80 rounded-xl p-4 border border-gray-700 overflow-hidden">
+          <h4 className="text-sm font-medium text-gray-300 mb-2">Sync Debug Log</h4>
+          <div className="font-mono text-xs text-gray-400 max-h-64 overflow-y-auto space-y-0.5">
+            {refreshDebugLog.map((line, i) => (
+              <div key={i} className="whitespace-pre-wrap break-all">
+                {line.includes('✓ MATCHED') ? (
+                  <span className="text-green-400">{line}</span>
+                ) : line.includes('✗ NO MATCH') ? (
+                  <span className="text-amber-400">{line}</span>
+                ) : line.includes('SYNC ERROR') ? (
+                  <span className="text-red-400">{line}</span>
+                ) : (
+                  line
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
       {/* Stats row */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-4">
         <div className="bg-gray-800/50 rounded-lg p-3">
