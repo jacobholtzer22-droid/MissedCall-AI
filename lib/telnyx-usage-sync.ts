@@ -250,11 +250,21 @@ export async function syncTelnyxUsage(
       }
     }
 
-    // Run messaging first, then call-control — same order as test, uses filter[date_range]
+    // Run messaging first — MDR is required for SMS costs
     const mdrRecords = await fetchWithFallback('messaging', dateRangeFilter, debugLog)
     debugLog.push(`Fetched ${mdrRecords.length} MDR records from Telnyx API`)
-    const cdrRecords = await fetchWithFallback('call-control', dateRangeFilter, debugLog)
-    debugLog.push(`Fetched ${cdrRecords.length} CDR records from Telnyx API`)
+
+    // Call-control (CDR) fetch is non-blocking — if it fails (e.g. 500), continue with messaging only
+    let cdrRecords: TelnyxDetailRecord[] = []
+    let callControlFetchFailed = false
+    try {
+      cdrRecords = await fetchWithFallback('call-control', dateRangeFilter, debugLog)
+      debugLog.push(`Fetched ${cdrRecords.length} CDR records from Telnyx API`)
+    } catch (err) {
+      callControlFetchFailed = true
+      const errMsg = err instanceof Error ? err.message : String(err)
+      debugLog.push(`Call-control fetch failed (non-blocking): ${errMsg}`)
+    }
 
     let mdrMatched = 0
     let mdrUnmatched = 0
@@ -363,6 +373,9 @@ export async function syncTelnyxUsage(
     debugLog.push(`=== SYNC COMPLETE ===`)
     debugLog.push(`Matched ${mdrMatched} MDR records, ${mdrUnmatched} MDR records unmatched`)
     debugLog.push(`Matched ${cdrMatched} CDR records, ${cdrUnmatched} CDR records unmatched`)
+    if (callControlFetchFailed) {
+      debugLog.push(`Saved ${result.mdrsProcessed} messaging records, call-control fetch failed (skipped)`)
+    }
   } catch (err) {
     result.errors.push(String(err))
     debugLog.push(`SYNC ERROR: ${String(err)}`)
