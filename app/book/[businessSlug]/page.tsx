@@ -47,7 +47,7 @@ export default function BookingPage() {
   const [service, setService] = useState('')
 
   const [submitting, setSubmitting] = useState(false)
-  const [confirmation, setConfirmation] = useState<{ scheduledAt: string; serviceType: string } | null>(null)
+  const [confirmation, setConfirmation] = useState<{ scheduledAt: string; serviceType: string; timezone?: string } | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
@@ -119,6 +119,7 @@ export default function BookingPage() {
           setConfirmation({
             scheduledAt: data.appointment.scheduledAt,
             serviceType: data.appointment.serviceType,
+            timezone: data.appointment.timezone,
           })
         } else {
           setError(data.error ?? 'Booking failed')
@@ -157,6 +158,7 @@ export default function BookingPage() {
 
   if (confirmation) {
     const d = new Date(confirmation.scheduledAt)
+    const tzOpt = confirmation.timezone ? { timeZone: confirmation.timezone } : {}
     return (
       <div className="min-h-screen flex items-center justify-center p-6" style={{ backgroundColor: '#f9fafb' }}>
         <div className="rounded-2xl shadow-lg border p-8 max-w-md text-center" style={{ backgroundColor: '#ffffff', borderColor: '#e5e7eb' }}>
@@ -166,8 +168,8 @@ export default function BookingPage() {
           <h1 className="text-2xl font-bold mb-2" style={{ color: '#111827' }}>You're All Set!</h1>
           <p className="mb-6" style={{ color: '#374151' }}>
             Your {confirmation.serviceType} appointment with {businessName} is confirmed for{' '}
-            {d.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })} at{' '}
-            {d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}.
+            {d.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', ...tzOpt })} at{' '}
+            {d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true, ...tzOpt })}.
           </p>
           <p className="text-sm" style={{ color: '#374151' }}>You'll receive a confirmation text shortly.</p>
         </div>

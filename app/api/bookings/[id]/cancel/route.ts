@@ -58,15 +58,18 @@ export async function POST(
 
     if (appointment.business.telnyxPhoneNumber) {
       const telnyx = new Telnyx({ apiKey: process.env.TELNYX_API_KEY! })
+      const tz = appointment.business.timezone ?? 'America/New_York'
       const dateStr = new Date(appointment.scheduledAt).toLocaleDateString('en-US', {
         weekday: 'short',
         month: 'short',
         day: 'numeric',
+        timeZone: tz,
       })
       const timeStr = new Date(appointment.scheduledAt).toLocaleTimeString('en-US', {
         hour: 'numeric',
         minute: '2-digit',
         hour12: true,
+        timeZone: tz,
       })
       const msg = `Your appointment with ${appointment.business.name} for ${dateStr} at ${timeStr} has been cancelled. Please contact us to reschedule.`
 

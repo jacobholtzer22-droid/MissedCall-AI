@@ -11,19 +11,21 @@ const baseUrl =
   process.env.NEXT_PUBLIC_APP_URL ??
   (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'https://alignandacquire.com')
 
-function formatDate(d: Date): string {
+function formatDate(d: Date, timeZone?: string): string {
   return d.toLocaleDateString('en-US', {
     weekday: 'short',
     month: 'short',
     day: 'numeric',
+    ...(timeZone && { timeZone }),
   })
 }
 
-function formatTime(d: Date): string {
+function formatTime(d: Date, timeZone?: string): string {
   return d.toLocaleTimeString('en-US', {
     hour: 'numeric',
     minute: '2-digit',
     hour12: true,
+    ...(timeZone && { timeZone }),
   })
 }
 
@@ -38,6 +40,7 @@ type BusinessWithPhone = Pick<
   | 'ownerPhone'
   | 'notifyBySms'
   | 'notifyByEmail'
+  | 'timezone'
 >
 
 export async function notifyOwnerOnBookingCreated(
@@ -45,8 +48,9 @@ export async function notifyOwnerOnBookingCreated(
   appointment: Pick<Appointment, 'id' | 'customerName' | 'customerPhone' | 'customerEmail' | 'serviceType' | 'scheduledAt'>
 ): Promise<void> {
   const scheduledAt = new Date(appointment.scheduledAt)
-  const dateStr = formatDate(scheduledAt)
-  const timeStr = formatTime(scheduledAt)
+  const tz = business.timezone ?? 'America/New_York'
+  const dateStr = formatDate(scheduledAt, tz)
+  const timeStr = formatTime(scheduledAt, tz)
   const dashboardUrl = `${baseUrl}/dashboard/appointments`
 
   // SMS
@@ -99,8 +103,9 @@ export async function notifyOwnerOnBookingCancelled(
   appointment: Pick<Appointment, 'id' | 'customerName' | 'customerPhone' | 'customerEmail' | 'serviceType' | 'scheduledAt'>
 ): Promise<void> {
   const scheduledAt = new Date(appointment.scheduledAt)
-  const dateStr = formatDate(scheduledAt)
-  const timeStr = formatTime(scheduledAt)
+  const tz = business.timezone ?? 'America/New_York'
+  const dateStr = formatDate(scheduledAt, tz)
+  const timeStr = formatTime(scheduledAt, tz)
   const dashboardUrl = `${baseUrl}/dashboard/appointments`
 
   // SMS

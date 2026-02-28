@@ -113,11 +113,13 @@ export async function POST(request: NextRequest) {
         weekday: 'short',
         month: 'short',
         day: 'numeric',
+        timeZone: tz,
       })
       const timeStr = startDate.toLocaleTimeString('en-US', {
         hour: 'numeric',
         minute: '2-digit',
         hour12: true,
+        timeZone: tz,
       })
       const msg = `Confirmed! Your appointment with ${business.name} is scheduled for ${dateStr} at ${timeStr}. Reply to this number if you need to reschedule.`
 
@@ -151,6 +153,7 @@ export async function POST(request: NextRequest) {
         id: appointment.id,
         scheduledAt: appointment.scheduledAt,
         serviceType: appointment.serviceType,
+        timezone: tz,
       },
     })
   } catch (error) {

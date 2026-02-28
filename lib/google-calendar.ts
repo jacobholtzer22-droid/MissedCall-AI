@@ -303,7 +303,12 @@ async function getAvailableSlotsInternal(
           slots.push({
             start: slotStart.toISOString(),
             end: slotEnd.toISOString(),
-            display: slotStart.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }),
+            display: slotStart.toLocaleTimeString('en-US', {
+              hour: 'numeric',
+              minute: '2-digit',
+              hour12: true,
+              timeZone: tz,
+            }),
           })
         }
       }

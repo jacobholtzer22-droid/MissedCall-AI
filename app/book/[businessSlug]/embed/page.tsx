@@ -55,7 +55,7 @@ export default function EmbedBookingPage() {
   const [service, setService] = useState('')
 
   const [submitting, setSubmitting] = useState(false)
-  const [confirmation, setConfirmation] = useState<{ scheduledAt: string; serviceType: string } | null>(null)
+  const [confirmation, setConfirmation] = useState<{ scheduledAt: string; serviceType: string; timezone?: string } | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   const reportHeight = useCallback(() => {
@@ -147,6 +147,7 @@ export default function EmbedBookingPage() {
           setConfirmation({
             scheduledAt: data.appointment.scheduledAt,
             serviceType: data.appointment.serviceType,
+            timezone: data.appointment.timezone,
           })
         } else {
           setError(data.error ?? 'Booking failed')
@@ -182,6 +183,7 @@ export default function EmbedBookingPage() {
 
   if (confirmation) {
     const d = new Date(confirmation.scheduledAt)
+    const tzOpt = confirmation.timezone ? { timeZone: confirmation.timezone } : {}
     return (
       <div ref={containerRef} className="p-6" style={{ backgroundColor: '#ffffff' }}>
         <div className="max-w-md mx-auto text-center">
@@ -191,8 +193,8 @@ export default function EmbedBookingPage() {
           <h2 className="text-xl font-bold mb-2" style={{ color: '#111827' }}>You're All Set!</h2>
           <p className="text-sm" style={{ color: '#6b7280' }}>
             Your {confirmation.serviceType} appointment with {businessName} is confirmed for{' '}
-            {d.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })} at{' '}
-            {d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}.
+            {d.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', ...tzOpt })} at{' '}
+            {d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true, ...tzOpt })}.
           </p>
           <p className="text-sm mt-2" style={{ color: '#6b7280' }}>You'll receive a confirmation text shortly.</p>
         </div>
