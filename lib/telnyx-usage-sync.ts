@@ -9,6 +9,47 @@ import { normalizeToE164 } from '@/lib/phone-utils'
 
 const TELNYX_API_BASE = 'https://api.telnyx.com/v2'
 
+/** Get start_date and end_date in ISO 8601 format for Telnyx Detail Records API.
+ * The API uses filter[start_date] and filter[end_date], NOT filter[date_range]. */
+function getDateRangeBounds(dateRange: string): { start_date: string; end_date: string } {
+  const now = new Date()
+  const toISO = (d: Date) => d.toISOString()
+
+  switch (dateRange) {
+    case 'yesterday': {
+      const yesterday = new Date(now)
+      yesterday.setUTCDate(yesterday.getUTCDate() - 1)
+      const start = new Date(Date.UTC(yesterday.getUTCFullYear(), yesterday.getUTCMonth(), yesterday.getUTCDate(), 0, 0, 0, 0))
+      const end = new Date(Date.UTC(yesterday.getUTCFullYear(), yesterday.getUTCMonth(), yesterday.getUTCDate(), 23, 59, 59, 999))
+      return { start_date: toISO(start), end_date: toISO(end) }
+    }
+    case 'last_7_days': {
+      const start = new Date(now)
+      start.setUTCDate(start.getUTCDate() - 7)
+      start.setUTCHours(0, 0, 0, 0)
+      return { start_date: toISO(start), end_date: toISO(now) }
+    }
+    case 'last_30_days': {
+      const start = new Date(now)
+      start.setUTCDate(start.getUTCDate() - 30)
+      start.setUTCHours(0, 0, 0, 0)
+      return { start_date: toISO(start), end_date: toISO(now) }
+    }
+    case 'last_90_days': {
+      const start = new Date(now)
+      start.setUTCDate(start.getUTCDate() - 90)
+      start.setUTCHours(0, 0, 0, 0)
+      return { start_date: toISO(start), end_date: toISO(now) }
+    }
+    default:
+      // Fallback to last_90_days if unknown range
+      const start = new Date(now)
+      start.setUTCDate(start.getUTCDate() - 90)
+      start.setUTCHours(0, 0, 0, 0)
+      return { start_date: toISO(start), end_date: toISO(now) }
+  }
+}
+
 /** Normalize phone to E.164 for comparison - same format Telnyx returns */
 function normalizePhoneNumber(phone: string | undefined | null): string {
   return normalizeToE164(phone ?? '')
@@ -70,11 +111,14 @@ async function fetchTelnyx<T>(path: string): Promise<T> {
   return res.json()
 }
 
-/** Fetch all pages of detail records */
+/** Fetch all pages of detail records.
+ * Uses filter[start_date] and filter[end_date] (ISO 8601), NOT filter[date_range]. */
 async function fetchAllDetailRecords(
   recordType: 'messaging' | 'call-control',
   dateRange: string
 ): Promise<TelnyxDetailRecord[]> {
+  const { start_date, end_date } = getDateRangeBounds(dateRange)
+
   const all: TelnyxDetailRecord[] = []
   let page = 1
   let totalPages = 1
@@ -82,7 +126,8 @@ async function fetchAllDetailRecords(
   do {
     const params = new URLSearchParams({
       'filter[record_type]': recordType,
-      'filter[date_range]': dateRange,
+      'filter[start_date]': start_date,
+      'filter[end_date]': end_date,
       'page[number]': String(page),
       'page[size]': '50',
       sort: '-created_at',
@@ -184,6 +229,8 @@ export async function syncTelnyxUsage(
 
   try {
     debugLog.push(`=== SYNC START (dateRange: ${dateRange}) ===`)
+    const { start_date, end_date } = getDateRangeBounds(dateRange)
+    debugLog.push(`Telnyx API date filter: start_date=${start_date}, end_date=${end_date}`)
 
     const businesses = await db.business.findMany({
       where: { telnyxPhoneNumber: { not: null } },
