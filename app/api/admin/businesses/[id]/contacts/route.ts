@@ -1,5 +1,5 @@
 import { auth } from '@clerk/nextjs/server'
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { normalizePhoneNumber } from '@/lib/phone-utils'
 
@@ -83,16 +83,16 @@ export async function POST(
 }
 
 export async function DELETE(
-  request: Request,
+  request: NextRequest,
   context: { params: { id: string } }
 ) {
   const { userId } = await auth()
   if (!userId || userId !== ADMIN_USER_ID) return unauthorized()
 
   const businessId = context.params.id
-  const { searchParams } = new URL(request.url)
-  const contactId = searchParams.get('id')
-  const phoneNumber = searchParams.get('phoneNumber')
+  const searchParams = request.nextUrl.searchParams
+  const contactId = searchParams.get('id')?.trim() || null
+  const phoneNumber = searchParams.get('phoneNumber')?.trim() || null
 
   if (!contactId && !phoneNumber) {
     return NextResponse.json(

@@ -99,6 +99,8 @@ export default function AdminDashboard() {
   const [importProgress, setImportProgress] = useState(0)
   const [importing, setImporting] = useState(false)
   const [importError, setImportError] = useState<string | null>(null)
+  const [contactsListExpanded, setContactsListExpanded] = useState(false)
+  const [contactsSearchFilter, setContactsSearchFilter] = useState('')
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   async function refreshUsageData(businessId: string) {
@@ -232,6 +234,8 @@ export default function AdminDashboard() {
     setNewBlockedLabel('')
     setNewContactPhone('')
     setNewContactName('')
+    setContactsListExpanded(false)
+    setContactsSearchFilter('')
     fetchBlockedNumbers(business.id)
     fetchContacts(business.id)
   }
@@ -386,23 +390,33 @@ export default function AdminDashboard() {
 
   async function removeContact(contact: Contact) {
     if (!selectedBusiness) return
+    const hasId = typeof contact.id === 'string' && contact.id.trim().length > 0
+    const hasPhone = typeof contact.phoneNumber === 'string' && contact.phoneNumber.trim().length > 0
+    if (!hasId && !hasPhone) {
+      setMessage('❌ Contact has no id or phone number')
+      return
+    }
     // Optimistic update: remove from UI immediately
-    setContacts(prev => prev.filter(c => c.id !== contact.id))
+    setContacts(prev => prev.filter(c => c.id !== contact.id && c.phoneNumber !== contact.phoneNumber))
     try {
-      const params = new URLSearchParams({ id: contact.id })
+      const params = new URLSearchParams()
+      if (hasId) params.set('id', contact.id)
+      else params.set('phoneNumber', contact.phoneNumber)
       const res = await fetch(
-        `/api/admin/businesses/${selectedBusiness.id}/contacts?${params}`,
+        `/api/admin/businesses/${selectedBusiness.id}/contacts?${params.toString()}`,
         { method: 'DELETE' }
       )
       const data = await res.json().catch(() => ({}))
       if (!res.ok) {
         setMessage(`❌ Failed to remove: ${data.error || 'Unknown error'}`)
         fetchContacts(selectedBusiness.id) // Revert on failure
-      } else if (data.deleted === 0) {
-        // Fallback: try delete by phone number
+        return
+      }
+      if (data.deleted === 0 && hasPhone && hasId) {
+        // Fallback: try delete by phone number if id didn't match
         const phoneParams = new URLSearchParams({ phoneNumber: contact.phoneNumber })
         const retry = await fetch(
-          `/api/admin/businesses/${selectedBusiness.id}/contacts?${phoneParams}`,
+          `/api/admin/businesses/${selectedBusiness.id}/contacts?${phoneParams.toString()}`,
           { method: 'DELETE' }
         )
         if (!retry.ok) {
@@ -878,7 +892,7 @@ export default function AdminDashboard() {
                       disabled={addingContact || !newContactPhone.trim()}
                       className="px-4 py-2 bg-gray-700 hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg text-sm font-medium transition"
                     >
-                      {addingContact ? 'Adding...' : 'Add'}
+                      {addingContact ? 'Adding...' : 'Add contact'}
                     </button>
                     <input
                       ref={fileInputRef}
@@ -901,23 +915,65 @@ export default function AdminDashboard() {
                   ) : contacts.length === 0 ? (
                     <p className="text-sm text-gray-500">No contacts. Add people the client already knows to skip automated texts.</p>
                   ) : (
-                    <ul className="divide-y divide-gray-800 rounded-lg border border-gray-800 overflow-hidden">
-                      {contacts.map(c => (
-                        <li key={c.id} className="flex items-center justify-between gap-2 bg-gray-800/50 px-3 py-2 text-sm">
-                          <span className="text-gray-300">
-                            {c.phoneNumber}
-                            {c.name ? <span className="text-gray-500 ml-2">({c.name})</span> : null}
-                          </span>
-                          <button
-                            type="button"
-                            onClick={() => removeContact(c)}
-                            className="text-red-400 hover:text-red-300 text-xs font-medium"
-                          >
-                            Remove
-                          </button>
-                        </li>
-                      ))}
-                    </ul>
+                    <div className="space-y-2">
+                      <button
+                        type="button"
+                        onClick={() => setContactsListExpanded(prev => !prev)}
+                        className="flex items-center justify-between w-full px-4 py-2.5 bg-gray-800/50 hover:bg-gray-800 border border-gray-700 rounded-lg text-left text-sm transition"
+                      >
+                        <span className="text-gray-300">
+                          {contacts.length} contact{contacts.length !== 1 ? 's' : ''} in address book
+                        </span>
+                        <span className="text-gray-500 text-xs">
+                          {contactsListExpanded ? '▼ Collapse' : '▶ Expand'}
+                        </span>
+                      </button>
+                      {contactsListExpanded && (
+                        <div className="rounded-lg border border-gray-800 overflow-hidden bg-gray-900/50">
+                          <div className="p-2 border-b border-gray-800">
+                            <input
+                              type="text"
+                              value={contactsSearchFilter}
+                              onChange={e => setContactsSearchFilter(e.target.value)}
+                              placeholder="Search by phone or name..."
+                              className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white placeholder-gray-600 text-sm"
+                            />
+                          </div>
+                          <ul className="divide-y divide-gray-800 max-h-64 overflow-y-auto">
+                            {(() => {
+                              const q = contactsSearchFilter.trim().toLowerCase()
+                              const filtered = !q ? contacts : contacts.filter(
+                                c =>
+                                  c.phoneNumber.toLowerCase().includes(q) ||
+                                  (c.name?.toLowerCase().includes(q) ?? false)
+                              )
+                              if (filtered.length === 0) {
+                                return (
+                                  <li className="px-4 py-3 text-sm text-gray-500 text-center">
+                                    {q ? 'No matches' : 'No contacts'}
+                                  </li>
+                                )
+                              }
+                              return filtered.map(c => (
+                                <li key={c.id} className="flex items-center justify-between gap-2 bg-gray-800/30 px-3 py-2 text-sm hover:bg-gray-800/50">
+                                  <span className="text-gray-300 truncate">
+                                    {c.phoneNumber}
+                                    {c.name ? <span className="text-gray-500 ml-2">({c.name})</span> : null}
+                                  </span>
+                                  <button
+                                    type="button"
+                                    onClick={() => removeContact(c)}
+                                    className="flex-shrink-0 text-red-400 hover:text-red-300 text-xs font-medium"
+                                  >
+                                    Remove
+                                  </button>
+                                </li>
+                              ))
+                            })()}
+                          </ul>
+                        </div>
+                      )}
+                    </div>
                   )}
                 </div>
               </Field>
