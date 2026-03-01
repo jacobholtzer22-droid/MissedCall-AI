@@ -5,7 +5,26 @@
 
 import Telnyx from 'telnyx'
 import nodemailer from 'nodemailer'
+import { TZDate } from '@date-fns/tz'
 import type { Business, Appointment } from '@prisma/client'
+
+/** Parse "YYYY-MM-DD HH:mm" as business local time (not UTC). */
+function parseDatetimeInTimezone(datetimeStr: string, tz: string): Date {
+  const match = datetimeStr.trim().match(/^(\d{4})-(\d{2})-(\d{2})\s+(\d{1,2}):(\d{2})(?::(\d{2}))?/)
+  if (!match) return new Date(datetimeStr)
+  const [, y, m, d, h, min, sec] = match
+  const d2 = new TZDate(
+    parseInt(y!, 10),
+    parseInt(m!, 10) - 1,
+    parseInt(d!, 10),
+    parseInt(h!, 10),
+    parseInt(min!, 10),
+    parseInt(sec || '0', 10),
+    0,
+    tz
+  )
+  return new Date(d2.getTime())
+}
 
 const baseUrl =
   process.env.NEXT_PUBLIC_APP_URL ??
@@ -161,7 +180,7 @@ export async function notifyOwnerOnBookingRequestNoCalendar(
   const { customerName, customerPhone, service, datetime, notes, customerAddress, conversationTranscript } = params
   const dashboardUrl = `${baseUrl}/dashboard/appointments`
   const tz = business.timezone ?? 'America/New_York'
-  const dateObj = new Date(datetime)
+  const dateObj = typeof datetime === 'string' ? parseDatetimeInTimezone(datetime, tz) : datetime
   const dateStr = formatDate(dateObj, tz)
   const timeStr = formatTime(dateObj, tz)
   const dateTimeLabel = `${dateStr} at ${timeStr}`
