@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation'
 import { CallScreenerCard } from './components/CallScreenerCard'
 import { parseContactFile } from '@/lib/import-contacts'
 import { DEFAULT_BUSINESS_HOURS } from '@/lib/business-hours'
+import { getIndustryDefaults, BUSINESS_TYPE_OPTIONS } from '@/lib/industry-defaults'
 
 interface Business {
   id: string
@@ -35,6 +36,8 @@ interface Business {
   bookingPageTitle?: string | null
   bookingPageServiceLabel?: string | null
   bookingPageConfirmation?: string | null
+  bookingRequiresAddress?: boolean
+  businessType?: string | null
   createdAt: string
   updatedAt: string
   _count: {
@@ -288,6 +291,8 @@ export default function AdminDashboard() {
       bookingPageTitle: business.bookingPageTitle ?? '',
       bookingPageServiceLabel: business.bookingPageServiceLabel ?? '',
       bookingPageConfirmation: business.bookingPageConfirmation ?? '',
+      bookingRequiresAddress: business.bookingRequiresAddress ?? true,
+      businessType: business.businessType ?? '',
     })
     setMessage('')
     setNewBlockedPhone('')
@@ -537,6 +542,8 @@ export default function AdminDashboard() {
           bookingPageTitle: editData.bookingPageTitle || null,
           bookingPageServiceLabel: editData.bookingPageServiceLabel || null,
           bookingPageConfirmation: editData.bookingPageConfirmation || null,
+          bookingRequiresAddress: editData.bookingRequiresAddress ?? true,
+          businessType: editData.businessType || null,
         }),
       })
 
@@ -1117,6 +1124,39 @@ export default function AdminDashboard() {
                 </div>
               </Field>
 
+              {/* Business Type */}
+              <Field
+                label="Business Type / Industry"
+                hint="Select to auto-fill AI greeting, services, and booking labels"
+              >
+                <select
+                  value={editData.businessType ?? ''}
+                  onChange={e => {
+                    const val = e.target.value
+                    if (val) {
+                      const defaults = getIndustryDefaults(val)
+                      setEditData(prev => ({
+                        ...prev,
+                        businessType: val,
+                        aiGreeting: defaults.aiGreeting,
+                        servicesOffered: JSON.stringify(defaults.services, null, 2),
+                        bookingPageTitle: defaults.bookingPageTitle,
+                        bookingPageServiceLabel: defaults.bookingPageServiceLabel,
+                        bookingRequiresAddress: defaults.bookingRequiresAddress,
+                      }))
+                    } else {
+                      setEditData(prev => ({ ...prev, businessType: val }))
+                    }
+                  }}
+                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-white"
+                >
+                  <option value="">Select industry...</option>
+                  {BUSINESS_TYPE_OPTIONS.map(opt => (
+                    <option key={opt} value={opt}>{opt}</option>
+                  ))}
+                </select>
+              </Field>
+
               {/* Setup Fee */}
               <Field label="Setup Fee">
                 <input
@@ -1231,6 +1271,20 @@ export default function AdminDashboard() {
                   placeholder="You're all set! Someone from {businessName} will meet you at your scheduled time for a free in-person quote."
                   className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-white placeholder-gray-600"
                 />
+              </Field>
+              <Field
+                label="Require Address on Booking"
+                hint="When enabled, customers must provide a property address (for mobile/quote visits)"
+              >
+                <label className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={editData.bookingRequiresAddress ?? true}
+                    onChange={e => setEditData({ ...editData, bookingRequiresAddress: e.target.checked })}
+                    className="rounded border-gray-600 bg-gray-800 text-blue-500 focus:ring-blue-500"
+                  />
+                  <span className="text-sm">Require property address</span>
+                </label>
               </Field>
 
               {/* Services Offered */}

@@ -45,6 +45,8 @@ export async function PATCH(
       'bookingPageTitle',
       'bookingPageServiceLabel',
       'bookingPageConfirmation',
+      'bookingRequiresAddress',
+      'businessType',
     ]
 
     const data: Record<string, unknown> = {}

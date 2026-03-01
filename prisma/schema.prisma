@@ -23,6 +23,7 @@ model Business {
   // Basic info
   name                  String                          // "Smith Dental"
   slug                  String    @unique               // "smith-dental" (for URLs)
+  businessType          String?                         // Landscaping, Car Detailing, HVAC, Other
 
   // Telnyx phone number provisioned for this business
   telnyxPhoneNumber     String?   @unique
@@ -67,6 +68,7 @@ model Business {
   bookingPageTitle      String?                         // e.g. "Schedule a Free In-Person Quote"
   bookingPageServiceLabel String?                       // e.g. "What do you need a quote for?"
   bookingPageConfirmation String?   @db.Text            // e.g. "You're all set! Someone from {businessName} will meet you at your scheduled time."
+  bookingRequiresAddress Boolean   @default(true)       // Require property address when booking (turn off for businesses that don't need it)
 
   // Owner notification preferences (booking created/cancelled)
   ownerEmail            String?                         // Business owner email for notifications

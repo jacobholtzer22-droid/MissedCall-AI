@@ -24,6 +24,7 @@ export default function BookingPage() {
   const [businessName, setBusinessName] = useState<string | null>(null)
   const [bookingPageTitle, setBookingPageTitle] = useState('Schedule a Free In-Person Quote')
   const [bookingPageServiceLabel, setBookingPageServiceLabel] = useState('What do you need a quote for?')
+  const [bookingRequiresAddress, setBookingRequiresAddress] = useState(true)
   const [bookingPageConfirmation, setBookingPageConfirmation] = useState(
     "You're all set! Someone from {businessName} will meet you at your scheduled time for a free in-person quote."
   )
@@ -59,6 +60,7 @@ export default function BookingPage() {
           data.bookingPageConfirmation ??
             "You're all set! Someone from {businessName} will meet you at your scheduled time for a free in-person quote."
         )
+        setBookingRequiresAddress(data.bookingRequiresAddress !== false)
         setCalendarConnected(data.calendarEnabled === true && !data.error?.includes('not connected') && !!data.businessName)
         setServicesOffered(Array.isArray(data.servicesOffered) ? data.servicesOffered : [])
         setLoading(false)
@@ -102,7 +104,9 @@ export default function BookingPage() {
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    if (!selectedSlot || !name.trim() || !phone.trim() || !service.trim() || !notes.trim() || !address.trim()) return
+    const addressRequired = bookingRequiresAddress
+    if (!selectedSlot || !name.trim() || !phone.trim() || !service.trim() || !notes.trim()) return
+    if (addressRequired && !address.trim()) return
     setSubmitting(true)
     setError(null)
     fetch('/api/bookings/create', {
@@ -116,7 +120,7 @@ export default function BookingPage() {
         slotStart: selectedSlot.start,
         serviceType: service.trim(),
         notes: notes.trim(),
-        customerAddress: address.trim(),
+        customerAddress: address.trim() || undefined,
       }),
     })
       .then(async res => {
@@ -323,6 +327,21 @@ export default function BookingPage() {
                   style={inputStyle}
                 />
               </div>
+              <div>
+                <label className="flex items-center gap-2 text-sm font-medium mb-2" style={labelStyle}>
+                  <MapPin className="h-4 w-4" />
+                  Property Address {bookingRequiresAddress && '*'}
+                </label>
+                <input
+                  type="text"
+                  value={address}
+                  onChange={e => setAddress(e.target.value)}
+                  required={bookingRequiresAddress}
+                  placeholder="Where should we meet you?"
+                  className="w-full px-4 py-3 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  style={inputStyle}
+                />
+              </div>
               {servicesOffered.length > 0 ? (
                 <div>
                   <label className="flex items-center gap-2 text-sm font-medium mb-2" style={labelStyle}>
@@ -376,21 +395,6 @@ export default function BookingPage() {
                   style={inputStyle}
                 />
               </div>
-              <div>
-                <label className="flex items-center gap-2 text-sm font-medium mb-2" style={labelStyle}>
-                  <MapPin className="h-4 w-4" />
-                  Address for the quote visit *
-                </label>
-                <input
-                  type="text"
-                  value={address}
-                  onChange={e => setAddress(e.target.value)}
-                  required
-                  placeholder="123 Main St, Grand Rapids, MI 49503"
-                  className="w-full px-4 py-3 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                  style={inputStyle}
-                />
-              </div>
             </div>
 
             {error && (
@@ -401,7 +405,7 @@ export default function BookingPage() {
 
             <button
               type="submit"
-              disabled={!selectedSlot || !name.trim() || !phone.trim() || !service.trim() || !notes.trim() || !address.trim() || submitting}
+              disabled={!selectedSlot || !name.trim() || !phone.trim() || !service.trim() || !notes.trim() || (bookingRequiresAddress && !address.trim()) || submitting}
               className="w-full py-4 text-white font-semibold rounded-xl text-base shadow-lg hover:shadow-xl hover:brightness-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:brightness-100 transition"
               style={{ backgroundColor: '#2563eb' }}
             >

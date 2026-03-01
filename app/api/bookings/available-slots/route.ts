@@ -88,6 +88,7 @@ export async function GET(request: NextRequest) {
       bookingPageTitle,
       bookingPageServiceLabel,
       bookingPageConfirmation,
+      bookingRequiresAddress: business.bookingRequiresAddress ?? true,
     })
   } catch (error) {
     console.error('Available slots error:', error)

@@ -71,15 +71,10 @@ export default function DemoForm() {
         <label className="block text-sm font-medium text-gray-300 mb-2">Business Type</label>
         <select name="businessType" required className="w-full px-4 py-3 bg-gray-800 border border-white/10 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500">
           <option value="">Select your industry...</option>
-          <option value="dental">Dental Office</option>
-          <option value="salon">Hair Salon / Barbershop</option>
-          <option value="medical">Medical Practice</option>
-          <option value="hvac">HVAC</option>
-          <option value="plumbing">Plumbing</option>
-          <option value="auto">Auto Repair</option>
-          <option value="legal">Law Firm</option>
-          <option value="spa">Spa / Wellness</option>
-          <option value="other">Other</option>
+          <option value="Landscaping / Lawn Care">Landscaping / Lawn Care</option>
+          <option value="Car Detailing / Auto Detailing">Car Detailing / Auto Detailing</option>
+          <option value="HVAC (Heating, Ventilation & Air Conditioning)">HVAC</option>
+          <option value="Other">Other</option>
         </select>
       </div>
       <div className="mb-4">

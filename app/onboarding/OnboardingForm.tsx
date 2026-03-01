@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { Building, ArrowRight } from 'lucide-react'
-import { getIndustryDefaults } from '@/lib/industry-defaults'
+import { getIndustryDefaults, BUSINESS_TYPE_OPTIONS } from '@/lib/industry-defaults'
 
 const DEFAULT_PLACEHOLDERS = {
   services: 'List your main services separated by commas...',
@@ -25,6 +25,7 @@ export function OnboardingForm({ createBusiness }: { createBusiness: CreateBusin
     specialInfo: industry?.specialInstructions ?? DEFAULT_PLACEHOLDERS.specialInfo,
     cannotHelp: industry?.cannotHelpPlaceholder ?? DEFAULT_PLACEHOLDERS.cannotHelp,
   }
+  const servicesValue = industry?.services?.length ? industry.services.join(', ') : ''
 
   return (
     <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
@@ -65,18 +66,11 @@ export function OnboardingForm({ createBusiness }: { createBusiness: CreateBusin
               className="w-full px-3 py-2 bg-white text-gray-900 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
               <option value="">Select your industry...</option>
-              <option value="Dental Office">Dental Office</option>
-              <option value="Hair Salon / Barbershop">Hair Salon / Barbershop</option>
-              <option value="Medical Practice">Medical Practice</option>
-              <option value="HVAC Company">HVAC Company</option>
-              <option value="Plumbing Company">Plumbing Company</option>
-              <option value="Auto Repair Shop">Auto Repair Shop</option>
-              <option value="Law Firm">Law Firm</option>
-              <option value="Spa / Wellness Center">Spa / Wellness Center</option>
-              <option value="Veterinary Clinic">Veterinary Clinic</option>
-              <option value="Real Estate Agency">Real Estate Agency</option>
-              <option value="Accounting / Tax Services">Accounting / Tax Services</option>
-              <option value="Other">Other</option>
+              {BUSINESS_TYPE_OPTIONS.map((opt) => (
+                <option key={opt} value={opt}>
+                  {opt}
+                </option>
+              ))}
             </select>
           </div>
 
@@ -86,9 +80,11 @@ export function OnboardingForm({ createBusiness }: { createBusiness: CreateBusin
               What services do you offer? <span className="text-red-500">*</span>
             </label>
             <textarea
+              key={businessType || 'empty'}
               name="services"
               required
               rows={2}
+              defaultValue={servicesValue}
               placeholder={placeholders.services}
               className="w-full px-3 py-2 bg-white text-gray-900 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 placeholder:text-gray-400"
             />

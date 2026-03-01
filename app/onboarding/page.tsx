@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation'
 import { db } from '@/lib/db'
 import { revalidatePath } from 'next/cache'
 import { OnboardingForm } from './OnboardingForm'
+import { getIndustryDefaults } from '@/lib/industry-defaults'
 
 export default async function OnboardingPage() {
   const { userId } = await auth()
@@ -43,6 +44,8 @@ export default async function OnboardingPage() {
       .replace(/[^a-z0-9]+/g, '-')
       .replace(/(^-|-$)/g, '')
 
+    const industryDefaults = getIndustryDefaults(businessType)
+
     // Build AI context from all the info
     const aiContext = `Business Type: ${businessType}
 Hours: ${businessHours || 'Not specified'}
@@ -57,11 +60,15 @@ ${cannotHelp ? `Do NOT try to help with: ${cannotHelp}. Instead, offer to have s
         data: {
           name: businessName,
           slug: slug + '-' + Date.now(),
-          aiGreeting: `Hi! Sorry we missed your call at ${businessName}. I'm an automated assistant - how can I help you today?`,
+          businessType,
+          aiGreeting: industryDefaults.aiGreeting,
           aiContext: aiContext,
           aiInstructions: aiInstructions,
           servicesOffered: services ? services.split(',').map(s => s.trim()) : [],
           businessHours: businessHours ? { description: businessHours } : undefined,
+          bookingPageTitle: industryDefaults.bookingPageTitle,
+          bookingPageServiceLabel: industryDefaults.bookingPageServiceLabel,
+          bookingRequiresAddress: industryDefaults.bookingRequiresAddress,
         }
       })
 

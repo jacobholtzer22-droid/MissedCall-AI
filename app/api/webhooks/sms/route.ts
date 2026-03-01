@@ -325,11 +325,12 @@ export async function POST(request: NextRequest) {
 // Fully conversational — NO booking links. AI handles everything via text.
 
 type BookingFlowState = {
-  step: 'greeting' | 'awaiting_name' | 'awaiting_service' | 'awaiting_notes' | 'awaiting_address' | 'awaiting_preference' | 'awaiting_selection' | 'confirmed'
+  step: 'greeting' | 'awaiting_name' | 'awaiting_service' | 'awaiting_notes' | 'awaiting_address' | 'awaiting_preference' | 'awaiting_selection' | 'awaiting_address_after_slot' | 'confirmed'
   customerName?: string
   serviceType?: string
   notes?: string
   customerAddress?: string
+  selectedSlot?: { start: string; end: string; display: string }  // Stored when user picks slot, before we ask for address
   timePreference?: string  // Raw text: "tomorrow afternoon", "next week", etc.
   offeredSlots?: { start: string; end: string; display: string }[]
   services?: { value: string; label: string }[]
@@ -402,6 +403,8 @@ async function handleSmsBookingFlow(
       ? 'awaiting_selection'
       : (legacyStep as BookingFlowState['step']) || 'greeting'
 
+  const bookingRequiresAddress = business.bookingRequiresAddress ?? true
+
   const flowState: BookingFlowState = {
     ...rawFlowState,
     step: mappedStep,
@@ -416,12 +419,73 @@ async function handleSmsBookingFlow(
   // Resolve slots from state (support legacy 'slots' or new 'offeredSlots')
   const offeredSlots = (flowState.offeredSlots ?? (rawFlowState.slots as SlotLike[] | undefined) ?? []) as SlotLike[]
 
+  // ── Step: awaiting_address_after_slot (user picked slot, now need address before confirming) ──
+  if (flowState.step === 'awaiting_address_after_slot' && flowState.selectedSlot) {
+    if (looksLikeQuestion(rawText)) return false
+    const address = rawText.trim()
+    if (!address || address.length > 500) return false
+    const convCheck = await db.conversation.findUnique({
+      where: { id: conversation.id },
+      include: { appointment: true },
+    })
+    if (convCheck?.appointment) return true
+    const res = await fetch(`${baseUrl}/api/bookings/create`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        businessId: business.id,
+        customerName: flowState.customerName || 'Customer',
+        customerPhone: from,
+        serviceType: flowState.serviceType || 'Appointment',
+        notes: flowState.notes ?? undefined,
+        customerAddress: address,
+        slotStart: flowState.selectedSlot.start,
+        conversationId: conversation.id,
+      }),
+    })
+    if (res.ok) {
+      await db.conversation.update({
+        where: { id: conversation.id },
+        data: {
+          status: 'appointment_booked',
+          callerName: flowState.customerName,
+          intent: 'book_appointment',
+          serviceRequested: flowState.serviceType,
+          bookingFlowState: Prisma.DbNull,
+        },
+      })
+      console.log('📅 SMS booking confirmed with address (confirmation SMS sent by create API)')
+      return true
+    }
+  }
+
   // ── Step: awaiting_selection (user picking from offered slots) ──
   const inSelectionStep = flowState.step === 'awaiting_selection'
   if (inSelectionStep && offeredSlots.length > 0) {
     const selectedSlot = parseSlotSelection(trimmed, offeredSlots)
     if (selectedSlot) {
-      // Re-check: conversation might have booking from another request
+      const slotObj = offeredSlots.find(s => s.start === selectedSlot.start)
+      // If business requires address, ask for it before confirming
+      if (bookingRequiresAddress) {
+        const msg = `Perfect! What's the address where we should meet you for the quote?`
+        await sendSMSAndLog(business, conversation.id, from, msg)
+        await db.conversation.update({
+          where: { id: conversation.id },
+          data: {
+            bookingFlowState: JSON.parse(JSON.stringify({
+              step: 'awaiting_address_after_slot',
+              customerName: flowState.customerName,
+              serviceType: flowState.serviceType,
+              notes: flowState.notes,
+              selectedSlot: slotObj ?? { start: selectedSlot.start, end: '', display: '' },
+              offeredSlots: flowState.offeredSlots,
+              sentAt: new Date().toISOString(),
+            })),
+          },
+        })
+        return true
+      }
+      // No address required — create immediately
       const convCheck = await db.conversation.findUnique({
         where: { id: conversation.id },
         include: { appointment: true },
@@ -664,13 +728,13 @@ async function handleSmsBookingFlow(
   if (flowState.step === 'awaiting_notes') {
     if (looksLikeQuestion(rawText)) return false
     const notes = parseNotesFromMessage(rawText)
-    const msg = `What's the address for the quote visit?`
+    const msg = `When works best for a quote visit? Do you have a day or time of day in mind?`
     await sendSMSAndLog(business, conversation.id, from, msg)
     await db.conversation.update({
       where: { id: conversation.id },
       data: {
         bookingFlowState: JSON.parse(JSON.stringify({
-          step: 'awaiting_address',
+          step: 'awaiting_preference',
           customerName: flowState.customerName,
           serviceType: flowState.serviceType,
           notes: notes || undefined,
@@ -682,7 +746,7 @@ async function handleSmsBookingFlow(
     return true
   }
 
-  // ── Step: awaiting_address ──
+  // ── Step: awaiting_address (legacy — address was between notes and preference; kept for in-flight convos) ──
   if (flowState.step === 'awaiting_address') {
     if (looksLikeQuestion(rawText)) return false
     const address = rawText.trim()
@@ -990,9 +1054,9 @@ BOOKING FLOW CONTEXT: The customer is in a conversational booking flow for a FRE
 - awaiting_name: "What's your name?"
 - awaiting_service: "Would you like to schedule a time for a free in-person quote? ${business.name} will come out, take a look, and give you an exact price. Anything we should know before coming out? (Like the size of the yard, specific areas you need done, etc.)"
 - awaiting_notes: "Anything we should know before coming out? (Like size of yard, specific areas, etc.) Reply 'no' to skip."
-- awaiting_address: "What's the address for the quote visit?"
 - awaiting_preference: "When works best for a quote visit? Do you have a day or time in mind?" (e.g. tomorrow, next week, anytime)
 - awaiting_selection: remind them to reply with a number to pick a time, or describe a different time
+- awaiting_address_after_slot: "What's the address where we should meet you for the quote?"
 Keep responses natural and conversational. Make it clear this is a FREE quote visit, not the actual service. No booking links — everything happens in the text conversation.`
     : ''
 

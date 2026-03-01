@@ -5,6 +5,7 @@ import { db } from '@/lib/db'
 import { getBusinessForDashboard } from '@/lib/get-business-for-dashboard'
 import { Building, Bot, Phone, Calendar, CheckCircle, ExternalLink, Bell } from 'lucide-react'
 import { revalidatePath } from 'next/cache'
+import { BusinessTypeSelector } from './SettingsFormWithIndustry'
 
 export default async function SettingsPage({
   searchParams,
@@ -53,6 +54,8 @@ export default async function SettingsPage({
     const bookingPageTitle = (formData.get('bookingPageTitle') as string)?.trim() || null
     const bookingPageServiceLabel = (formData.get('bookingPageServiceLabel') as string)?.trim() || null
     const bookingPageConfirmation = (formData.get('bookingPageConfirmation') as string)?.trim() || null
+    const bookingRequiresAddress = formData.get('bookingRequiresAddress') === 'on'
+    const businessType = (formData.get('businessType') as string)?.trim() || null
     const ownerEmail = (formData.get('ownerEmail') as string)?.trim() || null
     const ownerPhone = (formData.get('ownerPhone') as string)?.trim() || null
     const notifyBySms = formData.get('notifyBySms') === 'on'
@@ -79,6 +82,8 @@ export default async function SettingsPage({
         bookingPageTitle,
         bookingPageServiceLabel,
         bookingPageConfirmation,
+        bookingRequiresAddress,
+        businessType,
         ...(user.business.calendarEnabled && {
           slotDurationMinutes: [15, 30, 45, 60, 90, 120].includes(slotDurationMinutes) ? slotDurationMinutes : 30,
           bufferMinutes: [0, 15, 30, 45, 60].includes(bufferMinutes) ? bufferMinutes : 0,
@@ -115,7 +120,7 @@ export default async function SettingsPage({
           {!['denied', 'missing_params', 'exchange_failed'].includes(googleError) && 'Something went wrong. Please try again.'}
         </div>
       )}
-      <form action={saveSettings} className="space-y-6">
+      <form id="settings-form" action={saveSettings} className="space-y-6">
         <div className="bg-white rounded-xl border border-gray-200 p-6">
           <div className="flex items-start space-x-4 mb-4">
             <div className="bg-blue-50 p-2 rounded-lg"><Building className="h-5 w-5 text-blue-600" /></div>
@@ -125,6 +130,12 @@ export default async function SettingsPage({
             </div>
           </div>
           <div className="ml-11 grid gap-4 sm:grid-cols-2">
+            <div className="sm:col-span-2">
+              <BusinessTypeSelector
+                defaultValue={business.businessType ?? ''}
+                formId="settings-form"
+              />
+            </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Business Name</label>
               <input type="text" name="name" defaultValue={business.name} required className="w-full px-3 py-2 bg-white text-gray-900 border border-gray-200 rounded-lg placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500" />
@@ -191,6 +202,13 @@ export default async function SettingsPage({
               <textarea name="bookingPageConfirmation" rows={3} defaultValue={business.bookingPageConfirmation ?? ''} placeholder="You're all set! Someone from {businessName} will meet you at your scheduled time for a free in-person quote." className="w-full px-3 py-2 bg-white text-gray-900 border border-gray-200 rounded-lg placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500" />
               <p className="text-xs text-gray-500 mt-1">Use {'{businessName}'}, {'{date}'}, {'{time}'}, {'{service}'} as placeholders.</p>
             </div>
+            <div className="flex items-center gap-4">
+              <label className="flex items-center gap-2">
+                <input type="checkbox" name="bookingRequiresAddress" defaultChecked={business.bookingRequiresAddress ?? true} className="rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
+                <span className="text-sm font-medium text-gray-700">Require property address on bookings</span>
+              </label>
+            </div>
+            <p className="text-xs text-gray-500 -mt-2 ml-11">When enabled, customers must provide an address for quote visits. Turn off for businesses that don&apos;t need it (e.g. virtual appointments).</p>
           </div>
         </div>
         )}

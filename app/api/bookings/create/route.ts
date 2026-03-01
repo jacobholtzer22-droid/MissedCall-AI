@@ -54,14 +54,15 @@ export async function POST(request: NextRequest) {
         error: 'Missing required fields: customerName, customerPhone, slotStart, serviceType',
       }, { status: 400 })
     }
-    // Notes and address required for website bookings; optional for SMS
+    // Notes and address required for website bookings; address optional when bookingRequiresAddress is false
     const isWebsite = !conversationId
     if (isWebsite && !notes?.trim()) {
       return NextResponse.json({
         error: 'Missing required field: notes',
       }, { status: 400 })
     }
-    if (isWebsite && !customerAddress?.trim()) {
+    const requiresAddress = business.bookingRequiresAddress ?? true
+    if (isWebsite && requiresAddress && !customerAddress?.trim()) {
       return NextResponse.json({
         error: 'Missing required field: customerAddress',
       }, { status: 400 })
