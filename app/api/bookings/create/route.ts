@@ -7,6 +7,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { TZDate } from '@date-fns/tz'
 import { db } from '@/lib/db'
+import { recordMessageSent } from '@/lib/sms-cooldown'
 
 /** Format date as "Friday, March 6th" for clear SMS confirmation. */
 function formatDateFullForConfirm(d: Date, tz: string): string {
@@ -141,15 +142,25 @@ export async function POST(request: NextRequest) {
 
     const source = conversationId ? 'sms' : 'website'
 
-    const googleEventId = await createCalendarEvent(
-      business.id,
-      startDate,
-      endDate,
-      customerName.trim(),
-      serviceType.trim(),
-      customerPhone.trim(),
-      { customerEmail: customerEmail?.trim() || null, notes: notes?.trim() || null, customerAddress: customerAddress?.trim() || null, source }
-    )
+    let googleEventId: string | null = null
+    try {
+      googleEventId = await createCalendarEvent(
+        business.id,
+        startDate,
+        endDate,
+        customerName.trim(),
+        serviceType.trim(),
+        customerPhone.trim(),
+        { customerEmail: customerEmail?.trim() || null, notes: notes?.trim() || null, customerAddress: customerAddress?.trim() || null, source }
+      )
+      console.log('[BOOKING CREATE] Google Calendar event created:', googleEventId || 'no-id')
+    } catch (calErr) {
+      console.error('[BOOKING CREATE] Google Calendar event FAILED:', calErr instanceof Error ? calErr.message : String(calErr))
+      return NextResponse.json(
+        { error: 'Failed to create calendar event. Please try again.' },
+        { status: 500 }
+      )
+    }
 
     const appointment = await db.appointment.create({
       data: {
@@ -168,6 +179,8 @@ export async function POST(request: NextRequest) {
         source,
       },
     })
+
+    console.log('[BOOKING CREATE] Appointment created in DB:', appointment.id)
 
     // Send confirmation SMS via Telnyx (full date format: "Friday, March 6th")
     if (business.telnyxPhoneNumber) {
@@ -191,19 +204,29 @@ export async function POST(request: NextRequest) {
           to: customerPhone.trim(),
           text: msg,
         })
+        if (conversationId) {
+          void db.message
+            .create({
+              data: {
+                conversationId,
+                direction: 'outbound',
+                content: msg,
+                telnyxSid: null,
+                telnyxStatus: 'sent',
+              },
+            })
+            .then(() => recordMessageSent(business.id, customerPhone.trim()))
+            .catch((err) => console.error('[BOOKING CREATE] Failed to log confirmation message:', err))
+        }
       } catch (smsErr) {
         console.error('Failed to send confirmation SMS:', smsErr)
       }
     }
 
     // Notify business owner (SMS + email)
-    console.log('[BOOKING CREATE] About to call notifyOwnerOnBookingCreated', {
-      businessId: business.id,
-      appointmentId: appointment.id,
-      source,
-    })
+    let notifyResult = { smsSent: false, emailSent: false }
     try {
-      await notifyOwnerOnBookingCreated(business, {
+      notifyResult = await notifyOwnerOnBookingCreated(business, {
         id: appointment.id,
         customerName: customerName.trim(),
         customerPhone: customerPhone.trim(),
@@ -214,7 +237,7 @@ export async function POST(request: NextRequest) {
         notes: notes?.trim() || null,
         customerAddress: customerAddress?.trim() || null,
       })
-      console.log('[BOOKING CREATE] notifyOwnerOnBookingCreated completed successfully')
+      console.log('[BOOKING CREATE] Owner notified: SMS', notifyResult.smsSent ? 'yes' : 'no', 'Email', notifyResult.emailSent ? 'yes' : 'no')
     } catch (notifyErr) {
       console.error('[BOOKING CREATE] Failed to notify owner of new booking:', notifyErr)
     }

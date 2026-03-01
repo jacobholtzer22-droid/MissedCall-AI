@@ -277,8 +277,13 @@ export async function POST(request: NextRequest) {
               from,
               { notes: notes || null, source: 'sms' }
             )
+            console.log('[SMS BOOKING AI] Google Calendar event created:', googleEventId || 'no-id')
           } catch (err) {
-            console.error('❌ Failed to create calendar event for AI booking:', err)
+            console.error('[SMS BOOKING AI] Google Calendar event FAILED:', err instanceof Error ? err.message : String(err))
+            const fallbackMsg = `Sorry, we had trouble saving that to our calendar. Please text back to try again or call us at ${business.telnyxPhoneNumber}.`
+            await sendSMSAndLog(business, conversation.id, from, fallbackMsg, timing)
+            const totalMs = Date.now() - new Date(timing.webhookReceivedAt).getTime()
+            return NextResponse.json({ ok: false, error: 'Calendar creation failed', timing: { ...timing, totalMs } }, { status: 200 })
           }
         }
         const appointment = await db.appointment.create({
@@ -300,11 +305,12 @@ export async function POST(request: NextRequest) {
           where: { id: conversation.id },
           data: { status: 'appointment_booked', callerName: name, intent: 'book_appointment', serviceRequested: service },
         })
-        console.log('📅 Appointment booked:', { name, service, datetime })
+        console.log('[SMS BOOKING AI] Appointment created in DB:', appointment.id)
+        console.log('[SMS BOOKING AI] Google Calendar event created:', googleEventId || 'N/A (calendar off)')
 
         if (business.calendarEnabled) {
           try {
-            await notifyOwnerOnBookingCreated(business, {
+            const notifyResult = await notifyOwnerOnBookingCreated(business, {
               id: appointment.id,
               customerName: name,
               customerPhone: from,
@@ -314,8 +320,9 @@ export async function POST(request: NextRequest) {
               notes: notes || null,
               source: 'sms',
             })
+            console.log('[SMS BOOKING AI] Owner notified: SMS', notifyResult.smsSent ? 'yes' : 'no', 'Email', notifyResult.emailSent ? 'yes' : 'no')
           } catch (err) {
-            console.error('❌ Failed to notify owner of booking:', err)
+            console.error('[SMS BOOKING AI] Failed to notify owner:', err)
           }
         } else {
           try {
@@ -558,7 +565,8 @@ async function handleSmsBookingFlow(
         conversationId: conversation.id,
       }),
     })
-    if (res.ok) {
+    const resBody = await res.json().catch(() => ({}))
+    if (res.ok && resBody.appointment?.id) {
       await db.conversation.update({
         where: { id: conversation.id },
         data: {
@@ -569,9 +577,19 @@ async function handleSmsBookingFlow(
           bookingFlowState: Prisma.DbNull,
         },
       })
-      console.log('📅 SMS booking confirmed with address (confirmation SMS sent by create API)')
+      console.log('[SMS BOOKING] Appointment created in DB:', resBody.appointment.id)
+      console.log('[SMS BOOKING] Google Calendar event created via /api/bookings/create')
+      console.log('[SMS BOOKING] Owner notified via /api/bookings/create (check create API logs for SMS/Email)')
       return true
     }
+    console.error('[SMS BOOKING] /api/bookings/create failed:', res.status, resBody)
+    await sendSMSAndLog(
+      business,
+      conversation.id,
+      from,
+      `Sorry, we had trouble saving that. Please try again or call us at ${business.telnyxPhoneNumber}.`
+    )
+    return true
   }
 
   // ── Step: awaiting_selection (user picking from offered slots) ──
@@ -620,7 +638,8 @@ async function handleSmsBookingFlow(
           conversationId: conversation.id,
         }),
       })
-      if (res.ok) {
+      const resBody = await res.json().catch(() => ({}))
+      if (res.ok && resBody.appointment?.id) {
         await db.conversation.update({
           where: { id: conversation.id },
           data: {
@@ -631,9 +650,12 @@ async function handleSmsBookingFlow(
             bookingFlowState: Prisma.DbNull,
           },
         })
-        console.log('📅 SMS booking confirmed (confirmation SMS sent by create API)')
+        console.log('[SMS BOOKING] Appointment created in DB:', resBody.appointment.id)
+        console.log('[SMS BOOKING] Google Calendar event created via /api/bookings/create')
+        console.log('[SMS BOOKING] Owner notified via /api/bookings/create')
         return true
       }
+      console.error('[SMS BOOKING] /api/bookings/create failed (selection):', res.status, resBody)
     }
     // "None of those work" / "something else" → ask for new preference
     const wantsDifferentTimes = /\b(no|none|nope|those don't|doesn't work|something else|different|other)\b/.test(trimmed)
@@ -850,30 +872,24 @@ async function handleSmsBookingFlow(
 
   // ── Step: awaiting_name_and_preference (combined: name + day/time in one reply) ──
   if (flowState.step === 'awaiting_name_and_preference') {
-    const handled = await handleAwaitingNameAndPreference(business, conversation, rawText, trimmed, from, flowState)
+    const handled = await handleAwaitingNameAndPreference(business, conversation, rawText, trimmed, from, flowState, baseUrl)
     if (handled) return true
     return false
   }
 
-  // ── Step: awaiting_name ──
+  // ── Step: awaiting_name (legacy — redirect to combined name+time to keep messages short) ──
   if (flowState.step === 'awaiting_name') {
     if (looksLikeQuestion(rawText)) return false
     const name = parseNameFromMessage(rawText)
     if (!name || name.length > 100) return false
-    const services = getServicesList(business)
-    const serviceLines =
-      services.length > 1
-        ? `\n\n${services.map((s, i) => `${i + 1}. ${s.label}`).join('\n')}\n\nReply with a number.`
-        : ''
-    const msg = `Nice to meet you ${name}! What can we help you with?${serviceLines}`.trim()
+    const msg = `Thanks ${name}! What day and time works best for you? We're available ${formatBusinessHoursSummary(business.businessHours)}.`
     await sendSMSAndLog(business, conversation.id, from, msg)
     await db.conversation.update({
       where: { id: conversation.id },
       data: {
         bookingFlowState: JSON.parse(JSON.stringify({
-          step: 'awaiting_service',
+          step: 'awaiting_name_and_preference',
           customerName: name,
-          services,
           sentAt: new Date().toISOString(),
         })),
       },
@@ -976,7 +992,8 @@ async function handleAwaitingNameAndPreference(
   rawText: string,
   trimmed: string,
   from: string,
-  flowState: BookingFlowState
+  flowState: BookingFlowState,
+  baseUrl: string
 ): Promise<boolean> {
   if (looksLikeQuestion(rawText)) return false
   let name = parseNameFromMessage(rawText)
@@ -1004,9 +1021,10 @@ async function handleAwaitingNameAndPreference(
     return true
   }
 
-  const { startStr, endStr, timeOfDay, isPastDate } = timePref
+  const { startStr, endStr, timeOfDay, preferredHour, isPastDate } = timePref
   const serviceType = extractServiceFromConversation(conversation.messages)
   const notes = parseNotesFromMessage(rawText)
+  const bookingRequiresAddress = business.bookingRequiresAddress ?? true
 
   if (isPastDate) {
     const fallback = getNext3BusinessDays(tz, business.businessHours)
@@ -1039,8 +1057,67 @@ async function handleAwaitingNameAndPreference(
   let slots = await getAvailableSlots(business.id, startStr, endStr)
   slots = filterPastSlots(slots, tz)
   slots = filterSlotsByTimeOfDay(slots, timeOfDay, tz)
-  const displaySlots = pickSlotsForPreference(slots, tz, business.businessHours, trimmed)
+  let displaySlots = pickSlotsForPreference(slots, tz, business.businessHours, trimmed)
+  if (preferredHour !== undefined) {
+    const hourSlots = filterSlotsByHour(displaySlots, preferredHour, tz)
+    if (hourSlots.length > 0) displaySlots = hourSlots
+  }
   if (displaySlots.length > 0) {
+    const singleSlot = displaySlots.length === 1 ? displaySlots[0] : null
+    if (singleSlot && bookingRequiresAddress) {
+      const dateLabel = formatDateFull(singleSlot.start, tz)
+      const msg = `You're all set ${name}! We'll see you ${dateLabel} at ${singleSlot.display} for a quote on ${serviceType}. What's your property address?`
+      await sendSMSAndLog(business, conversation.id, from, msg)
+      await db.conversation.update({
+        where: { id: conversation.id },
+        data: {
+          bookingFlowState: JSON.parse(JSON.stringify({
+            step: 'awaiting_address_after_slot',
+            customerName: name,
+            serviceType,
+            notes: notes || undefined,
+            selectedSlot: singleSlot,
+            offeredSlots: displaySlots,
+            sentAt: new Date().toISOString(),
+          })),
+        },
+      })
+      return true
+    }
+    if (singleSlot && !bookingRequiresAddress) {
+      const convCheck = await db.conversation.findUnique({
+        where: { id: conversation.id },
+        include: { appointment: true },
+      })
+      if (convCheck?.appointment) return true
+      const res = await fetch(`${baseUrl}/api/bookings/create`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          businessId: business.id,
+          customerName: name,
+          customerPhone: from,
+          serviceType,
+          notes: notes ?? undefined,
+          slotStart: singleSlot.start,
+          conversationId: conversation.id,
+        }),
+      })
+      if (res.ok) {
+        await db.conversation.update({
+          where: { id: conversation.id },
+          data: {
+            status: 'appointment_booked',
+            callerName: name,
+            intent: 'book_appointment',
+            serviceRequested: serviceType,
+            bookingFlowState: Prisma.DbNull,
+          },
+        })
+        console.log('[SMS BOOKING] Appointment created via /api/bookings/create (single slot, no address required)')
+        return true
+      }
+    }
     const msg = formatSlotsMessage(displaySlots, tz)
     await sendSMSAndLog(business, conversation.id, from, msg)
     await db.conversation.update({
@@ -1178,6 +1255,15 @@ function filterSlotsByTimeOfDay(
   })
 }
 
+/** Filter slots to those matching a specific hour (0-23). Returns slots that start in that hour. */
+function filterSlotsByHour(slots: SlotLike[], preferredHour: number, tz: string): SlotLike[] {
+  return slots.filter(s => {
+    const d = new Date(s.start)
+    const hour = parseInt(d.toLocaleTimeString('en-US', { hour: 'numeric', hour12: false, timeZone: tz }), 10)
+    return hour === preferredHour
+  })
+}
+
 /** Pick slots based on preference: tomorrow→2-3, next week→3-4, anytime→3 across days. */
 function pickSlotsForPreference(
   slots: SlotLike[],
@@ -1213,6 +1299,7 @@ type TimePreferenceResult = {
   startStr: string
   endStr: string
   timeOfDay?: 'morning' | 'afternoon' | 'evening'
+  preferredHour?: number // 0-23 when user says "2pm", "9am", etc.
   isPastDate?: boolean
 }
 
@@ -1324,17 +1411,28 @@ function parseTimePreference(text: string, tz: string): TimePreferenceResult | n
     }
   }
 
+  // Specific hour: "2pm", "9am", "at 3pm" (require am/pm to avoid matching "march 6" as 6am)
+  let preferredHour: number | undefined
+  const hourMatch = t.match(/(?:at\s+)?(\d{1,2})(?::(\d{2}))?\s*(am|pm)\b/i)
+  if (hourMatch) {
+    let h = parseInt(hourMatch[1], 10)
+    const ampm = (hourMatch[3] || '').toLowerCase()
+    if (ampm === 'pm' && h < 12) h += 12
+    if (ampm === 'am' && h === 12) h = 0
+    if (h >= 0 && h <= 23) preferredHour = h
+  }
+
   // Time of day: morning, afternoon, evening
   if (/\b(morning|am)\b/.test(t) || /\bbefore\s+noon\b/.test(t)) {
-    timeOfDay = 'morning'
+    timeOfDay = timeOfDay ?? 'morning'
   } else if (/\b(afternoon|pm)\b/.test(t) || /\bafter\s+(noon|12)\b/.test(t)) {
-    timeOfDay = 'afternoon'
+    timeOfDay = timeOfDay ?? 'afternoon'
   } else if (/\bevening\b/.test(t) || /\bafter\s+[56]\s*(pm)?\b/.test(t)) {
-    timeOfDay = 'evening'
+    timeOfDay = timeOfDay ?? 'evening'
   } else if (/\bbefore\s+noon\b|\baround\s+\d|^\d\s*(am|pm)\b/i.test(t)) {
-    timeOfDay = 'morning'
+    timeOfDay = timeOfDay ?? 'morning'
   } else if (/\bafter\s+\d{1,2}\s*(pm)?|\baround\s+\d{1,2}\b/i.test(t)) {
-    timeOfDay = 'afternoon'
+    timeOfDay = timeOfDay ?? 'afternoon'
   }
 
   // Standalone time-of-day without specific day
@@ -1357,7 +1455,7 @@ function parseTimePreference(text: string, tz: string): TimePreferenceResult | n
     endDate.setDate(endDate.getDate() + 2)
   }
   const endStr = endDate.toLocaleDateString('en-CA', { timeZone: tz })
-  return { startStr, endStr, timeOfDay, isPastDate: isPastDate || undefined }
+  return { startStr, endStr, timeOfDay, preferredHour, isPastDate: isPastDate || undefined }
 }
 
 function parseSlotSelection(text: string, slots: { start: string; display: string }[]): { start: string } | null {
@@ -1420,18 +1518,20 @@ async function generateAIResponse(
 
   const flowState = bookingFlowState as BookingFlowState | null | undefined
   const inBookingFlow = flowState?.step
+  const bookingRequiresAddress = business.bookingRequiresAddress ?? true
+  const hoursSummary = formatBusinessHoursSummary(business.businessHours)
   const flowGuidance = inBookingFlow
     ? `
-BOOKING FLOW CONTEXT: The customer is in a conversational booking flow for a FREE IN-PERSON QUOTE (not the actual service). ${business.name} will come out, take a look, and give an exact price. Current step: ${flowState.step}.
-- If they asked a question mid-flow (e.g. "how much does it cost?"): answer briefly, then guide them back.
-- awaiting_name_and_preference: They need to give name + day/time. Say: "What's your name, and what day/time works best? We're available [hours]."
-- awaiting_name: "What's your name?"
-- awaiting_service: Ask what they need a quote for — use their exact words, don't categorize (e.g. "patio and walkway" not "gardening").
-- awaiting_notes: "Anything we should know? Reply 'no' to skip."
-- awaiting_preference: "When works best?" (e.g. tomorrow, next week, anytime)
-- awaiting_selection: "Reply with a number to pick a time, or describe a different time."
-- awaiting_address_after_slot: "What's the address for the quote?"
-Keep responses natural. No booking links — everything happens in text. Never ask for their phone number — you're texting them on it.`
+BOOKING FLOW CONTEXT: The customer is in a conversational booking flow for a FREE IN-PERSON QUOTE. ${business.name} will come out, take a look, and give an exact price. Current step: ${flowState.step}.
+
+CRITICAL - KEEP IT SHORT (3-4 messages max):
+- ALWAYS ask for name AND day/time TOGETHER in one message. Never ask "What's your name?" and then separately "When works?" — that's too many messages.
+- awaiting_name_and_preference: They need name + day/time in one reply. Say: "What's your name and what day/time works best? We're available ${hoursSummary}."
+- awaiting_selection: "Reply with a number to pick a time."
+- awaiting_address_after_slot: "What's your property address?" — MUST collect address before confirming for landscapers.
+${bookingRequiresAddress ? '- NEVER output [APPOINTMENT_BOOKED] until the customer has provided their property address. The structured flow handles confirmation.' : ''}
+- If they ask a question mid-flow: answer briefly (1 sentence), then guide back.
+- No booking links. Never ask for phone number — you're texting them. Use their exact words for services (e.g. "hydro seeding" not "landscaping").`
     : ''
 
   const systemPrompt = `You are a friendly SMS assistant for ${business.name}. You're helping someone who tried to call.

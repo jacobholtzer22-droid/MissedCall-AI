@@ -64,10 +64,13 @@ type BusinessWithPhone = Pick<
 
 export type BookingSource = 'website' | 'sms'
 
+export type NotifyOwnerResult = { smsSent: boolean; emailSent: boolean }
+
 export async function notifyOwnerOnBookingCreated(
   business: BusinessWithPhone,
   appointment: Pick<Appointment, 'id' | 'customerName' | 'customerPhone' | 'customerEmail' | 'serviceType' | 'scheduledAt' | 'notes'> & { customerAddress?: string | null; source?: BookingSource }
-): Promise<void> {
+): Promise<NotifyOwnerResult> {
+  const result: NotifyOwnerResult = { smsSent: false, emailSent: false }
   console.error('[NOTIFY OWNER] notifyOwnerOnBookingCreated called', { businessId: business.id, appointmentId: appointment.id })
 
   const scheduledAt = new Date(appointment.scheduledAt)
@@ -100,6 +103,7 @@ export async function notifyOwnerOnBookingCreated(
           text: smsText,
         })
         console.error('[NOTIFY OWNER] SMS sent successfully', { to: toPhone.trim(), telnyxResponse: JSON.stringify(response.data) })
+        result.smsSent = true
       } catch (err) {
         console.error('[NOTIFY OWNER] SMS FAILED:', {
           to: toPhone.trim(),
@@ -143,6 +147,7 @@ export async function notifyOwnerOnBookingCreated(
     try {
       await sendEmail(business.ownerEmail, subject, body)
       console.error('[NOTIFY OWNER] Email sent successfully to', business.ownerEmail)
+      result.emailSent = true
     } catch (err) {
       console.error('[NOTIFY OWNER] Email FAILED:', {
         to: business.ownerEmail,
@@ -157,6 +162,7 @@ export async function notifyOwnerOnBookingCreated(
       console.error('[NOTIFY OWNER] Email SKIP: No ownerEmail set for business', { businessId: business.id })
     }
   }
+  return result
 }
 
 // ── Booking request (no calendar) ───────────────────────────────────
