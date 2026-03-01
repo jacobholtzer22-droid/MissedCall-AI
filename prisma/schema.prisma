@@ -285,6 +285,7 @@ model Appointment {
 
   // Calendar integration
   googleCalendarEventId String?
+  calendarSyncFailed    Boolean   @default(false)   // True when we saved to DB but calendar sync failed
 
   // Status tracking
   status                String    @default("confirmed") // confirmed, cancelled, completed, no_show

@@ -7,26 +7,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { TZDate } from '@date-fns/tz'
 import { db } from '@/lib/db'
-import { recordMessageSent } from '@/lib/sms-cooldown'
-
-/** Format date as "Friday, March 6th" for clear SMS confirmation. */
-function formatDateFullForConfirm(d: Date, tz: string): string {
-  const day = parseInt(d.toLocaleDateString('en-CA', { day: 'numeric', timeZone: tz }), 10)
-  const ordinal = (n: number) => {
-    const s = ['th', 'st', 'nd', 'rd']
-    const v = n % 100
-    return n + (s[(v - 20) % 10] || s[v] || s[0])
-  }
-  const weekday = d.toLocaleDateString('en-US', { weekday: 'long', timeZone: tz })
-  const month = d.toLocaleDateString('en-US', { month: 'long', timeZone: tz })
-  return `${weekday}, ${month} ${ordinal(day)}`
-}
-import Telnyx from 'telnyx'
-import {
-  createCalendarEvent,
-  getAvailableSlots,
-} from '@/lib/google-calendar'
-import { notifyOwnerOnBookingCreated } from '@/lib/notify-owner'
+import { createBooking } from '@/lib/create-booking'
 
 export async function POST(request: NextRequest) {
   try {
@@ -37,11 +18,11 @@ export async function POST(request: NextRequest) {
       customerName,
       customerPhone,
       customerEmail,
-      slotStart, // ISO datetime string
+      slotStart,
       serviceType,
       notes,
       customerAddress,
-      conversationId, // Optional - for SMS bookings
+      conversationId,
     } = body
 
     let business
@@ -64,22 +45,20 @@ export async function POST(request: NextRequest) {
     }
 
     if (!customerName?.trim() || !customerPhone?.trim() || !slotStart || !serviceType?.trim()) {
-      return NextResponse.json({
-        error: 'Missing required fields: customerName, customerPhone, slotStart, serviceType',
-      }, { status: 400 })
+      return NextResponse.json(
+        { error: 'Missing required fields: customerName, customerPhone, slotStart, serviceType' },
+        { status: 400 }
+      )
     }
-    // Notes and address required for website bookings; address optional when bookingRequiresAddress is false
+
     const isWebsite = !conversationId
     if (isWebsite && !notes?.trim()) {
-      return NextResponse.json({
-        error: 'Missing required field: notes',
-      }, { status: 400 })
+      return NextResponse.json({ error: 'Missing required field: notes' }, { status: 400 })
     }
+
     const requiresAddress = business.bookingRequiresAddress ?? true
     if (isWebsite && requiresAddress && !customerAddress?.trim()) {
-      return NextResponse.json({
-        error: 'Missing required field: customerAddress',
-      }, { status: 400 })
+      return NextResponse.json({ error: 'Missing required field: customerAddress' }, { status: 400 })
     }
 
     const startDate = new Date(slotStart)
@@ -96,157 +75,31 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Prevent duplicate bookings: conversation already has a confirmed appointment
-    if (conversationId) {
-      const existing = await db.appointment.findFirst({
-        where: {
-          conversationId,
-          status: 'confirmed',
-        },
-      })
-      if (existing) {
-        return NextResponse.json({ error: 'This conversation already has a confirmed appointment' }, { status: 409 })
-      }
-    }
-
-    const slotDuration = business.slotDurationMinutes ?? 30
-
-    // Reject duplicate: same customer + business + same slot (within slot duration) + service
-    const marginMs = slotDuration * 60 * 1000
-    const existingDup = await db.appointment.findFirst({
-      where: {
-        businessId: business.id,
-        customerPhone: customerPhone.trim(),
-        status: 'confirmed',
-        serviceType: serviceType.trim(),
-        scheduledAt: {
-          gte: new Date(startDate.getTime() - marginMs),
-          lte: new Date(startDate.getTime() + marginMs),
-        },
-      },
+    const result = await createBooking({
+      business,
+      customerName: customerName.trim(),
+      customerPhone: customerPhone.trim(),
+      customerEmail: customerEmail?.trim() || null,
+      slotStart,
+      serviceType: serviceType.trim(),
+      notes: notes?.trim() || null,
+      customerAddress: customerAddress?.trim() || null,
+      conversationId: conversationId || null,
+      logPrefix: '[BOOKING CREATE]',
     })
-    if (existingDup) {
-      return NextResponse.json({ error: 'You already have a quote visit scheduled for this service at this time' }, { status: 409 })
-    }
-    const endDate = new Date(startDate.getTime() + slotDuration * 60 * 1000)
 
-    // Verify slot is still available (use business TZ for date to avoid timezone mismatch)
-    const dateStr = startDate.toLocaleDateString('en-CA', { timeZone: tz }) // YYYY-MM-DD
-    const availableSlots = await getAvailableSlots(business.id, dateStr, dateStr)
-    const isAvailable = availableSlots.some(
-      s => new Date(s.start).getTime() === startDate.getTime()
-    )
-    if (!isAvailable) {
-      return NextResponse.json({ error: 'This time slot is no longer available' }, { status: 409 })
-    }
-
-    const source = conversationId ? 'sms' : 'website'
-
-    let googleEventId: string | null = null
-    try {
-      googleEventId = await createCalendarEvent(
-        business.id,
-        startDate,
-        endDate,
-        customerName.trim(),
-        serviceType.trim(),
-        customerPhone.trim(),
-        { customerEmail: customerEmail?.trim() || null, notes: notes?.trim() || null, customerAddress: customerAddress?.trim() || null, source }
-      )
-      console.log('[BOOKING CREATE] Google Calendar event created:', googleEventId || 'no-id')
-    } catch (calErr) {
-      console.error('[BOOKING CREATE] Google Calendar event FAILED:', calErr instanceof Error ? calErr.message : String(calErr))
+    if (!result.ok) {
       return NextResponse.json(
-        { error: 'Failed to create calendar event. Please try again.' },
-        { status: 500 }
+        { error: result.error },
+        { status: result.status ?? 500 }
       )
-    }
-
-    const appointment = await db.appointment.create({
-      data: {
-        businessId: business.id,
-        conversationId: conversationId || null,
-        customerName: customerName.trim(),
-        customerPhone: customerPhone.trim(),
-        customerEmail: customerEmail?.trim() || null,
-        serviceType: serviceType.trim(),
-        scheduledAt: startDate,
-        duration: slotDuration,
-        notes: notes?.trim() || null,
-        customerAddress: customerAddress?.trim() || null,
-        googleCalendarEventId: googleEventId,
-        status: 'confirmed',
-        source,
-      },
-    })
-
-    console.log('[BOOKING CREATE] Appointment created in DB:', appointment.id)
-
-    // Send confirmation SMS via Telnyx (full date format: "Friday, March 6th")
-    if (business.telnyxPhoneNumber) {
-      const telnyx = new Telnyx({ apiKey: process.env.TELNYX_API_KEY! })
-      const dateStr = formatDateFullForConfirm(startDate, tz)
-      const timeStr = startDate.toLocaleTimeString('en-US', {
-        hour: 'numeric',
-        minute: '2-digit',
-        hour12: true,
-        timeZone: tz,
-      })
-      const name = customerName.trim()
-      const service = serviceType.trim()
-      const msg = conversationId
-        ? `You're all set ${name}! ${business.name} will meet you on ${dateStr} at ${timeStr} to take a look and give you a quote for ${service}. See you then! If anything changes just text us back.`
-        : `Confirmed! Your quote visit with ${business.name} is scheduled for ${dateStr} at ${timeStr}. They'll come out, take a look, and give you a quote for ${service}. Reply to this number if you need to reschedule.`
-
-      try {
-        await telnyx.messages.send({
-          from: business.telnyxPhoneNumber,
-          to: customerPhone.trim(),
-          text: msg,
-        })
-        if (conversationId) {
-          void db.message
-            .create({
-              data: {
-                conversationId,
-                direction: 'outbound',
-                content: msg,
-                telnyxSid: null,
-                telnyxStatus: 'sent',
-              },
-            })
-            .then(() => recordMessageSent(business.id, customerPhone.trim()))
-            .catch((err) => console.error('[BOOKING CREATE] Failed to log confirmation message:', err))
-        }
-      } catch (smsErr) {
-        console.error('Failed to send confirmation SMS:', smsErr)
-      }
-    }
-
-    // Notify business owner (SMS + email)
-    let notifyResult = { smsSent: false, emailSent: false }
-    try {
-      notifyResult = await notifyOwnerOnBookingCreated(business, {
-        id: appointment.id,
-        customerName: customerName.trim(),
-        customerPhone: customerPhone.trim(),
-        customerEmail: customerEmail?.trim() || null,
-        serviceType: serviceType.trim(),
-        scheduledAt: startDate,
-        source,
-        notes: notes?.trim() || null,
-        customerAddress: customerAddress?.trim() || null,
-      })
-      console.log('[BOOKING CREATE] Owner notified: SMS', notifyResult.smsSent ? 'yes' : 'no', 'Email', notifyResult.emailSent ? 'yes' : 'no')
-    } catch (notifyErr) {
-      console.error('[BOOKING CREATE] Failed to notify owner of new booking:', notifyErr)
     }
 
     return NextResponse.json({
       appointment: {
-        id: appointment.id,
-        scheduledAt: appointment.scheduledAt,
-        serviceType: appointment.serviceType,
+        id: result.appointment.id,
+        scheduledAt: result.appointment.scheduledAt,
+        serviceType: result.appointment.serviceType,
         timezone: tz,
       },
     })

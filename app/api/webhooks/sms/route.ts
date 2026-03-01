@@ -12,12 +12,9 @@ import Telnyx from 'telnyx'
 import Anthropic from '@anthropic-ai/sdk'
 import { addDays, addMonths, addYears } from 'date-fns'
 import { TZDate } from '@date-fns/tz'
-import { createCalendarEvent, getAvailableSlots, parseBusinessHours } from '@/lib/google-calendar'
-import {
-  notifyOwnerOnBookingCreated,
-  notifyOwnerOnBookingRequestNoCalendar,
-  notifyOwnerOnHumanNeeded,
-} from '@/lib/notify-owner'
+import { getAvailableSlots, parseBusinessHours } from '@/lib/google-calendar'
+import { createBooking } from '@/lib/create-booking'
+import { notifyOwnerOnHumanNeeded } from '@/lib/notify-owner'
 import { recordMessageSent } from '@/lib/sms-cooldown'
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY ?? '' })
@@ -257,93 +254,59 @@ export async function POST(request: NextRequest) {
 
       // Appointment booking tag — skip if conversation already has a booking
       const apptMatch = aiResponse.match(
-        /\[APPOINTMENT_BOOKED: name="([^"]+)", service="([^"]+)", datetime="([^"]+)"(?:, notes="([^"]*)")?\]/
+        /\[APPOINTMENT_BOOKED: name="([^"]+)", service="([^"]+)", datetime="([^"]+)"(?:, notes="([^"]*)")?(?:, address="([^"]*)")?\]/
       )
       if (apptMatch && conversation.status !== 'appointment_booked' && !conversation.appointment) {
-        const [, name, service, datetime, notes] = apptMatch
+        const [, name, service, datetime, notes, address] = apptMatch
         const tz = business.timezone ?? 'America/New_York'
         const scheduledAt = parseDatetimeInBusinessTz(datetime, tz)
-        const slotDuration = business.slotDurationMinutes ?? 30
-        const endDate = new Date(scheduledAt.getTime() + slotDuration * 60 * 1000)
-        let googleEventId: string | null = null
-        if (business.calendarEnabled && business.googleCalendarConnected) {
-          try {
-            googleEventId = await createCalendarEvent(
-              business.id,
-              scheduledAt,
-              endDate,
-              name,
-              service,
-              from,
-              { notes: notes || null, source: 'sms' }
-            )
-            console.log('[SMS BOOKING AI] Google Calendar event created:', googleEventId || 'no-id')
-          } catch (err) {
-            console.error('[SMS BOOKING AI] Google Calendar event FAILED:', err instanceof Error ? err.message : String(err))
-            const fallbackMsg = `Sorry, we had trouble saving that to our calendar. Please text back to try again or call us at ${business.telnyxPhoneNumber}.`
-            await sendSMSAndLog(business, conversation.id, from, fallbackMsg, timing)
-            const totalMs = Date.now() - new Date(timing.webhookReceivedAt).getTime()
-            return NextResponse.json({ ok: false, error: 'Calendar creation failed', timing: { ...timing, totalMs } }, { status: 200 })
-          }
-        }
-        const appointment = await db.appointment.create({
-          data: {
-            businessId: business.id,
-            conversationId: conversation.id,
-            customerName: name,
-            customerPhone: from,
-            serviceType: service,
-            scheduledAt,
-            duration: slotDuration,
-            notes: notes || null,
-            googleCalendarEventId: googleEventId,
-            status: 'confirmed',
-            source: 'sms',
-          },
-        })
-        await db.conversation.update({
-          where: { id: conversation.id },
-          data: { status: 'appointment_booked', callerName: name, intent: 'book_appointment', serviceRequested: service },
-        })
-        console.log('[SMS BOOKING AI] Appointment created in DB:', appointment.id)
-        console.log('[SMS BOOKING AI] Google Calendar event created:', googleEventId || 'N/A (calendar off)')
+        const slotStart = scheduledAt.toISOString()
 
-        if (business.calendarEnabled) {
-          try {
-            const notifyResult = await notifyOwnerOnBookingCreated(business, {
-              id: appointment.id,
-              customerName: name,
-              customerPhone: from,
-              customerEmail: null,
-              serviceType: service,
-              scheduledAt,
-              notes: notes || null,
-              source: 'sms',
-            })
-            console.log('[SMS BOOKING AI] Owner notified: SMS', notifyResult.smsSent ? 'yes' : 'no', 'Email', notifyResult.emailSent ? 'yes' : 'no')
-          } catch (err) {
-            console.error('[SMS BOOKING AI] Failed to notify owner:', err)
+        // Create appointment BEFORE sending confirmation — use shared createBooking
+        console.log('[SMS BOOKING] Creating appointment...')
+        const result = await createBooking({
+          business,
+          customerName: name,
+          customerPhone: from,
+          serviceType: service,
+          notes: notes || undefined,
+          customerAddress: address || undefined,
+          slotStart,
+          conversationId: conversation.id,
+          skipSlotVerification: true,
+          allowWithoutCalendar: true,
+          logPrefix: '[SMS BOOKING]',
+        })
+
+        if (result.ok) {
+          await db.conversation.update({
+            where: { id: conversation.id },
+            data: { status: 'appointment_booked', callerName: name, intent: 'book_appointment', serviceRequested: service },
+          })
+          console.log('[SMS BOOKING] Appointment created:', result.appointment.id)
+          if (result.calendarSyncFailed) {
+            console.log('[SMS BOOKING] Calendar FAILED:', result.calendarSyncFailed, '(appointment saved with calendarSyncFailed)')
+          } else {
+            console.log('[SMS BOOKING] Google Calendar event created (or calendar off)')
           }
-        } else {
-          try {
-            await notifyOwnerOnBookingRequestNoCalendar(business, {
-              customerName: name,
-              customerPhone: from,
-              service,
-              datetime,
-              notes: notes || null,
-              conversationTranscript,
-            })
-          } catch (err) {
-            console.error('❌ Failed to notify owner of booking request (no calendar):', err)
-          }
-          // Override AI response when calendar is off: send quote-specific message
-          const calendarOffMsg = `I've passed your info along to ${business.name}. They'll reach out soon to set up a time to come give you a quote for ${service}!`
-          await sendSMSAndLog(business, conversation.id, from, calendarOffMsg, timing)
+          console.log('[SMS BOOKING] Owner notified')
+          // createBooking already sent confirmation SMS — send cleanResponse as fallback only if we want to override (we don't; createBooking message is good)
+          // So we just send cleanResponse for consistency with AI's friendly wording (createBooking sent a different message — actually we have a problem)
+          // createBooking sends: "You're all set ${name}! ${business.name} will meet you on ${dateStr} at ${timeStr}..."
+          // The AI's cleanResponse also has a similar message. We should NOT send cleanResponse again — we'd double-send.
+          // createBooking already sent the confirmation. So we should NOT call sendSMSAndLog(cleanResponse) here.
+          // Skip to the end — we're done. Return.
           const totalMs = Date.now() - new Date(timing.webhookReceivedAt).getTime()
-          console.log('⏱️ [SMS] Total time (calendar-off path):', totalMs, 'ms', { timing: { ...timing, totalMs } })
+          console.log('⏱️ [SMS] Total time (SMS BOOKING via AI tag):', totalMs, 'ms', { timing: { ...timing, totalMs } })
           return NextResponse.json({ ok: true, timing: { ...timing, totalMs } }, { status: 200 })
         }
+
+        // createBooking failed — send error to customer
+        console.error('[SMS BOOKING] createBooking failed:', result.error)
+        const fallbackMsg = `Sorry, we had trouble saving that (${result.error}). Please text back to try again or call us at ${business.telnyxPhoneNumber}.`
+        await sendSMSAndLog(business, conversation.id, from, fallbackMsg, timing)
+        const totalMs = Date.now() - new Date(timing.webhookReceivedAt).getTime()
+        return NextResponse.json({ ok: false, error: result.error, timing: { ...timing, totalMs } }, { status: 200 })
       }
 
       const humanNeededMatch = aiResponse.match(/\[HUMAN_NEEDED(?:: reason="([^"]*)")?\]/)
@@ -533,9 +496,6 @@ async function handleSmsBookingFlow(
     customerName: rawFlowState.customerName ?? conversation.callerName,
     serviceType: rawFlowState.serviceType ?? conversation.serviceRequested,
   } as BookingFlowState
-  const baseUrl =
-    process.env.NEXT_PUBLIC_APP_URL ??
-    (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'https://alignandacquire.com')
   const tz = business.timezone ?? 'America/New_York'
 
   // Resolve slots from state (support legacy 'slots' or new 'offeredSlots')
@@ -551,22 +511,21 @@ async function handleSmsBookingFlow(
       include: { appointment: true },
     })
     if (convCheck?.appointment) return true
-    const res = await fetch(`${baseUrl}/api/bookings/create`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        businessId: business.id,
-        customerName: flowState.customerName || 'Customer',
-        customerPhone: from,
-        serviceType: flowState.serviceType || 'Appointment',
-        notes: flowState.notes ?? undefined,
-        customerAddress: address,
-        slotStart: flowState.selectedSlot.start,
-        conversationId: conversation.id,
-      }),
+
+    console.log('[SMS BOOKING] Creating appointment...')
+    const result = await createBooking({
+      business,
+      customerName: flowState.customerName || 'Customer',
+      customerPhone: from,
+      serviceType: flowState.serviceType || 'Appointment',
+      notes: flowState.notes ?? undefined,
+      customerAddress: address,
+      slotStart: flowState.selectedSlot.start,
+      conversationId: conversation.id,
+      logPrefix: '[SMS BOOKING]',
     })
-    const resBody = await res.json().catch(() => ({}))
-    if (res.ok && resBody.appointment?.id) {
+
+    if (result.ok) {
       await db.conversation.update({
         where: { id: conversation.id },
         data: {
@@ -577,12 +536,16 @@ async function handleSmsBookingFlow(
           bookingFlowState: Prisma.DbNull,
         },
       })
-      console.log('[SMS BOOKING] Appointment created in DB:', resBody.appointment.id)
-      console.log('[SMS BOOKING] Google Calendar event created via /api/bookings/create')
-      console.log('[SMS BOOKING] Owner notified via /api/bookings/create (check create API logs for SMS/Email)')
+      console.log('[SMS BOOKING] Appointment created:', result.appointment.id)
+      if (result.calendarSyncFailed) {
+        console.log('[SMS BOOKING] Calendar FAILED (appointment saved with calendarSyncFailed)')
+      } else {
+        console.log('[SMS BOOKING] Google Calendar event created (or calendar off)')
+      }
+      console.log('[SMS BOOKING] Owner notified')
       return true
     }
-    console.error('[SMS BOOKING] /api/bookings/create failed:', res.status, resBody)
+    console.error('[SMS BOOKING] createBooking failed:', result.error)
     await sendSMSAndLog(
       business,
       conversation.id,
@@ -624,22 +587,21 @@ async function handleSmsBookingFlow(
         include: { appointment: true },
       })
       if (convCheck?.appointment) return true
-      const res = await fetch(`${baseUrl}/api/bookings/create`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          businessId: business.id,
-          customerName: flowState.customerName || 'Customer',
-          customerPhone: from,
-          serviceType: flowState.serviceType || 'Appointment',
-          notes: flowState.notes ?? undefined,
-          customerAddress: flowState.customerAddress ?? undefined,
-          slotStart: selectedSlot.start,
-          conversationId: conversation.id,
-        }),
+
+      console.log('[SMS BOOKING] Creating appointment...')
+      const result = await createBooking({
+        business,
+        customerName: flowState.customerName || 'Customer',
+        customerPhone: from,
+        serviceType: flowState.serviceType || 'Appointment',
+        notes: flowState.notes ?? undefined,
+        customerAddress: flowState.customerAddress ?? undefined,
+        slotStart: selectedSlot.start,
+        conversationId: conversation.id,
+        logPrefix: '[SMS BOOKING]',
       })
-      const resBody = await res.json().catch(() => ({}))
-      if (res.ok && resBody.appointment?.id) {
+
+      if (result.ok) {
         await db.conversation.update({
           where: { id: conversation.id },
           data: {
@@ -650,12 +612,12 @@ async function handleSmsBookingFlow(
             bookingFlowState: Prisma.DbNull,
           },
         })
-        console.log('[SMS BOOKING] Appointment created in DB:', resBody.appointment.id)
-        console.log('[SMS BOOKING] Google Calendar event created via /api/bookings/create')
-        console.log('[SMS BOOKING] Owner notified via /api/bookings/create')
+        console.log('[SMS BOOKING] Appointment created:', result.appointment.id)
+        console.log('[SMS BOOKING] Google Calendar event created:', result.calendarSyncFailed ? 'FAILED (saved with calendarSyncFailed)' : 'yes')
+        console.log('[SMS BOOKING] Owner notified')
         return true
       }
-      console.error('[SMS BOOKING] /api/bookings/create failed (selection):', res.status, resBody)
+      console.error('[SMS BOOKING] createBooking failed (selection):', result.error)
     }
     // "None of those work" / "something else" → ask for new preference
     const wantsDifferentTimes = /\b(no|none|nope|those don't|doesn't work|something else|different|other)\b/.test(trimmed)
@@ -872,7 +834,7 @@ async function handleSmsBookingFlow(
 
   // ── Step: awaiting_name_and_preference (combined: name + day/time in one reply) ──
   if (flowState.step === 'awaiting_name_and_preference') {
-    const handled = await handleAwaitingNameAndPreference(business, conversation, rawText, trimmed, from, flowState, baseUrl)
+    const handled = await handleAwaitingNameAndPreference(business, conversation, rawText, trimmed, from, flowState)
     if (handled) return true
     return false
   }
@@ -992,8 +954,7 @@ async function handleAwaitingNameAndPreference(
   rawText: string,
   trimmed: string,
   from: string,
-  flowState: BookingFlowState,
-  baseUrl: string
+  flowState: BookingFlowState
 ): Promise<boolean> {
   if (looksLikeQuestion(rawText)) return false
   let name = parseNameFromMessage(rawText)
@@ -1066,7 +1027,7 @@ async function handleAwaitingNameAndPreference(
     const singleSlot = displaySlots.length === 1 ? displaySlots[0] : null
     if (singleSlot && bookingRequiresAddress) {
       const dateLabel = formatDateFull(singleSlot.start, tz)
-      const msg = `You're all set ${name}! We'll see you ${dateLabel} at ${singleSlot.display} for a quote on ${serviceType}. What's your property address?`
+      const msg = `Great! We have ${dateLabel} at ${singleSlot.display} available for your quote on ${serviceType}. What's your property address so we can confirm?`
       await sendSMSAndLog(business, conversation.id, from, msg)
       await db.conversation.update({
         where: { id: conversation.id },
@@ -1090,20 +1051,19 @@ async function handleAwaitingNameAndPreference(
         include: { appointment: true },
       })
       if (convCheck?.appointment) return true
-      const res = await fetch(`${baseUrl}/api/bookings/create`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          businessId: business.id,
-          customerName: name,
-          customerPhone: from,
-          serviceType,
-          notes: notes ?? undefined,
-          slotStart: singleSlot.start,
-          conversationId: conversation.id,
-        }),
+
+      console.log('[SMS BOOKING] Creating appointment...')
+      const result = await createBooking({
+        business,
+        customerName: name,
+        customerPhone: from,
+        serviceType,
+        notes: notes ?? undefined,
+        slotStart: singleSlot.start,
+        conversationId: conversation.id,
+        logPrefix: '[SMS BOOKING]',
       })
-      if (res.ok) {
+      if (result.ok) {
         await db.conversation.update({
           where: { id: conversation.id },
           data: {
@@ -1114,7 +1074,9 @@ async function handleAwaitingNameAndPreference(
             bookingFlowState: Prisma.DbNull,
           },
         })
-        console.log('[SMS BOOKING] Appointment created via /api/bookings/create (single slot, no address required)')
+        console.log('[SMS BOOKING] Appointment created:', result.appointment.id)
+        console.log('[SMS BOOKING] Google Calendar event created:', result.calendarSyncFailed ? 'FAILED (saved with calendarSyncFailed)' : 'yes')
+        console.log('[SMS BOOKING] Owner notified')
         return true
       }
     }
@@ -1569,11 +1531,11 @@ RULES:
 - If someone seems upset or you can't help, add [HUMAN_NEEDED] at the end (optional: [HUMAN_NEEDED: reason="brief reason"] to help the owner)
 ${flowGuidance}
 
-WHEN QUOTE VISIT IS CONFIRMED (you have name + service + date/time):
+WHEN QUOTE VISIT IS CONFIRMED (you have name + service + date/time${bookingRequiresAddress ? ' + property address' : ''}):
 Say something like: "You're all set! [Business name] will meet you on [Date - use full format: Friday, March 6th] at [Time] to take a look and give you a quote for [service]. See you then!"
 Then add this EXACT tag at the end of your message:
-[APPOINTMENT_BOOKED: name="John Smith", service="patio and walkway", datetime="2025-03-09 09:00", notes="First time"]
-CRITICAL: The datetime MUST be in BUSINESS LOCAL TIME (${tz}). If the customer says "9am" they mean 9am in the business timezone — output "09:00" not "14:00". Format: YYYY-MM-DD HH:mm. Example: 9am Monday March 9 = "2025-03-09 09:00".`
+[APPOINTMENT_BOOKED: name="John Smith", service="patio and walkway", datetime="2025-03-09 09:00", notes="First time"${bookingRequiresAddress ? ', address="123 Main St"' : ''}]
+CRITICAL: The datetime MUST be in BUSINESS LOCAL TIME (${tz}). If the customer says "9am" they mean 9am in the business timezone — output "09:00" not "14:00". Format: YYYY-MM-DD HH:mm. Example: 9am Monday March 9 = "2025-03-09 09:00". Include address in the tag if the business requires it and the customer provided it.`
 
   const AI_MODEL = 'claude-haiku-4-5-20251001'
   const apiKey = process.env.ANTHROPIC_API_KEY
