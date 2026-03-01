@@ -142,10 +142,26 @@ export async function createBooking(params: CreateBookingParams): Promise<Create
   if (!skipSlotVerification && business.googleCalendarConnected) {
     const dateStr = startDate.toLocaleDateString('en-CA', { timeZone: tz })
     const availableSlots = await getAvailableSlots(business.id, dateStr, dateStr)
-    const isAvailable = availableSlots.some((s) => new Date(s.start).getTime() === startDate.getTime())
+    const slotStartMs = startDate.getTime()
+    // Use 60s tolerance to handle timezone/parsing edge cases (e.g. 12:00 PM Eastern vs UTC)
+    const TOLERANCE_MS = 60_000
+    const isAvailable = availableSlots.some(
+      (s) => Math.abs(new Date(s.start).getTime() - slotStartMs) < TOLERANCE_MS
+    )
     if (!isAvailable) {
+      console.warn(`${logPrefix} Slot verification FAILED: slot not in available list`, {
+        slotStart: startDate.toISOString(),
+        slotStartTz: startDate.toLocaleString('en-US', { timeZone: tz }),
+        dateStr,
+        availableCount: availableSlots.length,
+        availableSlots: availableSlots.slice(0, 5).map((s) => ({
+          start: s.start,
+          display: s.display,
+        })),
+      })
       return { ok: false, error: 'This time slot is no longer available', status: 409 }
     }
+    console.log(`${logPrefix} Slot verification OK:`, { slotStart: startDate.toISOString(), dateStr })
   }
 
   const endDate = new Date(startDate.getTime() + slotDuration * 60 * 1000)

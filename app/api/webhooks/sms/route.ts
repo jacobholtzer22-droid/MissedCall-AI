@@ -60,6 +60,12 @@ function formatDateFull(isoOrDateStr: string | Date, tz: string): string {
 
 const DEFAULT_MAX_MESSAGES_PER_CONVERSATION = 15
 const BOOKING_INTENT_WORDS = ['book', 'appointment', 'schedule', 'booking', 'reserve']
+
+/** Returns customer-facing "call us" phrase. Uses forwardingNumber (owner's real number), never Telnyx. */
+function getCallUsPhrase(business: { forwardingNumber?: string | null }): string {
+  if (business.forwardingNumber?.trim()) return `give us a call at ${business.forwardingNumber.trim()}`
+  return 'call us directly'
+}
 const CONVERSATION_TIMEOUT_HOURS = 24
 const SPAM_WINDOW_SECONDS = 30
 
@@ -155,13 +161,13 @@ export async function POST(request: NextRequest) {
 
         // appointment_booked: send ONE final message (acknowledge thanks/questions) then close
         if (conversation.status === 'appointment_booked') {
-          const finalMsg = `Thanks for reaching out! If you need to reschedule or have any questions, just give us a call at ${business.telnyxPhoneNumber}.`
+          const finalMsg = `Thanks for reaching out! If you need to reschedule or have any questions, just ${getCallUsPhrase(business)}.`
           await sendSMSAndLog(business, conversation.id, from, finalMsg)
           await db.conversation.update({ where: { id: conversation.id }, data: { status: 'closed' } })
         }
         // lead_captured: same as appointment_booked — one final message then close
         if (conversation.status === 'lead_captured') {
-          const finalMsg = `Thanks for reaching out! If you have any questions, just give us a call at ${business.telnyxPhoneNumber}.`
+          const finalMsg = `Thanks for reaching out! If you have any questions, just ${getCallUsPhrase(business)}.`
           await sendSMSAndLog(business, conversation.id, from, finalMsg)
           await db.conversation.update({ where: { id: conversation.id }, data: { status: 'closed' } })
         }
@@ -207,7 +213,7 @@ export async function POST(request: NextRequest) {
         await sendSMS(
           business,
           from,
-          `Thanks for chatting! For further help, please call us directly at ${business.telnyxPhoneNumber}.`
+          `Thanks for chatting! For further help, please ${getCallUsPhrase(business)}.`
         )
         return new NextResponse('OK', { status: 200 })
       }
@@ -321,7 +327,7 @@ export async function POST(request: NextRequest) {
 
         // createBooking failed — send error to customer
         console.error('[SMS BOOKING] createBooking failed:', result.error)
-        const fallbackMsg = `Sorry, we had trouble saving that (${result.error}). Please text back to try again or call us at ${business.telnyxPhoneNumber}.`
+        const fallbackMsg = `Sorry, we had trouble saving that (${result.error}). Please text back to try again or ${getCallUsPhrase(business)}.`
         await sendSMSAndLog(business, conversation.id, from, fallbackMsg, timing)
         const totalMs = Date.now() - new Date(timing.webhookReceivedAt).getTime()
         return NextResponse.json({ ok: false, error: result.error, timing: { ...timing, totalMs } }, { status: 200 })
@@ -794,6 +800,7 @@ async function handleSmsBookingFlow(
       customerAddress: address,
       slotStart: flowState.selectedSlot.start,
       conversationId: conversation.id,
+      skipSlotVerification: true,
       logPrefix: '[SMS BOOKING]',
     })
 
@@ -822,7 +829,7 @@ async function handleSmsBookingFlow(
       business,
       conversation.id,
       from,
-      `Sorry, we had trouble saving that. Please try again or call us at ${business.telnyxPhoneNumber}.`
+      `Sorry, we had trouble saving that. Please try again or ${getCallUsPhrase(business)}.`
     )
     return true
   }
@@ -872,6 +879,7 @@ async function handleSmsBookingFlow(
         customerAddress: flowState.customerAddress ?? undefined,
         slotStart: selectedSlot.start,
         conversationId: conversation.id,
+        skipSlotVerification: true,
         logPrefix: '[SMS BOOKING]',
       })
 
@@ -892,6 +900,13 @@ async function handleSmsBookingFlow(
         return true
       }
       console.error('[SMS BOOKING] createBooking failed (selection):', result.error)
+      await sendSMSAndLog(
+        business,
+        conversation.id,
+        from,
+        `Sorry, we had trouble saving that. Please try again or ${getCallUsPhrase(business)}.`
+      )
+      return true
     }
     // "None of those work" / "something else" → ask for new preference
     const wantsDifferentTimes = /\b(no|none|nope|those don't|doesn't work|something else|different|other)\b/.test(trimmed)
@@ -1336,6 +1351,7 @@ async function handleAwaitingNameAndPreference(
         notes: notes ?? undefined,
         slotStart: singleSlot.start,
         conversationId: conversation.id,
+        skipSlotVerification: true,
         logPrefix: '[SMS BOOKING]',
       })
       if (result.ok) {
@@ -1354,6 +1370,14 @@ async function handleAwaitingNameAndPreference(
         console.log('[SMS BOOKING] Owner notified')
         return true
       }
+      console.error('[SMS BOOKING] createBooking failed (single slot):', result.error)
+      await sendSMSAndLog(
+        business,
+        conversation.id,
+        from,
+        `Sorry, we had trouble saving that. Please try again or ${getCallUsPhrase(business)}.`
+      )
+      return true
     }
     const msg = formatSlotsMessage(displaySlots, tz)
     await sendSMSAndLog(business, conversation.id, from, msg)
