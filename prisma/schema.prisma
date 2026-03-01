@@ -61,6 +61,7 @@ model Business {
   missedCallVoiceMessage String?  @default("We're sorry we can't get to the phone right now. You should receive a text message shortly.")
   missedCallAiEnabled   Boolean   @default(true)        // Send AI SMS after missed call
   smsCooldownDays       Int?                            // Cooldown period in days (null = use env SMS_COOLDOWN_DAYS or default 7)
+  cooldownBypassNumbers Json?     @default("[]")        // Admin: phone numbers that skip cooldown (for testing)
 
   // Owner notification preferences (booking created/cancelled)
   ownerEmail            String?                         // Business owner email for notifications

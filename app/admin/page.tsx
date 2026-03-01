@@ -32,6 +32,7 @@ interface Business {
   missedCallAiEnabled: boolean
   callScreenerEnabled: boolean
   callScreenerMessage: string | null
+  cooldownBypassNumbers?: string[] | null
   createdAt: string
   updatedAt: string
   _count: {
@@ -100,7 +101,6 @@ export default function AdminDashboard() {
   const [usageLoading, setUsageLoading] = useState<Record<string, boolean>>({})
   const [refreshLoading, setRefreshLoading] = useState(false)
   const [refreshFeedback, setRefreshFeedback] = useState<string | null>(null)
-  const [refreshDebugLog, setRefreshDebugLog] = useState<string[]>([])
   const [importModalOpen, setImportModalOpen] = useState(false)
   const [importPreview, setImportPreview] = useState<{ total: number; newCount: number; duplicateCount: number; contacts: { phoneNumber: string; name: string | null }[] } | null>(null)
   const [importProgress, setImportProgress] = useState(0)
@@ -113,7 +113,6 @@ export default function AdminDashboard() {
   async function refreshUsageData(businessId: string) {
     setRefreshLoading(true)
     setRefreshFeedback(null)
-    setRefreshDebugLog([])
     try {
       const syncRes = await fetch('/api/admin/usage/sync?dateRange=last_90_days', {
         method: 'POST',
@@ -123,7 +122,6 @@ export default function AdminDashboard() {
         setRefreshFeedback(`❌ Sync failed: ${syncData.error || 'Unknown error'}`)
         return
       }
-      setRefreshDebugLog(syncData.debugLog ?? [])
       const res = await fetch(`/api/admin/businesses/${businessId}/usage`)
       if (res.ok) {
         const data = await res.json()
@@ -240,6 +238,9 @@ export default function AdminDashboard() {
       businessHours: business.businessHours
         ? JSON.stringify(business.businessHours, null, 2)
         : '{}',
+      cooldownBypassNumbers: Array.isArray(business.cooldownBypassNumbers)
+        ? (business.cooldownBypassNumbers as string[]).join(', ')
+        : '',
     })
     setMessage('')
     setNewBlockedPhone('')
@@ -485,6 +486,7 @@ export default function AdminDashboard() {
           bufferMinutes: editData.calendarEnabled ? (editData.bufferMinutes ?? 0) : undefined,
           servicesOffered,
           businessHours,
+          cooldownBypassNumbers: editData.cooldownBypassNumbers ?? '',
         }),
       })
 
@@ -702,7 +704,6 @@ export default function AdminDashboard() {
                           onRefresh={() => refreshUsageData(business.id)}
                           refreshLoading={refreshLoading}
                           refreshFeedback={refreshFeedback}
-                          refreshDebugLog={refreshDebugLog}
                         />
                       ) : null}
                     </div>
@@ -895,6 +896,20 @@ export default function AdminDashboard() {
                 <input type="checkbox" checked={editData.missedCallAiEnabled} onChange={e => setEditData({...editData, missedCallAiEnabled: e.target.checked})} className="w-5 h-5 rounded" />
                 <span className="text-sm text-gray-300">Enable MissedCall AI (SMS after missed call)</span>
               </label>
+
+              {/* Cooldown Bypass Numbers (admin only) */}
+              <Field
+                label="Numbers that skip cooldown (for testing)"
+                hint="These numbers will always receive missed call SMS regardless of cooldown. Use for testing."
+              >
+                <input
+                  type="text"
+                  value={editData.cooldownBypassNumbers ?? ''}
+                  onChange={e => setEditData({ ...editData, cooldownBypassNumbers: e.target.value })}
+                  placeholder="+15551234567, +15559876543"
+                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-white placeholder-gray-600"
+                />
+              </Field>
 
               {/* Blocked numbers */}
               <Field
@@ -1269,44 +1284,12 @@ function UsagePanel({
   onRefresh,
   refreshLoading,
   refreshFeedback,
-  refreshDebugLog = [],
 }: {
   data: UsageData
   onRefresh: () => void
   refreshLoading: boolean
   refreshFeedback?: string | null
-  refreshDebugLog?: string[]
 }) {
-  const [testTelnyxLoading, setTestTelnyxLoading] = useState(false)
-  const [testTelnyxResult, setTestTelnyxResult] = useState<{
-    totalCount: number
-    records: { from: string; to: string; direction: string; cost: string; created_at: string }[]
-    raw?: Record<string, unknown>
-    error?: string
-  } | null>(null)
-
-  async function handleTestTelnyx() {
-    setTestTelnyxLoading(true)
-    setTestTelnyxResult(null)
-    try {
-      const res = await fetch('/api/admin/telnyx-test')
-      const json = await res.json()
-      if (!res.ok) {
-        setTestTelnyxResult({ totalCount: 0, records: [], error: json.error ?? 'Request failed', raw: json })
-        return
-      }
-      setTestTelnyxResult({
-        totalCount: json.totalCount ?? 0,
-        records: json.records ?? [],
-        raw: json.raw,
-      })
-    } catch (err) {
-      setTestTelnyxResult({ totalCount: 0, records: [], error: String(err) })
-    } finally {
-      setTestTelnyxLoading(false)
-    }
-  }
-
   const formatPhone = (p: string) => {
     const d = p.replace(/\D/g, '')
     if (d.length === 10) return `(${d.slice(0, 3)}) ${d.slice(3, 6)}-${d.slice(6)}`
@@ -1327,44 +1310,15 @@ function UsagePanel({
             <span className="text-sm text-gray-400">{refreshFeedback}</span>
           )}
           <button
-          type="button"
-          onClick={onRefresh}
-          disabled={refreshLoading}
-          className="px-4 py-2 bg-amber-600 hover:bg-amber-700 disabled:opacity-50 rounded-lg text-sm font-medium transition"
-        >
-          {refreshLoading ? 'Syncing…' : 'Refresh Usage'}
-        </button>
-          <button
             type="button"
-            onClick={handleTestTelnyx}
-            disabled={testTelnyxLoading}
-            className="px-4 py-2 bg-gray-600 hover:bg-gray-500 disabled:opacity-50 rounded-lg text-sm font-medium transition"
+            onClick={onRefresh}
+            disabled={refreshLoading}
+            className="px-4 py-2 bg-amber-600 hover:bg-amber-700 disabled:opacity-50 rounded-lg text-sm font-medium transition"
           >
-            {testTelnyxLoading ? 'Testing…' : 'Test Telnyx API'}
+            {refreshLoading ? 'Syncing…' : 'Refresh Usage'}
           </button>
         </div>
       </div>
-      {/* Sync debug log */}
-      {refreshDebugLog.length > 0 && (
-        <div className="bg-gray-900/80 rounded-xl p-4 border border-gray-700 overflow-hidden">
-          <h4 className="text-sm font-medium text-gray-300 mb-2">Sync Debug Log</h4>
-          <div className="font-mono text-xs text-gray-400 max-h-64 overflow-y-auto space-y-0.5">
-            {refreshDebugLog.map((line, i) => (
-              <div key={i} className="whitespace-pre-wrap break-all">
-                {line.includes('✓ MATCHED') ? (
-                  <span className="text-green-400">{line}</span>
-                ) : line.includes('✗ NO MATCH') ? (
-                  <span className="text-amber-400">{line}</span>
-                ) : line.includes('SYNC ERROR') ? (
-                  <span className="text-red-400">{line}</span>
-                ) : (
-                  line
-                )}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
       {/* Stats row */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-4">
         <div className="bg-gray-800/50 rounded-lg p-3">
@@ -1494,63 +1448,6 @@ function UsagePanel({
           )}
         </div>
       </div>
-      {/* Telnyx API Test Modal */}
-      {testTelnyxResult && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={() => setTestTelnyxResult(null)}>
-          <div className="bg-gray-900 border border-gray-700 rounded-xl shadow-xl max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
-            <div className="p-4 border-b border-gray-700 flex items-center justify-between">
-              <h3 className="text-lg font-semibold text-white">Telnyx API Debug — Messaging Records (last 7 days)</h3>
-              <button onClick={() => setTestTelnyxResult(null)} className="text-gray-400 hover:text-white">✕</button>
-            </div>
-            <div className="p-4 overflow-y-auto flex-1">
-              {testTelnyxResult.error ? (
-                <p className="text-red-400 mb-4">Error: {testTelnyxResult.error}</p>
-              ) : (
-                <p className="text-gray-300 mb-4">
-                  <strong>Total records returned:</strong> {testTelnyxResult.totalCount}
-                </p>
-              )}
-              {testTelnyxResult.records && testTelnyxResult.records.length > 0 && (
-                <div className="mb-4 overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="text-left text-gray-400 border-b border-gray-700">
-                        <th className="py-2 pr-4">From</th>
-                        <th className="py-2 pr-4">To</th>
-                        <th className="py-2 pr-4">Direction</th>
-                        <th className="py-2 pr-4">Cost</th>
-                        <th className="py-2">Created</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {testTelnyxResult.records.map((r, i) => (
-                        <tr key={i} className="border-b border-gray-800/50">
-                          <td className="py-2 pr-4 text-gray-200 font-mono text-xs">{r.from}</td>
-                          <td className="py-2 pr-4 text-gray-200 font-mono text-xs">{r.to}</td>
-                          <td className="py-2 pr-4 text-gray-300">{r.direction}</td>
-                          <td className="py-2 pr-4 text-amber-400">{r.cost}</td>
-                          <td className="py-2 text-gray-400 text-xs">{r.created_at}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-              {testTelnyxResult.records?.length === 0 && !testTelnyxResult.error && (
-                <p className="text-gray-500 italic">No records returned from Telnyx.</p>
-              )}
-              {testTelnyxResult.raw && (
-                <details className="mt-4">
-                  <summary className="text-sm text-gray-400 cursor-pointer hover:text-gray-300">Raw API response</summary>
-                  <pre className="mt-2 p-3 bg-gray-950 rounded text-xs text-gray-400 overflow-x-auto max-h-64 overflow-y-auto">
-                    {JSON.stringify(testTelnyxResult.raw as Record<string, unknown>, null, 2)}
-                  </pre>
-                </details>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   )
 }

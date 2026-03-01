@@ -4,7 +4,6 @@ import { cookies } from 'next/headers'
 import { db } from '@/lib/db'
 import { getBusinessForDashboard } from '@/lib/get-business-for-dashboard'
 import { Building, Bot, Phone, Calendar, CheckCircle, ExternalLink, Bell } from 'lucide-react'
-import { EmbedCodeSection } from '@/app/components/EmbedCodeSection'
 import { revalidatePath } from 'next/cache'
 
 export default async function SettingsPage({
@@ -219,11 +218,6 @@ export default async function SettingsPage({
                     </a>
                   </div>
                 </div>
-                <EmbedCodeSection
-                  businessSlug={business.slug}
-                  baseUrl={process.env.NEXT_PUBLIC_APP_URL ?? (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'https://alignandacquire.com')}
-                  variant="light"
-                />
               </div>
             ) : (
               <a

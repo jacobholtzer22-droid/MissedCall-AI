@@ -22,7 +22,7 @@ export function BookingPageHeader({ businessName }: { businessName: string | nul
           >
             <Logo size="xs" variant="light" className="h-8 w-auto" />
             <span className="text-sm font-medium" style={{ color: '#6b7280' }}>
-              Align & Acquire
+              Align and Acquire
             </span>
           </Link>
           {businessName && (

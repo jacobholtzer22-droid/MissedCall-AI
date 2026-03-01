@@ -32,7 +32,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import type { Business } from '@prisma/client'
 import { db } from '@/lib/db'
 import Telnyx from 'telnyx'
-import { checkCooldown, recordMessageSent, logCooldownSkip } from '@/lib/sms-cooldown'
+import { checkCooldown, recordMessageSent, logCooldownSkip, isCooldownBypassNumber } from '@/lib/sms-cooldown'
 import { isExistingContact, logContactSkip } from '@/lib/contacts-check'
 
 const VOICE = 'AWS.Polly.Joanna'
@@ -453,7 +453,7 @@ async function handleForwardingFallback(
 
 async function sendMissedCallSMS(
   telnyx: InstanceType<typeof Telnyx>,
-  business: { id: string; name: string; aiGreeting: string | null; telnyxPhoneNumber: string | null; smsCooldownDays?: number | null },
+  business: { id: string; name: string; aiGreeting: string | null; telnyxPhoneNumber: string | null; smsCooldownDays?: number | null; cooldownBypassNumbers?: unknown },
   callControlId: string,
   callerPhone: string
 ) {
@@ -481,11 +481,16 @@ async function sendMissedCallSMS(
     return
   }
 
-  // 2. Check cooldown — skip if we recently sent to this number
-  const cooldown = await checkCooldown(business.id, callerPhone, business)
-  if (!cooldown.allowed && cooldown.lastMessageSent) {
-    await logCooldownSkip(business.id, callerPhone, cooldown.lastMessageSent, 'missed_call')
-    return
+  // 2. Cooldown bypass (admin/testing) — skip cooldown check for configured numbers
+  if (isCooldownBypassNumber(callerPhone, business.cooldownBypassNumbers ?? [])) {
+    console.log('COOLDOWN_BYPASS: Admin number, skipping cooldown', { businessId: business.id, callerPhone })
+  } else {
+    // 3. Check cooldown — skip if we recently sent to this number
+    const cooldown = await checkCooldown(business.id, callerPhone, business)
+    if (!cooldown.allowed && cooldown.lastMessageSent) {
+      await logCooldownSkip(business.id, callerPhone, cooldown.lastMessageSent, 'missed_call')
+      return
+    }
   }
 
   let conversation = await db.conversation.findFirst({

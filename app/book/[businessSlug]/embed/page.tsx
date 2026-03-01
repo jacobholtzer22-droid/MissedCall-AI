@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useRef, useCallback } from 'react'
 import { useParams } from 'next/navigation'
-import { Calendar, Clock, User, Phone, Mail, FileText, CheckCircle, ChevronRight } from 'lucide-react'
+import { Calendar, Clock, User, Phone, Mail, FileText, CheckCircle } from 'lucide-react'
 import { BookingPageHeader } from '@/app/components/BookingPageHeader'
 
 const EMBED_MESSAGE_TYPE = 'booking-embed-height'
@@ -216,8 +216,6 @@ export default function EmbedBookingPage() {
                 Select a date to book your appointment
               </label>
               <div className="flex items-center gap-2">
-                <Calendar className="h-5 w-5 shrink-0" style={{ color: '#6b7280' }} />
-                <ChevronRight className="h-4 w-4 shrink-0" style={{ color: '#9ca3af' }} aria-hidden />
                 <input
                   type="date"
                   value={selectedDate}

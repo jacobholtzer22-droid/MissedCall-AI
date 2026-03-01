@@ -10,7 +10,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import Telnyx from 'telnyx'
 import { db } from '@/lib/db'
-import { checkCooldown, recordMessageSent, logCooldownSkip } from '@/lib/sms-cooldown'
+import { checkCooldown, recordMessageSent, logCooldownSkip, isCooldownBypassNumber } from '@/lib/sms-cooldown'
 import { isExistingContact, logContactSkip } from '@/lib/contacts-check'
 
 const xmlHeaders = { 'Content-Type': 'text/xml' as const }
@@ -92,7 +92,7 @@ export async function POST(request: NextRequest) {
 }
 
 async function triggerMissedCallSMS(
-  business: { id: string; name: string; aiGreeting: string | null; telnyxPhoneNumber: string | null; smsCooldownDays?: number | null },
+  business: { id: string; name: string; aiGreeting: string | null; telnyxPhoneNumber: string | null; smsCooldownDays?: number | null; cooldownBypassNumbers?: unknown },
   callerPhone: string
 ) {
   // 0. Check blocked list first
@@ -119,11 +119,16 @@ async function triggerMissedCallSMS(
     return
   }
 
-  // 2. Check cooldown — skip if we recently sent to this number
-  const cooldown = await checkCooldown(business.id, callerPhone, business)
-  if (!cooldown.allowed && cooldown.lastMessageSent) {
-    await logCooldownSkip(business.id, callerPhone, cooldown.lastMessageSent, 'missed_call')
-    return
+  // 2. Cooldown bypass (admin/testing) — skip cooldown check for configured numbers
+  if (isCooldownBypassNumber(callerPhone, business.cooldownBypassNumbers ?? [])) {
+    console.log('COOLDOWN_BYPASS: Admin number, skipping cooldown', { businessId: business.id, callerPhone })
+  } else {
+    // 3. Check cooldown — skip if we recently sent to this number
+    const cooldown = await checkCooldown(business.id, callerPhone, business)
+    if (!cooldown.allowed && cooldown.lastMessageSent) {
+      await logCooldownSkip(business.id, callerPhone, cooldown.lastMessageSent, 'missed_call')
+      return
+    }
   }
 
   const telnyxClient = new Telnyx({ apiKey: process.env.TELNYX_API_KEY! })

@@ -6,6 +6,7 @@
 // NOT applied to: manual messages, compliance responses (STOP confirmation)
 
 import { db } from '@/lib/db'
+import { phonesMatch } from '@/lib/phone-utils'
 
 const DEFAULT_COOLDOWN_DAYS = 7
 const ENV_COOLDOWN_DAYS = process.env.SMS_COOLDOWN_DAYS
@@ -15,6 +16,25 @@ const ENV_COOLDOWN_DAYS = process.env.SMS_COOLDOWN_DAYS
 export interface CooldownCheckResult {
   allowed: boolean
   lastMessageSent?: Date
+}
+
+/**
+ * Get the cooldown period in days for a business.
+ * Priority: business.smsCooldownDays > env SMS_COOLDOWN_DAYS > default 7
+ */
+/**
+ * Check if the caller's number is in the business's cooldown bypass list.
+ * Used for admin/testing — bypass numbers skip cooldown but still respect blocked/contacts.
+ */
+export function isCooldownBypassNumber(
+  callerPhone: string,
+  cooldownBypassNumbers: unknown
+): boolean {
+  const list = Array.isArray(cooldownBypassNumbers) ? cooldownBypassNumbers : []
+  if (list.length === 0) return false
+  return list.some(
+    (entry) => typeof entry === 'string' && entry.trim() && phonesMatch(callerPhone, entry.trim())
+  )
 }
 
 /**

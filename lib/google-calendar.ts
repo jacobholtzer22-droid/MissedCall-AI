@@ -402,7 +402,7 @@ export async function createCalendarEvent(
     `Service: ${serviceType}`,
     notes ? `Notes: ${notes}` : null,
     '',
-    'Booked via MissedCall AI - Align & Acquire',
+    'Booked via MissedCall AI - Align and Acquire',
   ].filter(Boolean)
   const description = descriptionLines.join('\n')
 
@@ -425,6 +425,19 @@ export async function deleteCalendarEvent(businessId: string, eventId: string): 
 
   try {
     await calendar.events.delete({ calendarId: 'primary', eventId })
+    return true
+  } catch {
+    return false
+  }
+}
+
+/** Returns true if the event exists in Google Calendar, false if not found or error */
+export async function calendarEventExists(businessId: string, eventId: string): Promise<boolean> {
+  const calendar = await getCalendarClient(businessId)
+  if (!calendar) return false
+
+  try {
+    await calendar.events.get({ calendarId: 'primary', eventId })
     return true
   } catch {
     return false

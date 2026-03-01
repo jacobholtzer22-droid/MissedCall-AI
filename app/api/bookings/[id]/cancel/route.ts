@@ -47,8 +47,13 @@ export async function POST(
       return NextResponse.json({ error: 'Appointment already cancelled' }, { status: 400 })
     }
 
+    // Try to delete from Google Calendar; if event was already deleted manually, still mark as cancelled
     if (appointment.googleCalendarEventId) {
-      await deleteCalendarEvent(appointment.businessId, appointment.googleCalendarEventId)
+      try {
+        await deleteCalendarEvent(appointment.businessId, appointment.googleCalendarEventId)
+      } catch {
+        // Event may have been deleted from Google Calendar directly; continue to mark as cancelled
+      }
     }
 
     await db.appointment.update({

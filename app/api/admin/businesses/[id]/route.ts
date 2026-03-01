@@ -41,6 +41,7 @@ export async function PATCH(
       'missedCallAiEnabled',
       'slotDurationMinutes',
       'bufferMinutes',
+      'cooldownBypassNumbers',
     ]
 
     const data: Record<string, unknown> = {}
@@ -54,6 +55,23 @@ export async function PATCH(
       data.telnyxPhoneNumber = raw && typeof raw === 'string' && raw.trim()
         ? normalizeToE164(raw.trim()) || null
         : null
+    }
+
+    // Parse cooldownBypassNumbers: comma-separated string → JSON array of E.164 numbers
+    if (data.cooldownBypassNumbers !== undefined) {
+      const raw = data.cooldownBypassNumbers
+      if (Array.isArray(raw)) {
+        data.cooldownBypassNumbers = raw
+          .map((v) => (typeof v === 'string' ? normalizeToE164(v.trim()) : ''))
+          .filter(Boolean)
+      } else if (typeof raw === 'string' && raw.trim()) {
+        data.cooldownBypassNumbers = raw
+          .split(/[,;\s]+/)
+          .map((s) => normalizeToE164(s.trim()))
+          .filter(Boolean)
+      } else {
+        data.cooldownBypassNumbers = []
+      }
     }
 
     const business = await db.business.update({

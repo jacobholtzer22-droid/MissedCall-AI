@@ -13,7 +13,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import Telnyx from 'telnyx'
-import { checkCooldown, recordMessageSent, logCooldownSkip } from '@/lib/sms-cooldown'
+import { checkCooldown, recordMessageSent, logCooldownSkip, isCooldownBypassNumber } from '@/lib/sms-cooldown'
 import { isExistingContact, logContactSkip } from '@/lib/contacts-check'
 
 export async function POST(request: NextRequest) {
@@ -235,11 +235,16 @@ export async function POST(request: NextRequest) {
       data: { status: 'no_response' },
     })
 
-    // Cooldown check (contacts already checked above)
-    const cooldown = await checkCooldown(business.id, callerPhone, business)
-    if (!cooldown.allowed && cooldown.lastMessageSent) {
-      await logCooldownSkip(business.id, callerPhone, cooldown.lastMessageSent, 'missed_call_dial_status')
-      return new NextResponse('', { status: 200 })
+    // Cooldown bypass (admin/testing) — skip cooldown check for configured numbers
+    if (isCooldownBypassNumber(callerPhone, business.cooldownBypassNumbers ?? [])) {
+      console.log('COOLDOWN_BYPASS: Admin number, skipping cooldown', { businessId: business.id, callerPhone })
+    } else {
+      // Cooldown check (contacts already checked above)
+      const cooldown = await checkCooldown(business.id, callerPhone, business)
+      if (!cooldown.allowed && cooldown.lastMessageSent) {
+        await logCooldownSkip(business.id, callerPhone, cooldown.lastMessageSent, 'missed_call_dial_status')
+        return new NextResponse('', { status: 200 })
+      }
     }
 
     const telnyxClient = new Telnyx({ apiKey: process.env.TELNYX_API_KEY! })

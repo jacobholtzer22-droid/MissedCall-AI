@@ -114,7 +114,7 @@ export async function notifyOwnerOnBookingCreated(
       '',
       `View and manage appointments: ${dashboardUrl}`,
       '',
-      'Booked via MissedCall AI - Align & Acquire',
+      'Booked via MissedCall AI - Align and Acquire',
     ]
       .filter(Boolean)
       .join('\n')

@@ -22,7 +22,6 @@ export function CancelBookingButton({
       const res = await fetch(`/api/bookings/${appointmentId}/cancel`, { method: 'POST' })
       if (res.ok) {
         onCancelled?.()
-        window.location.reload()
       }
     } finally {
       setLoading(false)
