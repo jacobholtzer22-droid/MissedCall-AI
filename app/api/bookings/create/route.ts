@@ -123,7 +123,11 @@ export async function POST(request: NextRequest) {
         hour12: true,
         timeZone: tz,
       })
-      const msg = `Confirmed! Your appointment with ${business.name} is scheduled for ${dateStr} at ${timeStr}. Reply to this number if you need to reschedule.`
+      const name = customerName.trim()
+      const service = serviceType.trim()
+      const msg = conversationId
+        ? `You're all set ${name}! Your ${service} is booked for ${dateStr} at ${timeStr}. We'll see you then! If anything changes just text us back.`
+        : `Confirmed! Your appointment with ${business.name} is scheduled for ${dateStr} at ${timeStr}. Reply to this number if you need to reschedule.`
 
       try {
         await telnyx.messages.send({
@@ -151,7 +155,7 @@ export async function POST(request: NextRequest) {
         serviceType: serviceType.trim(),
         scheduledAt: startDate,
         source,
-        notes: notes.trim(),
+        notes: notes?.trim() || null,
       })
       console.log('[BOOKING CREATE] notifyOwnerOnBookingCreated completed successfully')
     } catch (notifyErr) {

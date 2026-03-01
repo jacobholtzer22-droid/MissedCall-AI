@@ -1,5 +1,5 @@
 // ===========================================
-// OWNER NOTIFICATIONS - Booking created/cancelled
+// OWNER NOTIFICATIONS - Booking created
 // ===========================================
 // Sends SMS (Telnyx) and email (nodemailer/Gmail) to business owner
 
@@ -138,21 +138,36 @@ export async function notifyOwnerOnBookingCreated(
   }
 }
 
-export async function notifyOwnerOnBookingCancelled(
+// ── Booking request (no calendar) ───────────────────────────────────
+// For businesses without calendar integration: AI tagged [APPOINTMENT_BOOKED]
+// but no Google Calendar event was created — owner must confirm manually.
+
+export type ConversationMessage = { direction: string; content: string; createdAt: Date }
+
+export async function notifyOwnerOnBookingRequestNoCalendar(
   business: BusinessWithPhone,
-  appointment: Pick<Appointment, 'id' | 'customerName' | 'customerPhone' | 'customerEmail' | 'serviceType' | 'scheduledAt'>
+  params: {
+    customerName: string
+    customerPhone: string
+    service: string
+    datetime: string
+    notes?: string | null
+    conversationTranscript: ConversationMessage[]
+  }
 ): Promise<void> {
-  const scheduledAt = new Date(appointment.scheduledAt)
-  const tz = business.timezone ?? 'America/New_York'
-  const dateStr = formatDate(scheduledAt, tz)
-  const timeStr = formatTime(scheduledAt, tz)
+  const { customerName, customerPhone, service, datetime, notes, conversationTranscript } = params
   const dashboardUrl = `${baseUrl}/dashboard/appointments`
+  const tz = business.timezone ?? 'America/New_York'
+  const dateObj = new Date(datetime)
+  const dateStr = formatDate(dateObj, tz)
+  const timeStr = formatTime(dateObj, tz)
+  const dateTimeLabel = `${dateStr} at ${timeStr}`
 
   // SMS
   if (business.notifyBySms) {
     const toPhone = business.ownerPhone || business.forwardingNumber
     if (toPhone && business.telnyxPhoneNumber) {
-      const smsText = `Booking cancelled: ${appointment.customerName} on ${dateStr} at ${timeStr}`
+      const smsText = `📅 New Lead! ${customerName} wants to book ${service} around ${dateTimeLabel}. Phone: ${customerPhone}. Check your dashboard for details.`
       try {
         const telnyx = new Telnyx({ apiKey: process.env.TELNYX_API_KEY! })
         await telnyx.messages.send({
@@ -160,34 +175,131 @@ export async function notifyOwnerOnBookingCancelled(
           to: toPhone.trim(),
           text: smsText,
         })
+        console.error('[NOTIFY OWNER] Booking request (no calendar) SMS sent to', toPhone.trim())
       } catch (err) {
-        console.error('Failed to send owner cancellation SMS:', err)
+        console.error('[NOTIFY OWNER] Booking request SMS FAILED:', err instanceof Error ? err.message : String(err))
       }
     }
   }
 
   // Email
   if (business.notifyByEmail && business.ownerEmail) {
-    const subject = `Booking Cancelled - ${appointment.customerName} - ${dateStr} ${timeStr}`
+    const subject = `New Appointment Request - ${customerName} - ${service}`
+    const transcriptText = conversationTranscript
+      .map((m) => {
+        const label = m.direction === 'inbound' ? 'Customer' : business.name
+        const ts = m.createdAt instanceof Date ? m.createdAt.toLocaleString('en-US', { timeZone: tz }) : ''
+        return `[${ts}] ${label}: ${m.content}`
+      })
+      .join('\n\n')
+
     const body = [
-      `An appointment has been cancelled for ${business.name}.`,
+      `A new appointment request has come in for ${business.name}.`,
       '',
-      'Cancelled appointment details:',
-      `  Customer: ${appointment.customerName}`,
-      `  Phone: ${appointment.customerPhone}`,
-      appointment.customerEmail ? `  Email: ${appointment.customerEmail}` : null,
-      `  Service: ${appointment.serviceType}`,
-      `  Was scheduled: ${dateStr} at ${timeStr}`,
+      'Customer details:',
+      `  Name: ${customerName}`,
+      `  Phone: ${customerPhone}`,
+      `  Service requested: ${service}`,
+      `  Preferred date/time: ${dateTimeLabel}`,
+      notes ? `  Notes: ${notes}` : null,
       '',
-      `View all appointments: ${dashboardUrl}`,
+      'Full conversation transcript:',
+      '─'.repeat(40),
+      transcriptText,
+      '─'.repeat(40),
+      '',
+      '⚠️ This appointment has NOT been added to your calendar. Please confirm the time with the customer directly.',
+      '',
+      `View your dashboard: ${dashboardUrl}`,
+      '',
+      'Powered by MissedCall AI - Align and Acquire',
     ]
       .filter(Boolean)
       .join('\n')
 
     try {
       await sendEmail(business.ownerEmail, subject, body)
+      console.error('[NOTIFY OWNER] Booking request (no calendar) email sent to', business.ownerEmail)
     } catch (err) {
-      console.error('Failed to send owner cancellation email:', err)
+      console.error('[NOTIFY OWNER] Booking request email FAILED:', err instanceof Error ? err.message : String(err))
+    }
+  }
+}
+
+// ── Human needed ────────────────────────────────────────────────────
+// When AI flags [HUMAN_NEEDED] — customer needs personal follow-up.
+
+export async function notifyOwnerOnHumanNeeded(
+  business: BusinessWithPhone,
+  params: {
+    customerName: string
+    customerPhone: string
+    reason?: string | null
+    conversationTranscript: ConversationMessage[]
+    conversationId: string
+  }
+): Promise<void> {
+  const { customerName, customerPhone, reason, conversationTranscript, conversationId } = params
+  const conversationUrl = `${baseUrl}/dashboard/conversations/${conversationId}`
+  const tz = business.timezone ?? 'America/New_York'
+
+  // SMS
+  if (business.notifyBySms) {
+    const toPhone = business.ownerPhone || business.forwardingNumber
+    if (toPhone && business.telnyxPhoneNumber) {
+      const smsText = `⚠️ A customer needs your help! ${customerName} (${customerPhone}) needs a personal follow-up. Check your email for the full conversation.`
+      try {
+        const telnyx = new Telnyx({ apiKey: process.env.TELNYX_API_KEY! })
+        await telnyx.messages.send({
+          from: business.telnyxPhoneNumber,
+          to: toPhone.trim(),
+          text: smsText,
+        })
+        console.error('[NOTIFY OWNER] Human needed SMS sent to', toPhone.trim())
+      } catch (err) {
+        console.error('[NOTIFY OWNER] Human needed SMS FAILED:', err instanceof Error ? err.message : String(err))
+      }
+    }
+  }
+
+  // Email
+  if (business.notifyByEmail && business.ownerEmail) {
+    const subject = `Follow-Up Needed - ${customerName}`
+    const transcriptText = conversationTranscript
+      .map((m) => {
+        const label = m.direction === 'inbound' ? 'Customer' : business.name
+        const ts = m.createdAt instanceof Date ? m.createdAt.toLocaleString('en-US', { timeZone: tz }) : ''
+        return `[${ts}] ${label}: ${m.content}`
+      })
+      .join('\n\n')
+
+    const body = [
+      `A customer needs your personal follow-up.`,
+      '',
+      'Customer details:',
+      `  Name: ${customerName}`,
+      `  Phone: ${customerPhone}`,
+      reason ? `\nWhy the AI flagged this: ${reason}\n` : null,
+      '',
+      'Full conversation transcript:',
+      '─'.repeat(40),
+      transcriptText,
+      '─'.repeat(40),
+      '',
+      'Please reach out to this customer directly.',
+      '',
+      `View this conversation: ${conversationUrl}`,
+      '',
+      'Powered by MissedCall AI - Align and Acquire',
+    ]
+      .filter(Boolean)
+      .join('\n')
+
+    try {
+      await sendEmail(business.ownerEmail, subject, body)
+      console.error('[NOTIFY OWNER] Human needed email sent to', business.ownerEmail)
+    } catch (err) {
+      console.error('[NOTIFY OWNER] Human needed email FAILED:', err instanceof Error ? err.message : String(err))
     }
   }
 }

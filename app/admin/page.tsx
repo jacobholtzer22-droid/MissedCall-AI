@@ -4,7 +4,6 @@ import { useEffect, useState, useRef } from 'react'
 import { useUser } from '@clerk/nextjs'
 import { useRouter } from 'next/navigation'
 import { CallScreenerCard } from './components/CallScreenerCard'
-import { EmbedCodeSection } from '@/app/components/EmbedCodeSection'
 import { parseContactFile } from '@/lib/import-contacts'
 import { DEFAULT_BUSINESS_HOURS } from '@/lib/business-hours'
 
@@ -560,193 +559,160 @@ export default function AdminDashboard() {
         </div>
 
         {/* Business List */}
-        <div className="space-y-4">
+        <div className="space-y-6">
           {businesses.map(business => (
             <div
               key={business.id}
-              className="bg-gray-900 border border-gray-800 rounded-xl p-6"
+              className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden"
             >
-              <div className="flex items-start justify-between">
-                <div className="flex-1">
-                  <div className="flex items-center gap-3 mb-2">
-                    <h2 className="text-xl font-semibold">{business.name}</h2>
-                    <StatusBadge status={business.subscriptionStatus} />
-                    {business.spamFilterEnabled ? (
-                      <span className="text-xs px-2.5 py-1 rounded-full border bg-green-500/10 text-green-400 border-green-500/20">
-                        Spam Filter ON
-                      </span>
-                    ) : (
-                      <span className="text-xs px-2.5 py-1 rounded-full border bg-gray-500/10 text-gray-400 border-gray-500/20">
-                        Spam Filter OFF
-                      </span>
+              {/* Business Info & Status */}
+              <div className="p-6">
+                <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-6">
+                  <div className="flex-1 space-y-4">
+                    {/* Header: Name + Status badges */}
+                    <div>
+                      <h2 className="text-xl font-semibold text-white mb-2">{business.name}</h2>
+                      <div className="flex flex-wrap gap-2 items-center">
+                        <StatusBadge status={business.subscriptionStatus} />
+                        <StatusPill
+                          active={!!business.calendarEnabled}
+                          label="Online Booking"
+                        />
+                        <StatusPill
+                          active={!!business.googleCalendarConnected}
+                          label="Calendar"
+                        />
+                        {business.spamFilterEnabled && (
+                          <span className="text-xs px-2.5 py-1 rounded-full border bg-green-500/10 text-green-400 border-green-500/20">
+                            Spam Filter
+                          </span>
+                        )}
+                        {business._count.blockedCalls30d > 0 && (
+                          <span className="text-xs px-2.5 py-1 rounded-full border bg-red-500/10 text-red-400 border-red-500/20">
+                            {business._count.blockedCalls30d} blocked (30d)
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Key business details */}
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-sm">
+                      <div>
+                        <p className="text-gray-500 text-xs uppercase tracking-wide">Phone</p>
+                        <p className={business.telnyxPhoneNumber ? 'text-green-400 font-mono' : 'text-red-400'}>
+                          {business.telnyxPhoneNumber || 'Not assigned'}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-gray-500 text-xs uppercase tracking-wide">Forwarding</p>
+                        <p className="text-gray-300">{business.forwardingNumber || '—'}</p>
+                      </div>
+                      <div>
+                        <p className="text-gray-500 text-xs uppercase tracking-wide">Timezone</p>
+                        <p className="text-gray-300">{business.timezone.split('/').pop()?.replace('_', ' ') ?? business.timezone}</p>
+                      </div>
+                      <div>
+                        <p className="text-gray-500 text-xs uppercase tracking-wide">Activity</p>
+                        <p className="text-gray-300">{business._count.conversations} convos · {business._count.appointments} appts</p>
+                      </div>
+                    </div>
+
+                    {/* Fees (compact) */}
+                    {(business.setupFee != null || business.monthlyFee != null) && (
+                      <div className="flex gap-4 text-sm text-gray-400">
+                        {business.setupFee != null && <span>Setup: ${business.setupFee}</span>}
+                        {business.monthlyFee != null && <span>Monthly: ${business.monthlyFee}/mo</span>}
+                      </div>
                     )}
-                    {business._count.blockedCalls30d > 0 && (
-                      <span className="text-xs text-red-400">
-                        🛡️ {business._count.blockedCalls30d} spam blocked (30d)
-                      </span>
+
+                    {business.adminNotes && (
+                      <p className="text-sm text-gray-500 italic">{business.adminNotes}</p>
                     )}
-                  </div>
 
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-4 text-sm">
-                    <div>
-                      <span className="text-gray-500">Telnyx Number (telnyxPhoneNumber)</span>
-                      <p className={business.telnyxPhoneNumber ? 'text-green-400 font-mono text-xs' : 'text-red-400'}>
-                        {business.telnyxPhoneNumber ? `"${business.telnyxPhoneNumber}"` : 'NOT ASSIGNED'}
-                      </p>
-                    </div>
-                    <div>
-                      <span className="text-gray-500">Forwarding Number</span>
-                      <p className={business.forwardingNumber ? 'text-gray-300' : 'text-gray-500'}>
-                        {business.forwardingNumber || 'Not set'}
-                      </p>
-                    </div>
-                    <div>
-                      <span className="text-gray-500">Timezone</span>
-                      <p className="text-gray-300">{business.timezone}</p>
-                    </div>
-                    <div>
-                      <span className="text-gray-500">Conversations</span>
-                      <p className="text-gray-300">{business._count.conversations}</p>
-                    </div>
-                    <div>
-                      <span className="text-gray-500">Appointments</span>
-                      <p className="text-gray-300">{business._count.appointments}</p>
-                    </div>
-                    <div>
-                      <span className="text-gray-500">Online Booking</span>
-                      <p className={business.calendarEnabled ? 'text-green-400' : 'text-gray-500'}>
-                        {business.calendarEnabled ? 'Enabled' : 'Disabled'}
-                      </p>
-                    </div>
-                    <div>
-                      <span className="text-gray-500">Google Calendar</span>
-                      <p className={business.googleCalendarConnected ? 'text-green-400' : 'text-gray-500'}>
-                        {business.googleCalendarConnected ? 'Connected' : 'Not connected'}
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mt-3 text-sm">
-                    <div>
-                      <span className="text-gray-500">Setup Fee</span>
-                      <p className={business.setupFee != null ? 'text-gray-300' : 'text-gray-500'}>
-                        {business.setupFee != null ? `$${business.setupFee}` : 'Not set'}
-                      </p>
-                    </div>
-                    <div>
-                      <span className="text-gray-500">Monthly Fee</span>
-                      <p className={business.monthlyFee != null ? 'text-gray-300' : 'text-gray-500'}>
-                        {business.monthlyFee != null ? `$${business.monthlyFee}/mo` : 'Not set'}
-                      </p>
-                    </div>
-                    <div>
-                      <span className="text-gray-500">This Week</span>
-                      <p className="text-gray-300">{business._count.conversations}</p>
-                    </div>
-                  </div>
-
-                  {business.aiGreeting && (
-                    <div className="mt-3 text-sm">
-                      <span className="text-gray-500">AI Greeting: </span>
-                      <span className="text-gray-400 italic">&quot;{business.aiGreeting}&quot;</span>
-                    </div>
-                  )}
-                  {business.adminNotes && (
-                    <div className="mt-3 text-sm">
-                      <span className="text-gray-500">Notes: </span>
-                      <span className="text-gray-400">{business.adminNotes}</span>
-                    </div>
-                  )}
-
-                  <div className="mt-4">
-                    <CallScreenerCard
-                      businessId={business.id}
-                      businessName={business.name}
-                      callScreenerEnabled={business.callScreenerEnabled}
-                      callScreenerMessage={business.callScreenerMessage}
-                      onToggle={async (id, enabled) => {
-                        await fetch(`/api/admin/businesses/${id}`, {
-                          method: 'PATCH',
-                          headers: { 'Content-Type': 'application/json' },
-                          body: JSON.stringify({ callScreenerEnabled: enabled }),
-                        })
-                        fetchBusinesses()
-                      }}
-                      onUpdateMessage={async (id, message) => {
-                        await fetch(`/api/admin/businesses/${id}`, {
-                          method: 'PATCH',
-                          headers: { 'Content-Type': 'application/json' },
-                          body: JSON.stringify({ callScreenerMessage: message }),
-                        })
-                        fetchBusinesses()
-                      }}
-                    />
-                  </div>
-
-                  {business.calendarEnabled && business.googleCalendarConnected && (
-                    <div className="mt-4">
-                      <EmbedCodeSection
-                        businessSlug={business.slug}
-                        baseUrl={process.env.NEXT_PUBLIC_APP_URL || (typeof window !== 'undefined' ? window.location.origin : 'https://alignandacquire.com')}
-                        variant="dark"
+                    {/* Call Screener */}
+                    <div className="pt-2">
+                      <CallScreenerCard
+                        businessId={business.id}
+                        businessName={business.name}
+                        callScreenerEnabled={business.callScreenerEnabled}
+                        callScreenerMessage={business.callScreenerMessage}
+                        onToggle={async (id, enabled) => {
+                          await fetch(`/api/admin/businesses/${id}`, {
+                            method: 'PATCH',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ callScreenerEnabled: enabled }),
+                          })
+                          fetchBusinesses()
+                        }}
+                        onUpdateMessage={async (id, message) => {
+                          await fetch(`/api/admin/businesses/${id}`, {
+                            method: 'PATCH',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ callScreenerMessage: message }),
+                          })
+                          fetchBusinesses()
+                        }}
                       />
                     </div>
-                  )}
 
-                  {/* Usage & Cost section */}
-                  {expandedUsageId === business.id && (
-                    <div className="mt-6 pt-6 border-t border-gray-800">
-                      {usageLoading[business.id] ? (
-                        <p className="text-gray-500 text-sm">Loading usage...</p>
-                      ) : usageData[business.id] ? (
-                        <UsagePanel
-                          data={usageData[business.id]!}
-                          onRefresh={() => refreshUsageData(business.id)}
-                          refreshLoading={refreshLoading}
-                          refreshFeedback={refreshFeedback}
-                        />
-                      ) : null}
+                    {/* Usage & Cost - clean summary card */}
+                    {expandedUsageId === business.id && (
+                      <div className="mt-4 pt-4 border-t border-gray-800">
+                        {usageLoading[business.id] ? (
+                          <p className="text-gray-500 text-sm">Loading usage...</p>
+                        ) : usageData[business.id] ? (
+                          <UsagePanel
+                            data={usageData[business.id]!}
+                            onRefresh={() => refreshUsageData(business.id)}
+                            refreshLoading={refreshLoading}
+                            refreshFeedback={refreshFeedback}
+                          />
+                        ) : null}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Action buttons - grouped */}
+                  <div className="flex flex-col sm:flex-row lg:flex-col gap-2 shrink-0">
+                    <div className="flex flex-wrap gap-2">
+                      <a
+                        href={`/api/admin/view-as?businessId=${business.id}`}
+                        className="px-4 py-2 bg-amber-600 hover:bg-amber-700 rounded-lg text-sm font-medium transition"
+                      >
+                        View as Client
+                      </a>
+                      <button
+                        onClick={() => startEdit(business)}
+                        className="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg text-sm font-medium transition"
+                      >
+                        Edit
+                      </button>
+                      <a
+                        href={`/admin/${business.id}/conversations`}
+                        className="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg text-sm font-medium transition"
+                      >
+                        View Conversations
+                      </a>
                     </div>
-                  )}
-                </div>
-
-                <div className="flex flex-wrap gap-2 ml-4">
-                  <a
-                    href={`/api/admin/view-as?businessId=${business.id}`}
-                    className="px-4 py-2 bg-amber-600 hover:bg-amber-700 rounded-lg text-sm font-medium transition"
-                  >
-                    View as Client
-                  </a>
-                  {business.calendarEnabled && (
-                  <a
-                    href={`/api/auth/google?businessId=${business.id}`}
-                    className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 rounded-lg text-sm font-medium transition"
-                  >
-                    {business.googleCalendarConnected ? 'Reconnect Calendar' : 'Connect Calendar'}
-                  </a>
-                  )}
-                  <button
-                    onClick={() => startEdit(business)}
-                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg text-sm font-medium transition"
-                  >
-                    Edit
-                  </button>
-                  <a
-                    href={`/admin/${business.id}/conversations`}
-                    className="px-4 py-2 bg-gray-800 hover:bg-gray-700 rounded-lg text-sm font-medium transition"
-                  >
-                    View Conversations
-                  </a>
-                  <button
-                    onClick={() => toggleUsage(business.id)}
-                    className={`px-4 py-2 rounded-lg text-sm font-medium transition ${
-                      expandedUsageId === business.id
-                        ? 'bg-green-600 hover:bg-green-700'
-                        : 'bg-gray-800 hover:bg-gray-700'
-                    }`}
-                  >
-                    {expandedUsageId === business.id ? 'Hide Usage' : 'Usage & Cost'}
-                  </button>
+                    {business.calendarEnabled && (
+                      <a
+                        href={`/api/auth/google?businessId=${business.id}`}
+                        className="px-4 py-2 text-sm font-medium rounded-lg border border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/10 transition"
+                      >
+                        {business.googleCalendarConnected ? 'Reconnect Calendar' : 'Connect Calendar'}
+                      </a>
+                    )}
+                    <button
+                      onClick={() => toggleUsage(business.id)}
+                      className={`px-4 py-2 rounded-lg text-sm font-medium transition ${
+                        expandedUsageId === business.id
+                          ? 'bg-green-600 hover:bg-green-700'
+                          : 'bg-gray-800 hover:bg-gray-700 text-gray-300'
+                      }`}
+                    >
+                      {expandedUsageId === business.id ? 'Hide Usage' : 'Usage & Cost'}
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>
@@ -1290,6 +1256,7 @@ function UsagePanel({
   refreshLoading: boolean
   refreshFeedback?: string | null
 }) {
+  const [showDetails, setShowDetails] = useState(false)
   const formatPhone = (p: string) => {
     const d = p.replace(/\D/g, '')
     if (d.length === 10) return `(${d.slice(0, 3)}) ${d.slice(3, 6)}-${d.slice(6)}`
@@ -1302,152 +1269,107 @@ function UsagePanel({
     blocked: 'Blocked list',
   }
   return (
-    <div className="space-y-6">
+    <div className="bg-gray-800/30 rounded-xl border border-gray-700 p-4 space-y-4">
       <div className="flex items-center justify-between flex-wrap gap-2">
-        <h3 className="text-lg font-semibold text-gray-200">Usage & Cost</h3>
+        <h3 className="font-semibold text-gray-200">Usage & Cost</h3>
         <div className="flex items-center gap-2">
-          {refreshFeedback && (
-            <span className="text-sm text-gray-400">{refreshFeedback}</span>
-          )}
+          {refreshFeedback && <span className="text-xs text-gray-400">{refreshFeedback}</span>}
           <button
             type="button"
             onClick={onRefresh}
             disabled={refreshLoading}
-            className="px-4 py-2 bg-amber-600 hover:bg-amber-700 disabled:opacity-50 rounded-lg text-sm font-medium transition"
+            className="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 disabled:opacity-50 rounded-lg text-sm font-medium transition"
           >
-            {refreshLoading ? 'Syncing…' : 'Refresh Usage'}
+            {refreshLoading ? 'Syncing…' : 'Refresh'}
           </button>
         </div>
       </div>
-      {/* Stats row */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-4">
-        <div className="bg-gray-800/50 rounded-lg p-3">
-          <p className="text-xs text-gray-500">SMS sent (week)</p>
-          <p className="text-xl font-bold text-white">{data.sms.thisWeek}</p>
+      {/* Summary cards */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <div className="bg-gray-900/50 rounded-lg p-3">
+          <p className="text-xs text-gray-500">SMS (this week)</p>
+          <p className="text-lg font-bold text-white">{data.sms.thisWeek}</p>
         </div>
-        <div className="bg-gray-800/50 rounded-lg p-3">
-          <p className="text-xs text-gray-500">SMS sent (all time)</p>
-          <p className="text-xl font-bold text-white">{data.sms.allTime}</p>
+        <div className="bg-gray-900/50 rounded-lg p-3">
+          <p className="text-xs text-gray-500">Cost (this week)</p>
+          <p className="text-lg font-bold text-white">${data.cost.totalThisWeek.toFixed(2)}</p>
         </div>
-        <div className="bg-gray-800/50 rounded-lg p-3">
-          <p className="text-xs text-gray-500">Missed-call SMS</p>
-          <p className="text-xl font-bold text-white">{data.missedCallSmsTriggered}</p>
+        <div className="bg-gray-900/50 rounded-lg p-3">
+          <p className="text-xs text-gray-500">Cost (all time)</p>
+          <p className="text-lg font-bold text-gray-300">${data.cost.totalAllTime.toFixed(2)}</p>
         </div>
-        <div className="bg-gray-800/50 rounded-lg p-3">
-          <p className="text-xs text-gray-500">Skipped (cooldown)</p>
-          <p className="text-xl font-bold text-amber-400">{data.skips.cooldown}</p>
-        </div>
-        <div className="bg-gray-800/50 rounded-lg p-3">
-          <p className="text-xs text-gray-500">Skipped (contact)</p>
-          <p className="text-xl font-bold text-blue-400">{data.skips.existingContact}</p>
-        </div>
-        <div className="bg-gray-800/50 rounded-lg p-3">
-          <p className="text-xs text-gray-500">Skipped (blocked)</p>
-          <p className="text-xl font-bold text-red-400">{data.skips.blocked}</p>
-        </div>
-        <div className="bg-gray-800/50 rounded-lg p-3">
-          <p className="text-xs text-gray-500">Money saved</p>
-          <p className="text-xl font-bold text-green-400">${data.moneySaved.toFixed(2)}</p>
+        <div className="bg-gray-900/50 rounded-lg p-3">
+          <p className="text-xs text-gray-500">Saved</p>
+          <p className="text-lg font-bold text-green-400">${data.moneySaved.toFixed(2)}</p>
         </div>
       </div>
-      {/* Cost panel - real Telnyx MDR/CDR data */}
-      <div className="bg-gray-800/50 rounded-xl p-4 border border-gray-700">
-        <h4 className="text-sm font-medium text-gray-300 mb-3">Cost Overview (from Telnyx MDR/CDR)</h4>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <div>
-            <p className="text-xs text-gray-500">This week</p>
-            <p className="font-bold text-white">${data.cost.totalThisWeek.toFixed(2)}</p>
-            <p className="text-xs text-gray-400">SMS: ${data.cost.smsThisWeek.toFixed(2)} · Calls: ${data.cost.callThisWeek.toFixed(2)}</p>
+      <p className="text-xs text-gray-500">
+        {data.sms.allTime} total SMS · {data.missedCallSmsTriggered} missed-call triggered · 
+        Skipped: {data.skips.cooldown} cooldown, {data.skips.existingContact} contact, {data.skips.blocked} blocked
+      </p>
+      {showDetails && (
+        <>
+          <div className="border-t border-gray-700 pt-3 space-y-3">
+            <h4 className="text-sm font-medium text-gray-400">Skip Logs</h4>
+            <div className="bg-gray-900/50 rounded-lg border border-gray-800 overflow-hidden max-h-36 overflow-y-auto">
+              {data.skipLogs.length === 0 ? (
+                <p className="p-3 text-gray-500 text-sm">No skips</p>
+              ) : (
+                <table className="w-full text-xs">
+                  <thead className="bg-gray-900 sticky top-0">
+                    <tr>
+                      <th className="text-left px-2 py-1.5 text-gray-500">Time</th>
+                      <th className="text-left px-2 py-1.5 text-gray-500">Phone</th>
+                      <th className="text-left px-2 py-1.5 text-gray-500">Reason</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data.skipLogs.slice(0, 15).map((log) => (
+                      <tr key={log.id} className="border-t border-gray-800/50">
+                        <td className="px-2 py-1.5 text-gray-400 whitespace-nowrap">{new Date(log.attemptedAt).toLocaleString()}</td>
+                        <td className="px-2 py-1.5 text-gray-400">{formatPhone(log.phoneNumber)}</td>
+                        <td className="px-2 py-1.5">{skipReasonLabel[log.reason] ?? log.reason}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+            <h4 className="text-sm font-medium text-gray-400">Recent Messages</h4>
+            <div className="bg-gray-900/50 rounded-lg border border-gray-800 overflow-hidden max-h-36 overflow-y-auto">
+              {data.recentMessages.length === 0 ? (
+                <p className="p-3 text-gray-500 text-sm">No messages</p>
+              ) : (
+                <table className="w-full text-xs">
+                  <thead className="bg-gray-900 sticky top-0">
+                    <tr>
+                      <th className="text-left px-2 py-1.5 text-gray-500">Time</th>
+                      <th className="text-left px-2 py-1.5 text-gray-500">From</th>
+                      <th className="text-left px-2 py-1.5 text-gray-500">Content</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data.recentMessages.slice(0, 10).map((m) => (
+                      <tr key={m.id} className="border-t border-gray-800/50">
+                        <td className="px-2 py-1.5 text-gray-400 whitespace-nowrap">{new Date(m.createdAt).toLocaleString()}</td>
+                        <td className="px-2 py-1.5 text-gray-400">{formatPhone(m.callerPhone)}</td>
+                        <td className="px-2 py-1.5 text-gray-500 max-w-[200px] truncate">{m.content}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
           </div>
-          <div>
-            <p className="text-xs text-gray-500">All time</p>
-            <p className="font-bold text-white">${data.cost.totalAllTime.toFixed(2)}</p>
-            <p className="text-xs text-gray-400">SMS: ${data.cost.smsAllTime.toFixed(2)} · Calls: ${data.cost.callAllTime.toFixed(2)}</p>
-          </div>
-        </div>
-        <p className="text-xs text-gray-500 mt-2">Synced from Telnyx. Click Refresh Usage to fetch latest.</p>
-      </div>
-      {/* Skip logs */}
-      <div className="space-y-2">
-        <h4 className="text-sm font-medium text-gray-300">Skip Logs — every skipped message with reason</h4>
-        <div className="bg-gray-800/30 rounded-lg border border-gray-800 overflow-hidden max-h-48 overflow-y-auto">
-          {data.skipLogs.length === 0 ? (
-            <p className="p-4 text-gray-500 text-sm">No skips recorded yet</p>
-          ) : (
-            <table className="w-full text-sm">
-              <thead className="bg-gray-900/50 sticky top-0">
-                <tr>
-                  <th className="text-left px-3 py-2 text-gray-400">Time</th>
-                  <th className="text-left px-3 py-2 text-gray-400">Phone</th>
-                  <th className="text-left px-3 py-2 text-gray-400">Reason</th>
-                  <th className="text-left px-3 py-2 text-gray-400">Type</th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.skipLogs.map((log) => (
-                  <tr key={log.id} className="border-t border-gray-800/50">
-                    <td className="px-3 py-2 text-gray-300 whitespace-nowrap">
-                      {new Date(log.attemptedAt).toLocaleString()}
-                    </td>
-                    <td className="px-3 py-2 text-gray-300">{formatPhone(log.phoneNumber)}</td>
-                    <td className="px-3 py-2">
-                      <span className={`px-2 py-0.5 rounded text-xs ${
-                        log.reason === 'cooldown' ? 'bg-amber-500/20 text-amber-400' :
-                        log.reason === 'existing_contact' ? 'bg-blue-500/20 text-blue-400' :
-                        log.reason === 'blocked' ? 'bg-red-500/20 text-red-400' :
-                        'bg-gray-500/20 text-gray-400'
-                      }`}>
-                        {skipReasonLabel[log.reason] ?? log.reason}
-                      </span>
-                    </td>
-                    <td className="px-3 py-2 text-gray-500">{log.messageType ?? '—'}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </div>
-      </div>
-      {/* Recent message activity */}
-      <div className="space-y-2">
-        <h4 className="text-sm font-medium text-gray-300">Recent Message Activity</h4>
-        <div className="bg-gray-800/30 rounded-lg border border-gray-800 overflow-hidden max-h-48 overflow-y-auto">
-          {data.recentMessages.length === 0 ? (
-            <p className="p-4 text-gray-500 text-sm">No messages yet</p>
-          ) : (
-            <table className="w-full text-sm">
-              <thead className="bg-gray-900/50 sticky top-0">
-                <tr>
-                  <th className="text-left px-3 py-2 text-gray-400">Time</th>
-                  <th className="text-left px-3 py-2 text-gray-400">From</th>
-                  <th className="text-left px-3 py-2 text-gray-400">Dir</th>
-                  <th className="text-left px-3 py-2 text-gray-400">Content</th>
-                  <th className="text-right px-3 py-2 text-gray-400">Cost</th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.recentMessages.map((m) => (
-                  <tr key={m.id} className="border-t border-gray-800/50">
-                    <td className="px-3 py-2 text-gray-300 whitespace-nowrap">
-                      {new Date(m.createdAt).toLocaleString()}
-                    </td>
-                    <td className="px-3 py-2 text-gray-300">{formatPhone(m.callerPhone)}</td>
-                    <td className="px-3 py-2">
-                      <span className={m.direction === 'outbound' ? 'text-blue-400' : 'text-gray-400'}>
-                        {m.direction === 'outbound' ? 'Out' : 'In'}
-                      </span>
-                    </td>
-                    <td className="px-3 py-2 text-gray-400 max-w-xs truncate">{m.content}</td>
-                    <td className="px-3 py-2 text-right text-gray-400">
-                      {m.cost != null ? `$${m.cost.toFixed(4)}` : '—'}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </div>
-      </div>
+        </>
+      )}
+      <button
+        type="button"
+        onClick={() => setShowDetails(!showDetails)}
+        className="text-xs text-gray-500 hover:text-gray-400"
+      >
+        {showDetails ? 'Hide details' : 'Show details'}
+      </button>
     </div>
   )
 }
@@ -1478,6 +1400,16 @@ function StatusBadge({ status }: { status: string }) {
   return (
     <span className={`text-xs px-2.5 py-1 rounded-full border ${styles[status] || styles.canceled}`}>
       {status}
+    </span>
+  )
+}
+
+function StatusPill({ active, label }: { active: boolean; label: string }) {
+  return (
+    <span className={`text-xs px-2.5 py-1 rounded-full border ${
+      active ? 'bg-green-500/10 text-green-400 border-green-500/20' : 'bg-gray-500/10 text-gray-500 border-gray-500/20'
+    }`}>
+      {label}: {active ? 'On' : 'Off'}
     </span>
   )
 }

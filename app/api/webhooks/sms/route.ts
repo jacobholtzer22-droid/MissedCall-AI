@@ -10,9 +10,17 @@ import { Prisma } from '@prisma/client'
 import { db } from '@/lib/db'
 import Telnyx from 'telnyx'
 import Anthropic from '@anthropic-ai/sdk'
-import { getAvailableSlots } from '@/lib/google-calendar'
+import { addDays } from 'date-fns'
+import { getAvailableSlots, parseBusinessHours } from '@/lib/google-calendar'
+import {
+  notifyOwnerOnBookingCreated,
+  notifyOwnerOnBookingRequestNoCalendar,
+  notifyOwnerOnHumanNeeded,
+} from '@/lib/notify-owner'
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! })
+
+const DAY_NAMES = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'] as const
 
 const MAX_MESSAGES_PER_CONVERSATION = 20
 const BOOKING_INTENT_WORDS = ['book', 'appointment', 'schedule', 'booking', 'reserve']
@@ -126,8 +134,22 @@ export async function POST(request: NextRequest) {
       const bookingHandled = await handleSmsBookingFlow(business, conversation, text, from)
       if (bookingHandled) return new NextResponse('OK', { status: 200 })
 
-      // AI response
-      const aiResponse = await generateAIResponse(business, conversation, text)
+      // AI response (pass bookingFlowState so AI can guide back when customer goes off-topic)
+      const aiResponse = await generateAIResponse(business, conversation, text, conversation.bookingFlowState)
+
+      const cleanResponse = aiResponse
+        .replace(/\[APPOINTMENT_BOOKED:.*?\]/g, '')
+        .replace(/\[HUMAN_NEEDED(?:: reason="[^"]*")?\]/g, '')
+        .trim()
+
+      const conversationTranscript = [
+        ...conversation.messages.map((m) => ({
+          direction: m.direction,
+          content: m.content,
+          createdAt: m.createdAt as Date,
+        })),
+        { direction: 'outbound' as const, content: cleanResponse, createdAt: new Date() },
+      ]
 
       // Appointment booking tag
       const apptMatch = aiResponse.match(
@@ -135,7 +157,7 @@ export async function POST(request: NextRequest) {
       )
       if (apptMatch) {
         const [, name, service, datetime, notes] = apptMatch
-        await db.appointment.create({
+        const appointment = await db.appointment.create({
           data: {
             businessId: business.id,
             conversationId: conversation.id,
@@ -153,19 +175,58 @@ export async function POST(request: NextRequest) {
           data: { status: 'appointment_booked', callerName: name, intent: 'book_appointment', serviceRequested: service },
         })
         console.log('📅 Appointment booked:', { name, service, datetime })
+
+        if (business.calendarEnabled) {
+          try {
+            await notifyOwnerOnBookingCreated(business, {
+              id: appointment.id,
+              customerName: name,
+              customerPhone: from,
+              customerEmail: null,
+              serviceType: service,
+              scheduledAt: new Date(datetime),
+              notes: notes || null,
+              source: 'sms',
+            })
+          } catch (err) {
+            console.error('❌ Failed to notify owner of booking:', err)
+          }
+        } else {
+          try {
+            await notifyOwnerOnBookingRequestNoCalendar(business, {
+              customerName: name,
+              customerPhone: from,
+              service,
+              datetime,
+              notes: notes || null,
+              conversationTranscript,
+            })
+          } catch (err) {
+            console.error('❌ Failed to notify owner of booking request (no calendar):', err)
+          }
+        }
       }
 
-      const cleanResponse = aiResponse
-        .replace(/\[APPOINTMENT_BOOKED:.*?\]/g, '')
-        .replace(/\[HUMAN_NEEDED\]/g, '')
-        .trim()
-
-      if (aiResponse.includes('[HUMAN_NEEDED]')) {
+      const humanNeededMatch = aiResponse.match(/\[HUMAN_NEEDED(?:: reason="([^"]*)")?\]/)
+      if (humanNeededMatch) {
+        const [, reason] = humanNeededMatch
         await db.conversation.update({
           where: { id: conversation.id },
           data: { status: 'needs_review', intent: 'human_needed' },
         })
         console.log('🚨 Flagged for human review')
+
+        try {
+          await notifyOwnerOnHumanNeeded(business, {
+            customerName: conversation.callerName || 'Customer',
+            customerPhone: from,
+            reason: reason || null,
+            conversationTranscript,
+            conversationId: conversation.id,
+          })
+        } catch (err) {
+          console.error('❌ Failed to notify owner of human needed:', err)
+        }
       }
 
       await sendSMSAndLog(business, conversation.id, from, cleanResponse)
@@ -181,6 +242,63 @@ export async function POST(request: NextRequest) {
 }
 
 // ── SMS Booking Flow ────────────────────────────────────────────────
+// Fully conversational — NO booking links. AI handles everything via text.
+
+type BookingFlowState = {
+  step: 'greeting' | 'awaiting_name' | 'awaiting_service' | 'awaiting_notes' | 'awaiting_preference' | 'awaiting_selection' | 'confirmed'
+  customerName?: string
+  serviceType?: string
+  notes?: string
+  timePreference?: string  // Raw text: "tomorrow afternoon", "next week", etc.
+  offeredSlots?: { start: string; end: string; display: string }[]
+  services?: { value: string; label: string }[]
+  sentAt?: string
+}
+
+function getServicesList(business: { servicesOffered?: unknown }): { value: string; label: string }[] {
+  const raw = business.servicesOffered
+  if (!Array.isArray(raw) || raw.length === 0) {
+    return [{ value: 'Appointment', label: 'Appointment' }]
+  }
+  return raw.map((s: unknown) => {
+    if (typeof s === 'object' && s !== null && 'name' in s && typeof (s as { name: string }).name === 'string') {
+      const obj = s as { name: string; price?: number }
+      const priceStr = typeof obj.price === 'number' ? ` - $${obj.price}` : ''
+      return { value: obj.name, label: `${obj.name}${priceStr}` }
+    }
+    const name = typeof s === 'string' ? s : String(s)
+    return { value: name, label: name }
+  })
+}
+
+function looksLikeQuestion(text: string): boolean {
+  const t = text.trim()
+  if (t.includes('?')) return true
+  return /^(what|when|where|who|how|why|can|could|would|is|are|do|does|will|are you)\b/i.test(t)
+}
+
+function parseNameFromMessage(text: string): string {
+  const m = text.match(/(?:my name is|i'm|i am|this is|name is|it's)\s+(.+)/i)
+  return m ? m[1].trim() : text.trim()
+}
+
+function parseServiceSelection(text: string, services: { value: string; label: string }[]): string | null {
+  const num = parseInt(text.replace(/\D/g, ''), 10)
+  if (num >= 1 && num <= services.length) {
+    return services[num - 1].label
+  }
+  const lower = text.toLowerCase().trim()
+  const found = services.find(s => s.label.toLowerCase().includes(lower) || s.value.toLowerCase().includes(lower))
+  return found ? found.label : null
+}
+
+function parseNotesFromMessage(text: string): string {
+  const t = text.trim().toLowerCase()
+  if (!t || ['no', 'nope', 'nothing', 'skip', 'n/a', 'na', 'none', "don't have any", "i don't"].some(w => t === w || t.startsWith(w + ' '))) {
+    return ''
+  }
+  return text.trim()
+}
 
 async function handleSmsBookingFlow(
   business: any,
@@ -190,27 +308,44 @@ async function handleSmsBookingFlow(
 ): Promise<boolean> {
   if (!business.calendarEnabled) return false
 
-  const trimmed = text?.toLowerCase().trim() || ''
-  const flowState = (conversation.bookingFlowState as {
-    step?: string
-    slots?: { start: string; end: string; display: string }[]
-  } | null) ?? {}
+  const rawText = text?.trim() || ''
+  const trimmed = rawText.toLowerCase()
+  const rawFlowState = (conversation.bookingFlowState as Record<string, unknown> | null) ?? {}
+  // Support legacy step names
+  const legacyStep = rawFlowState.step as string
+  const mappedStep: BookingFlowState['step'] =
+    legacyStep === 'awaiting_slot' || legacyStep === 'awaiting_time'
+      ? 'awaiting_selection'
+      : (legacyStep as BookingFlowState['step']) || 'greeting'
 
-  // Already in flow: user is selecting a slot
-  if (flowState.step === 'awaiting_slot' && flowState.slots?.length) {
-    const selectedSlot = parseSlotSelection(trimmed, flowState.slots)
+  const flowState: BookingFlowState = {
+    ...rawFlowState,
+    step: mappedStep,
+    customerName: rawFlowState.customerName ?? conversation.callerName,
+    serviceType: rawFlowState.serviceType ?? conversation.serviceRequested,
+  } as BookingFlowState
+  const baseUrl =
+    process.env.NEXT_PUBLIC_APP_URL ??
+    (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'https://alignandacquire.com')
+  const tz = business.timezone ?? 'America/New_York'
+
+  // Resolve slots from state (support legacy 'slots' or new 'offeredSlots')
+  const offeredSlots = (flowState.offeredSlots ?? (rawFlowState.slots as SlotLike[] | undefined) ?? []) as SlotLike[]
+
+  // ── Step: awaiting_selection (user picking from offered slots) ──
+  const inSelectionStep = flowState.step === 'awaiting_selection'
+  if (inSelectionStep && offeredSlots.length > 0) {
+    const selectedSlot = parseSlotSelection(trimmed, offeredSlots)
     if (selectedSlot) {
-      const baseUrl =
-        process.env.NEXT_PUBLIC_APP_URL ??
-        (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'https://alignandacquire.com')
       const res = await fetch(`${baseUrl}/api/bookings/create`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           businessId: business.id,
-          customerName: conversation.callerName || 'Customer',
+          customerName: flowState.customerName || 'Customer',
           customerPhone: from,
-          serviceType: conversation.serviceRequested || 'Appointment',
+          serviceType: flowState.serviceType || 'Appointment',
+          notes: flowState.notes ?? undefined,
           slotStart: selectedSlot.start,
           conversationId: conversation.id,
         }),
@@ -220,7 +355,9 @@ async function handleSmsBookingFlow(
           where: { id: conversation.id },
           data: {
             status: 'appointment_booked',
+            callerName: flowState.customerName,
             intent: 'book_appointment',
+            serviceRequested: flowState.serviceType,
             bookingFlowState: Prisma.DbNull,
           },
         })
@@ -228,62 +365,451 @@ async function handleSmsBookingFlow(
         return true
       }
     }
-    // Invalid selection - clear flow and let AI handle
-    await db.conversation.update({
-      where: { id: conversation.id },
-      data: { bookingFlowState: Prisma.DbNull },
-    })
+    // "None of those work" / "something else" → ask for new preference
+    const wantsDifferentTimes = /\b(no|none|nope|those don't|doesn't work|something else|different|other)\b/.test(trimmed)
+    if (wantsDifferentTimes) {
+      const msg = `No problem! What day and time would be better for you?`
+      await sendSMSAndLog(business, conversation.id, from, msg)
+      await db.conversation.update({
+        where: { id: conversation.id },
+        data: {
+          bookingFlowState: JSON.parse(JSON.stringify({
+            step: 'awaiting_preference',
+            customerName: flowState.customerName,
+            serviceType: flowState.serviceType,
+            notes: flowState.notes,
+            sentAt: new Date().toISOString(),
+          })),
+        },
+      })
+      return true
+    }
+
+    // User gave a new time preference (e.g. "Thursday afternoon", "next week")
+    const timePref = parseTimePreference(trimmed, tz)
+    if (timePref) {
+      const { startStr, endStr, timeOfDay } = timePref
+      let slots = await getAvailableSlots(business.id, startStr, endStr)
+      slots = filterSlotsByTimeOfDay(slots, timeOfDay, tz)
+      const displaySlots = pickSlotsForPreference(slots, tz, business.businessHours, trimmed)
+      if (displaySlots.length > 0) {
+        const msg = formatSlotsMessage(displaySlots, tz)
+        await sendSMSAndLog(business, conversation.id, from, msg)
+        await db.conversation.update({
+          where: { id: conversation.id },
+          data: {
+            bookingFlowState: JSON.parse(JSON.stringify({
+              step: 'awaiting_selection',
+              customerName: flowState.customerName,
+              serviceType: flowState.serviceType,
+              notes: flowState.notes,
+              timePreference: trimmed,
+              offeredSlots: displaySlots,
+              sentAt: new Date().toISOString(),
+            })),
+          },
+        })
+        return true
+      }
+      // Requested time range has no slots — offer alternatives
+      const fallback = getNext3BusinessDays(tz, business.businessHours)
+      const fallbackSlots = await getAvailableSlots(business.id, fallback.startStr, fallback.endStr)
+      const altSlots = pickSlotsAcrossDays(fallbackSlots, tz, business.businessHours, 3)
+      if (altSlots.length > 0) {
+        const msg = `That slot is taken, but I've got:\n\n${formatSlotsMessage(altSlots, tz)}`
+        await sendSMSAndLog(business, conversation.id, from, msg)
+        await db.conversation.update({
+          where: { id: conversation.id },
+          data: {
+            bookingFlowState: JSON.parse(JSON.stringify({
+              step: 'awaiting_selection',
+              customerName: flowState.customerName,
+              serviceType: flowState.serviceType,
+              notes: flowState.notes,
+              offeredSlots: altSlots,
+              sentAt: new Date().toISOString(),
+            })),
+          },
+        })
+        return true
+      }
+      await sendSMSAndLog(
+        business,
+        conversation.id,
+        from,
+        `We don't have any availability in the next few days. Text us back when you'd like to try again or give us a call!`
+      )
+      await db.conversation.update({ where: { id: conversation.id }, data: { bookingFlowState: Prisma.DbNull } })
+      return true
+    }
+    // Invalid or unclear — let AI handle
+    return false
   }
 
-  // Detect booking intent (only if calendar/booking is enabled for this business)
-  const hasBookingIntent = BOOKING_INTENT_WORDS.some(w => trimmed.includes(w))
-  if (!hasBookingIntent || !business.calendarEnabled || !business.googleCalendarConnected) return false
-
-  const baseUrl =
-    process.env.NEXT_PUBLIC_APP_URL ??
-    (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'https://alignandacquire.com')
-  const bookingUrl = `${baseUrl}/book/${business.slug}`
-
-  // Fetch available slots for next 14 days (use business TZ for correct dates)
-  const tz = business.timezone ?? 'America/New_York'
-  const now = new Date()
-  const startStr = now.toLocaleDateString('en-CA', { timeZone: tz }) // YYYY-MM-DD
-  const endDate = new Date(now)
-  endDate.setDate(endDate.getDate() + 14)
-  const endStr = endDate.toLocaleDateString('en-CA', { timeZone: tz })
-
-  const slots = await getAvailableSlots(business.id, startStr, endStr)
-  const displaySlots = slots.slice(0, 8) // Max 8 slots for SMS
-
-  if (displaySlots.length === 0) {
-    await sendSMSAndLog(
-      business,
-      conversation.id,
-      from,
-      `Hi! You can book online here: ${bookingUrl}\n\nWe don't have any availability in the next few days. Please check the link for other dates or call us to schedule!`
-    )
+  // ── Step: awaiting_preference (asked "when works best?", waiting for answer) ──
+  if (flowState.step === 'awaiting_preference') {
+    if (looksLikeQuestion(rawText)) return false
+    const timePref = parseTimePreference(trimmed, tz)
+    if (timePref) {
+      const { startStr, endStr, timeOfDay } = timePref
+      let slots = await getAvailableSlots(business.id, startStr, endStr)
+      slots = filterSlotsByTimeOfDay(slots, timeOfDay, tz)
+      const displaySlots = pickSlotsForPreference(slots, tz, business.businessHours, trimmed)
+      if (displaySlots.length > 0) {
+        const msg = formatSlotsMessage(displaySlots, tz)
+        await sendSMSAndLog(business, conversation.id, from, msg)
+        await db.conversation.update({
+          where: { id: conversation.id },
+          data: {
+            bookingFlowState: JSON.parse(JSON.stringify({
+              step: 'awaiting_selection',
+              customerName: flowState.customerName,
+              serviceType: flowState.serviceType,
+              notes: flowState.notes,
+              timePreference: trimmed,
+              offeredSlots: displaySlots,
+              sentAt: new Date().toISOString(),
+            })),
+          },
+        })
+        return true
+      }
+      // No slots in that range — offer closest alternatives
+      const fallback = getNext3BusinessDays(tz, business.businessHours)
+      const fallbackSlots = await getAvailableSlots(business.id, fallback.startStr, fallback.endStr)
+      const altSlots = pickSlotsAcrossDays(fallbackSlots, tz, business.businessHours, 3)
+      if (altSlots.length > 0) {
+        const msg = `That slot is taken, but I've got:\n\n${formatSlotsMessage(altSlots, tz)}`
+        await sendSMSAndLog(business, conversation.id, from, msg)
+        await db.conversation.update({
+          where: { id: conversation.id },
+          data: {
+            bookingFlowState: JSON.parse(JSON.stringify({
+              step: 'awaiting_selection',
+              customerName: flowState.customerName,
+              serviceType: flowState.serviceType,
+              notes: flowState.notes,
+              offeredSlots: altSlots,
+              sentAt: new Date().toISOString(),
+            })),
+          },
+        })
+        return true
+      }
+      // No availability at all
+      await sendSMSAndLog(
+        business,
+        conversation.id,
+        from,
+        `We don't have any availability in the next few days. Text us back when you'd like to try again or give us a call!`
+      )
+      await db.conversation.update({ where: { id: conversation.id }, data: { bookingFlowState: Prisma.DbNull } })
+      return true
+    }
+    // Couldn't parse — ask for clarification
+    const msg = `No problem! What day and time would be better for you? (e.g. "tomorrow afternoon", "next week", "anytime")`
+    await sendSMSAndLog(business, conversation.id, from, msg)
     return true
   }
 
-  const lines = displaySlots.map((s, i) => {
-    const d = new Date(s.start)
-    const dateStr = d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
-    return `${i + 1}. ${dateStr} - ${s.display}`
-  })
-  const msg = `Hi! You can book online here: ${bookingUrl}\n\nOr pick a time below:\n${lines.join('\n')}\n\nReply with a number to book!`
-  await sendSMSAndLog(business, conversation.id, from, msg)
+  // ── Step: awaiting_name ──
+  if (flowState.step === 'awaiting_name') {
+    if (looksLikeQuestion(rawText)) return false
+    const name = parseNameFromMessage(rawText)
+    if (!name || name.length > 100) return false
+    const services = getServicesList(business)
+    const serviceLines =
+      services.length > 1
+        ? `\n\n${services.map((s, i) => `${i + 1}. ${s.label}`).join('\n')}\n\nReply with a number.`
+        : ''
+    const msg = `Nice to meet you ${name}! What can we help you with?${serviceLines}`.trim()
+    await sendSMSAndLog(business, conversation.id, from, msg)
+    await db.conversation.update({
+      where: { id: conversation.id },
+      data: {
+        bookingFlowState: JSON.parse(JSON.stringify({
+          step: 'awaiting_service',
+          customerName: name,
+          services,
+          sentAt: new Date().toISOString(),
+        })),
+      },
+    })
+    return true
+  }
 
+  // ── Step: awaiting_service ──
+  if (flowState.step === 'awaiting_service' && flowState.services?.length) {
+    if (looksLikeQuestion(rawText)) return false
+    const serviceType = parseServiceSelection(rawText, flowState.services)
+    if (!serviceType) return false
+    const msg = `Got it! Anything specific we should know to prepare for your ${serviceType}?`
+    await sendSMSAndLog(business, conversation.id, from, msg)
+    await db.conversation.update({
+      where: { id: conversation.id },
+      data: {
+        bookingFlowState: JSON.parse(JSON.stringify({
+          step: 'awaiting_notes',
+          customerName: flowState.customerName,
+          serviceType,
+          services: flowState.services,
+          sentAt: new Date().toISOString(),
+        })),
+      },
+    })
+    return true
+  }
+
+  // ── Step: awaiting_notes ──
+  if (flowState.step === 'awaiting_notes') {
+    if (looksLikeQuestion(rawText)) return false
+    const notes = parseNotesFromMessage(rawText)
+    const msg = `When works best for you? Do you have a day or time of day in mind?`
+    await sendSMSAndLog(business, conversation.id, from, msg)
+    await db.conversation.update({
+      where: { id: conversation.id },
+      data: {
+        bookingFlowState: JSON.parse(JSON.stringify({
+          step: 'awaiting_preference',
+          customerName: flowState.customerName,
+          serviceType: flowState.serviceType,
+          notes: notes || undefined,
+          services: flowState.services,
+          sentAt: new Date().toISOString(),
+        })),
+      },
+    })
+    return true
+  }
+
+  // ── Detect booking intent (start flow) ──
+  const hasBookingIntent = BOOKING_INTENT_WORDS.some(w => trimmed.includes(w))
+  if (!hasBookingIntent || !business.calendarEnabled || !business.googleCalendarConnected) return false
+
+  const msg = `Hey! I'd love to help you get something scheduled. What's your name?`
+  await sendSMSAndLog(business, conversation.id, from, msg)
   await db.conversation.update({
     where: { id: conversation.id },
     data: {
       bookingFlowState: JSON.parse(JSON.stringify({
-        step: 'awaiting_slot',
-        slots: displaySlots,
+        step: 'awaiting_name',
         sentAt: new Date().toISOString(),
       })),
     },
   })
   return true
+}
+
+/** Get next N business days (skip days when business is closed). */
+function getNext3BusinessDays(tz: string, businessHoursRaw: unknown): { startStr: string; endStr: string } {
+  const hours = parseBusinessHours(businessHoursRaw)
+  const now = new Date()
+  const todayStr = now.toLocaleDateString('en-CA', { timeZone: tz })
+  const todayNoon = new Date(todayStr + 'T12:00:00Z')
+  const days: string[] = []
+  for (let offset = 0; offset < 14 && days.length < 3; offset++) {
+    const d = addDays(todayNoon, offset)
+    const dateStr = d.toLocaleDateString('en-CA', { timeZone: tz })
+    const dayName = DAY_NAMES[d.getDay()]
+    if (hours[dayName]) {
+      days.push(dateStr)
+    }
+  }
+  if (days.length === 0) {
+    return { startStr: todayStr, endStr: todayStr }
+  }
+  return { startStr: days[0], endStr: days[days.length - 1] }
+}
+
+type SlotLike = { start: string; end: string; display: string }
+
+/** Pick up to 3 slots per day (morning, midday, afternoon) across multiple days. */
+function pickSlotsAcrossDays(
+  slots: SlotLike[],
+  tz: string,
+  _businessHoursRaw: unknown,
+  targetDays: number
+): SlotLike[] {
+  const byDay = new Map<string, SlotLike[]>()
+  for (const s of slots) {
+    const d = new Date(s.start)
+    const dateStr = d.toLocaleDateString('en-CA', { timeZone: tz })
+    if (!byDay.has(dateStr)) byDay.set(dateStr, [])
+    byDay.get(dateStr)!.push(s)
+  }
+  const sortedDays = Array.from(byDay.keys()).sort()
+  const result: SlotLike[] = []
+  let globalIndex = 1
+  for (let i = 0; i < Math.min(targetDays, sortedDays.length); i++) {
+    const daySlots = byDay.get(sortedDays[i])!.sort(
+      (a, b) => new Date(a.start).getTime() - new Date(b.start).getTime()
+    )
+    const picked = pickBest3ForDay(daySlots)
+    for (const slot of picked) {
+      result.push(slot)
+      globalIndex++
+    }
+  }
+  return result
+}
+
+/** Pick up to 3 slots for one day: morning, midday, afternoon. */
+function pickBest3ForDay(slots: SlotLike[]): SlotLike[] {
+  if (slots.length <= 3) return slots
+  const sorted = [...slots].sort((a, b) => new Date(a.start).getTime() - new Date(b.start).getTime())
+  const first = sorted[0]
+  const last = sorted[sorted.length - 1]
+  const midIdx = Math.floor(sorted.length / 2)
+  const mid = sorted[midIdx]
+  return [first, mid, last]
+}
+
+/** Filter slots by time of day: morning (<12), afternoon (12-17), evening (17+). */
+function filterSlotsByTimeOfDay(
+  slots: SlotLike[],
+  timeOfDay: 'morning' | 'afternoon' | 'evening' | undefined,
+  tz: string
+): SlotLike[] {
+  if (!timeOfDay) return slots
+  return slots.filter(s => {
+    const d = new Date(s.start)
+    const hour = parseInt(d.toLocaleTimeString('en-US', { hour: 'numeric', hour12: false, timeZone: tz }), 10)
+    if (timeOfDay === 'morning') return hour < 12
+    if (timeOfDay === 'afternoon') return hour >= 12 && hour < 17
+    if (timeOfDay === 'evening') return hour >= 17
+    return true
+  })
+}
+
+/** Pick slots based on preference: tomorrow→2-3, next week→3-4, anytime→3 across days. */
+function pickSlotsForPreference(
+  slots: SlotLike[],
+  tz: string,
+  businessHoursRaw: unknown,
+  preferenceText: string
+): SlotLike[] {
+  const t = preferenceText.toLowerCase()
+  if (/\btomorrow\b/.test(t)) {
+    return pickSlotsAcrossDays(slots, tz, businessHoursRaw, 1).slice(0, 3)
+  }
+  if (/\bnext\s+week\b/.test(t)) {
+    return pickSlotsAcrossDays(slots, tz, businessHoursRaw, 7).slice(0, 4)
+  }
+  if (/\b(anytime|whenever|asap|as\s+soon\s+as\s+possible)\b/.test(t)) {
+    return pickSlotsAcrossDays(slots, tz, businessHoursRaw, 3).slice(0, 3)
+  }
+  return pickSlotsAcrossDays(slots, tz, businessHoursRaw, 3).slice(0, 4)
+}
+
+function formatSlotsMessage(slots: SlotLike[], tz: string): string {
+  const lines: string[] = ["Here's what I've got:", '']
+  slots.forEach((s, i) => {
+    const d = new Date(s.start)
+    const dayLabel = d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', timeZone: tz })
+    lines.push(`${i + 1}. ${dayLabel} at ${s.display}`)
+  })
+  lines.push('')
+  lines.push("Reply with a number or tell me something else that works!")
+  return lines.join('\n').trim()
+}
+
+/** Parse natural language timing into date range + optional time-of-day filter. */
+function parseTimePreference(
+  text: string,
+  tz: string
+): { startStr: string; endStr: string; timeOfDay?: 'morning' | 'afternoon' | 'evening' } | null {
+  const t = text.toLowerCase().trim()
+  const dayNames: Record<string, number> = {
+    sunday: 0, monday: 1, tuesday: 2, wednesday: 3, thursday: 4, friday: 5, saturday: 6,
+    sun: 0, mon: 1, tue: 2, wed: 3, thu: 4, fri: 5, sat: 6,
+  }
+  const now = new Date()
+  const todayStr = now.toLocaleDateString('en-CA', { timeZone: tz })
+  const todayNoon = new Date(todayStr + 'T12:00:00Z')
+  const todayDow = todayNoon.getDay()
+
+  // anytime, whenever, ASAP, as soon as possible → next 3 business days
+  if (/\b(anytime|whenever|asap|as\s+soon\s+as\s+possible|soonest|earliest)\b/.test(t)) {
+    const { startStr, endStr } = getNext3BusinessDays(tz, null)
+    return { startStr, endStr }
+  }
+
+  let startDate: Date | null = null
+  let timeOfDay: 'morning' | 'afternoon' | 'evening' | undefined
+
+  // "this Friday", "next Monday" etc.
+  if (/\bthis\s+(monday|tuesday|wednesday|thursday|friday|saturday|sunday|mon|tue|wed|thu|fri|sat|sun)\b/i.test(t)) {
+    const match = t.match(/this\s+(\w+)/i)
+    if (match) {
+      const name = match[1].toLowerCase()
+      const dow = dayNames[name] ?? dayNames[name.slice(0, 3)]
+      if (dow !== undefined) {
+        let daysAhead = dow - todayDow
+        if (daysAhead <= 0) daysAhead += 7
+        startDate = addDays(todayNoon, daysAhead)
+      }
+    }
+  } else if (/\bnext\s+week\b/.test(t)) {
+    startDate = addDays(todayNoon, 7)
+  } else if (/\bnext\s+(monday|tuesday|wednesday|thursday|friday|saturday|sunday|mon|tue|wed|thu|fri|sat|sun)\b/i.test(t)) {
+    const match = t.match(/next\s+(\w+)/i)
+    if (match) {
+      const name = match[1].toLowerCase()
+      const dow = dayNames[name] ?? dayNames[name.slice(0, 3)]
+      if (dow !== undefined) {
+        let daysAhead = dow - todayDow
+        if (daysAhead <= 0) daysAhead += 7
+        daysAhead += 7 // "next" Monday = Monday of next week
+        startDate = addDays(todayNoon, daysAhead)
+      }
+    }
+  } else if (/\btomorrow\b/.test(t)) {
+    startDate = addDays(todayNoon, 1)
+  } else if (/\btoday\b/.test(t)) {
+    startDate = todayNoon
+  } else {
+    for (const [name, dow] of Object.entries(dayNames)) {
+      if (new RegExp(`\\b${name}\\b`).test(t)) {
+        let daysAhead = dow - todayDow
+        if (daysAhead <= 0) daysAhead += 7
+        startDate = addDays(todayNoon, daysAhead)
+        break
+      }
+    }
+  }
+
+  // Time of day: morning, afternoon, evening, after X, before X, around X
+  if (/\b(morning|am)\b/.test(t) || /\bbefore\s+noon\b/.test(t)) {
+    timeOfDay = 'morning'
+  } else if (/\b(afternoon|pm)\b/.test(t) || /\bafter\s+(noon|12)\b/.test(t)) {
+    timeOfDay = 'afternoon'
+  } else if (/\bevening\b/.test(t) || /\bafter\s+[56]\s*(pm)?\b/.test(t)) {
+    timeOfDay = 'evening'
+  } else if (/\bbefore\s+noon\b|\baround\s+\d|^\d\s*(am|pm)\b/i.test(t)) {
+    timeOfDay = 'morning'
+  } else if (/\bafter\s+\d{1,2}\s*(pm)?|\baround\s+\d{1,2}\b/i.test(t)) {
+    timeOfDay = 'afternoon'
+  }
+
+  // If no specific day, "ASAP" etc. already handled; check for standalone time-of-day
+  if (!startDate && (timeOfDay || /\b(morning|afternoon|evening)\b/.test(t))) {
+    const { startStr, endStr } = getNext3BusinessDays(tz, null)
+    return { startStr, endStr, timeOfDay: timeOfDay ?? 'afternoon' }
+  }
+
+  if (!startDate) return null
+
+  const startStr = startDate.toLocaleDateString('en-CA', { timeZone: tz })
+  const endDate = new Date(startDate)
+  if (/\bnext\s+week\b/.test(t)) {
+    endDate.setDate(endDate.getDate() + 6)
+  } else if (timeOfDay) {
+    endDate.setDate(endDate.getDate() + 1)
+  } else {
+    endDate.setDate(endDate.getDate() + 2)
+  }
+  const endStr = endDate.toLocaleDateString('en-CA', { timeZone: tz })
+  return { startStr, endStr, timeOfDay }
 }
 
 function parseSlotSelection(text: string, slots: { start: string; display: string }[]): { start: string } | null {
@@ -308,18 +834,37 @@ function parseSlotSelection(text: string, slots: { start: string; display: strin
 
 // ── Helpers ─────────────────────────────────────────────────────────
 
-async function generateAIResponse(business: any, conversation: any, latestMessage: string): Promise<string> {
+async function generateAIResponse(
+  business: any,
+  conversation: any,
+  latestMessage: string,
+  bookingFlowState?: unknown
+): Promise<string> {
   const conversationHistory = conversation.messages.map((msg: any) => ({
     role: msg.direction === 'inbound' ? ('user' as const) : ('assistant' as const),
     content: msg.content,
   }))
+
+  const flowState = bookingFlowState as BookingFlowState | null | undefined
+  const inBookingFlow = flowState?.step
+  const flowGuidance = inBookingFlow
+    ? `
+BOOKING FLOW CONTEXT: The customer is in a conversational booking flow via SMS. Current step: ${flowState.step}.
+- If they asked a question mid-flow (e.g. "how much does it cost?"): answer briefly, then guide them back.
+- awaiting_name: "What's your name?"
+- awaiting_service: remind them to pick a service (by number or name)
+- awaiting_notes: "Anything specific we should know? (Reply 'no' to skip)"
+- awaiting_preference: "When works best for you? Do you have a day or time in mind?" (e.g. tomorrow, next week, anytime)
+- awaiting_selection: remind them to reply with a number to pick a time, or describe a different time
+Keep responses natural and conversational. No booking links — everything happens in the text conversation.`
+    : ''
 
   const systemPrompt = `You are a friendly SMS assistant for ${business.name}. You're helping someone who tried to call.
 
 GOALS:
 1. Be helpful, friendly, and brief (SMS should be under 160 chars when possible)
 2. Understand what they need
-3. If they want an appointment: get their name, service needed, and preferred date/time
+3. If they want an appointment: the SMS booking flow will collect name, service, notes, and time - you may see customers mid-flow
 4. Answer questions about the business
 5. If you can't help or they're upset, flag for human follow-up
 
@@ -333,7 +878,8 @@ RULES:
 - Keep responses SHORT (1-2 sentences ideal)
 - Be warm and natural, not robotic
 - Don't make up information
-- If someone seems upset or you can't help, add [HUMAN_NEEDED] at the end
+- If someone seems upset or you can't help, add [HUMAN_NEEDED] at the end (optional: [HUMAN_NEEDED: reason="brief reason"] to help the owner)
+${flowGuidance}
 
 WHEN BOOKING IS CONFIRMED (you have name + service + date/time):
 Add this EXACT tag at the end of your message:

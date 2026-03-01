@@ -10,7 +10,6 @@ import { db } from '@/lib/db'
 import Telnyx from 'telnyx'
 import { deleteCalendarEvent } from '@/lib/google-calendar'
 import { getBusinessForDashboard } from '@/lib/get-business-for-dashboard'
-import { notifyOwnerOnBookingCancelled } from '@/lib/notify-owner'
 
 const ADMIN_USER_ID = process.env.ADMIN_USER_ID
 
@@ -87,20 +86,6 @@ export async function POST(
       } catch (smsErr) {
         console.error('Failed to send cancellation SMS:', smsErr)
       }
-    }
-
-    // Notify business owner (SMS + email)
-    try {
-      await notifyOwnerOnBookingCancelled(appointment.business, {
-        id: appointment.id,
-        customerName: appointment.customerName,
-        customerPhone: appointment.customerPhone,
-        customerEmail: appointment.customerEmail,
-        serviceType: appointment.serviceType,
-        scheduledAt: appointment.scheduledAt,
-      })
-    } catch (notifyErr) {
-      console.error('Failed to notify owner of cancelled booking:', notifyErr)
     }
 
     return NextResponse.json({ success: true })

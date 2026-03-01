@@ -6,7 +6,7 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { getAvailableSlotsWithDebug } from '@/lib/google-calendar'
+import { getAvailableSlots } from '@/lib/google-calendar'
 
 export async function GET(request: NextRequest) {
   try {
@@ -53,29 +53,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Start date must be before end date' }, { status: 400 })
     }
 
-    const { slots, debug } = await getAvailableSlotsWithDebug(
-      business.id,
-      effectiveStart,
-      effectiveEnd,
-      business.slug
-    )
-
-    // Console logging for debugging
-    console.log('[available-slots] businessId/slug:', { businessId: business.id, slug: business.slug })
-    console.log('[available-slots] calendarEnabled:', debug.calendarEnabled)
-    console.log('[available-slots] googleCalendarConnected:', debug.googleCalendarConnected)
-    console.log('[available-slots] tokensExist:', debug.tokensExist)
-    console.log('[available-slots] businessHours:', JSON.stringify(debug.businessHours))
-    console.log('[available-slots] timezone:', debug.timezone)
-    console.log('[available-slots] dateRangeQueried:', debug.dateRangeQueried)
-    console.log('[available-slots] timeMin/timeMax:', { timeMin: debug.timeMin, timeMax: debug.timeMax })
-    console.log('[available-slots] googleCalendarBusyTimes:', JSON.stringify(debug.googleCalendarBusyTimes))
-    if (debug.googleCalendarError) {
-      console.error('[available-slots] googleCalendarError:', debug.googleCalendarError)
-    }
-    console.log('[available-slots] slotsBeforeFiltering:', debug.slotsBeforeFiltering)
-    console.log('[available-slots] slotsAfterPastFilter:', debug.slotsAfterPastFilter)
-    console.log('[available-slots] finalSlotCount:', debug.finalSlotCount)
+    const slots = await getAvailableSlots(business.id, effectiveStart, effectiveEnd)
 
     // Parse services for booking dropdown: supports { name, price? } or plain strings (duration not shown to customers)
     const rawServices = business.servicesOffered
@@ -98,7 +76,6 @@ export async function GET(request: NextRequest) {
       slotDurationMinutes: business.slotDurationMinutes ?? 30,
       calendarEnabled: true,
       servicesOffered,
-      debug,
     })
   } catch (error) {
     console.error('Available slots error:', error)
