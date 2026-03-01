@@ -10,7 +10,7 @@ import { Prisma } from '@prisma/client'
 import { db } from '@/lib/db'
 import Telnyx from 'telnyx'
 import Anthropic from '@anthropic-ai/sdk'
-import { addDays } from 'date-fns'
+import { addDays, addMonths, addYears } from 'date-fns'
 import { TZDate } from '@date-fns/tz'
 import { getAvailableSlots, parseBusinessHours } from '@/lib/google-calendar'
 import {
@@ -23,6 +23,25 @@ import { recordMessageSent } from '@/lib/sms-cooldown'
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! })
 
 const DAY_NAMES = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'] as const
+const MONTH_NAMES: Record<string, number> = {
+  january: 0, february: 1, march: 2, april: 3, may: 4, june: 5, july: 6,
+  august: 7, september: 8, october: 9, november: 10, december: 11,
+  jan: 0, feb: 1, mar: 2, apr: 3, jun: 5, jul: 6, aug: 7, sep: 8, sept: 8, oct: 9, nov: 10, dec: 11,
+}
+
+/** Format date as "Friday, March 6th" for clear SMS confirmation. */
+function formatDateFull(isoOrDateStr: string | Date, tz: string): string {
+  const d = typeof isoOrDateStr === 'string' ? new Date(isoOrDateStr) : isoOrDateStr
+  const day = parseInt(d.toLocaleDateString('en-CA', { day: 'numeric', timeZone: tz }), 10)
+  const ordinal = (n: number) => {
+    const s = ['th', 'st', 'nd', 'rd']
+    const v = n % 100
+    return n + (s[(v - 20) % 10] || s[v] || s[0])
+  }
+  const weekday = d.toLocaleDateString('en-US', { weekday: 'long', timeZone: tz })
+  const month = d.toLocaleDateString('en-US', { month: 'long', timeZone: tz })
+  return `${weekday}, ${month} ${ordinal(day)}`
+}
 
 const MAX_MESSAGES_PER_CONVERSATION = 20
 const BOOKING_INTENT_WORDS = ['book', 'appointment', 'schedule', 'booking', 'reserve']
@@ -544,7 +563,35 @@ async function handleSmsBookingFlow(
     // User gave a new time preference (e.g. "Thursday afternoon", "next week")
     const timePref = parseTimePreference(trimmed, tz)
     if (timePref) {
-      const { startStr, endStr, timeOfDay } = timePref
+      const { startStr, endStr, timeOfDay, isPastDate } = timePref
+      if (isPastDate) {
+        const fallback = getNext3BusinessDays(tz, business.businessHours)
+        let fallbackSlots = await getAvailableSlots(business.id, fallback.startStr, fallback.endStr)
+        fallbackSlots = filterPastSlots(fallbackSlots, tz)
+        const altSlots = pickSlotsAcrossDays(fallbackSlots, tz, business.businessHours, 3)
+        if (altSlots.length > 0) {
+          const msg = `That date has already passed. Would you like to book for one of these times instead?\n\n${formatSlotsMessage(altSlots, tz)}`
+          await sendSMSAndLog(business, conversation.id, from, msg)
+          await db.conversation.update({
+            where: { id: conversation.id },
+            data: {
+              bookingFlowState: JSON.parse(JSON.stringify({
+                step: 'awaiting_selection',
+                customerName: flowState.customerName,
+                serviceType: flowState.serviceType,
+                notes: flowState.notes,
+                customerAddress: flowState.customerAddress,
+                offeredSlots: altSlots,
+                sentAt: new Date().toISOString(),
+              })),
+            },
+          })
+          return true
+        }
+        await sendSMSAndLog(business, conversation.id, from, `That date has already passed. We don't have availability in the next few days — text back when you'd like to try again or give us a call!`)
+        await db.conversation.update({ where: { id: conversation.id }, data: { bookingFlowState: Prisma.DbNull } })
+        return true
+      }
       let slots = await getAvailableSlots(business.id, startStr, endStr)
       slots = filterPastSlots(slots, tz)
       slots = filterSlotsByTimeOfDay(slots, timeOfDay, tz)
@@ -569,13 +616,14 @@ async function handleSmsBookingFlow(
         })
         return true
       }
-      // Requested time range has no slots — offer alternatives
+      // Requested date has no availability — offer alternatives
+      const dateLabel = formatDateFull(startStr + 'T12:00:00', tz)
       const fallback = getNext3BusinessDays(tz, business.businessHours)
       let fallbackSlots = await getAvailableSlots(business.id, fallback.startStr, fallback.endStr)
       fallbackSlots = filterPastSlots(fallbackSlots, tz)
       const altSlots = pickSlotsAcrossDays(fallbackSlots, tz, business.businessHours, 3)
       if (altSlots.length > 0) {
-        const msg = `That slot is taken, but I've got:\n\n${formatSlotsMessage(altSlots, tz)}`
+        const msg = `Sorry, ${dateLabel} is fully booked. How about one of these times?\n\n${formatSlotsMessage(altSlots, tz)}`
         await sendSMSAndLog(business, conversation.id, from, msg)
         await db.conversation.update({
           where: { id: conversation.id },
@@ -611,7 +659,35 @@ async function handleSmsBookingFlow(
     if (looksLikeQuestion(rawText)) return false
     const timePref = parseTimePreference(trimmed, tz)
     if (timePref) {
-      const { startStr, endStr, timeOfDay } = timePref
+      const { startStr, endStr, timeOfDay, isPastDate } = timePref
+      if (isPastDate) {
+        const fallback = getNext3BusinessDays(tz, business.businessHours)
+        let fallbackSlots = await getAvailableSlots(business.id, fallback.startStr, fallback.endStr)
+        fallbackSlots = filterPastSlots(fallbackSlots, tz)
+        const altSlots = pickSlotsAcrossDays(fallbackSlots, tz, business.businessHours, 3)
+        if (altSlots.length > 0) {
+          const msg = `That date has already passed. Would you like to book for one of these times instead?\n\n${formatSlotsMessage(altSlots, tz)}`
+          await sendSMSAndLog(business, conversation.id, from, msg)
+          await db.conversation.update({
+            where: { id: conversation.id },
+            data: {
+              bookingFlowState: JSON.parse(JSON.stringify({
+                step: 'awaiting_selection',
+                customerName: flowState.customerName,
+                serviceType: flowState.serviceType,
+                notes: flowState.notes,
+                customerAddress: flowState.customerAddress,
+                offeredSlots: altSlots,
+                sentAt: new Date().toISOString(),
+              })),
+            },
+          })
+          return true
+        }
+        await sendSMSAndLog(business, conversation.id, from, `That date has already passed. We don't have availability in the next few days — text back when you'd like to try again or give us a call!`)
+        await db.conversation.update({ where: { id: conversation.id }, data: { bookingFlowState: Prisma.DbNull } })
+        return true
+      }
       let slots = await getAvailableSlots(business.id, startStr, endStr)
       slots = filterPastSlots(slots, tz)
       slots = filterSlotsByTimeOfDay(slots, timeOfDay, tz)
@@ -636,13 +712,14 @@ async function handleSmsBookingFlow(
         })
         return true
       }
-      // No slots in that range — offer closest alternatives
+      // No slots on that date — offer closest alternatives (date is fully booked)
+      const dateLabel = formatDateFull(startStr + 'T12:00:00', tz)
       const fallback = getNext3BusinessDays(tz, business.businessHours)
       let fallbackSlots = await getAvailableSlots(business.id, fallback.startStr, fallback.endStr)
       fallbackSlots = filterPastSlots(fallbackSlots, tz)
       const altSlots = pickSlotsAcrossDays(fallbackSlots, tz, business.businessHours, 3)
       if (altSlots.length > 0) {
-        const msg = `That slot is taken, but I've got:\n\n${formatSlotsMessage(altSlots, tz)}`
+        const msg = `Sorry, ${dateLabel} is fully booked. How about one of these times?\n\n${formatSlotsMessage(altSlots, tz)}`
         await sendSMSAndLog(business, conversation.id, from, msg)
         await db.conversation.update({
           where: { id: conversation.id },
@@ -660,7 +737,6 @@ async function handleSmsBookingFlow(
         })
         return true
       }
-      // No availability at all
       await sendSMSAndLog(
         business,
         conversation.id,
@@ -902,8 +978,7 @@ function pickSlotsForPreference(
 function formatSlotsMessage(slots: SlotLike[], tz: string): string {
   const lines: string[] = ["Here are some times to schedule your free in-person quote:", '']
   slots.forEach((s, i) => {
-    const d = new Date(s.start)
-    const dayLabel = d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', timeZone: tz })
+    const dayLabel = formatDateFull(s.start, tz)
     lines.push(`${i + 1}. ${dayLabel} at ${s.display}`)
   })
   lines.push('')
@@ -911,11 +986,15 @@ function formatSlotsMessage(slots: SlotLike[], tz: string): string {
   return lines.join('\n').trim()
 }
 
+type TimePreferenceResult = {
+  startStr: string
+  endStr: string
+  timeOfDay?: 'morning' | 'afternoon' | 'evening'
+  isPastDate?: boolean
+}
+
 /** Parse natural language timing into date range + optional time-of-day filter. */
-function parseTimePreference(
-  text: string,
-  tz: string
-): { startStr: string; endStr: string; timeOfDay?: 'morning' | 'afternoon' | 'evening' } | null {
+function parseTimePreference(text: string, tz: string): TimePreferenceResult | null {
   const t = text.toLowerCase().trim()
   const dayNames: Record<string, number> = {
     sunday: 0, monday: 1, tuesday: 2, wednesday: 3, thursday: 4, friday: 5, saturday: 6,
@@ -926,6 +1005,7 @@ function parseTimePreference(
   const [y, m, d] = todayStr.split('-').map(Number)
   const todayStart = new TZDate(y, m - 1, d, 0, 0, 0, 0, tz)
   const todayDow = nowInTz.getDay()
+  const todayMs = nowInTz.getTime()
 
   // anytime, whenever, ASAP, as soon as possible → next 3 business days
   if (/\b(anytime|whenever|asap|as\s+soon\s+as\s+possible|soonest|earliest)\b/.test(t)) {
@@ -936,8 +1016,45 @@ function parseTimePreference(
   let startDate: Date | null = null
   let timeOfDay: 'morning' | 'afternoon' | 'evening' | undefined
 
-  // "this Friday", "next Monday" etc. — day names mean NEXT upcoming occurrence (including today)
-  if (/\bthis\s+(monday|tuesday|wednesday|thursday|friday|saturday|sunday|mon|tue|wed|thu|fri|sat|sun)\b/i.test(t)) {
+  // "this weekend" = upcoming Saturday
+  if (/\bthis\s+weekend\b/i.test(t)) {
+    const satDow = 6
+    let daysAhead = satDow - todayDow
+    if (daysAhead < 0) daysAhead += 7
+    startDate = addDays(todayStart, daysAhead)
+  }
+  // "the 6th" or "6th" or "on the 15th" = day of month (current or next month if passed)
+  else if (/\b(?:the\s+)?(\d{1,2})(?:st|nd|rd|th)?\b/.test(t) && !/\b(monday|tuesday|wednesday|thursday|friday|saturday|sunday|jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\b/i.test(t)) {
+    const match = t.match(/(?:the\s+)?(\d{1,2})(?:st|nd|rd|th)?/i)
+    if (match) {
+      const dayOfMonth = parseInt(match[1], 10)
+      if (dayOfMonth >= 1 && dayOfMonth <= 31) {
+        let candidate = new TZDate(y, m - 1, Math.min(dayOfMonth, 28), 0, 0, 0, 0, tz)
+        if (candidate.getDate() !== dayOfMonth) candidate.setDate(dayOfMonth)
+        if (candidate.getTime() < todayMs) candidate = addMonths(candidate, 1)
+        if (candidate.getDate() !== dayOfMonth) candidate.setDate(Math.min(dayOfMonth, new Date(candidate.getFullYear(), candidate.getMonth() + 1, 0).getDate()))
+        startDate = candidate
+      }
+    }
+  }
+  // "March 6th" or "March 6" or "march 15" = specific date
+  else if (/\b(january|february|march|april|may|june|july|august|september|october|november|december|jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)\s+(\d{1,2})(?:st|nd|rd|th)?\b/i.test(t)) {
+    const match = t.match(/(\w+)\s+(\d{1,2})(?:st|nd|rd|th)?/i)
+    if (match) {
+      const monthName = match[1].toLowerCase()
+      const monthIdx = MONTH_NAMES[monthName] ?? MONTH_NAMES[monthName.slice(0, 3)]
+      const dayOfMonth = parseInt(match[2], 10)
+      if (monthIdx !== undefined && dayOfMonth >= 1 && dayOfMonth <= 31) {
+        let candidate = new TZDate(y, monthIdx, Math.min(dayOfMonth, 28), 0, 0, 0, 0, tz)
+        if (candidate.getDate() !== dayOfMonth) candidate.setDate(dayOfMonth)
+        if (candidate.getTime() < todayMs) candidate = addYears(candidate, 1)
+        if (candidate.getDate() !== dayOfMonth) candidate.setDate(Math.min(dayOfMonth, new Date(candidate.getFullYear(), candidate.getMonth() + 1, 0).getDate()))
+        startDate = candidate
+      }
+    }
+  }
+  // "this Friday", "this Monday" — next upcoming occurrence (including today)
+  else if (/\bthis\s+(monday|tuesday|wednesday|thursday|friday|saturday|sunday|mon|tue|wed|thu|fri|sat|sun)\b/i.test(t)) {
     const match = t.match(/this\s+(\w+)/i)
     if (match) {
       const name = match[1].toLowerCase()
@@ -948,9 +1065,9 @@ function parseTimePreference(
         startDate = addDays(todayStart, daysAhead)
       }
     }
-  } else if (/\bnext\s+week\b/.test(t)) {
-    startDate = addDays(todayStart, 7)
-  } else if (/\bnext\s+(monday|tuesday|wednesday|thursday|friday|saturday|sunday|mon|tue|wed|thu|fri|sat|sun)\b/i.test(t)) {
+  }
+  // "next Monday" = Monday of next week
+  else if (/\bnext\s+(monday|tuesday|wednesday|thursday|friday|saturday|sunday|mon|tue|wed|thu|fri|sat|sun)\b/i.test(t)) {
     const match = t.match(/next\s+(\w+)/i)
     if (match) {
       const name = match[1].toLowerCase()
@@ -958,16 +1075,22 @@ function parseTimePreference(
       if (dow !== undefined) {
         let daysAhead = dow - todayDow
         if (daysAhead <= 0) daysAhead += 7
-        daysAhead += 7 // "next" Monday = Monday of next week
+        daysAhead += 7
         startDate = addDays(todayStart, daysAhead)
       }
     }
-  } else if (/\btomorrow\b/.test(t)) {
+  }
+  else if (/\bnext\s+week\b/.test(t)) {
+    startDate = addDays(todayStart, 7)
+  }
+  else if (/\btomorrow\b/.test(t)) {
     startDate = addDays(todayStart, 1)
-  } else if (/\btoday\b/.test(t)) {
+  }
+  else if (/\btoday\b/.test(t)) {
     startDate = todayStart
-  } else {
-    // Standalone day name (e.g. "Monday", "Thursday") = next upcoming occurrence, including today
+  }
+  else {
+    // Standalone day name (e.g. "Friday", "Thursday works") = next upcoming occurrence, including today
     for (const [name, dow] of Object.entries(dayNames)) {
       if (new RegExp(`\\b${name}\\b`).test(t)) {
         let daysAhead = dow - todayDow
@@ -978,7 +1101,7 @@ function parseTimePreference(
     }
   }
 
-  // Time of day: morning, afternoon, evening, after X, before X, around X
+  // Time of day: morning, afternoon, evening
   if (/\b(morning|am)\b/.test(t) || /\bbefore\s+noon\b/.test(t)) {
     timeOfDay = 'morning'
   } else if (/\b(afternoon|pm)\b/.test(t) || /\bafter\s+(noon|12)\b/.test(t)) {
@@ -991,7 +1114,7 @@ function parseTimePreference(
     timeOfDay = 'afternoon'
   }
 
-  // If no specific day, "ASAP" etc. already handled; check for standalone time-of-day
+  // Standalone time-of-day without specific day
   if (!startDate && (timeOfDay || /\b(morning|afternoon|evening)\b/.test(t))) {
     const { startStr, endStr } = getNext3BusinessDays(tz, null)
     return { startStr, endStr, timeOfDay: timeOfDay ?? 'afternoon' }
@@ -1000,6 +1123,8 @@ function parseTimePreference(
   if (!startDate) return null
 
   const startStr = startDate.toLocaleDateString('en-CA', { timeZone: tz })
+  const isPastDate = startStr < todayStr
+
   const endDate = new Date(startDate)
   if (/\bnext\s+week\b/.test(t)) {
     endDate.setDate(endDate.getDate() + 6)
@@ -1009,7 +1134,7 @@ function parseTimePreference(
     endDate.setDate(endDate.getDate() + 2)
   }
   const endStr = endDate.toLocaleDateString('en-CA', { timeZone: tz })
-  return { startStr, endStr, timeOfDay }
+  return { startStr, endStr, timeOfDay, isPastDate: isPastDate || undefined }
 }
 
 function parseSlotSelection(text: string, slots: { start: string; display: string }[]): { start: string } | null {
@@ -1045,6 +1170,29 @@ async function generateAIResponse(
     content: msg.content,
   }))
 
+  const tz = business.timezone ?? 'America/New_York'
+  const nowInTz = new TZDate(new Date(), tz)
+  const todayStr = nowInTz.toISOString().slice(0, 10)
+  const todayFormatted = formatDateFull(todayStr + 'T12:00:00', tz)
+  const weekday = nowInTz.toLocaleDateString('en-US', { weekday: 'long', timeZone: tz })
+
+  let availableDatesForPrompt = ''
+  if (business.calendarEnabled && business.googleCalendarConnected) {
+    try {
+      const endDate = addDays(nowInTz, 14)
+      const endStr = endDate.toLocaleDateString('en-CA', { timeZone: tz })
+      const slots = await getAvailableSlots(business.id, todayStr, endStr)
+      const uniqueDates = Array.from(new Set(slots.map(s => new Date(s.start).toLocaleDateString('en-CA', { timeZone: tz }))))
+        .sort()
+        .slice(0, 14)
+      if (uniqueDates.length > 0) {
+        availableDatesForPrompt = `\n- Available dates for quotes (next 2 weeks): ${uniqueDates.map(d => formatDateFull(d + 'T12:00:00', tz)).join(', ')}`
+      }
+    } catch {
+      // Ignore — prompt will work without this
+    }
+  }
+
   const flowState = bookingFlowState as BookingFlowState | null | undefined
   const inBookingFlow = flowState?.step
   const flowGuidance = inBookingFlow
@@ -1061,6 +1209,16 @@ Keep responses natural and conversational. Make it clear this is a FREE quote vi
     : ''
 
   const systemPrompt = `You are a friendly SMS assistant for ${business.name}. You're helping someone who tried to call.
+
+DATE & TIME CONTEXT (use this for all date-related answers):
+- Today is ${weekday}, ${todayFormatted}
+- Business timezone: ${tz}
+${availableDatesForPrompt}
+
+CRITICAL DATE RULES:
+- NEVER suggest or confirm a date in the past. If someone mentions a date that has passed, tell them it has passed and suggest booking for an available future date.
+- ALWAYS confirm the exact date (e.g. "Friday, March 6th") before finalizing any booking to avoid confusion.
+- "Friday" or "this Friday" = the next upcoming Friday from today. "Next Monday" = the Monday of next week. "This weekend" = the upcoming Saturday.
 
 GOALS:
 1. Be helpful, friendly, and brief (SMS should be under 160 chars when possible)
@@ -1083,7 +1241,7 @@ RULES:
 ${flowGuidance}
 
 WHEN QUOTE VISIT IS CONFIRMED (you have name + service + date/time):
-Say something like: "You're all set! [Business name] will meet you on [Date] at [Time] to take a look and give you a quote for [service]. See you then!"
+Say something like: "You're all set! [Business name] will meet you on [Date - use full format: Friday, March 6th] at [Time] to take a look and give you a quote for [service]. See you then!"
 Then add this EXACT tag at the end of your message:
 [APPOINTMENT_BOOKED: name="John Smith", service="Teeth Cleaning", datetime="2024-01-15 14:00", notes="First time patient"]`
 

@@ -7,6 +7,19 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { TZDate } from '@date-fns/tz'
 import { db } from '@/lib/db'
+
+/** Format date as "Friday, March 6th" for clear SMS confirmation. */
+function formatDateFullForConfirm(d: Date, tz: string): string {
+  const day = parseInt(d.toLocaleDateString('en-CA', { day: 'numeric', timeZone: tz }), 10)
+  const ordinal = (n: number) => {
+    const s = ['th', 'st', 'nd', 'rd']
+    const v = n % 100
+    return n + (s[(v - 20) % 10] || s[v] || s[0])
+  }
+  const weekday = d.toLocaleDateString('en-US', { weekday: 'long', timeZone: tz })
+  const month = d.toLocaleDateString('en-US', { month: 'long', timeZone: tz })
+  return `${weekday}, ${month} ${ordinal(day)}`
+}
 import Telnyx from 'telnyx'
 import {
   createCalendarEvent,
@@ -156,15 +169,10 @@ export async function POST(request: NextRequest) {
       },
     })
 
-    // Send confirmation SMS via Telnyx
+    // Send confirmation SMS via Telnyx (full date format: "Friday, March 6th")
     if (business.telnyxPhoneNumber) {
       const telnyx = new Telnyx({ apiKey: process.env.TELNYX_API_KEY! })
-      const dateStr = startDate.toLocaleDateString('en-US', {
-        weekday: 'short',
-        month: 'short',
-        day: 'numeric',
-        timeZone: tz,
-      })
+      const dateStr = formatDateFullForConfirm(startDate, tz)
       const timeStr = startDate.toLocaleTimeString('en-US', {
         hour: 'numeric',
         minute: '2-digit',
