@@ -27,7 +27,7 @@ export function BookingPageHeader({ businessName }: { businessName: string | nul
           </Link>
           {businessName && (
             <span className="text-sm font-medium truncate max-w-[200px] sm:max-w-none" style={{ color: '#374151' }}>
-              Booking for {businessName}
+              Schedule a quote with {businessName}
             </span>
           )}
         </div>

@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useRef, useCallback } from 'react'
 import { useParams } from 'next/navigation'
-import { Calendar, Clock, User, Phone, Mail, FileText, CheckCircle } from 'lucide-react'
+import { Calendar, Clock, User, Phone, Mail, FileText, MapPin, CheckCircle } from 'lucide-react'
 import { BookingPageHeader } from '@/app/components/BookingPageHeader'
 
 const EMBED_MESSAGE_TYPE = 'booking-embed-height'
@@ -42,6 +42,7 @@ export default function EmbedBookingPage() {
   const [email, setEmail] = useState('')
   const [service, setService] = useState('')
   const [notes, setNotes] = useState('')
+  const [address, setAddress] = useState('')
   const [servicesOffered, setServicesOffered] = useState<ServiceOption[]>([])
 
   const [submitting, setSubmitting] = useState(false)
@@ -114,7 +115,7 @@ export default function EmbedBookingPage() {
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    if (!selectedSlot || !name.trim() || !phone.trim() || !service.trim() || !notes.trim()) return
+    if (!selectedSlot || !name.trim() || !phone.trim() || !service.trim() || !notes.trim() || !address.trim()) return
     setSubmitting(true)
     setError(null)
     fetch('/api/bookings/create', {
@@ -128,6 +129,7 @@ export default function EmbedBookingPage() {
         slotStart: selectedSlot.start,
         serviceType: service.trim(),
         notes: notes.trim(),
+        customerAddress: address.trim(),
       }),
     })
       .then(async res => {
@@ -164,7 +166,7 @@ export default function EmbedBookingPage() {
         <div className="p-6">
         <div className="max-w-md mx-auto text-center">
           <Calendar className="h-12 w-12 mx-auto mb-4" style={{ color: '#d1d5db' }} />
-          <h2 className="text-lg font-semibold mb-2" style={{ color: '#111827' }}>Booking Not Available</h2>
+          <h2 className="text-lg font-semibold mb-2" style={{ color: '#111827' }}>Quote Scheduling Not Available</h2>
           <p className="text-sm" style={{ color: '#6b7280' }}>
             {businessName
               ? `${businessName} doesn't have online booking enabled. Please call or text to schedule.`
@@ -185,11 +187,11 @@ export default function EmbedBookingPage() {
           <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-6">
             <CheckCircle className="h-10 w-10" style={{ color: '#16a34a' }} />
           </div>
-          <h2 className="text-xl font-bold mb-2" style={{ color: '#111827' }}>You're All Set!</h2>
+          <h2 className="text-xl font-bold mb-2" style={{ color: '#111827' }}>Your Quote Visit is Scheduled!</h2>
           <p className="text-sm" style={{ color: '#6b7280' }}>
-            Your {confirmation.serviceType} appointment with {businessName} is confirmed for{' '}
+            {businessName} will meet you on{' '}
             {d.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', ...tzOpt })} at{' '}
-            {d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true, ...tzOpt })}.
+            {d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true, ...tzOpt })} to give you a quote for {confirmation.serviceType}.
           </p>
           <p className="text-sm mt-2" style={{ color: '#6b7280' }}>You'll receive a confirmation text shortly.</p>
         </div>
@@ -206,14 +208,14 @@ export default function EmbedBookingPage() {
       <div className="p-4 sm:p-6 md:p-8">
         <div className="max-w-2xl mx-auto">
           <div className="text-center mb-6">
-            <h2 className="text-xl font-bold" style={{ color: '#111827' }}>Book with {businessName}</h2>
-            <p className="text-sm mt-1" style={{ color: '#6b7280' }}>Select a date and time that works for you</p>
+            <h2 className="text-xl font-bold" style={{ color: '#111827' }}>Schedule a Free Quote</h2>
+            <p className="text-sm mt-1" style={{ color: '#6b7280' }}>Select a date and time for your in-person quote visit</p>
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-6">
             <div>
               <label className="block text-sm font-medium mb-2" style={labelStyle}>
-                Select a date to book your appointment
+                Select a date for your quote visit
               </label>
               <div className="flex items-center gap-2">
                 <input
@@ -312,7 +314,7 @@ export default function EmbedBookingPage() {
               <div>
                 <label className="flex items-center gap-2 text-sm font-medium mb-2" style={labelStyle}>
                   <FileText className="h-4 w-4" />
-                  Service *
+                  What do you need a quote for? *
                 </label>
                 <select
                   value={service}
@@ -333,14 +335,14 @@ export default function EmbedBookingPage() {
               <div>
                 <label className="flex items-center gap-2 text-sm font-medium mb-2" style={labelStyle}>
                   <FileText className="h-4 w-4" />
-                  Service *
+                  What do you need a quote for? *
                 </label>
                 <input
                   type="text"
                   value={service}
                   onChange={e => setService(e.target.value)}
                   required
-                  placeholder="e.g. Teeth cleaning, Haircut"
+                  placeholder="e.g. Lawn mowing, Landscaping"
                   className="w-full px-4 py-3 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                   style={inputStyle}
                 />
@@ -349,15 +351,30 @@ export default function EmbedBookingPage() {
             <div>
               <label className="flex items-center gap-2 text-sm font-medium mb-2" style={labelStyle}>
                 <FileText className="h-4 w-4" />
-                Tell us more about what you need (required) *
+                Tell us about the job so we can prepare *
               </label>
               <textarea
                 value={notes}
                 onChange={e => setNotes(e.target.value)}
                 required
                 rows={3}
-                placeholder="Any details that would help us prepare for your appointment..."
+                placeholder="Yard size, specific areas, access details, etc."
                 className="w-full px-4 py-3 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-none"
+                style={inputStyle}
+              />
+            </div>
+            <div>
+              <label className="flex items-center gap-2 text-sm font-medium mb-2" style={labelStyle}>
+                <MapPin className="h-4 w-4" />
+                Address for the quote visit *
+              </label>
+              <input
+                type="text"
+                value={address}
+                onChange={e => setAddress(e.target.value)}
+                required
+                placeholder="123 Main St, Grand Rapids, MI 49503"
+                className="w-full px-4 py-3 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                 style={inputStyle}
               />
             </div>
@@ -371,11 +388,11 @@ export default function EmbedBookingPage() {
 
           <button
             type="submit"
-            disabled={!selectedSlot || !name.trim() || !phone.trim() || !service.trim() || !notes.trim() || submitting}
+            disabled={!selectedSlot || !name.trim() || !phone.trim() || !service.trim() || !notes.trim() || !address.trim() || submitting}
             className="w-full py-4 text-white font-semibold rounded-xl text-base shadow-lg hover:shadow-xl hover:brightness-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:brightness-100 transition"
             style={{ backgroundColor: '#2563eb' }}
           >
-            {submitting ? 'Booking...' : 'Confirm Booking'}
+            {submitting ? 'Scheduling...' : 'Schedule My Quote'}
           </button>
         </form>
         </div>

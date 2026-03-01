@@ -10,7 +10,7 @@ import { Logo } from '@/app/components/Logo'
 const navigation = [
   { name: 'Overview', href: '/dashboard', icon: LayoutDashboard },
   { name: 'Conversations', href: '/dashboard/conversations', icon: MessageSquare },
-  { name: 'Appointments', href: '/dashboard/appointments', icon: Calendar },
+  { name: 'Scheduled Quotes', href: '/dashboard/appointments', icon: Calendar },
   { name: 'Test Mode', href: '/dashboard/test', icon: FlaskConical },
   { name: 'Settings', href: '/dashboard/settings', icon: Settings },
 ]

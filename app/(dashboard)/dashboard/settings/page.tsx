@@ -147,7 +147,7 @@ export default async function SettingsPage({
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Services Offered</label>
               <textarea name="servicesOffered" rows={2} defaultValue={Array.isArray(business.servicesOffered) ? business.servicesOffered.join(', ') : ''} placeholder="Teeth cleaning, fillings, crowns, root canals" className="w-full px-3 py-2 bg-white text-gray-900 border border-gray-200 rounded-lg placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500" />
-              <p className="text-xs text-gray-500 mt-1">Separate with commas. AI uses this to help book appointments.</p>
+              <p className="text-xs text-gray-500 mt-1">Separate with commas. AI uses this to help schedule quote visits.</p>
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Business Context</label>
@@ -184,10 +184,10 @@ export default async function SettingsPage({
                 <option value={90}>90 min</option>
                 <option value={120}>120 min</option>
               </select>
-              <p className="text-xs text-gray-500 mt-1">How long each booked appointment will be on your calendar</p>
+              <p className="text-xs text-gray-500 mt-1">How long each quote visit will be on your calendar</p>
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Buffer Between Appointments</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Buffer Between Quote Visits</label>
               <select
                 name="bufferMinutes"
                 defaultValue={business.bufferMinutes ?? 0}
@@ -199,7 +199,7 @@ export default async function SettingsPage({
                 <option value={45}>45 min</option>
                 <option value={60}>60 min</option>
               </select>
-              <p className="text-xs text-gray-500 mt-1">Minimum break between back-to-back appointments</p>
+              <p className="text-xs text-gray-500 mt-1">Minimum break between back-to-back quote visits</p>
             </div>
             {business.googleCalendarConnected ? (
               <div className="space-y-4">
@@ -207,7 +207,7 @@ export default async function SettingsPage({
                   <CheckCircle className="h-5 w-5 text-green-600 shrink-0" />
                   <div>
                     <p className="font-medium text-green-800">Calendar connected</p>
-                    <p className="text-sm text-green-700">Bookings sync to your Google Calendar. Booking page: /book/{business.slug}</p>
+                    <p className="text-sm text-green-700">Quote visits sync to your Google Calendar. Booking page: /book/{business.slug}</p>
                     <a
                       href={`/book/${business.slug}`}
                       target="_blank"
@@ -242,8 +242,8 @@ export default async function SettingsPage({
           <div className="flex items-start space-x-4 mb-4">
             <div className="bg-blue-50 p-2 rounded-lg"><Bell className="h-5 w-5 text-blue-600" /></div>
             <div>
-              <h2 className="text-lg font-semibold text-gray-900">Booking Notifications</h2>
-              <p className="text-sm text-gray-500">Get notified when appointments are booked or cancelled</p>
+              <h2 className="text-lg font-semibold text-gray-900">Quote Visit Notifications</h2>
+              <p className="text-sm text-gray-500">Get notified when quote visits are scheduled or cancelled</p>
             </div>
           </div>
           <div className="ml-11 space-y-4">

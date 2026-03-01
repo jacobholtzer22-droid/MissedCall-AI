@@ -271,6 +271,7 @@ model Appointment {
   scheduledAt           DateTime                        // When the appointment is
   duration              Int       @default(60)          // Duration in minutes
   notes                 String?   @db.Text              // Any special notes/requests
+  customerAddress       String?   @db.Text              // Address for the quote visit
 
   // Source tracking (website vs sms)
   source                String    @default("website")  // "website" | "sms"

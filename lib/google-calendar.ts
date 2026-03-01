@@ -380,9 +380,9 @@ export async function createCalendarEvent(
   customerName: string,
   serviceType: string,
   customerPhone: string,
-  options: { customerEmail?: string | null; notes?: string | null; source?: CalendarEventSource } = {}
+  options: { customerEmail?: string | null; notes?: string | null; customerAddress?: string | null; source?: CalendarEventSource } = {}
 ): Promise<string | null> {
-  const { customerEmail, notes, source = 'website' } = options
+  const { customerEmail, notes, customerAddress, source = 'website' } = options
 
   const calendar = await getCalendarClient(businessId)
   if (!calendar) return null
@@ -394,14 +394,15 @@ export async function createCalendarEvent(
   const tz = business?.timezone ?? 'America/New_York'
 
   const sourceLabel = source === 'sms' ? '📱 Missed Call Lead' : '🌐 Website Lead'
-  const summary = `${sourceLabel} ${customerName} - ${serviceType}`
+  const summary = `${sourceLabel} Quote - ${customerName} - ${serviceType}`
 
-  const sourceDesc = source === 'sms' ? 'Source: Missed Call SMS Booking' : 'Source: Website Booking'
+  const sourceDesc = source === 'sms' ? 'Source: Missed Call SMS - In-person quote visit' : 'Source: Website - In-person quote visit'
   const descriptionLines = [
     sourceDesc,
     `Customer: ${customerName}`,
     `Phone: ${customerPhone}`,
     customerEmail ? `Email: ${customerEmail}` : null,
+    customerAddress ? `Address: ${customerAddress}` : null,
     `Service: ${serviceType}`,
     notes ? `Notes: ${notes}` : null,
     '',
@@ -409,14 +410,19 @@ export async function createCalendarEvent(
   ].filter(Boolean)
   const description = descriptionLines.join('\n')
 
+  const eventBody: { summary: string; description: string; location?: string; start: { dateTime: string; timeZone: string }; end: { dateTime: string; timeZone: string } } = {
+    summary,
+    description,
+    start: { dateTime: start.toISOString(), timeZone: tz },
+    end: { dateTime: end.toISOString(), timeZone: tz },
+  }
+  if (customerAddress?.trim()) {
+    eventBody.location = customerAddress.trim()
+  }
+
   const event = await calendar.events.insert({
     calendarId: 'primary',
-    requestBody: {
-      summary,
-      description,
-      start: { dateTime: start.toISOString(), timeZone: tz },
-      end: { dateTime: end.toISOString(), timeZone: tz },
-    },
+    requestBody: eventBody,
   })
 
   return event.data.id ?? null

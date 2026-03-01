@@ -179,7 +179,7 @@ function ConvoStatusBadge({ status }: { status: string }) {
   }
   const labels: Record<string, string> = {
     active: 'Active',
-    appointment_booked: 'Booked',
+    appointment_booked: 'Quote Scheduled',
     completed: 'Done',
     no_response: 'No Reply',
   }

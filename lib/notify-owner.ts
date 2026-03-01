@@ -47,7 +47,7 @@ export type BookingSource = 'website' | 'sms'
 
 export async function notifyOwnerOnBookingCreated(
   business: BusinessWithPhone,
-  appointment: Pick<Appointment, 'id' | 'customerName' | 'customerPhone' | 'customerEmail' | 'serviceType' | 'scheduledAt' | 'notes'> & { source?: BookingSource }
+  appointment: Pick<Appointment, 'id' | 'customerName' | 'customerPhone' | 'customerEmail' | 'serviceType' | 'scheduledAt' | 'notes'> & { customerAddress?: string | null; source?: BookingSource }
 ): Promise<void> {
   console.error('[NOTIFY OWNER] notifyOwnerOnBookingCreated called', { businessId: business.id, appointmentId: appointment.id })
 
@@ -70,7 +70,8 @@ export async function notifyOwnerOnBookingCreated(
     } else if (!business.telnyxPhoneNumber) {
       console.error('[NOTIFY OWNER] SMS SKIP: No telnyxPhoneNumber set for business', { businessId: business.id })
     } else {
-      const smsText = `📅 New ${sourceLabel} Lead!\n${appointment.customerName} booked ${appointment.serviceType} on ${dateStr} at ${timeStr}.\nPhone: ${appointment.customerPhone}${notesTruncated ? `\nNotes: ${notesTruncated}` : ''}\nFull details in your email and dashboard.`
+      const addressLine = appointment.customerAddress ? `\n📍 Address: ${appointment.customerAddress}` : ''
+      const smsText = `📅 New Quote Request! ${appointment.customerName} wants a quote for ${appointment.serviceType} on ${dateStr} at ${timeStr}.\nPhone: ${appointment.customerPhone}${addressLine}${notesTruncated ? `\nNotes: ${notesTruncated}` : ''}\nFull details in your email and dashboard.`
       console.error('[NOTIFY OWNER] Sending SMS to', toPhone.trim(), 'from', business.telnyxPhoneNumber)
       try {
         const telnyx = new Telnyx({ apiKey: process.env.TELNYX_API_KEY! })
@@ -96,9 +97,9 @@ export async function notifyOwnerOnBookingCreated(
   // Email
   if (business.notifyByEmail && business.ownerEmail) {
     console.error('[NOTIFY OWNER] Email enabled, sending to', business.ownerEmail)
-    const subject = `New Booking - ${appointment.customerName} - ${appointment.serviceType} - ${dateStr}`
+    const subject = `New Quote Visit - ${appointment.customerName} - ${appointment.serviceType} - ${dateStr}`
     const body = [
-      `A new appointment has been booked for ${business.name}.`,
+      `A new quote visit has been scheduled for ${business.name}.`,
       '',
       `Source: ${sourceLabel} Lead`,
       '',
@@ -106,13 +107,14 @@ export async function notifyOwnerOnBookingCreated(
       `  Name: ${appointment.customerName}`,
       `  Phone: ${appointment.customerPhone}`,
       appointment.customerEmail ? `  Email: ${appointment.customerEmail}` : null,
+      appointment.customerAddress ? `  Address: ${appointment.customerAddress}` : null,
       '',
-      `Service booked: ${appointment.serviceType}`,
+      `Service (quote requested): ${appointment.serviceType}`,
       `Date and time: ${dateStr} at ${timeStr}`,
       '',
       appointment.notes ? `Notes / context from customer:\n${appointment.notes}` : null,
       '',
-      `View and manage appointments: ${dashboardUrl}`,
+      `View and manage quote visits: ${dashboardUrl}`,
       '',
       'Booked via MissedCall AI - Align and Acquire',
     ]
@@ -152,10 +154,11 @@ export async function notifyOwnerOnBookingRequestNoCalendar(
     service: string
     datetime: string
     notes?: string | null
+    customerAddress?: string | null
     conversationTranscript: ConversationMessage[]
   }
 ): Promise<void> {
-  const { customerName, customerPhone, service, datetime, notes, conversationTranscript } = params
+  const { customerName, customerPhone, service, datetime, notes, customerAddress, conversationTranscript } = params
   const dashboardUrl = `${baseUrl}/dashboard/appointments`
   const tz = business.timezone ?? 'America/New_York'
   const dateObj = new Date(datetime)
@@ -167,7 +170,8 @@ export async function notifyOwnerOnBookingRequestNoCalendar(
   if (business.notifyBySms) {
     const toPhone = business.ownerPhone || business.forwardingNumber
     if (toPhone && business.telnyxPhoneNumber) {
-      const smsText = `📅 New Lead! ${customerName} wants to book ${service} around ${dateTimeLabel}. Phone: ${customerPhone}. Check your dashboard for details.`
+      const addressLine = customerAddress ? `\n📍 Address: ${customerAddress}` : ''
+      const smsText = `📅 New Quote Request! ${customerName} wants a quote for ${service} around ${dateTimeLabel}. Phone: ${customerPhone}${addressLine}. Check your dashboard for details.`
       try {
         const telnyx = new Telnyx({ apiKey: process.env.TELNYX_API_KEY! })
         await telnyx.messages.send({
@@ -184,7 +188,7 @@ export async function notifyOwnerOnBookingRequestNoCalendar(
 
   // Email
   if (business.notifyByEmail && business.ownerEmail) {
-    const subject = `New Appointment Request - ${customerName} - ${service}`
+    const subject = `New Quote Request - ${customerName} - ${service}`
     const transcriptText = conversationTranscript
       .map((m) => {
         const label = m.direction === 'inbound' ? 'Customer' : business.name
@@ -194,7 +198,7 @@ export async function notifyOwnerOnBookingRequestNoCalendar(
       .join('\n\n')
 
     const body = [
-      `A new appointment request has come in for ${business.name}.`,
+      `A new quote request has come in for ${business.name}.`,
       '',
       'Customer details:',
       `  Name: ${customerName}`,
@@ -202,13 +206,14 @@ export async function notifyOwnerOnBookingRequestNoCalendar(
       `  Service requested: ${service}`,
       `  Preferred date/time: ${dateTimeLabel}`,
       notes ? `  Notes: ${notes}` : null,
+      customerAddress ? `  Address: ${customerAddress}` : null,
       '',
       'Full conversation transcript:',
       '─'.repeat(40),
       transcriptText,
       '─'.repeat(40),
       '',
-      '⚠️ This appointment has NOT been added to your calendar. Please confirm the time with the customer directly.',
+      '⚠️ This quote visit has NOT been added to your calendar. Please confirm the time with the customer directly.',
       '',
       `View your dashboard: ${dashboardUrl}`,
       '',

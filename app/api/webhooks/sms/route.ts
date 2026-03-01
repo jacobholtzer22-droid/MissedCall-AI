@@ -98,7 +98,7 @@ export async function POST(request: NextRequest) {
 
         // appointment_booked: send ONE final message then close; closed/human_needed: no response
         if (conversation.status === 'appointment_booked') {
-          const finalMsg = `Your appointment is all set! If you need to reschedule or have questions, call us directly at ${business.telnyxPhoneNumber}.`
+          const finalMsg = `Your quote visit is all set! If you need to reschedule or have questions, call us directly at ${business.telnyxPhoneNumber}.`
           await sendSMSAndLog(business, conversation.id, from, finalMsg)
           await db.conversation.update({ where: { id: conversation.id }, data: { status: 'closed' } })
         }
@@ -240,6 +240,10 @@ export async function POST(request: NextRequest) {
           } catch (err) {
             console.error('❌ Failed to notify owner of booking request (no calendar):', err)
           }
+          // Override AI response when calendar is off: send quote-specific message
+          const calendarOffMsg = `I've passed your info along to ${business.name}. They'll reach out soon to set up a time to come give you a quote for ${service}!`
+          await sendSMSAndLog(business, conversation.id, from, calendarOffMsg)
+          return new NextResponse('OK', { status: 200 })
         }
       }
 
@@ -281,10 +285,11 @@ export async function POST(request: NextRequest) {
 // Fully conversational — NO booking links. AI handles everything via text.
 
 type BookingFlowState = {
-  step: 'greeting' | 'awaiting_name' | 'awaiting_service' | 'awaiting_notes' | 'awaiting_preference' | 'awaiting_selection' | 'confirmed'
+  step: 'greeting' | 'awaiting_name' | 'awaiting_service' | 'awaiting_notes' | 'awaiting_address' | 'awaiting_preference' | 'awaiting_selection' | 'confirmed'
   customerName?: string
   serviceType?: string
   notes?: string
+  customerAddress?: string
   timePreference?: string  // Raw text: "tomorrow afternoon", "next week", etc.
   offeredSlots?: { start: string; end: string; display: string }[]
   services?: { value: string; label: string }[]
@@ -391,6 +396,7 @@ async function handleSmsBookingFlow(
           customerPhone: from,
           serviceType: flowState.serviceType || 'Appointment',
           notes: flowState.notes ?? undefined,
+          customerAddress: flowState.customerAddress ?? undefined,
           slotStart: selectedSlot.start,
           conversationId: conversation.id,
         }),
@@ -423,6 +429,7 @@ async function handleSmsBookingFlow(
             customerName: flowState.customerName,
             serviceType: flowState.serviceType,
             notes: flowState.notes,
+            customerAddress: flowState.customerAddress,
             sentAt: new Date().toISOString(),
           })),
         },
@@ -449,6 +456,7 @@ async function handleSmsBookingFlow(
               customerName: flowState.customerName,
               serviceType: flowState.serviceType,
               notes: flowState.notes,
+              customerAddress: flowState.customerAddress,
               timePreference: trimmed,
               offeredSlots: displaySlots,
               sentAt: new Date().toISOString(),
@@ -473,6 +481,7 @@ async function handleSmsBookingFlow(
               customerName: flowState.customerName,
               serviceType: flowState.serviceType,
               notes: flowState.notes,
+              customerAddress: flowState.customerAddress,
               offeredSlots: altSlots,
               sentAt: new Date().toISOString(),
             })),
@@ -514,6 +523,7 @@ async function handleSmsBookingFlow(
               customerName: flowState.customerName,
               serviceType: flowState.serviceType,
               notes: flowState.notes,
+              customerAddress: flowState.customerAddress,
               timePreference: trimmed,
               offeredSlots: displaySlots,
               sentAt: new Date().toISOString(),
@@ -538,6 +548,7 @@ async function handleSmsBookingFlow(
               customerName: flowState.customerName,
               serviceType: flowState.serviceType,
               notes: flowState.notes,
+              customerAddress: flowState.customerAddress,
               offeredSlots: altSlots,
               sentAt: new Date().toISOString(),
             })),
@@ -592,7 +603,7 @@ async function handleSmsBookingFlow(
     if (looksLikeQuestion(rawText)) return false
     const serviceType = parseServiceSelection(rawText, flowState.services)
     if (!serviceType) return false
-    const msg = `Got it! Anything specific we should know to prepare for your ${serviceType}?`
+    const msg = `Got it! We'll set up a free in-person quote for ${serviceType}. ${business.name} will come out, take a look, and give you an exact price. Anything we should know before coming out? (Yard size, specific areas, etc.)`
     await sendSMSAndLog(business, conversation.id, from, msg)
     await db.conversation.update({
       where: { id: conversation.id },
@@ -613,7 +624,30 @@ async function handleSmsBookingFlow(
   if (flowState.step === 'awaiting_notes') {
     if (looksLikeQuestion(rawText)) return false
     const notes = parseNotesFromMessage(rawText)
-    const msg = `When works best for you? Do you have a day or time of day in mind?`
+    const msg = `What's the address for the quote visit?`
+    await sendSMSAndLog(business, conversation.id, from, msg)
+    await db.conversation.update({
+      where: { id: conversation.id },
+      data: {
+        bookingFlowState: JSON.parse(JSON.stringify({
+          step: 'awaiting_address',
+          customerName: flowState.customerName,
+          serviceType: flowState.serviceType,
+          notes: notes || undefined,
+          services: flowState.services,
+          sentAt: new Date().toISOString(),
+        })),
+      },
+    })
+    return true
+  }
+
+  // ── Step: awaiting_address ──
+  if (flowState.step === 'awaiting_address') {
+    if (looksLikeQuestion(rawText)) return false
+    const address = rawText.trim()
+    if (!address || address.length > 500) return false
+    const msg = `When works best for a quote visit? Do you have a day or time of day in mind?`
     await sendSMSAndLog(business, conversation.id, from, msg)
     await db.conversation.update({
       where: { id: conversation.id },
@@ -622,7 +656,8 @@ async function handleSmsBookingFlow(
           step: 'awaiting_preference',
           customerName: flowState.customerName,
           serviceType: flowState.serviceType,
-          notes: notes || undefined,
+          notes: flowState.notes,
+          customerAddress: address,
           services: flowState.services,
           sentAt: new Date().toISOString(),
         })),
@@ -635,7 +670,7 @@ async function handleSmsBookingFlow(
   const hasBookingIntent = BOOKING_INTENT_WORDS.some(w => trimmed.includes(w))
   if (!hasBookingIntent || !business.calendarEnabled || !business.googleCalendarConnected) return false
 
-  const msg = `Hey! I'd love to help you get something scheduled. What's your name?`
+  const msg = `Hey! I'd love to help you schedule a free in-person quote. ${business.name} will come out, take a look, and give you an exact price. What's your name?`
   await sendSMSAndLog(business, conversation.id, from, msg)
   await db.conversation.update({
     where: { id: conversation.id },
@@ -761,7 +796,7 @@ function pickSlotsForPreference(
 }
 
 function formatSlotsMessage(slots: SlotLike[], tz: string): string {
-  const lines: string[] = ["Here's what I've got:", '']
+  const lines: string[] = ["Here are some times for your free quote visit:", '']
   slots.forEach((s, i) => {
     const d = new Date(s.start)
     const dayLabel = d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', timeZone: tz })
@@ -910,14 +945,15 @@ async function generateAIResponse(
   const inBookingFlow = flowState?.step
   const flowGuidance = inBookingFlow
     ? `
-BOOKING FLOW CONTEXT: The customer is in a conversational booking flow via SMS. Current step: ${flowState.step}.
+BOOKING FLOW CONTEXT: The customer is in a conversational booking flow for a FREE IN-PERSON QUOTE (not the actual service). ${business.name} will come out, take a look, and give an exact price. Current step: ${flowState.step}.
 - If they asked a question mid-flow (e.g. "how much does it cost?"): answer briefly, then guide them back.
 - awaiting_name: "What's your name?"
-- awaiting_service: remind them to pick a service (by number or name)
-- awaiting_notes: "Anything specific we should know? (Reply 'no' to skip)"
-- awaiting_preference: "When works best for you? Do you have a day or time in mind?" (e.g. tomorrow, next week, anytime)
+- awaiting_service: "Would you like to schedule a time for a free in-person quote? ${business.name} will come out, take a look, and give you an exact price. Anything we should know before coming out? (Like the size of the yard, specific areas you need done, etc.)"
+- awaiting_notes: "Anything we should know before coming out? (Like size of yard, specific areas, etc.) Reply 'no' to skip."
+- awaiting_address: "What's the address for the quote visit?"
+- awaiting_preference: "When works best for a quote visit? Do you have a day or time in mind?" (e.g. tomorrow, next week, anytime)
 - awaiting_selection: remind them to reply with a number to pick a time, or describe a different time
-Keep responses natural and conversational. No booking links — everything happens in the text conversation.`
+Keep responses natural and conversational. Make it clear this is a FREE quote visit, not the actual service. No booking links — everything happens in the text conversation.`
     : ''
 
   const systemPrompt = `You are a friendly SMS assistant for ${business.name}. You're helping someone who tried to call.
@@ -925,7 +961,7 @@ Keep responses natural and conversational. No booking links — everything happe
 GOALS:
 1. Be helpful, friendly, and brief (SMS should be under 160 chars when possible)
 2. Understand what they need
-3. If they want an appointment: the SMS booking flow will collect name, service, notes, and time - you may see customers mid-flow
+3. If they want to schedule a quote: the SMS booking flow will collect name, service, notes, and time for a FREE in-person quote visit - you may see customers mid-flow
 4. Answer questions about the business
 5. If you can't help or they're upset, flag for human follow-up
 
@@ -942,8 +978,9 @@ RULES:
 - If someone seems upset or you can't help, add [HUMAN_NEEDED] at the end (optional: [HUMAN_NEEDED: reason="brief reason"] to help the owner)
 ${flowGuidance}
 
-WHEN BOOKING IS CONFIRMED (you have name + service + date/time):
-Add this EXACT tag at the end of your message:
+WHEN QUOTE VISIT IS CONFIRMED (you have name + service + date/time):
+Say something like: "You're all set! [Business name] will meet you on [Date] at [Time] to take a look and give you a quote for [service]. See you then!"
+Then add this EXACT tag at the end of your message:
 [APPOINTMENT_BOOKED: name="John Smith", service="Teeth Cleaning", datetime="2024-01-15 14:00", notes="First time patient"]`
 
   try {

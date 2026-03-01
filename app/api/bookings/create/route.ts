@@ -26,6 +26,7 @@ export async function POST(request: NextRequest) {
       slotStart, // ISO datetime string
       serviceType,
       notes,
+      customerAddress,
       conversationId, // Optional - for SMS bookings
     } = body
 
@@ -53,11 +54,16 @@ export async function POST(request: NextRequest) {
         error: 'Missing required fields: customerName, customerPhone, slotStart, serviceType',
       }, { status: 400 })
     }
-    // Notes required for website bookings; optional for SMS
+    // Notes and address required for website bookings; optional for SMS
     const isWebsite = !conversationId
     if (isWebsite && !notes?.trim()) {
       return NextResponse.json({
         error: 'Missing required field: notes',
+      }, { status: 400 })
+    }
+    if (isWebsite && !customerAddress?.trim()) {
+      return NextResponse.json({
+        error: 'Missing required field: customerAddress',
       }, { status: 400 })
     }
 
@@ -70,7 +76,7 @@ export async function POST(request: NextRequest) {
     const nowInTz = new TZDate(new Date(), tz)
     if (startDate.getTime() < nowInTz.getTime()) {
       return NextResponse.json(
-        { error: 'Cannot book appointments in the past' },
+        { error: 'Cannot schedule quote visits in the past' },
         { status: 400 }
       )
     }
@@ -105,7 +111,7 @@ export async function POST(request: NextRequest) {
       },
     })
     if (existingDup) {
-      return NextResponse.json({ error: 'You already have an appointment for this service at this time' }, { status: 409 })
+      return NextResponse.json({ error: 'You already have a quote visit scheduled for this service at this time' }, { status: 409 })
     }
     const endDate = new Date(startDate.getTime() + slotDuration * 60 * 1000)
 
@@ -128,7 +134,7 @@ export async function POST(request: NextRequest) {
       customerName.trim(),
       serviceType.trim(),
       customerPhone.trim(),
-      { customerEmail: customerEmail?.trim() || null, notes: notes?.trim() || null, source }
+      { customerEmail: customerEmail?.trim() || null, notes: notes?.trim() || null, customerAddress: customerAddress?.trim() || null, source }
     )
 
     const appointment = await db.appointment.create({
@@ -142,6 +148,7 @@ export async function POST(request: NextRequest) {
         scheduledAt: startDate,
         duration: slotDuration,
         notes: notes?.trim() || null,
+        customerAddress: customerAddress?.trim() || null,
         googleCalendarEventId: googleEventId,
         status: 'confirmed',
         source,
@@ -166,8 +173,8 @@ export async function POST(request: NextRequest) {
       const name = customerName.trim()
       const service = serviceType.trim()
       const msg = conversationId
-        ? `You're all set ${name}! Your ${service} is booked for ${dateStr} at ${timeStr}. We'll see you then! If anything changes just text us back.`
-        : `Confirmed! Your appointment with ${business.name} is scheduled for ${dateStr} at ${timeStr}. Reply to this number if you need to reschedule.`
+        ? `You're all set ${name}! ${business.name} will meet you on ${dateStr} at ${timeStr} to take a look and give you a quote for ${service}. See you then! If anything changes just text us back.`
+        : `Confirmed! Your quote visit with ${business.name} is scheduled for ${dateStr} at ${timeStr}. They'll come out, take a look, and give you a quote for ${service}. Reply to this number if you need to reschedule.`
 
       try {
         await telnyx.messages.send({
@@ -196,6 +203,7 @@ export async function POST(request: NextRequest) {
         scheduledAt: startDate,
         source,
         notes: notes?.trim() || null,
+        customerAddress: customerAddress?.trim() || null,
       })
       console.log('[BOOKING CREATE] notifyOwnerOnBookingCreated completed successfully')
     } catch (notifyErr) {

@@ -133,7 +133,7 @@ export default async function DashboardPage() {
       <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
         <StatCard title="Conversations Today" value={stats.todayConversations.toString()} description={`${stats.totalConversations} total`} icon={Phone} />
         <StatCard title="Calls Saved" value={stats.callsSaved.toString()} description="Customers who engaged" icon={ShieldCheck} highlight={stats.callsSaved > 0} />
-        <StatCard title="Appointments Booked" value={stats.weeklyAppointments.toString()} description="This week" icon={Calendar} />
+        <StatCard title="Quote Visits Booked" value={stats.weeklyAppointments.toString()} description="This week" icon={Calendar} />
         <StatCard title="Response Rate" value={`${stats.responseRate}%`} description="Callers who replied" icon={TrendingUp} />
       </div>
 
@@ -141,7 +141,7 @@ export default async function DashboardPage() {
       {stats.upcomingAppointments.length > 0 && (
         <div className="bg-white rounded-xl border border-gray-200">
           <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
-            <h2 className="text-lg font-semibold text-gray-900">Upcoming Appointments</h2>
+            <h2 className="text-lg font-semibold text-gray-900">Upcoming Quote Visits</h2>
             <Link href="/dashboard/appointments" className="text-sm text-blue-600 hover:text-blue-700 flex items-center">
               View all<ArrowRight className="h-4 w-4 ml-1" />
             </Link>
@@ -259,7 +259,7 @@ export default async function DashboardPage() {
                   <div className="text-right">
                     <p className="text-sm text-gray-500">{formatRelativeTime(conversation.lastMessageAt)}</p>
                     <span className={`text-xs px-2 py-1 rounded-full ${conversation.status === 'active' ? 'bg-green-100 text-green-700' : conversation.status === 'appointment_booked' ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-600'}`}>
-                      {conversation.status === 'active' ? 'Active' : conversation.status === 'appointment_booked' ? 'Booked' : conversation.status === 'completed' ? 'Completed' : 'No response'}
+                      {conversation.status === 'active' ? 'Active' : conversation.status === 'appointment_booked' ? 'Quote Scheduled' : conversation.status === 'completed' ? 'Completed' : 'No response'}
                     </span>
                   </div>
                 </div>

@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { Calendar, Phone, Globe, MessageCircle, Trash2 } from 'lucide-react'
+import { Calendar, Phone, Globe, MessageCircle, Trash2, MapPin } from 'lucide-react'
 import { formatPhoneNumber } from '@/lib/utils'
 import { CancelBookingButton } from './CancelBookingButton'
 
@@ -15,6 +15,7 @@ type Appointment = {
   status: string
   source: string | null
   notes: string | null
+  customerAddress?: string | null
   conversation?: { id: string } | null
 }
 
@@ -78,7 +79,7 @@ function AppointmentCard({
                     ? 'bg-purple-100 text-purple-700'
                     : 'bg-slate-100 text-slate-600'
                 }`}
-                title={(appointment.source ?? 'website') === 'sms' ? 'Booked via missed call SMS' : 'Booked via website'}
+                title={(appointment.source ?? 'website') === 'sms' ? 'Quote scheduled via missed call SMS' : 'Quote scheduled via website'}
               >
                 {(appointment.source ?? 'website') === 'sms' ? (
                   <>
@@ -94,11 +95,22 @@ function AppointmentCard({
               </span>
             </div>
             <p className="text-sm text-gray-500">{appointment.serviceType}</p>
-            <div className="flex items-center space-x-4 mt-1 text-sm text-gray-500">
+            <div className="flex items-center space-x-4 mt-1 text-sm text-gray-500 flex-wrap gap-x-4 gap-y-1">
               <span className="flex items-center">
                 <Phone className="h-3 w-3 mr-1" />
                 {formatPhoneNumber(appointment.customerPhone)}
               </span>
+              {appointment.customerAddress && (
+                <a
+                  href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(appointment.customerAddress)}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center text-blue-600 hover:text-blue-800 hover:underline"
+                >
+                  <MapPin className="h-3 w-3 mr-1 flex-shrink-0" />
+                  <span className="truncate max-w-[200px]">{appointment.customerAddress}</span>
+                </a>
+              )}
             </div>
           </div>
         </div>
@@ -116,7 +128,10 @@ function AppointmentCard({
               appointment.status === 'cancelled' ? 'bg-red-100 text-red-700' :
               'bg-gray-100 text-gray-600'
             }`}>
-              {appointment.status.charAt(0).toUpperCase() + appointment.status.slice(1)}
+              {appointment.status === 'confirmed' ? 'Quote Scheduled' :
+               appointment.status === 'completed' ? 'Quote Completed' :
+               appointment.status === 'cancelled' ? 'Cancelled' :
+               appointment.status.charAt(0).toUpperCase() + appointment.status.slice(1)}
             </span>
           </div>
           <div className="flex flex-col gap-1">
@@ -204,11 +219,11 @@ export function AppointmentsClient() {
     return (
       <div className="space-y-6">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Appointments</h1>
-          <p className="text-gray-500 mt-1">View and manage all booked appointments</p>
+          <h1 className="text-2xl font-bold text-gray-900">Scheduled Quotes</h1>
+          <p className="text-gray-500 mt-1">View and manage all quote visits</p>
         </div>
         <div className="flex items-center justify-center py-12">
-          <p className="text-gray-500">Loading appointments...</p>
+          <p className="text-gray-500">Loading quote visits...</p>
         </div>
       </div>
     )
@@ -231,9 +246,9 @@ export function AppointmentsClient() {
       {appointments.length === 0 ? (
         <div className="bg-white rounded-xl border border-gray-200 p-12 text-center">
           <Calendar className="h-12 w-12 text-gray-300 mx-auto mb-4" />
-          <h3 className="text-lg font-medium text-gray-900 mb-2">No appointments yet</h3>
+          <h3 className="text-lg font-medium text-gray-900 mb-2">No quote visits yet</h3>
           <p className="text-gray-500 max-w-md mx-auto">
-            When your AI assistant books appointments, they&apos;ll appear here.
+            When customers schedule quote visits, they&apos;ll appear here.
           </p>
         </div>
       ) : (
@@ -267,7 +282,7 @@ export function AppointmentsClient() {
                       : 'text-gray-600 hover:bg-gray-100 hover:text-gray-800'
                   } disabled:opacity-50`}
                 >
-                  {deleteAllLoading ? 'Deleting...' : deleteAllConfirm ? 'Click again to confirm' : 'Delete All Past Appointments'}
+                  {deleteAllLoading ? 'Deleting...' : deleteAllConfirm ? 'Click again to confirm' : 'Delete All Past Quote Visits'}
                 </button>
               </div>
               <div className="bg-white rounded-xl border border-gray-200 divide-y divide-gray-100">

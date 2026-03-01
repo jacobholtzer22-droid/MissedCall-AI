@@ -1105,7 +1105,7 @@ export default function AdminDashboard() {
                   value={editData.aiInstructions}
                   onChange={e => setEditData({ ...editData, aiInstructions: e.target.value })}
                   rows={4}
-                  placeholder="Be friendly and professional. Always try to book an appointment..."
+                  placeholder="Be friendly and professional. Always try to schedule a free in-person quote..."
                   className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-white placeholder-gray-600"
                 />
               </Field>
