@@ -145,6 +145,7 @@ export async function POST(request: NextRequest) {
             scheduledAt: new Date(datetime),
             notes: notes || null,
             status: 'confirmed',
+            source: 'sms',
           },
         })
         await db.conversation.update({

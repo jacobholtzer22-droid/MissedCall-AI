@@ -356,13 +356,19 @@ export async function getBusyTimes(
   return getBusyTimesWithRange(businessId, timeMin, timeMax)
 }
 
+export type CalendarEventSource = 'website' | 'sms'
+
 export async function createCalendarEvent(
   businessId: string,
   start: Date,
   end: Date,
-  summary: string,
-  description: string
+  customerName: string,
+  serviceType: string,
+  customerPhone: string,
+  options: { customerEmail?: string | null; notes?: string | null; source?: CalendarEventSource } = {}
 ): Promise<string | null> {
+  const { customerEmail, notes, source = 'website' } = options
+
   const calendar = await getCalendarClient(businessId)
   if (!calendar) return null
 
@@ -371,6 +377,22 @@ export async function createCalendarEvent(
     select: { timezone: true },
   })
   const tz = business?.timezone ?? 'America/New_York'
+
+  const sourceLabel = source === 'sms' ? '📱 Missed Call Lead' : '🌐 Website Lead'
+  const summary = `${sourceLabel} ${customerName} - ${serviceType}`
+
+  const sourceDesc = source === 'sms' ? 'Source: Missed Call SMS Booking' : 'Source: Website Booking'
+  const descriptionLines = [
+    sourceDesc,
+    `Customer: ${customerName}`,
+    `Phone: ${customerPhone}`,
+    customerEmail ? `Email: ${customerEmail}` : null,
+    `Service: ${serviceType}`,
+    notes ? `Notes: ${notes}` : null,
+    '',
+    'Booked via MissedCall AI - Align & Acquire',
+  ].filter(Boolean)
+  const description = descriptionLines.join('\n')
 
   const event = await calendar.events.insert({
     calendarId: 'primary',

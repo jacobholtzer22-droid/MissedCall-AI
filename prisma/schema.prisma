@@ -270,6 +270,9 @@ model Appointment {
   duration              Int       @default(60)          // Duration in minutes
   notes                 String?   @db.Text              // Any special notes/requests
 
+  // Source tracking (website vs sms)
+  source                String    @default("website")  // "website" | "sms"
+
   // Calendar integration
   googleCalendarEventId String?
 

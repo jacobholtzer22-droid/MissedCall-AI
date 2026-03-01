@@ -52,6 +52,13 @@ export async function POST(request: NextRequest) {
         error: 'Missing required fields: customerName, customerPhone, slotStart, serviceType',
       }, { status: 400 })
     }
+    // Notes required for website bookings; optional for SMS
+    const isWebsite = !conversationId
+    if (isWebsite && !notes?.trim()) {
+      return NextResponse.json({
+        error: 'Missing required field: notes',
+      }, { status: 400 })
+    }
 
     const startDate = new Date(slotStart)
     if (isNaN(startDate.getTime())) {
@@ -72,22 +79,16 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'This time slot is no longer available' }, { status: 409 })
     }
 
-    const summary = `${serviceType} - ${customerName}`
-    const description = [
-      `Customer: ${customerName}`,
-      `Phone: ${customerPhone}`,
-      customerEmail ? `Email: ${customerEmail}` : null,
-      notes ? `Notes: ${notes}` : null,
-    ]
-      .filter(Boolean)
-      .join('\n')
+    const source = conversationId ? 'sms' : 'website'
 
     const googleEventId = await createCalendarEvent(
       business.id,
       startDate,
       endDate,
-      summary,
-      description
+      customerName.trim(),
+      serviceType.trim(),
+      customerPhone.trim(),
+      { customerEmail: customerEmail?.trim() || null, notes: notes?.trim() || null, source }
     )
 
     const appointment = await db.appointment.create({
@@ -103,6 +104,7 @@ export async function POST(request: NextRequest) {
         notes: notes?.trim() || null,
         googleCalendarEventId: googleEventId,
         status: 'confirmed',
+        source,
       },
     })
 
@@ -135,6 +137,11 @@ export async function POST(request: NextRequest) {
     }
 
     // Notify business owner (SMS + email)
+    console.log('[BOOKING CREATE] About to call notifyOwnerOnBookingCreated', {
+      businessId: business.id,
+      appointmentId: appointment.id,
+      source,
+    })
     try {
       await notifyOwnerOnBookingCreated(business, {
         id: appointment.id,
@@ -143,9 +150,12 @@ export async function POST(request: NextRequest) {
         customerEmail: customerEmail?.trim() || null,
         serviceType: serviceType.trim(),
         scheduledAt: startDate,
+        source,
+        notes: notes.trim(),
       })
+      console.log('[BOOKING CREATE] notifyOwnerOnBookingCreated completed successfully')
     } catch (notifyErr) {
-      console.error('Failed to notify owner of new booking:', notifyErr)
+      console.error('[BOOKING CREATE] Failed to notify owner of new booking:', notifyErr)
     }
 
     return NextResponse.json({

@@ -2,7 +2,7 @@ import { auth } from '@clerk/nextjs/server'
 import { redirect } from 'next/navigation'
 import { db } from '@/lib/db'
 import { getBusinessForDashboard } from '@/lib/get-business-for-dashboard'
-import { Calendar, Clock, User, Phone } from 'lucide-react'
+import { Calendar, Phone, Globe, MessageCircle } from 'lucide-react'
 import { formatPhoneNumber } from '@/lib/utils'
 import { CancelBookingButton } from './CancelBookingButton'
 
@@ -96,7 +96,29 @@ function AppointmentCard({
             <Calendar className="h-6 w-6 text-blue-600" />
           </div>
           <div>
-            <p className="font-medium text-gray-900">{appointment.customerName}</p>
+            <div className="flex items-center gap-2">
+              <p className="font-medium text-gray-900">{appointment.customerName}</p>
+              <span
+                className={`inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full ${
+                  (appointment.source ?? 'website') === 'sms'
+                    ? 'bg-purple-100 text-purple-700'
+                    : 'bg-slate-100 text-slate-600'
+                }`}
+                title={(appointment.source ?? 'website') === 'sms' ? 'Booked via missed call SMS' : 'Booked via website'}
+              >
+                {(appointment.source ?? 'website') === 'sms' ? (
+                  <>
+                    <MessageCircle className="h-3 w-3" />
+                    SMS
+                  </>
+                ) : (
+                  <>
+                    <Globe className="h-3 w-3" />
+                    Website
+                  </>
+                )}
+              </span>
+            </div>
             <p className="text-sm text-gray-500">{appointment.serviceType}</p>
             <div className="flex items-center space-x-4 mt-1 text-sm text-gray-500">
               <span className="flex items-center">

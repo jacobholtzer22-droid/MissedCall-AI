@@ -43,57 +43,97 @@ type BusinessWithPhone = Pick<
   | 'timezone'
 >
 
+export type BookingSource = 'website' | 'sms'
+
 export async function notifyOwnerOnBookingCreated(
   business: BusinessWithPhone,
-  appointment: Pick<Appointment, 'id' | 'customerName' | 'customerPhone' | 'customerEmail' | 'serviceType' | 'scheduledAt'>
+  appointment: Pick<Appointment, 'id' | 'customerName' | 'customerPhone' | 'customerEmail' | 'serviceType' | 'scheduledAt' | 'notes'> & { source?: BookingSource }
 ): Promise<void> {
+  console.error('[NOTIFY OWNER] notifyOwnerOnBookingCreated called', { businessId: business.id, appointmentId: appointment.id })
+
   const scheduledAt = new Date(appointment.scheduledAt)
   const tz = business.timezone ?? 'America/New_York'
   const dateStr = formatDate(scheduledAt, tz)
   const timeStr = formatTime(scheduledAt, tz)
-  const dashboardUrl = `${baseUrl}/dashboard/appointments`
+  const dashboardUrl = 'https://alignandacquire.com/dashboard/appointments'
+  const sourceLabel = appointment.source === 'sms' ? 'Missed Call' : 'Website'
+  const notesTruncated = appointment.notes
+    ? (appointment.notes.length > 100 ? appointment.notes.slice(0, 100) + '...' : appointment.notes)
+    : ''
 
   // SMS
   if (business.notifyBySms) {
+    console.error('[NOTIFY OWNER] SMS enabled, checking phone numbers...')
     const toPhone = business.ownerPhone || business.forwardingNumber
-    if (toPhone && business.telnyxPhoneNumber) {
-      const smsText = `New booking! ${appointment.customerName} booked ${dateStr} at ${timeStr}. Service: ${appointment.serviceType}. Phone: ${appointment.customerPhone}`
+    if (!toPhone) {
+      console.error('[NOTIFY OWNER] SMS SKIP: No ownerPhone or forwardingNumber set for business', { businessId: business.id })
+    } else if (!business.telnyxPhoneNumber) {
+      console.error('[NOTIFY OWNER] SMS SKIP: No telnyxPhoneNumber set for business', { businessId: business.id })
+    } else {
+      const smsText = `📅 New ${sourceLabel} Lead!\n${appointment.customerName} booked ${appointment.serviceType} on ${dateStr} at ${timeStr}.\nPhone: ${appointment.customerPhone}${notesTruncated ? `\nNotes: ${notesTruncated}` : ''}\nFull details in your email and dashboard.`
+      console.error('[NOTIFY OWNER] Sending SMS to', toPhone.trim(), 'from', business.telnyxPhoneNumber)
       try {
         const telnyx = new Telnyx({ apiKey: process.env.TELNYX_API_KEY! })
-        await telnyx.messages.send({
+        const response = await telnyx.messages.send({
           from: business.telnyxPhoneNumber,
           to: toPhone.trim(),
           text: smsText,
         })
+        console.error('[NOTIFY OWNER] SMS sent successfully', { to: toPhone.trim(), telnyxResponse: JSON.stringify(response.data) })
       } catch (err) {
-        console.error('Failed to send owner booking SMS:', err)
+        console.error('[NOTIFY OWNER] SMS FAILED:', {
+          to: toPhone.trim(),
+          from: business.telnyxPhoneNumber,
+          error: err instanceof Error ? err.message : String(err),
+          fullError: err,
+        })
       }
     }
+  } else {
+    console.error('[NOTIFY OWNER] SMS disabled (notifyBySms=false)')
   }
 
   // Email
   if (business.notifyByEmail && business.ownerEmail) {
-    const subject = `New Booking - ${appointment.customerName} - ${dateStr} ${timeStr}`
+    console.error('[NOTIFY OWNER] Email enabled, sending to', business.ownerEmail)
+    const subject = `New Booking - ${appointment.customerName} - ${appointment.serviceType} - ${dateStr}`
     const body = [
       `A new appointment has been booked for ${business.name}.`,
+      '',
+      `Source: ${sourceLabel} Lead`,
       '',
       'Customer details:',
       `  Name: ${appointment.customerName}`,
       `  Phone: ${appointment.customerPhone}`,
       appointment.customerEmail ? `  Email: ${appointment.customerEmail}` : null,
       '',
-      `Service: ${appointment.serviceType}`,
-      `Date/Time: ${dateStr} at ${timeStr}`,
+      `Service booked: ${appointment.serviceType}`,
+      `Date and time: ${dateStr} at ${timeStr}`,
+      '',
+      appointment.notes ? `Notes / context from customer:\n${appointment.notes}` : null,
       '',
       `View and manage appointments: ${dashboardUrl}`,
+      '',
+      'Booked via MissedCall AI - Align & Acquire',
     ]
       .filter(Boolean)
       .join('\n')
 
     try {
       await sendEmail(business.ownerEmail, subject, body)
+      console.error('[NOTIFY OWNER] Email sent successfully to', business.ownerEmail)
     } catch (err) {
-      console.error('Failed to send owner booking email:', err)
+      console.error('[NOTIFY OWNER] Email FAILED:', {
+        to: business.ownerEmail,
+        error: err instanceof Error ? err.message : String(err),
+        fullError: err,
+      })
+    }
+  } else {
+    if (!business.notifyByEmail) {
+      console.error('[NOTIFY OWNER] Email disabled (notifyByEmail=false)')
+    } else if (!business.ownerEmail) {
+      console.error('[NOTIFY OWNER] Email SKIP: No ownerEmail set for business', { businessId: business.id })
     }
   }
 }
@@ -161,8 +201,17 @@ function getTransporter() {
   const host = process.env.SMTP_HOST || 'smtp.gmail.com'
   const port = Number(process.env.SMTP_PORT) || 587
 
+  console.error('[NOTIFY OWNER] SMTP config check:', {
+    SMTP_HOST: host,
+    SMTP_PORT: port,
+    SMTP_USER: user ? '(set)' : 'MISSING',
+    SMTP_PASS: pass ? '(set)' : 'MISSING',
+  })
+
   if (!user || !pass) {
-    throw new Error('SMTP_USER and SMTP_PASS must be set for email notifications')
+    const missing = [(!user && 'SMTP_USER'), (!pass && 'SMTP_PASS')].filter(Boolean)
+    console.error('[NOTIFY OWNER] SMTP FAIL: Missing env vars:', missing)
+    throw new Error(`SMTP_USER and SMTP_PASS must be set for email notifications. Missing: ${missing.join(', ')}`)
   }
 
   transporter = nodemailer.createTransport({
@@ -176,10 +225,17 @@ function getTransporter() {
 
 async function sendEmail(to: string, subject: string, text: string): Promise<void> {
   const from = process.env.SMTP_FROM || process.env.SMTP_USER || 'noreply@alignandacquire.com'
-  await getTransporter().sendMail({
-    from,
-    to,
-    subject,
-    text,
-  })
+  console.error('[NOTIFY OWNER] sendEmail called', { to, subject: subject.slice(0, 50) + '...' })
+  try {
+    const result = await getTransporter().sendMail({
+      from,
+      to,
+      subject,
+      text,
+    })
+    console.error('[NOTIFY OWNER] sendMail result:', { messageId: result.messageId })
+  } catch (err) {
+    console.error('[NOTIFY OWNER] sendMail FAILED - full SMTP error:', err)
+    throw err
+  }
 }

@@ -11,6 +11,11 @@ interface TimeSlot {
   display: string
 }
 
+interface ServiceOption {
+  value: string
+  label: string
+}
+
 interface SlotsDebug {
   businessId: string
   calendarEnabled: boolean
@@ -45,6 +50,8 @@ export default function BookingPage() {
   const [phone, setPhone] = useState('')
   const [email, setEmail] = useState('')
   const [service, setService] = useState('')
+  const [notes, setNotes] = useState('')
+  const [servicesOffered, setServicesOffered] = useState<ServiceOption[]>([])
 
   const [submitting, setSubmitting] = useState(false)
   const [confirmation, setConfirmation] = useState<{ scheduledAt: string; serviceType: string; timezone?: string } | null>(null)
@@ -57,6 +64,7 @@ export default function BookingPage() {
       .then(data => {
         setBusinessName(data.businessName ?? null)
         setCalendarConnected(data.calendarEnabled === true && !data.error?.includes('not connected') && !!data.businessName)
+        setServicesOffered(Array.isArray(data.servicesOffered) ? data.servicesOffered : [])
         setLoading(false)
       })
       .catch(() => {
@@ -98,7 +106,7 @@ export default function BookingPage() {
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    if (!selectedSlot || !name.trim() || !phone.trim() || !service.trim()) return
+    if (!selectedSlot || !name.trim() || !phone.trim() || !service.trim() || !notes.trim()) return
     setSubmitting(true)
     setError(null)
     fetch('/api/bookings/create', {
@@ -111,6 +119,7 @@ export default function BookingPage() {
         customerEmail: email.trim() || undefined,
         slotStart: selectedSlot.start,
         serviceType: service.trim(),
+        notes: notes.trim(),
       }),
     })
       .then(async res => {
@@ -310,18 +319,56 @@ export default function BookingPage() {
                   style={inputStyle}
                 />
               </div>
+              {servicesOffered.length > 0 ? (
+                <div>
+                  <label className="flex items-center gap-2 text-sm font-medium mb-2" style={labelStyle}>
+                    <FileText className="h-4 w-4" />
+                    Service *
+                  </label>
+                  <select
+                    value={service}
+                    onChange={e => setService(e.target.value)}
+                    required
+                    className="w-full px-4 py-3 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    style={inputStyle}
+                  >
+                    <option value="">Select a service</option>
+                    {servicesOffered.map(opt => (
+                      <option key={opt.value} value={opt.value}>
+                        {opt.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              ) : (
+                <div>
+                  <label className="flex items-center gap-2 text-sm font-medium mb-2" style={labelStyle}>
+                    <FileText className="h-4 w-4" />
+                    Service *
+                  </label>
+                  <input
+                    type="text"
+                    value={service}
+                    onChange={e => setService(e.target.value)}
+                    required
+                    placeholder="e.g. Teeth cleaning, Haircut"
+                    className="w-full px-4 py-3 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    style={inputStyle}
+                  />
+                </div>
+              )}
               <div>
                 <label className="flex items-center gap-2 text-sm font-medium mb-2" style={labelStyle}>
                   <FileText className="h-4 w-4" />
-                  Service / Description *
+                  Tell us more about what you need (required) *
                 </label>
-                <input
-                  type="text"
-                  value={service}
-                  onChange={e => setService(e.target.value)}
+                <textarea
+                  value={notes}
+                  onChange={e => setNotes(e.target.value)}
                   required
-                  placeholder="e.g. Teeth cleaning, Haircut"
-                  className="w-full px-4 py-3 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  rows={3}
+                  placeholder="Any details that would help us prepare for your appointment..."
+                  className="w-full px-4 py-3 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-none"
                   style={inputStyle}
                 />
               </div>
@@ -335,7 +382,7 @@ export default function BookingPage() {
 
             <button
               type="submit"
-              disabled={!selectedSlot || !name.trim() || !phone.trim() || !service.trim() || submitting}
+              disabled={!selectedSlot || !name.trim() || !phone.trim() || !service.trim() || !notes.trim() || submitting}
               className="w-full py-4 text-white font-semibold rounded-xl hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition"
               style={{ backgroundColor: '#2563eb' }}
             >
