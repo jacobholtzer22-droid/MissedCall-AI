@@ -50,7 +50,10 @@ interface ClientState {
 }
 
 export async function POST(request: NextRequest) {
+  const webhookReceivedAt = new Date().toISOString()
+  const timing: Record<string, string | number | undefined> = { webhookReceivedAt }
   try {
+    console.log('⏱️ [VOICE] Webhook received at:', webhookReceivedAt)
     const body = await request.json()
     const eventType = body.data?.event_type as string
     const payload = body.data?.payload
@@ -117,7 +120,7 @@ export async function POST(request: NextRequest) {
           valid_digits: '0123456789',
         })
       } else {
-        await sendMissedCallSMS(telnyx, business, callControlId, from)
+        await sendMissedCallSMS(telnyx, business, callControlId, from, timing)
         const normalMsg = business.missedCallVoiceMessage || DEFAULT_VOICE_MESSAGE
         console.log('🔊 Speaking missed call message:', { callControlId, message: normalMsg })
         await telnyx.calls.actions.speak(callControlId, {
@@ -126,7 +129,9 @@ export async function POST(request: NextRequest) {
         })
       }
 
-      return NextResponse.json({}, { status: 200 })
+      timing.totalMs = Date.now() - new Date(webhookReceivedAt).getTime()
+      console.log('⏱️ [VOICE] Total time (call.initiated):', timing.totalMs, 'ms')
+      return NextResponse.json({ ok: true, timing }, { status: 200 })
     }
 
     // =============================================
@@ -151,7 +156,7 @@ export async function POST(request: NextRequest) {
         }
       } catch (err) {
         console.error('❌ Failed to bridge calls:', err)
-        await handleForwardingFallback(telnyx, state, 'failed')
+        await handleForwardingFallback(telnyx, state, 'failed', undefined, timing)
       }
 
       return NextResponse.json({}, { status: 200 })
@@ -168,7 +173,7 @@ export async function POST(request: NextRequest) {
         if (!business?.forwardingNumber) {
           console.error('❌ No forwarding number found, falling back to missed call flow')
           if (business) {
-            await sendMissedCallSMS(telnyx, business, callControlId, state.callerPhone!)
+            await sendMissedCallSMS(telnyx, business, callControlId, state.callerPhone!, timing)
             await telnyx.calls.actions.speak(callControlId, {
               payload: business.missedCallVoiceMessage || DEFAULT_VOICE_MESSAGE,
               voice: VOICE,
@@ -183,7 +188,7 @@ export async function POST(request: NextRequest) {
         const connectionId = state.connectionId || process.env.TELNYX_CONNECTION_ID
         if (!connectionId) {
           console.error('❌ No connection_id available for outbound call, falling back')
-          await sendMissedCallSMS(telnyx, business, callControlId, state.callerPhone!)
+          await sendMissedCallSMS(telnyx, business, callControlId, state.callerPhone!, timing)
           await telnyx.calls.actions.speak(callControlId, {
             payload: business.missedCallVoiceMessage || DEFAULT_VOICE_MESSAGE,
             voice: VOICE,
@@ -211,7 +216,7 @@ export async function POST(request: NextRequest) {
           console.log('📞 Forwarding call created:', (outboundCall as any)?.data?.call_control_id)
         } catch (err) {
           console.error('❌ Failed to create forwarding call:', err)
-          await sendMissedCallSMS(telnyx, business, callControlId, state.callerPhone!)
+          await sendMissedCallSMS(telnyx, business, callControlId, state.callerPhone!, timing)
           await telnyx.calls.actions.speak(callControlId, {
             payload: business.missedCallVoiceMessage || DEFAULT_VOICE_MESSAGE,
             voice: VOICE,
@@ -279,7 +284,7 @@ export async function POST(request: NextRequest) {
           } as any)
         } else {
           // ---- STANDARD SCREENING FLOW (no forwarding) ----
-          await sendMissedCallSMS(telnyx, business, callControlId, callerPhone)
+          await sendMissedCallSMS(telnyx, business, callControlId, callerPhone, timing)
           const missedMsg = business.missedCallVoiceMessage || DEFAULT_VOICE_MESSAGE
           console.log('🔊 Speaking missed call message:', { callControlId, message: missedMsg })
           await telnyx.calls.actions.speak(callControlId, {
@@ -302,7 +307,9 @@ export async function POST(request: NextRequest) {
         })
       }
 
-      return NextResponse.json({}, { status: 200 })
+      timing.totalMs = Date.now() - new Date(webhookReceivedAt).getTime()
+      console.log('⏱️ [VOICE] Total time (call.gather.ended):', timing.totalMs, 'ms')
+      return NextResponse.json({ ok: true, timing }, { status: 200 })
     }
 
     // =============================================
@@ -339,8 +346,10 @@ export async function POST(request: NextRequest) {
         }
       }
 
-      await handleForwardingFallback(telnyx, state, 'no-answer')
-      return NextResponse.json({}, { status: 200 })
+      await handleForwardingFallback(telnyx, state, 'no-answer', undefined, timing)
+      timing.totalMs = Date.now() - new Date(webhookReceivedAt).getTime()
+      console.log('⏱️ [VOICE] Total time (hangup fallback):', timing.totalMs, 'ms')
+      return NextResponse.json({ ok: true, timing }, { status: 200 })
     }
 
     // =============================================
@@ -356,8 +365,10 @@ export async function POST(request: NextRequest) {
         await telnyx.calls.actions.hangup(callControlId, {})
       } catch {}
 
-      await handleForwardingFallback(telnyx, state, 'failed')
-      return NextResponse.json({}, { status: 200 })
+      await handleForwardingFallback(telnyx, state, 'failed', undefined, timing)
+      timing.totalMs = Date.now() - new Date(webhookReceivedAt).getTime()
+      console.log('⏱️ [VOICE] Total time (bridge failed):', timing.totalMs, 'ms')
+      return NextResponse.json({ ok: true, timing }, { status: 200 })
     }
 
     // Acknowledge all other events
@@ -401,6 +412,7 @@ async function handleForwardingFallback(
   state: ClientState,
   dialCallStatus = 'no-answer',
   answeredBy?: string,
+  timing?: Record<string, string | number | undefined>,
 ) {
   if (!state.businessId || !state.callerPhone || !state.aLegCallControlId) {
     console.error('❌ Missing state for forwarding fallback')
@@ -434,7 +446,7 @@ async function handleForwardingFallback(
   const business = await db.business.findUnique({ where: { id: state.businessId } })
   if (!business) return
 
-  await sendMissedCallSMS(telnyx, business, state.aLegCallControlId, state.callerPhone)
+          await sendMissedCallSMS(telnyx, business, state.aLegCallControlId, state.callerPhone, timing)
 
   const missedMsg = business.missedCallVoiceMessage || DEFAULT_VOICE_MESSAGE
   try {
@@ -455,7 +467,8 @@ async function sendMissedCallSMS(
   telnyx: InstanceType<typeof Telnyx>,
   business: { id: string; name: string; aiGreeting: string | null; telnyxPhoneNumber: string | null; smsCooldownDays?: number | null; cooldownBypassNumbers?: unknown },
   callControlId: string,
-  callerPhone: string
+  callerPhone: string,
+  timing?: Record<string, string | number | undefined>,
 ) {
   // 0. Check blocked list first
   const blocked = await db.blockedNumber.findFirst({
@@ -538,26 +551,56 @@ async function sendMissedCallSMS(
   ).slice(0, 140)
 
   try {
+    if (timing) {
+      timing.telnyxSendAt = new Date().toISOString()
+      console.log('⏱️ [VOICE] Telnyx send API call started at:', timing.telnyxSendAt)
+    }
     const message = await telnyx.messages.send({
       from: business.telnyxPhoneNumber!,
       to: callerPhone,
       text: greeting,
     })
+    const data = (message as any)?.data
+    const messageId = data?.id
+    const status = data?.to?.[0]?.status ?? 'sent'
 
-    await db.message.create({
-      data: {
-        conversationId: conversation.id,
-        direction: 'outbound',
-        content: greeting,
-        telnyxSid: (message as any).data?.id ?? null,
-        telnyxStatus: (message as any).data?.to?.[0]?.status ?? 'sent',
-      },
-    })
+    if (timing) {
+      timing.telnyxResponseAt = new Date().toISOString()
+      timing.telnyxMessageId = messageId
+      timing.telnyxStatus = status
+      timing.totalMs = Date.now() - new Date(timing.webhookReceivedAt as string).getTime()
+      console.log('⏱️ [VOICE] Telnyx API responded at:', timing.telnyxResponseAt, {
+        success: true,
+        telnyxMessageId: messageId,
+        telnyxStatus: status,
+        fullResponse: JSON.stringify(data),
+        totalMs: timing.totalMs,
+      })
+    }
+    console.log('📤 [VOICE] Sent initial SMS — Telnyx message ID:', messageId, '| Look up in Telnyx portal:', messageId)
 
-    await recordMessageSent(business.id, callerPhone)
-    console.log('📤 Sent initial SMS:', (message as any).data?.id)
+    // Defer database writes — SMS is sent; logging can happen after
+    const convId = conversation.id
+    void db.message
+      .create({
+        data: {
+          conversationId: convId,
+          direction: 'outbound',
+          content: greeting,
+          telnyxSid: messageId ?? null,
+          telnyxStatus: status,
+        },
+      })
+      .then(() => recordMessageSent(business.id, callerPhone))
+      .catch((err) => console.error('❌ [VOICE] Deferred DB log failed (SMS was sent):', err))
   } catch (err) {
-    console.error('❌ Failed to send SMS:', err)
+    const errMsg = err instanceof Error ? err.message : String(err)
+    if (timing) {
+      timing.telnyxResponseAt = new Date().toISOString()
+      timing.telnyxError = errMsg
+      console.log('⏱️ [VOICE] Telnyx API error at:', timing.telnyxResponseAt, { error: errMsg })
+    }
+    console.error('❌ [VOICE] Failed to send SMS:', err, '| Full:', JSON.stringify(err, Object.getOwnPropertyNames(err)))
   }
 }
 

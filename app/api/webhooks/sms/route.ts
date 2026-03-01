@@ -18,6 +18,7 @@ import {
   notifyOwnerOnBookingRequestNoCalendar,
   notifyOwnerOnHumanNeeded,
 } from '@/lib/notify-owner'
+import { recordMessageSent } from '@/lib/sms-cooldown'
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! })
 
@@ -28,13 +29,35 @@ const BOOKING_INTENT_WORDS = ['book', 'appointment', 'schedule', 'booking', 'res
 const CONVERSATION_TIMEOUT_HOURS = 24
 const SPAM_WINDOW_SECONDS = 30
 
+// Timing data for debugging slow responses
+type WebhookTiming = {
+  webhookReceivedAt: string
+  aiStartAt?: string
+  aiEndAt?: string
+  telnyxSendAt?: string
+  telnyxResponseAt?: string
+  telnyxMessageId?: string
+  telnyxStatus?: string
+  telnyxError?: string
+  totalMs?: number
+}
+
+function createTiming(): WebhookTiming & { now: () => string } {
+  const received = new Date().toISOString()
+  return {
+    webhookReceivedAt: received,
+    now: () => new Date().toISOString(),
+  }
+}
+
 export async function POST(request: NextRequest) {
+  const timing = createTiming()
   try {
     const body = await request.json()
     const eventType = body.data?.event_type as string
     const payload = body.data?.payload
 
-    console.log('💬 SMS webhook event:', eventType)
+    console.log('⏱️ [SMS] Webhook received at:', timing.webhookReceivedAt, '| event:', eventType)
 
     // ── Delivery status update ──────────────────────────────────────
     if (eventType === 'message.finalized' || eventType === 'message.sent') {
@@ -168,10 +191,18 @@ export async function POST(request: NextRequest) {
 
       // ── SMS BOOKING FLOW ─────────────────────────────────────────
       const bookingHandled = await handleSmsBookingFlow(business, conversation, text, from)
-      if (bookingHandled) return new NextResponse('OK', { status: 200 })
+      if (bookingHandled) {
+        const totalMs = Date.now() - new Date(timing.webhookReceivedAt).getTime()
+        console.log('⏱️ [SMS] Total time (booking flow):', totalMs, 'ms', { timing: { ...timing, totalMs } })
+        return NextResponse.json({ ok: true, timing: { ...timing, totalMs } }, { status: 200 })
+      }
 
       // AI response (pass bookingFlowState so AI can guide back when customer goes off-topic)
+      timing.aiStartAt = timing.now()
+      console.log('⏱️ [SMS] AI processing started at:', timing.aiStartAt)
       const aiResponse = await generateAIResponse(business, conversation, text, conversation.bookingFlowState)
+      timing.aiEndAt = timing.now()
+      console.log('⏱️ [SMS] AI processing finished at:', timing.aiEndAt)
 
       const cleanResponse = aiResponse
         .replace(/\[APPOINTMENT_BOOKED:.*?\]/g, '')
@@ -242,8 +273,10 @@ export async function POST(request: NextRequest) {
           }
           // Override AI response when calendar is off: send quote-specific message
           const calendarOffMsg = `I've passed your info along to ${business.name}. They'll reach out soon to set up a time to come give you a quote for ${service}!`
-          await sendSMSAndLog(business, conversation.id, from, calendarOffMsg)
-          return new NextResponse('OK', { status: 200 })
+          await sendSMSAndLog(business, conversation.id, from, calendarOffMsg, timing)
+          const totalMs = Date.now() - new Date(timing.webhookReceivedAt).getTime()
+          console.log('⏱️ [SMS] Total time (calendar-off path):', totalMs, 'ms', { timing: { ...timing, totalMs } })
+          return NextResponse.json({ ok: true, timing: { ...timing, totalMs } }, { status: 200 })
         }
       }
 
@@ -269,8 +302,15 @@ export async function POST(request: NextRequest) {
         }
       }
 
-      await sendSMSAndLog(business, conversation.id, from, cleanResponse)
-      return new NextResponse('OK', { status: 200 })
+      await sendSMSAndLog(business, conversation.id, from, cleanResponse, timing)
+      const totalMs = Date.now() - new Date(timing.webhookReceivedAt).getTime()
+      timing.totalMs = totalMs
+      console.log('⏱️ [SMS] Total time (webhook→SMS sent):', totalMs, 'ms', {
+        timing,
+        telnyxMessageId: timing.telnyxMessageId,
+        telnyxStatus: timing.telnyxStatus,
+      })
+      return NextResponse.json({ ok: true, timing }, { status: 200 })
     }
 
     // Acknowledge any other event
@@ -985,7 +1025,7 @@ Then add this EXACT tag at the end of your message:
 
   try {
     const response = await anthropic.messages.create({
-      model: 'claude-sonnet-4-6',
+      model: 'claude-3-5-haiku-20241022',
       max_tokens: 256,
       system: systemPrompt,
       messages: conversationHistory,
@@ -1003,21 +1043,51 @@ async function sendSMS(business: any, to: string, message: string) {
   await telnyxClient.messages.send({ from: business.telnyxPhoneNumber!, to, text: message })
 }
 
-async function sendSMSAndLog(business: any, conversationId: string, to: string, message: string) {
+async function sendSMSAndLog(
+  business: any,
+  conversationId: string,
+  to: string,
+  message: string,
+  timing?: WebhookTiming & { now: () => string }
+) {
   const telnyxClient = new Telnyx({ apiKey: process.env.TELNYX_API_KEY! })
   try {
+    if (timing) {
+      timing.telnyxSendAt = timing.now()
+      console.log('⏱️ [SMS] Telnyx send API call started at:', timing.telnyxSendAt)
+    }
     const sent = await telnyxClient.messages.send({ from: business.telnyxPhoneNumber!, to, text: message })
-    await db.message.create({
-      data: {
-        conversationId,
-        direction: 'outbound',
-        content: message,
-        telnyxSid: (sent as any).data?.id ?? null,
-        telnyxStatus: (sent as any).data?.to?.[0]?.status ?? 'sent',
-      },
-    })
-    console.log('📤 Sent AI response:', (sent as any).data?.id)
+    const data = (sent as any)?.data
+    const messageId = data?.id
+    const status = data?.to?.[0]?.status ?? 'sent'
+
+    if (timing) {
+      timing.telnyxResponseAt = timing.now()
+      timing.telnyxMessageId = messageId
+      timing.telnyxStatus = status
+      console.log('⏱️ [SMS] Telnyx API responded at:', timing.telnyxResponseAt, {
+        success: true,
+        telnyxMessageId: messageId,
+        telnyxStatus: status,
+        fullResponse: JSON.stringify(data),
+      })
+    } else {
+      console.log('📤 Sent AI response, Telnyx message ID:', messageId, 'status:', status, '| Look up in Telnyx portal:', messageId)
+    }
+
+    // Defer database writes — SMS is sent; logging can happen after (don't block response)
+    const payload = { conversationId, direction: 'outbound' as const, content: message, telnyxSid: messageId ?? null, telnyxStatus: status }
+    void db.message
+      .create({ data: payload })
+      .then(() => recordMessageSent(business.id, to))
+      .catch((err) => console.error('❌ Deferred DB log failed (SMS was sent):', err))
   } catch (error) {
-    console.error('❌ Error sending SMS:', error)
+    const errMsg = error instanceof Error ? error.message : String(error)
+    if (timing) {
+      timing.telnyxResponseAt = timing.now()
+      timing.telnyxError = errMsg
+      console.log('⏱️ [SMS] Telnyx API error at:', timing.telnyxResponseAt, { error: errMsg })
+    }
+    console.error('❌ Error sending SMS:', error, '| Full error:', JSON.stringify(error, Object.getOwnPropertyNames(error)))
   }
 }

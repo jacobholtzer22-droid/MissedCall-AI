@@ -20,7 +20,10 @@ function xmlResponse(xml: string): NextResponse {
 }
 
 export async function POST(request: NextRequest) {
+  const webhookReceivedAt = new Date().toISOString()
+  const timing: Record<string, string | number | undefined> = { webhookReceivedAt }
   try {
+    console.log('⏱️ [VOICE-GATHER] Webhook received at:', webhookReceivedAt)
     const body = await request.json()
     const { searchParams } = new URL(request.url)
 
@@ -59,7 +62,10 @@ export async function POST(request: NextRequest) {
         },
       })
 
-      await triggerMissedCallSMS(business, callerPhone)
+      await triggerMissedCallSMS(business, callerPhone, timing)
+
+      timing.totalMs = Date.now() - new Date(webhookReceivedAt).getTime()
+      console.log('⏱️ [VOICE-GATHER] Total time (digit 1):', timing.totalMs, 'ms', timing)
 
       return xmlResponse(
         '<Response><Say voice="Polly.Joanna">Thank you. We are unable to take your call right now, but we will text you shortly to help with your request. Goodbye.</Say></Response>'
@@ -93,7 +99,8 @@ export async function POST(request: NextRequest) {
 
 async function triggerMissedCallSMS(
   business: { id: string; name: string; aiGreeting: string | null; telnyxPhoneNumber: string | null; smsCooldownDays?: number | null; cooldownBypassNumbers?: unknown },
-  callerPhone: string
+  callerPhone: string,
+  timing?: Record<string, string | number | undefined>,
 ) {
   // 0. Check blocked list first
   const blocked = await db.blockedNumber.findFirst({
@@ -162,25 +169,52 @@ async function triggerMissedCallSMS(
     `Hi! Sorry we missed your call at ${business.name}. I'm an automated assistant - how can I help you today?`
 
   try {
+    if (timing) {
+      timing.telnyxSendAt = new Date().toISOString()
+      console.log('⏱️ [VOICE-GATHER] Telnyx send API call started at:', timing.telnyxSendAt)
+    }
     const message = await telnyxClient.messages.send({
       from: business.telnyxPhoneNumber!,
       to: callerPhone,
       text: greeting,
     })
+    const data = (message as any)?.data
+    const messageId = data?.id
+    const status = data?.to?.[0]?.status ?? 'sent'
 
-    await db.message.create({
-      data: {
-        conversationId: conversation.id,
-        direction: 'outbound',
-        content: greeting,
-        telnyxSid: (message as any).data?.id ?? null,
-        telnyxStatus: (message as any).data?.to?.[0]?.status ?? 'sent',
-      },
-    })
+    if (timing) {
+      timing.telnyxResponseAt = new Date().toISOString()
+      timing.telnyxMessageId = messageId
+      timing.telnyxStatus = status
+      timing.totalMs = Date.now() - new Date(timing.webhookReceivedAt as string).getTime()
+      console.log('⏱️ [VOICE-GATHER] Telnyx API responded at:', timing.telnyxResponseAt, {
+        success: true,
+        telnyxMessageId: messageId,
+        telnyxStatus: status,
+        fullResponse: JSON.stringify(data),
+        totalMs: timing.totalMs,
+      })
+    }
+    console.log('📤 [VOICE-GATHER] Sent SMS — Telnyx message ID:', messageId, '| Look up in Telnyx portal:', messageId)
 
-    await recordMessageSent(business.id, callerPhone)
-    console.log('📤 Sent MissedCall AI SMS:', (message as any).data?.id)
+    // Defer database writes — SMS is sent; logging can happen after
+    void db.message
+      .create({
+        data: {
+          conversationId: conversation.id,
+          direction: 'outbound',
+          content: greeting,
+          telnyxSid: messageId ?? null,
+          telnyxStatus: status,
+        },
+      })
+      .then(() => recordMessageSent(business.id, callerPhone))
+      .catch((err) => console.error('❌ [VOICE-GATHER] Deferred DB log failed (SMS was sent):', err))
   } catch (error) {
-    console.error('❌ Error sending SMS:', error)
+    if (timing) {
+      timing.telnyxResponseAt = new Date().toISOString()
+      timing.telnyxError = error instanceof Error ? error.message : String(error)
+    }
+    console.error('❌ [VOICE-GATHER] Error sending SMS:', error, '| Full:', JSON.stringify(error, Object.getOwnPropertyNames(error)))
   }
 }

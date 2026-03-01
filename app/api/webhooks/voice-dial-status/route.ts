@@ -17,7 +17,10 @@ import { checkCooldown, recordMessageSent, logCooldownSkip, isCooldownBypassNumb
 import { isExistingContact, logContactSkip } from '@/lib/contacts-check'
 
 export async function POST(request: NextRequest) {
+  const webhookReceivedAt = new Date().toISOString()
+  const timing: Record<string, string | number | undefined> = { webhookReceivedAt }
   try {
+    console.log('⏱️ [VOICE-DIAL-STATUS] Webhook received at:', webhookReceivedAt)
     const body = await request.json()
     const { searchParams } = new URL(request.url)
 
@@ -253,29 +256,52 @@ export async function POST(request: NextRequest) {
       `Hi! Sorry we missed your call at ${business.name}. I'm an automated assistant - how can I help you today?`
 
     try {
+      timing.telnyxSendAt = new Date().toISOString()
+      console.log('⏱️ [VOICE-DIAL-STATUS] Telnyx send API call started at:', timing.telnyxSendAt)
       const message = await telnyxClient.messages.send({
         from: business.telnyxPhoneNumber!,
         to: callerPhone,
         text: greeting,
       })
+      const data = (message as any)?.data
+      const messageId = data?.id
+      const status = data?.to?.[0]?.status ?? 'sent'
 
-      await db.message.create({
-        data: {
-          conversationId: conversationForSms.id,
-          direction: 'outbound',
-          content: greeting,
-          telnyxSid: (message as any).data?.id ?? null,
-          telnyxStatus: (message as any).data?.to?.[0]?.status ?? 'sent',
-        },
+      timing.telnyxResponseAt = new Date().toISOString()
+      timing.telnyxMessageId = messageId
+      timing.telnyxStatus = status
+      timing.totalMs = Date.now() - new Date(webhookReceivedAt).getTime()
+      console.log('⏱️ [VOICE-DIAL-STATUS] Telnyx API responded at:', timing.telnyxResponseAt, {
+        success: true,
+        telnyxMessageId: messageId,
+        telnyxStatus: status,
+        fullResponse: JSON.stringify(data),
+        totalMs: timing.totalMs,
       })
+      console.log('📤 [VOICE-DIAL-STATUS] Sent SMS — Telnyx message ID:', messageId, '| Look up in Telnyx portal:', messageId)
 
-      await recordMessageSent(business.id, callerPhone)
-      console.log('📤 Sent MissedCall AI SMS after missed dial:', (message as any).data?.id)
+      // Defer database writes — SMS is sent; logging can happen after
+      void db.message
+        .create({
+          data: {
+            conversationId: conversationForSms.id,
+            direction: 'outbound',
+            content: greeting,
+            telnyxSid: messageId ?? null,
+            telnyxStatus: status,
+          },
+        })
+        .then(() => recordMessageSent(business.id, callerPhone))
+        .catch((err) => console.error('❌ [VOICE-DIAL-STATUS] Deferred DB log failed (SMS was sent):', err))
     } catch (error) {
-      console.error('❌ Error sending SMS:', error)
+      timing.telnyxResponseAt = new Date().toISOString()
+      timing.telnyxError = error instanceof Error ? error.message : String(error)
+      timing.totalMs = Date.now() - new Date(webhookReceivedAt).getTime()
+      console.error('❌ [VOICE-DIAL-STATUS] Error sending SMS:', error, '| Full:', JSON.stringify(error, Object.getOwnPropertyNames(error)))
     }
 
-    return new NextResponse('', { status: 200 })
+    console.log('⏱️ [VOICE-DIAL-STATUS] Total time:', timing.totalMs, 'ms', timing)
+    return NextResponse.json({ ok: true, timing }, { status: 200 })
   } catch (error) {
     console.error('❌ Error in dial status callback:', error)
     return new NextResponse('', { status: 200 })
