@@ -3,8 +3,12 @@
 import { useEffect, useState } from 'react'
 import { useParams } from 'next/navigation'
 import Link from 'next/link'
+import { addDays } from 'date-fns'
+import { parseISO } from 'date-fns'
+import { format } from 'date-fns'
 import { Calendar, Clock, User, Phone, Mail, FileText, MapPin, CheckCircle } from 'lucide-react'
 import { BookingPageHeader } from '@/app/components/BookingPageHeader'
+import { BookingCalendar } from '@/app/components/BookingCalendar'
 
 interface TimeSlot {
   start: string
@@ -47,10 +51,11 @@ export default function BookingPage() {
   const [submitting, setSubmitting] = useState(false)
   const [confirmation, setConfirmation] = useState<{ scheduledAt: string; serviceType: string; timezone?: string } | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [serverToday, setServerToday] = useState<string>('')
 
   useEffect(() => {
     if (!slug) return
-    fetch(`/api/bookings/available-slots?businessSlug=${slug}&start=${new Date().toISOString().slice(0, 10)}&end=${addDays(new Date(), 14).toISOString().slice(0, 10)}`)
+    fetch(`/api/bookings/available-slots?businessSlug=${slug}`)
       .then(res => res.json())
       .then(data => {
         setBusinessName(data.businessName ?? null)
@@ -63,6 +68,7 @@ export default function BookingPage() {
         setBookingRequiresAddress(data.bookingRequiresAddress !== false)
         setCalendarConnected(data.calendarEnabled === true && !data.error?.includes('not connected') && !!data.businessName)
         setServicesOffered(Array.isArray(data.servicesOffered) ? data.servicesOffered : [])
+        if (data.today) setServerToday(data.today)
         setLoading(false)
       })
       .catch(() => {
@@ -77,6 +83,10 @@ export default function BookingPage() {
       setNoMoreAvailabilityToday(false)
       return
     }
+    const apiQueryDate = selectedDate
+    console.log(
+      `Today's date: ${serverToday || '(loading)'}, Selected date: ${selectedDate}, API query date: ${apiQueryDate}`
+    )
     setSlotsLoading(true)
     setSelectedSlot(null)
     fetch(`/api/bookings/available-slots?businessSlug=${slug}&start=${selectedDate}&end=${selectedDate}`)
@@ -91,16 +101,12 @@ export default function BookingPage() {
         setNoMoreAvailabilityToday(false)
         setSlotsLoading(false)
       })
-  }, [slug, selectedDate])
+  }, [slug, selectedDate, serverToday])
 
-  const today = new Date().toISOString().slice(0, 10)
-  const maxDate = addDays(new Date(), 30).toISOString().slice(0, 10)
-
-  function addDays(d: Date, n: number) {
-    const out = new Date(d)
-    out.setDate(out.getDate() + n)
-    return out
-  }
+  const today = serverToday || format(new Date(), 'yyyy-MM-dd')
+  const maxDate = serverToday
+    ? format(addDays(parseISO(serverToday), 30), 'yyyy-MM-dd')
+    : format(addDays(new Date(), 30), 'yyyy-MM-dd')
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -228,19 +234,14 @@ export default function BookingPage() {
                 <label className="block text-sm font-medium mb-2" style={labelStyle}>
                   Select a date for your quote visit
                 </label>
-                <div className="flex items-center gap-2">
-                  <input
-                    type="date"
-                    value={selectedDate}
-                    onChange={e => setSelectedDate(e.target.value)}
-                    min={today}
-                    max={maxDate}
-                    className="flex-1 px-4 py-3 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                    style={inputStyle}
-                  />
-                </div>
+                <BookingCalendar
+                  today={today}
+                  maxDate={maxDate}
+                  selectedDate={selectedDate}
+                  onSelectDate={setSelectedDate}
+                />
                 <p className="mt-2 text-xs" style={{ color: '#6b7280' }}>
-                  Click a highlighted date to see available times
+                  Click a date to see available times
                 </p>
               </div>
 

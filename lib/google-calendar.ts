@@ -267,6 +267,7 @@ async function getAvailableSlotsInternal(
 
   debug.timeMin = timeMin
   debug.timeMax = timeMax
+  console.log('[google-calendar] freebusy range', { startStr, endStr, timezone: tz, timeMin, timeMax })
 
   let busy: { start: string; end: string }[] = []
   let googleCalendarError: string | undefined

@@ -40,12 +40,18 @@ export async function GET(request: NextRequest) {
 
     const tz = business.timezone ?? 'America/New_York'
     const nowInTz = new TZDate(new Date(), tz)
-    const todayStr = nowInTz.toISOString().slice(0, 10)
+    const todayStr = `${nowInTz.getFullYear()}-${String(nowInTz.getMonth() + 1).padStart(2, '0')}-${String(nowInTz.getDate()).padStart(2, '0')}`
     const defaultEndDate = new TZDate(nowInTz)
     defaultEndDate.setDate(defaultEndDate.getDate() + 14)
+    const defaultEndStr = `${defaultEndDate.getFullYear()}-${String(defaultEndDate.getMonth() + 1).padStart(2, '0')}-${String(defaultEndDate.getDate()).padStart(2, '0')}`
 
-    const effectiveStart = startStr ?? todayStr
-    const effectiveEnd = endStr ?? defaultEndDate.toISOString().slice(0, 10)
+    let effectiveStart = startStr ?? todayStr
+    const effectiveEnd = endStr ?? defaultEndStr
+
+    // Never allow queries for dates before today (in business timezone)
+    if (effectiveStart < todayStr) {
+      effectiveStart = todayStr
+    }
 
     if (!/^\d{4}-\d{2}-\d{2}$/.test(effectiveStart) || !/^\d{4}-\d{2}-\d{2}$/.test(effectiveEnd)) {
       return NextResponse.json({ error: 'Invalid date range' }, { status: 400 })
@@ -54,6 +60,8 @@ export async function GET(request: NextRequest) {
     if (effectiveStart > effectiveEnd) {
       return NextResponse.json({ error: 'Start date must be before end date' }, { status: 400 })
     }
+
+    console.log('[available-slots]', { businessSlug: business.slug, timezone: tz, todayStr, effectiveStart, effectiveEnd, timeMin: 'see getAvailableSlotsWithMeta' })
 
     const { slots, noMoreAvailabilityToday } = await getAvailableSlotsWithMeta(business.id, effectiveStart, effectiveEnd)
 
@@ -89,6 +97,8 @@ export async function GET(request: NextRequest) {
       bookingPageServiceLabel,
       bookingPageConfirmation,
       bookingRequiresAddress: business.bookingRequiresAddress ?? true,
+      today: todayStr,
+      timezone: tz,
     })
   } catch (error) {
     console.error('Available slots error:', error)
