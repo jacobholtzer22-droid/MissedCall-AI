@@ -87,10 +87,12 @@ async function fetchTelnyx<T>(path: string): Promise<T> {
   return res.json()
 }
 
+type VoiceRecordType = 'call' | 'call-control' | 'sip-trunking'
+
 /** Fetch all pages of detail records.
  * Uses EXACT same API format as /api/admin/telnyx-test: filter[record_type], filter[date_range]. */
 async function fetchAllDetailRecords(
-  recordType: 'messaging' | 'call-control',
+  recordType: 'messaging' | VoiceRecordType,
   dateRangeFilter: string
 ): Promise<TelnyxDetailRecord[]> {
   const all: TelnyxDetailRecord[] = []
@@ -118,7 +120,7 @@ async function fetchAllDetailRecords(
 
 /** Fetch with fallback: if last_90_days fails, try last_30_days, then last_7_days. */
 async function fetchWithFallback(
-  recordType: 'messaging' | 'call-control',
+  recordType: 'messaging' | VoiceRecordType,
   dateRangeFilter: string,
   debugLog: string[]
 ): Promise<TelnyxDetailRecord[]> {
@@ -149,9 +151,76 @@ async function fetchWithFallback(
   throw lastError ?? new Error('Fetch failed')
 }
 
+/** Try multiple voice record types in order: call, call-control, sip-trunking. */
+async function fetchVoiceRecordsWithFallback(
+  dateRangeFilter: string,
+  debugLog: string[]
+): Promise<TelnyxDetailRecord[]> {
+  const voiceTypes: VoiceRecordType[] = ['call', 'call-control', 'sip-trunking']
+  let lastError: Error | null = null
+
+  for (const recordType of voiceTypes) {
+    try {
+      debugLog.push(`Telnyx API: trying voice record_type=${recordType}`)
+      const records = await fetchWithFallback(recordType, dateRangeFilter, debugLog)
+      debugLog.push(`  ✓ Success with record_type=${recordType}, got ${records.length} records`)
+      return records
+    } catch (err) {
+      lastError = err instanceof Error ? err : new Error(String(err))
+      debugLog.push(`  record_type=${recordType} failed: ${lastError.message}`)
+    }
+  }
+
+  // Last resort: try Usage Reports API (returns aggregated data, cannot attribute per-business)
+  try {
+    debugLog.push('All CDR record types failed, trying Usage Reports API as fallback...')
+    const usage = await fetchUsageReportsFallback(dateRangeFilter)
+    if (usage) {
+      debugLog.push(`Usage Reports: cost=$${usage.cost.toFixed(4)}, billed_sec=${usage.billedSec}`)
+      debugLog.push('(Usage Reports data is account-level only, not stored per-business)')
+    }
+  } catch (err) {
+    debugLog.push(`Usage Reports fallback also failed: ${err instanceof Error ? err.message : String(err)}`)
+  }
+
+  throw lastError ?? new Error('All voice CDR record types failed')
+}
+
+/** Fallback: fetch sip-trunking usage from Usage Reports API (aggregated, no per-business attribution). */
+async function fetchUsageReportsFallback(
+  dateRangeFilter: string
+): Promise<{ cost: number; billedSec: number } | null> {
+  const apiKey = process.env.TELNYX_API_KEY
+  if (!apiKey) return null
+
+  const params = new URLSearchParams({
+    product: 'sip-trunking',
+    dimensions: 'direction',
+    metrics: 'cost,billed_sec',
+    date_range: dateRangeFilter,
+  })
+  const res = await fetch(`https://api.telnyx.com/v2/usage_reports?${params}`, {
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
+    },
+  })
+  if (!res.ok) return null
+  const json = (await res.json()) as { data?: Array<{ cost?: number; billed_sec?: number }> }
+  const data = json.data ?? []
+  let cost = 0
+  let billedSec = 0
+  for (const row of data) {
+    cost += Number(row.cost ?? 0)
+    billedSec += Number(row.billed_sec ?? 0)
+  }
+  return { cost, billedSec }
+}
+
 interface BusinessWithPhone {
   id: string
   telnyxPhoneNumber: string | null
+  forwardingNumber: string | null
 }
 
 /** Get business ID for a record by matching phone number.
@@ -239,7 +308,7 @@ export async function syncTelnyxUsage(
 
     const businesses = await db.business.findMany({
       where: { telnyxPhoneNumber: { not: null } },
-      select: { id: true, telnyxPhoneNumber: true },
+      select: { id: true, telnyxPhoneNumber: true, forwardingNumber: true },
     })
     debugLog.push(`Businesses with telnyxPhoneNumber (exactly as stored in DB):`)
     if (businesses.length === 0) {
@@ -254,16 +323,16 @@ export async function syncTelnyxUsage(
     const mdrRecords = await fetchWithFallback('messaging', dateRangeFilter, debugLog)
     debugLog.push(`Fetched ${mdrRecords.length} MDR records from Telnyx API`)
 
-    // Call-control (CDR) fetch is non-blocking — if it fails (e.g. 500), continue with messaging only
+    // Voice CDR fetch is non-blocking — tries call, call-control, sip-trunking, then Usage Reports
     let cdrRecords: TelnyxDetailRecord[] = []
-    let callControlFetchFailed = false
+    let voiceFetchFailed = false
     try {
-      cdrRecords = await fetchWithFallback('call-control', dateRangeFilter, debugLog)
-      debugLog.push(`Fetched ${cdrRecords.length} CDR records from Telnyx API`)
+      cdrRecords = await fetchVoiceRecordsWithFallback(dateRangeFilter, debugLog)
+      debugLog.push(`Fetched ${cdrRecords.length} voice CDR records from Telnyx API`)
     } catch (err) {
-      callControlFetchFailed = true
+      voiceFetchFailed = true
       const errMsg = err instanceof Error ? err.message : String(err)
-      debugLog.push(`Call-control fetch failed (non-blocking): ${errMsg}`)
+      debugLog.push(`Voice CDR fetch failed (non-blocking): ${errMsg}`)
     }
 
     let mdrMatched = 0
@@ -341,6 +410,14 @@ export async function syncTelnyxUsage(
         }
         cdrMatched++
 
+        // If cld (called number) matches business forwarding number, this is a call-forwarding leg (B-leg)
+        const business = businesses.find((b) => b.id === businessId)!
+        const isCallForwarding =
+          !!business.forwardingNumber &&
+          !!record.cld &&
+          phonesMatchE164(record.cld, business.forwardingNumber)
+        const recordType: 'call' | 'call_forwarding' = isCallForwarding ? 'call_forwarding' : 'call'
+
         const recordId =
           record.id ?? record.uuid ?? `cdr-${record.started_at ?? record.created_at}-${record.cli}-${record.cld}`
         const cost = parseCost(record.cost)
@@ -350,7 +427,7 @@ export async function syncTelnyxUsage(
           where: { telnyxRecordId: recordId },
           create: {
             businessId,
-            recordType: 'call',
+            recordType,
             telnyxRecordId: recordId,
             cost,
             occurredAt,
@@ -362,7 +439,18 @@ export async function syncTelnyxUsage(
               billed_sec: record.billed_sec,
             },
           },
-          update: { cost, occurredAt, metadata: { cli: record.cli, cld: record.cld, direction: record.direction, call_sec: record.call_sec, billed_sec: record.billed_sec } },
+          update: {
+            cost,
+            occurredAt,
+            recordType,
+            metadata: {
+              cli: record.cli,
+              cld: record.cld,
+              direction: record.direction,
+              call_sec: record.call_sec,
+              billed_sec: record.billed_sec,
+            },
+          },
         })
         result.cdrsProcessed++
       } catch (err) {
@@ -373,8 +461,8 @@ export async function syncTelnyxUsage(
     debugLog.push(`=== SYNC COMPLETE ===`)
     debugLog.push(`Matched ${mdrMatched} MDR records, ${mdrUnmatched} MDR records unmatched`)
     debugLog.push(`Matched ${cdrMatched} CDR records, ${cdrUnmatched} CDR records unmatched`)
-    if (callControlFetchFailed) {
-      debugLog.push(`Saved ${result.mdrsProcessed} messaging records, call-control fetch failed (skipped)`)
+    if (voiceFetchFailed) {
+      debugLog.push(`Saved ${result.mdrsProcessed} messaging records, voice CDR fetch failed (skipped)`)
     }
   } catch (err) {
     result.errors.push(String(err))

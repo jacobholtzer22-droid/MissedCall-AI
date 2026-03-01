@@ -9,6 +9,19 @@ import { db } from '@/lib/db'
 
 const ADMIN_USER_ID = process.env.ADMIN_USER_ID
 
+function sumCallMinutes(
+  records: { metadata: unknown }[]
+): { count: number; minutes: number } {
+  let minutes = 0
+  for (const r of records) {
+    const m = r.metadata as Record<string, unknown> | null
+    if (!m) continue
+    const sec = Number(m.billed_sec ?? m.call_sec ?? 0)
+    if (!isNaN(sec) && sec > 0) minutes += sec / 60
+  }
+  return { count: records.length, minutes }
+}
+
 export async function GET(
   _request: Request,
   { params }: { params: Promise<{ id: string }> }
@@ -46,6 +59,8 @@ export async function GET(
       recentMessages,
       usageThisWeek,
       usageAllTime,
+      callRecordsThisWeek,
+      callRecordsAllTime,
     ] = await Promise.all([
       db.message.count({
         where: {
@@ -102,21 +117,47 @@ export async function GET(
         where: { businessId },
         _sum: { cost: true },
       }),
+      // Call records for count and minutes (this week)
+      db.telnyxUsageRecord.findMany({
+        where: {
+          businessId,
+          recordType: { in: ['call', 'call_forwarding'] },
+          occurredAt: { gte: weekStart },
+        },
+        select: { metadata: true },
+      }),
+      // Call records for count and minutes (all time)
+      db.telnyxUsageRecord.findMany({
+        where: {
+          businessId,
+          recordType: { in: ['call', 'call_forwarding'] },
+        },
+        select: { metadata: true },
+      }),
     ])
 
     const totalSkips = cooldownSkips + contactSkips + blockedSkips
 
     const smsCostThisWeek =
       usageThisWeek.find((u) => u.recordType === 'sms')?._sum.cost ?? 0
-    const callCostThisWeek =
+    const voiceCostThisWeek =
       usageThisWeek.find((u) => u.recordType === 'call')?._sum.cost ?? 0
+    const callForwardingCostThisWeek =
+      usageThisWeek.find((u) => u.recordType === 'call_forwarding')?._sum.cost ?? 0
     const smsCostAllTime =
       usageAllTime.find((u) => u.recordType === 'sms')?._sum.cost ?? 0
-    const callCostAllTime =
+    const voiceCostAllTime =
       usageAllTime.find((u) => u.recordType === 'call')?._sum.cost ?? 0
+    const callForwardingCostAllTime =
+      usageAllTime.find((u) => u.recordType === 'call_forwarding')?._sum.cost ?? 0
 
-    const totalCostThisWeek = smsCostThisWeek + callCostThisWeek
-    const totalCostAllTime = smsCostAllTime + callCostAllTime
+    const totalCostThisWeek =
+      smsCostThisWeek + voiceCostThisWeek + callForwardingCostThisWeek
+    const totalCostAllTime =
+      smsCostAllTime + voiceCostAllTime + callForwardingCostAllTime
+
+    const callsThisWeek = sumCallMinutes(callRecordsThisWeek)
+    const callsAllTime = sumCallMinutes(callRecordsAllTime)
 
     // Money saved: use avg cost per SMS from real data when available
     const avgSmsCost =
@@ -139,11 +180,19 @@ export async function GET(
       moneySaved: Math.round(moneySaved * 100) / 100,
       cost: {
         smsThisWeek: Math.round(smsCostThisWeek * 100) / 100,
-        callThisWeek: Math.round(callCostThisWeek * 100) / 100,
+        voiceThisWeek: Math.round(voiceCostThisWeek * 100) / 100,
+        callForwardingThisWeek: Math.round(callForwardingCostThisWeek * 100) / 100,
         totalThisWeek: Math.round(totalCostThisWeek * 100) / 100,
         smsAllTime: Math.round(smsCostAllTime * 100) / 100,
-        callAllTime: Math.round(callCostAllTime * 100) / 100,
+        voiceAllTime: Math.round(voiceCostAllTime * 100) / 100,
+        callForwardingAllTime: Math.round(callForwardingCostAllTime * 100) / 100,
         totalAllTime: Math.round(totalCostAllTime * 100) / 100,
+      },
+      calls: {
+        thisWeek: callsThisWeek.count,
+        allTime: callsAllTime.count,
+        minutesThisWeek: Math.round(callsThisWeek.minutes * 10) / 10,
+        minutesAllTime: Math.round(callsAllTime.minutes * 10) / 10,
       },
       skipLogs,
       recentMessages: recentMessages.map((m) => ({

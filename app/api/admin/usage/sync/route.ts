@@ -34,10 +34,7 @@ async function handleSync(request: Request) {
 
   try {
     const result = await syncTelnyxUsage(dateRange)
-    return NextResponse.json({
-      ok: true,
-      ...result,
-    })
+    return NextResponse.json({ ok: true, ...result })
   } catch (error) {
     console.error('Usage sync failed:', error)
     return NextResponse.json(

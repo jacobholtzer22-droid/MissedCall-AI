@@ -71,12 +71,15 @@ interface UsageData {
   moneySaved: number
   cost: {
     smsThisWeek: number
-    callThisWeek: number
+    voiceThisWeek: number
+    callForwardingThisWeek: number
     totalThisWeek: number
     smsAllTime: number
-    callAllTime: number
+    voiceAllTime: number
+    callForwardingAllTime: number
     totalAllTime: number
   }
+  calls?: { thisWeek: number; allTime: number; minutesThisWeek: number; minutesAllTime: number }
   skipLogs: { id: string; phoneNumber: string; reason: string; attemptedAt: string; lastMessageSent: string; messageType: string | null }[]
   recentMessages: { id: string; direction: string; content: string; createdAt: string; callerPhone: string; callerName: string | null; cost: number | null }[]
 }
@@ -119,6 +122,10 @@ export default function AdminDashboard() {
   const [usageLoading, setUsageLoading] = useState<Record<string, boolean>>({})
   const [refreshLoading, setRefreshLoading] = useState(false)
   const [refreshFeedback, setRefreshFeedback] = useState<string | null>(null)
+  const [exportDateRange, setExportDateRange] = useState<'this_week' | 'this_month' | 'last_month' | 'custom'>('this_month')
+  const [exportStartDate, setExportStartDate] = useState('')
+  const [exportEndDate, setExportEndDate] = useState('')
+  const [exportLoading, setExportLoading] = useState(false)
   const [importModalOpen, setImportModalOpen] = useState(false)
   const [importPreview, setImportPreview] = useState<{ total: number; newCount: number; duplicateCount: number; contacts: { phoneNumber: string; name: string | null }[] } | null>(null)
   const [importProgress, setImportProgress] = useState(0)
@@ -158,6 +165,25 @@ export default function AdminDashboard() {
       console.error(err)
     } finally {
       setRefreshLoading(false)
+    }
+  }
+
+  function exportUsageReport(format: 'csv' | 'xlsx') {
+    setExportLoading(true)
+    try {
+      const params = new URLSearchParams({
+        dateRange: exportDateRange,
+        format,
+      })
+      if (exportDateRange === 'custom' && exportStartDate && exportEndDate) {
+        params.set('startDate', exportStartDate)
+        params.set('endDate', exportEndDate)
+      }
+      window.open(`/api/admin/usage/export?${params}`, '_blank')
+    } catch (err) {
+      console.error(err)
+    } finally {
+      setExportLoading(false)
     }
   }
 
@@ -574,19 +600,64 @@ export default function AdminDashboard() {
     <div className="min-h-screen bg-gray-950 text-white">
       {/* Header */}
       <div className="border-b border-gray-800 bg-gray-900/50 px-6 py-4">
-        <div className="max-w-7xl mx-auto flex items-center justify-between">
+        <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
           <div>
             <h1 className="text-2xl font-bold">Admin Dashboard</h1>
             <p className="text-sm text-gray-400 mt-1">
               Manage all clients · {businesses.length} business{businesses.length !== 1 ? 'es' : ''}
             </p>
           </div>
-          <a
-            href="/dashboard"
-            className="text-sm text-gray-400 hover:text-white transition"
-          >
-            ← Back to Dashboard
-          </a>
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="flex items-center gap-2">
+              <select
+                value={exportDateRange}
+                onChange={(e) => setExportDateRange(e.target.value as typeof exportDateRange)}
+                className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white"
+              >
+                <option value="this_week">This week</option>
+                <option value="this_month">This month</option>
+                <option value="last_month">Last month</option>
+                <option value="custom">Custom range</option>
+              </select>
+              {exportDateRange === 'custom' && (
+                <>
+                  <input
+                    type="date"
+                    value={exportStartDate}
+                    onChange={(e) => setExportStartDate(e.target.value)}
+                    className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white"
+                  />
+                  <span className="text-gray-500">to</span>
+                  <input
+                    type="date"
+                    value={exportEndDate}
+                    onChange={(e) => setExportEndDate(e.target.value)}
+                    className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white"
+                  />
+                </>
+              )}
+            </div>
+            <button
+              onClick={() => exportUsageReport('csv')}
+              disabled={exportLoading || (exportDateRange === 'custom' && (!exportStartDate || !exportEndDate))}
+              className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 rounded-lg text-sm font-medium transition"
+            >
+              Export CSV
+            </button>
+            <button
+              onClick={() => exportUsageReport('xlsx')}
+              disabled={exportLoading || (exportDateRange === 'custom' && (!exportStartDate || !exportEndDate))}
+              className="px-4 py-2 bg-emerald-700 hover:bg-emerald-800 disabled:opacity-50 rounded-lg text-sm font-medium transition"
+            >
+              Export Excel
+            </button>
+            <a
+              href="/dashboard"
+              className="text-sm text-gray-400 hover:text-white transition"
+            >
+              ← Back to Dashboard
+            </a>
+          </div>
         </div>
       </div>
 
@@ -1135,7 +1206,7 @@ export default function AdminDashboard() {
                     const val = e.target.value
                     if (val) {
                       const defaults = getIndustryDefaults(val)
-                      setEditData(prev => ({
+                      setEditData((prev: Record<string, unknown>) => ({
                         ...prev,
                         businessType: val,
                         aiGreeting: defaults.aiGreeting,
@@ -1145,7 +1216,7 @@ export default function AdminDashboard() {
                         bookingRequiresAddress: defaults.bookingRequiresAddress,
                       }))
                     } else {
-                      setEditData(prev => ({ ...prev, businessType: val }))
+                      setEditData((prev: Record<string, unknown>) => ({ ...prev, businessType: val }))
                     }
                   }}
                   className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-white"
@@ -1435,8 +1506,10 @@ function UsagePanel({
     <div className="bg-gray-800/30 rounded-xl border border-gray-700 p-4 space-y-4">
       <div className="flex items-center justify-between flex-wrap gap-2">
         <h3 className="font-semibold text-gray-200">Usage & Cost</h3>
-        <div className="flex items-center gap-2">
-          {refreshFeedback && <span className="text-xs text-gray-400">{refreshFeedback}</span>}
+        <div className="flex items-center gap-2 flex-wrap">
+          {refreshFeedback && (
+            <span className="text-xs text-gray-400">{refreshFeedback}</span>
+          )}
           <button
             type="button"
             onClick={onRefresh}
@@ -1447,29 +1520,44 @@ function UsagePanel({
           </button>
         </div>
       </div>
-      {/* Summary cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+      {/* Summary cards - SMS cost, Voice cost, Total cost (this week / all time) + call stats */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
         <div className="bg-gray-900/50 rounded-lg p-3">
-          <p className="text-xs text-gray-500">SMS (this week)</p>
-          <p className="text-lg font-bold text-white">{data.sms.thisWeek}</p>
+          <p className="text-xs text-gray-500">SMS cost</p>
+          <p className="text-sm font-bold text-white">${(data.cost.smsThisWeek ?? 0).toFixed(2)} <span className="text-gray-500 font-normal">/ ${(data.cost.smsAllTime ?? 0).toFixed(2)}</span></p>
+          <p className="text-xs text-gray-500 mt-0.5">this week / all time</p>
         </div>
         <div className="bg-gray-900/50 rounded-lg p-3">
-          <p className="text-xs text-gray-500">Cost (this week)</p>
-          <p className="text-lg font-bold text-white">${data.cost.totalThisWeek.toFixed(2)}</p>
+          <p className="text-xs text-gray-500">Voice cost</p>
+          <p className="text-sm font-bold text-white">${((data.cost.voiceThisWeek ?? 0) + (data.cost.callForwardingThisWeek ?? 0)).toFixed(2)} <span className="text-gray-500 font-normal">/ ${((data.cost.voiceAllTime ?? 0) + (data.cost.callForwardingAllTime ?? 0)).toFixed(2)}</span></p>
+          <p className="text-xs text-gray-500 mt-0.5">this week / all time</p>
         </div>
         <div className="bg-gray-900/50 rounded-lg p-3">
-          <p className="text-xs text-gray-500">Cost (all time)</p>
-          <p className="text-lg font-bold text-gray-300">${data.cost.totalAllTime.toFixed(2)}</p>
+          <p className="text-xs text-gray-500">Total cost</p>
+          <p className="text-sm font-bold text-white">${data.cost.totalThisWeek.toFixed(2)} <span className="text-gray-500 font-normal">/ ${data.cost.totalAllTime.toFixed(2)}</span></p>
+          <p className="text-xs text-gray-500 mt-0.5">this week / all time</p>
         </div>
         <div className="bg-gray-900/50 rounded-lg p-3">
-          <p className="text-xs text-gray-500">Saved</p>
-          <p className="text-lg font-bold text-green-400">${data.moneySaved.toFixed(2)}</p>
+          <p className="text-xs text-gray-500">Call count</p>
+          <p className="text-sm font-bold text-white">{data.calls?.thisWeek ?? 0} <span className="text-gray-500 font-normal">/ {data.calls?.allTime ?? 0}</span></p>
+          <p className="text-xs text-gray-500 mt-0.5">this week / all time</p>
+        </div>
+        <div className="bg-gray-900/50 rounded-lg p-3">
+          <p className="text-xs text-gray-500">Call minutes</p>
+          <p className="text-sm font-bold text-white">{data.calls?.minutesThisWeek ?? 0} <span className="text-gray-500 font-normal">/ {data.calls?.minutesAllTime ?? 0}</span></p>
+          <p className="text-xs text-gray-500 mt-0.5">this week / all time</p>
+        </div>
+        <div className="bg-gray-900/50 rounded-lg p-3">
+          <p className="text-xs text-gray-500">SMS count</p>
+          <p className="text-sm font-bold text-white">{data.sms.thisWeek} <span className="text-gray-500 font-normal">/ {data.sms.allTime}</span></p>
+          <p className="text-xs text-gray-500 mt-0.5">this week / all time</p>
         </div>
       </div>
-      <p className="text-xs text-gray-500">
-        {data.sms.allTime} total SMS · {data.missedCallSmsTriggered} missed-call triggered · 
-        Skipped: {data.skips.cooldown} cooldown, {data.skips.existingContact} contact, {data.skips.blocked} blocked
-      </p>
+      <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-500">
+        <span>{data.missedCallSmsTriggered} missed-call triggered</span>
+        <span>Skipped: {data.skips.cooldown} cooldown, {data.skips.existingContact} contact, {data.skips.blocked} blocked</span>
+        <span className="text-green-400">Saved: ${data.moneySaved.toFixed(2)}</span>
+      </div>
       {showDetails && (
         <>
           <div className="border-t border-gray-700 pt-3 space-y-3">
