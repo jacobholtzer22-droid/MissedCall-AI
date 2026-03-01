@@ -55,6 +55,11 @@ export default async function SettingsPage({
     const ownerPhone = (formData.get('ownerPhone') as string)?.trim() || null
     const notifyBySms = formData.get('notifyBySms') === 'on'
     const notifyByEmail = formData.get('notifyByEmail') === 'on'
+    const slotDurationMinutesRaw = formData.get('slotDurationMinutes') as string
+    const bufferMinutesRaw = formData.get('bufferMinutes') as string
+
+    const slotDurationMinutes = slotDurationMinutesRaw ? parseInt(slotDurationMinutesRaw, 10) : 30
+    const bufferMinutes = bufferMinutesRaw ? parseInt(bufferMinutesRaw, 10) : 0
 
     await db.business.update({
       where: { id: user.business.id },
@@ -69,6 +74,10 @@ export default async function SettingsPage({
         ownerPhone,
         notifyBySms,
         notifyByEmail,
+        ...(user.business.calendarEnabled && {
+          slotDurationMinutes: [15, 30, 45, 60, 90, 120].includes(slotDurationMinutes) ? slotDurationMinutes : 30,
+          bufferMinutes: [0, 15, 30, 45, 60].includes(bufferMinutes) ? bufferMinutes : 0,
+        }),
       }
     })
 
@@ -162,6 +171,37 @@ export default async function SettingsPage({
             </div>
           </div>
           <div className="ml-11 space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Default Appointment Length</label>
+              <select
+                name="slotDurationMinutes"
+                defaultValue={business.slotDurationMinutes ?? 30}
+                className="w-full max-w-xs px-3 py-2 bg-white text-gray-900 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value={15}>15 min</option>
+                <option value={30}>30 min</option>
+                <option value={45}>45 min</option>
+                <option value={60}>60 min</option>
+                <option value={90}>90 min</option>
+                <option value={120}>120 min</option>
+              </select>
+              <p className="text-xs text-gray-500 mt-1">How long each booked appointment will be on your calendar</p>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Buffer Between Appointments</label>
+              <select
+                name="bufferMinutes"
+                defaultValue={business.bufferMinutes ?? 0}
+                className="w-full max-w-xs px-3 py-2 bg-white text-gray-900 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value={0}>No buffer</option>
+                <option value={15}>15 min</option>
+                <option value={30}>30 min</option>
+                <option value={45}>45 min</option>
+                <option value={60}>60 min</option>
+              </select>
+              <p className="text-xs text-gray-500 mt-1">Minimum break between back-to-back appointments</p>
+            </div>
             {business.googleCalendarConnected ? (
               <div className="space-y-4">
                 <div className="flex items-center gap-3 p-4 bg-green-50 border border-green-200 rounded-lg">

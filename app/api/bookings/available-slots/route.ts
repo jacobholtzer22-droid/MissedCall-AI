@@ -77,27 +77,25 @@ export async function GET(request: NextRequest) {
     console.log('[available-slots] slotsAfterPastFilter:', debug.slotsAfterPastFilter)
     console.log('[available-slots] finalSlotCount:', debug.finalSlotCount)
 
-    // Parse services for booking dropdown: supports { name, price?, duration? } or plain strings
+    // Parse services for booking dropdown: supports { name, price? } or plain strings (duration not shown to customers)
     const rawServices = business.servicesOffered
     let servicesOffered: { value: string; label: string }[] = []
-    const slotMins = business.slotDurationMinutes ?? 30
     if (Array.isArray(rawServices) && rawServices.length > 0) {
       servicesOffered = rawServices.map((s: unknown) => {
         if (typeof s === 'object' && s !== null && 'name' in s && typeof (s as { name: string }).name === 'string') {
-          const obj = s as { name: string; price?: number; duration?: number }
+          const obj = s as { name: string; price?: number }
           const priceStr = typeof obj.price === 'number' ? ` - $${obj.price}` : ''
-          const durationStr = typeof obj.duration === 'number' ? ` (${obj.duration} min)` : slotMins ? ` (${slotMins} min)` : ''
-          return { value: obj.name, label: `${obj.name}${priceStr}${durationStr}` }
+          return { value: obj.name, label: `${obj.name}${priceStr}` }
         }
         const name = typeof s === 'string' ? s : String(s)
-        return { value: name, label: `${name} (${slotMins} min)` }
+        return { value: name, label: name }
       })
     }
 
     return NextResponse.json({
       slots,
       businessName: business.name,
-      slotDurationMinutes: slotMins,
+      slotDurationMinutes: business.slotDurationMinutes ?? 30,
       calendarEnabled: true,
       servicesOffered,
       debug,

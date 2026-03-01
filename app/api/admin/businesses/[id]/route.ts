@@ -39,6 +39,8 @@ export async function PATCH(
       'callScreenerMessage',
       'missedCallVoiceMessage',
       'missedCallAiEnabled',
+      'slotDurationMinutes',
+      'bufferMinutes',
     ]
 
     const data: Record<string, unknown> = {}

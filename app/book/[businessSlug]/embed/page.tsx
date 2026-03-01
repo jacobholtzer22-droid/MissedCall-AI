@@ -2,7 +2,8 @@
 
 import { useEffect, useState, useRef, useCallback } from 'react'
 import { useParams } from 'next/navigation'
-import { Calendar, Clock, User, Phone, Mail, FileText, CheckCircle } from 'lucide-react'
+import { Calendar, Clock, User, Phone, Mail, FileText, CheckCircle, ChevronRight } from 'lucide-react'
+import { BookingPageHeader } from '@/app/components/BookingPageHeader'
 
 const EMBED_MESSAGE_TYPE = 'booking-embed-height'
 
@@ -15,23 +16,6 @@ interface TimeSlot {
   start: string
   end: string
   display: string
-}
-
-interface SlotsDebug {
-  businessId: string
-  calendarEnabled: boolean
-  googleCalendarConnected: boolean
-  tokensExist: boolean
-  businessHours: Record<string, { open: string; close: string } | null>
-  timezone: string
-  dateRangeQueried: { start: string; end: string }
-  timeMin: string
-  timeMax: string
-  googleCalendarBusyTimes: { start: string; end: string }[]
-  googleCalendarError?: string
-  slotsBeforeFiltering: number
-  slotsAfterPastFilter: number
-  finalSlotCount: number
 }
 
 function sendHeightToParent(height: number) {
@@ -52,7 +36,6 @@ export default function EmbedBookingPage() {
   const [slots, setSlots] = useState<TimeSlot[]>([])
   const [slotsLoading, setSlotsLoading] = useState(false)
   const [selectedSlot, setSelectedSlot] = useState<TimeSlot | null>(null)
-  const [slotsDebug, setSlotsDebug] = useState<SlotsDebug | null>(null)
 
   const [name, setName] = useState('')
   const [phone, setPhone] = useState('')
@@ -104,7 +87,6 @@ export default function EmbedBookingPage() {
   useEffect(() => {
     if (!slug || !selectedDate) {
       setSlots([])
-      setSlotsDebug(null)
       return
     }
     setSlotsLoading(true)
@@ -113,12 +95,10 @@ export default function EmbedBookingPage() {
       .then(res => res.json())
       .then(data => {
         setSlots(data.slots ?? [])
-        setSlotsDebug(data.debug ?? null)
         setSlotsLoading(false)
       })
       .catch(() => {
         setSlots([])
-        setSlotsDebug(null)
         setSlotsLoading(false)
       })
   }, [slug, selectedDate])
@@ -168,15 +148,20 @@ export default function EmbedBookingPage() {
 
   if (loading) {
     return (
-      <div ref={containerRef} className="min-h-[200px] flex items-center justify-center p-6" style={{ backgroundColor: '#ffffff' }}>
-        <div style={{ color: '#6b7280' }}>Loading...</div>
+      <div ref={containerRef} className="min-h-[200px]" style={{ backgroundColor: '#ffffff' }}>
+        <BookingPageHeader businessName={null} />
+        <div className="flex items-center justify-center p-6">
+          <div style={{ color: '#6b7280' }}>Loading...</div>
+        </div>
       </div>
     )
   }
 
   if (!calendarConnected || !businessName) {
     return (
-      <div ref={containerRef} className="p-6" style={{ backgroundColor: '#ffffff' }}>
+      <div ref={containerRef} style={{ backgroundColor: '#ffffff' }}>
+        <BookingPageHeader businessName={businessName} />
+        <div className="p-6">
         <div className="max-w-md mx-auto text-center">
           <Calendar className="h-12 w-12 mx-auto mb-4" style={{ color: '#d1d5db' }} />
           <h2 className="text-lg font-semibold mb-2" style={{ color: '#111827' }}>Booking Not Available</h2>
@@ -185,6 +170,7 @@ export default function EmbedBookingPage() {
               ? `${businessName} doesn't have online booking enabled. Please call or text to schedule.`
               : 'Business not found.'}
           </p>
+        </div>
         </div>
       </div>
     )
@@ -215,31 +201,39 @@ export default function EmbedBookingPage() {
   const labelStyle = { color: '#374151' } as const
 
   return (
-    <div ref={containerRef} className="p-4 sm:p-6 md:p-8" style={{ backgroundColor: '#ffffff' }}>
-      <div className="max-w-2xl mx-auto">
-        <div className="text-center mb-6">
-          <h2 className="text-xl font-bold" style={{ color: '#111827' }}>Book with {businessName}</h2>
-          <p className="text-sm mt-1" style={{ color: '#6b7280' }}>Select a date and time that works for you</p>
-        </div>
-
-        <form onSubmit={handleSubmit} className="space-y-6">
-          <div>
-            <label className="flex items-center gap-2 text-sm font-medium mb-2" style={labelStyle}>
-              <Calendar className="h-4 w-4" />
-              Date
-            </label>
-            <input
-              type="date"
-              value={selectedDate}
-              onChange={e => setSelectedDate(e.target.value)}
-              min={today}
-              max={maxDate}
-              className="w-full px-4 py-3 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-              style={inputStyle}
-            />
+    <div ref={containerRef} style={{ backgroundColor: '#ffffff' }}>
+      <BookingPageHeader businessName={businessName} />
+      <div className="p-4 sm:p-6 md:p-8">
+        <div className="max-w-2xl mx-auto">
+          <div className="text-center mb-6">
+            <h2 className="text-xl font-bold" style={{ color: '#111827' }}>Book with {businessName}</h2>
+            <p className="text-sm mt-1" style={{ color: '#6b7280' }}>Select a date and time that works for you</p>
           </div>
 
-          {selectedDate && (
+          <form onSubmit={handleSubmit} className="space-y-6">
+            <div>
+              <label className="block text-sm font-medium mb-2" style={labelStyle}>
+                Select a date to book your appointment
+              </label>
+              <div className="flex items-center gap-2">
+                <Calendar className="h-5 w-5 shrink-0" style={{ color: '#6b7280' }} />
+                <ChevronRight className="h-4 w-4 shrink-0" style={{ color: '#9ca3af' }} aria-hidden />
+                <input
+                  type="date"
+                  value={selectedDate}
+                  onChange={e => setSelectedDate(e.target.value)}
+                  min={today}
+                  max={maxDate}
+                  className="flex-1 px-4 py-3 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  style={inputStyle}
+                />
+              </div>
+              <p className="mt-2 text-xs" style={{ color: '#6b7280' }}>
+                Click a highlighted date to see available times
+              </p>
+            </div>
+
+            {selectedDate && (
             <div>
               <label className="flex items-center gap-2 text-sm font-medium mb-2" style={labelStyle}>
                 <Clock className="h-4 w-4" />
@@ -271,7 +265,7 @@ export default function EmbedBookingPage() {
             </div>
           )}
 
-          <div className="border-t pt-6 space-y-4" style={{ borderColor: '#f3f4f6' }}>
+          <div className="border-t pt-6 space-y-4" style={{ borderColor: '#e5e7eb' }}>
             <div>
               <label className="flex items-center gap-2 text-sm font-medium mb-2" style={labelStyle}>
                 <User className="h-4 w-4" />
@@ -380,12 +374,13 @@ export default function EmbedBookingPage() {
           <button
             type="submit"
             disabled={!selectedSlot || !name.trim() || !phone.trim() || !service.trim() || !notes.trim() || submitting}
-            className="w-full py-4 text-white font-semibold rounded-xl hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition"
+            className="w-full py-4 text-white font-semibold rounded-xl text-base shadow-lg hover:shadow-xl hover:brightness-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:brightness-100 transition"
             style={{ backgroundColor: '#2563eb' }}
           >
             {submitting ? 'Booking...' : 'Confirm Booking'}
           </button>
         </form>
+        </div>
       </div>
     </div>
   )

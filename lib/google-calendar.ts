@@ -207,6 +207,7 @@ async function getAvailableSlotsInternal(
     select: {
       businessHours: true,
       slotDurationMinutes: true,
+      bufferMinutes: true,
       timezone: true,
       googleCalendarConnected: true,
       calendarEnabled: true,
@@ -218,6 +219,7 @@ async function getAvailableSlotsInternal(
   const tz = business?.timezone ?? 'America/New_York'
   const hours = parseBusinessHours(business?.businessHours)
   const slotMins = business?.slotDurationMinutes ?? 30
+  const bufferMins = business?.bufferMinutes ?? 0
   const tokensExist = !!(business?.googleAccessToken || business?.googleRefreshToken)
 
   const debug: AvailableSlotsDebug = {
@@ -268,10 +270,20 @@ async function getAvailableSlotsInternal(
     debug.googleCalendarError = googleCalendarError
   }
 
+  // Expand busy periods by buffer: can't start a slot until buffer minutes after an event ends
+  const busyWithBuffer = bufferMins > 0
+    ? busy.map(b => ({
+        start: b.start,
+        end: addMinutes(new Date(b.end), bufferMins).toISOString(),
+      }))
+    : busy
+
   const slots: TimeSlot[] = []
   const now = new Date()
   let slotsBeforeFiltering = 0
   let slotsAfterPastFilter = 0
+
+  const slotStepMins = slotMins + bufferMins // next slot starts slotMins + bufferMins after previous
 
   const cursor = new TZDate(startParsed.year, startParsed.month, startParsed.day, 0, 0, 0, 0, tz)
   const endCursor = new TZDate(endParsed.year, endParsed.month, endParsed.day, 23, 59, 59, 999, tz)
@@ -296,7 +308,7 @@ async function getAvailableSlotsInternal(
       const slotEnd = addMinutes(slotStart, slotMins)
       if (slotEnd.getTime() <= dayEndMs) {
         slotsBeforeFiltering++
-        const overlapsBusy = slotOverlapsBusy(slotStart, slotEnd, busy)
+        const overlapsBusy = slotOverlapsBusy(slotStart, slotEnd, busyWithBuffer)
         const isPast = slotStart < now
         if (!overlapsBusy && !isPast) {
           slotsAfterPastFilter++
@@ -312,7 +324,7 @@ async function getAvailableSlotsInternal(
           })
         }
       }
-      slotStart = slotEnd
+      slotStart = addMinutes(slotStart, slotStepMins)
     }
     cursor.setDate(cursor.getDate() + 1)
   }

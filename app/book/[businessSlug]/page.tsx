@@ -3,7 +3,8 @@
 import { useEffect, useState } from 'react'
 import { useParams } from 'next/navigation'
 import Link from 'next/link'
-import { Calendar, Clock, User, Phone, Mail, FileText, CheckCircle } from 'lucide-react'
+import { Calendar, Clock, User, Phone, Mail, FileText, CheckCircle, ChevronRight } from 'lucide-react'
+import { BookingPageHeader } from '@/app/components/BookingPageHeader'
 
 interface TimeSlot {
   start: string
@@ -14,23 +15,6 @@ interface TimeSlot {
 interface ServiceOption {
   value: string
   label: string
-}
-
-interface SlotsDebug {
-  businessId: string
-  calendarEnabled: boolean
-  googleCalendarConnected: boolean
-  tokensExist: boolean
-  businessHours: Record<string, { open: string; close: string } | null>
-  timezone: string
-  dateRangeQueried: { start: string; end: string }
-  timeMin: string
-  timeMax: string
-  googleCalendarBusyTimes: { start: string; end: string }[]
-  googleCalendarError?: string
-  slotsBeforeFiltering: number
-  slotsAfterPastFilter: number
-  finalSlotCount: number
 }
 
 export default function BookingPage() {
@@ -44,7 +28,6 @@ export default function BookingPage() {
   const [slots, setSlots] = useState<TimeSlot[]>([])
   const [slotsLoading, setSlotsLoading] = useState(false)
   const [selectedSlot, setSelectedSlot] = useState<TimeSlot | null>(null)
-  const [slotsDebug, setSlotsDebug] = useState<SlotsDebug | null>(null)
 
   const [name, setName] = useState('')
   const [phone, setPhone] = useState('')
@@ -76,7 +59,6 @@ export default function BookingPage() {
   useEffect(() => {
     if (!slug || !selectedDate) {
       setSlots([])
-      setSlotsDebug(null)
       return
     }
     setSlotsLoading(true)
@@ -85,12 +67,10 @@ export default function BookingPage() {
       .then(res => res.json())
       .then(data => {
         setSlots(data.slots ?? [])
-        setSlotsDebug(data.debug ?? null)
         setSlotsLoading(false)
       })
       .catch(() => {
         setSlots([])
-        setSlotsDebug(null)
         setSlotsLoading(false)
       })
   }, [slug, selectedDate])
@@ -140,15 +120,20 @@ export default function BookingPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center" style={{ backgroundColor: '#f9fafb' }}>
-        <div style={{ color: '#374151' }}>Loading...</div>
+      <div className="min-h-screen" style={{ backgroundColor: '#f9fafb' }}>
+        <BookingPageHeader businessName={null} />
+        <div className="flex items-center justify-center py-20">
+          <div style={{ color: '#374151' }}>Loading...</div>
+        </div>
       </div>
     )
   }
 
   if (!calendarConnected || !businessName) {
     return (
-      <div className="min-h-screen flex items-center justify-center p-6" style={{ backgroundColor: '#f9fafb' }}>
+      <div className="min-h-screen flex flex-col" style={{ backgroundColor: '#f9fafb' }}>
+        <BookingPageHeader businessName={businessName} />
+        <div className="flex-1 flex items-center justify-center p-6">
         <div className="rounded-2xl shadow-lg border p-8 max-w-md text-center" style={{ backgroundColor: '#ffffff', borderColor: '#e5e7eb' }}>
           <Calendar className="h-12 w-12 mx-auto mb-4" style={{ color: '#d1d5db' }} />
           <h1 className="text-xl font-semibold mb-2" style={{ color: '#111827' }}>Booking Not Available</h1>
@@ -160,6 +145,7 @@ export default function BookingPage() {
           <Link href="/" className="font-medium" style={{ color: '#2563eb' }}>
             ← Back to home
           </Link>
+        </div>
         </div>
       </div>
     )
@@ -190,57 +176,52 @@ export default function BookingPage() {
   const labelStyle = { color: '#374151' } as const
 
   return (
-    <div className="min-h-screen py-12 px-4" style={{ backgroundColor: '#f9fafb' }}>
-      <div className="max-w-2xl mx-auto">
-        <div className="text-center mb-8">
-          <h1 className="text-2xl font-bold" style={{ color: '#111827' }}>Book with {businessName}</h1>
-          <p className="mt-1" style={{ color: '#6b7280' }}>Select a date and time that works for you</p>
-        </div>
+    <div className="min-h-screen" style={{ backgroundColor: '#f9fafb' }}>
+      <BookingPageHeader businessName={businessName} />
+      <div className="py-10 px-4">
+        <div className="max-w-2xl mx-auto">
+          <div className="text-center mb-8">
+            <h1 className="text-2xl font-bold" style={{ color: '#111827' }}>Book with {businessName}</h1>
+            <p className="mt-1" style={{ color: '#6b7280' }}>Select a date and time that works for you</p>
+          </div>
 
-        <div className="rounded-2xl shadow-lg overflow-hidden" style={{ backgroundColor: '#ffffff', border: '1px solid #e5e7eb' }}>
-          <form onSubmit={handleSubmit} className="p-6 md:p-8 space-y-6">
-            {/* Date picker */}
-            <div>
-              <label className="flex items-center gap-2 text-sm font-medium mb-2" style={labelStyle}>
-                <Calendar className="h-4 w-4" />
-                Date
-              </label>
-              <input
-                type="date"
-                value={selectedDate}
-                onChange={e => setSelectedDate(e.target.value)}
-                min={today}
-                max={maxDate}
-                className="w-full px-4 py-3 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                style={inputStyle}
-              />
-            </div>
-
-            {/* Time slots */}
-            {selectedDate && (
+          <div className="rounded-2xl shadow-lg overflow-hidden" style={{ backgroundColor: '#ffffff', border: '1px solid #e5e7eb' }}>
+            <form onSubmit={handleSubmit} className="p-6 md:p-8 space-y-6">
+              {/* Step 1: Date picker */}
               <div>
-                <label className="flex items-center gap-2 text-sm font-medium mb-2" style={labelStyle}>
-                  <Clock className="h-4 w-4" />
-                  Available Times
+                <label className="block text-sm font-medium mb-2" style={labelStyle}>
+                  Select a date to book your appointment
                 </label>
-                {slotsLoading ? (
-                  <p className="text-sm" style={{ color: '#6b7280' }}>Loading...</p>
-                ) : slots.length === 0 ? (
-                  <div>
+                <div className="flex items-center gap-2">
+                  <Calendar className="h-5 w-5 shrink-0" style={{ color: '#6b7280' }} />
+                  <ChevronRight className="h-4 w-4 shrink-0" style={{ color: '#9ca3af' }} aria-hidden />
+                  <input
+                    type="date"
+                    value={selectedDate}
+                    onChange={e => setSelectedDate(e.target.value)}
+                    min={today}
+                    max={maxDate}
+                    className="flex-1 px-4 py-3 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    style={inputStyle}
+                  />
+                </div>
+                <p className="mt-2 text-xs" style={{ color: '#6b7280' }}>
+                  Click a highlighted date to see available times
+                </p>
+              </div>
+
+              {/* Step 2: Time slots */}
+              {selectedDate && (
+                <div>
+                  <label className="flex items-center gap-2 text-sm font-medium mb-2" style={labelStyle}>
+                    <Clock className="h-4 w-4" />
+                    Available Times
+                  </label>
+                  {slotsLoading ? (
+                    <p className="text-sm" style={{ color: '#6b7280' }}>Loading...</p>
+                  ) : slots.length === 0 ? (
                     <p className="text-sm" style={{ color: '#6b7280' }}>No availability on this date</p>
-                    {slotsDebug && (
-                      <details className="mt-4">
-                        <summary className="text-xs font-medium cursor-pointer" style={{ color: '#6b7280' }}>
-                          Debug info
-                        </summary>
-                        <pre className="mt-2 p-4 rounded-lg text-xs overflow-auto max-h-64" style={{ backgroundColor: '#f3f4f6', color: '#111827' }}>
-                          {JSON.stringify(slotsDebug, null, 2)}
-                        </pre>
-                      </details>
-                    )}
-                  </div>
-                ) : (
-                  <>
+                  ) : (
                     <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
                       {slots.map(slot => (
                         <button
@@ -258,22 +239,11 @@ export default function BookingPage() {
                         </button>
                       ))}
                     </div>
-                    {slotsDebug && (
-                      <details className="mt-4">
-                        <summary className="text-xs font-medium cursor-pointer" style={{ color: '#6b7280' }}>
-                          Debug info
-                        </summary>
-                        <pre className="mt-2 p-4 rounded-lg text-xs overflow-auto max-h-64" style={{ backgroundColor: '#f3f4f6', color: '#111827' }}>
-                          {JSON.stringify(slotsDebug, null, 2)}
-                        </pre>
-                      </details>
-                    )}
-                  </>
-                )}
-              </div>
-            )}
+                  )}
+                </div>
+              )}
 
-            {/* Customer form */}
+            {/* Step 3: Customer form */}
             <div className="border-t pt-6 space-y-4" style={{ borderColor: '#f3f4f6' }}>
               <div>
                 <label className="flex items-center gap-2 text-sm font-medium mb-2" style={labelStyle}>
@@ -383,7 +353,7 @@ export default function BookingPage() {
             <button
               type="submit"
               disabled={!selectedSlot || !name.trim() || !phone.trim() || !service.trim() || !notes.trim() || submitting}
-              className="w-full py-4 text-white font-semibold rounded-xl hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition"
+              className="w-full py-4 text-white font-semibold rounded-xl text-base shadow-lg hover:shadow-xl hover:brightness-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:brightness-100 transition"
               style={{ backgroundColor: '#2563eb' }}
             >
               {submitting ? 'Booking...' : 'Confirm Booking'}
@@ -396,6 +366,7 @@ export default function BookingPage() {
             ← Back to home
           </Link>
         </p>
+        </div>
       </div>
     </div>
   )

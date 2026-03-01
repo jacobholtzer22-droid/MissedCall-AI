@@ -43,7 +43,8 @@ model Business {
   googleAccessToken       String?   @db.Text
   googleRefreshToken      String?   @db.Text
   googleCalendarConnected Boolean   @default(false)
-  slotDurationMinutes     Int       @default(30)   // Booking slot length (30 or 60)
+  slotDurationMinutes     Int       @default(30)   // Booking slot length (15, 30, 45, etc.)
+  bufferMinutes           Int       @default(0)    // Buffer between back-to-back appointments
 
   // Billing
   stripeCustomerId      String?   @unique

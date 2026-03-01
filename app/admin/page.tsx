@@ -14,6 +14,8 @@ interface Business {
   slug: string
   calendarEnabled?: boolean
   googleCalendarConnected?: boolean
+  slotDurationMinutes?: number | null
+  bufferMinutes?: number | null
   telnyxPhoneNumber: string | null
   forwardingNumber: string | null
   timezone: string
@@ -218,6 +220,8 @@ export default function AdminDashboard() {
     setEditData({
       name: business.name,
       calendarEnabled: business.calendarEnabled ?? false,
+      slotDurationMinutes: business.slotDurationMinutes ?? 30,
+      bufferMinutes: business.bufferMinutes ?? 0,
       telnyxPhoneNumber: business.telnyxPhoneNumber || '',
       forwardingNumber: business.forwardingNumber || '',
       timezone: business.timezone,
@@ -477,6 +481,8 @@ export default function AdminDashboard() {
           calendarEnabled: editData.calendarEnabled,
           spamFilterEnabled: editData.spamFilterEnabled,
           missedCallAiEnabled: editData.missedCallAiEnabled,
+          slotDurationMinutes: editData.calendarEnabled ? (editData.slotDurationMinutes ?? 30) : undefined,
+          bufferMinutes: editData.calendarEnabled ? (editData.bufferMinutes ?? 0) : undefined,
           servicesOffered,
           businessHours,
         }),
@@ -841,6 +847,44 @@ export default function AdminDashboard() {
                 <input type="checkbox" checked={editData.calendarEnabled} onChange={e => setEditData({...editData, calendarEnabled: e.target.checked})} className="w-5 h-5 rounded" />
                 <span className="text-sm text-gray-300">Enable Online Booking (Google Calendar + /book page + SMS booking flow)</span>
               </label>
+
+              {editData.calendarEnabled && (
+                <>
+                  <Field
+                    label="Default Appointment Length"
+                    hint="How long each booked appointment will be on the calendar"
+                  >
+                    <select
+                      value={editData.slotDurationMinutes ?? 30}
+                      onChange={e => setEditData({ ...editData, slotDurationMinutes: parseInt(e.target.value, 10) })}
+                      className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-white"
+                    >
+                      <option value={15}>15 min</option>
+                      <option value={30}>30 min</option>
+                      <option value={45}>45 min</option>
+                      <option value={60}>60 min</option>
+                      <option value={90}>90 min</option>
+                      <option value={120}>120 min</option>
+                    </select>
+                  </Field>
+                  <Field
+                    label="Buffer Between Appointments"
+                    hint="Minimum break between back-to-back appointments"
+                  >
+                    <select
+                      value={editData.bufferMinutes ?? 0}
+                      onChange={e => setEditData({ ...editData, bufferMinutes: parseInt(e.target.value, 10) })}
+                      className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-white"
+                    >
+                      <option value={0}>No buffer</option>
+                      <option value={15}>15 min</option>
+                      <option value={30}>30 min</option>
+                      <option value={45}>45 min</option>
+                      <option value={60}>60 min</option>
+                    </select>
+                  </Field>
+                </>
+              )}
 
               <label className="flex items-center gap-3 cursor-pointer">
                 <input type="checkbox" checked={editData.spamFilterEnabled} onChange={e => setEditData({...editData, spamFilterEnabled: e.target.checked})} className="w-5 h-5 rounded" />

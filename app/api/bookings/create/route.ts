@@ -65,7 +65,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid slotStart' }, { status: 400 })
     }
 
-    const slotDuration = business.slotDurationMinutes ?? 60
+    const slotDuration = business.slotDurationMinutes ?? 30
     const endDate = new Date(startDate.getTime() + slotDuration * 60 * 1000)
 
     // Verify slot is still available (use business TZ for date to avoid timezone mismatch)
