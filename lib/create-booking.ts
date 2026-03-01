@@ -25,6 +25,25 @@ function formatDateFullForConfirm(d: Date, tz: string): string {
   return `${weekday}, ${month} ${ordinal(day)}`
 }
 
+/** Clean garbled service text for confirmation: "a quote for to book a quote for my lawn" → "your lawn" */
+function cleanServiceForConfirmation(service: string): string {
+  let s = service.trim()
+  if (!s || s.length > 100) return 'your property'
+  // Extract "my lawn", "the patio", "your driveway" etc. — avoid echoing "a quote for to book a quote for"
+  const myMatch = s.match(/(?:my|the)\s+([^.?!]{2,40}?)(?:\s+(?:work|quote|visit))?\.?$/i)
+  if (myMatch) return 'your ' + myMatch[1].trim().replace(/^(my|the)\s+/i, '')
+  const yourMatch = s.match(/your\s+([^.?!]{2,40}?)(?:\s+(?:work|quote|visit))?\.?$/i)
+  if (yourMatch) return 'your ' + yourMatch[1].trim()
+  // Strip common filler then take what remains
+  s = s
+    .replace(/\b(?:a\s+)?quote\s+(?:for|on|about)\s+/gi, '')
+    .replace(/\bto\s+book\s+(?:a\s+)?(?:quote\s+)?(?:for\s+)?/gi, '')
+    .replace(/\b(?:for|on|about)\s+(?:my|the)\s+/gi, '')
+  s = s.replace(/^\s*(?:your|the)\s+/i, '').trim()
+  if (s.length >= 2 && s.length <= 50) return /^your\s/i.test(s) ? s : 'your ' + s
+  return 'your property'
+}
+
 export type CreateBookingParams = {
   business: Business
   customerName: string
@@ -177,7 +196,7 @@ export async function createBooking(params: CreateBookingParams): Promise<Create
 
   console.log(`${logPrefix} Appointment created:`, appointment.id)
 
-  // Send confirmation SMS
+  // Send confirmation SMS — ALWAYS use actual booked date/time from slotStart, never customer's words
   if (business.telnyxPhoneNumber) {
     const telnyx = new Telnyx({ apiKey: process.env.TELNYX_API_KEY! })
     const dateStr = formatDateFullForConfirm(startDate, tz)
@@ -187,9 +206,11 @@ export async function createBooking(params: CreateBookingParams): Promise<Create
       hour12: true,
       timeZone: tz,
     })
+    const cleanService = cleanServiceForConfirmation(service)
+    const addressPart = customerAddress?.trim() ? ` at ${customerAddress.trim()}` : ''
     let msg = conversationId
-      ? `You're all set ${name}! ${business.name} will meet you on ${dateStr} at ${timeStr} to take a look and give you a quote for ${service}. See you then! If anything changes just text us back.`
-      : `Confirmed! Your quote visit with ${business.name} is scheduled for ${dateStr} at ${timeStr}. They'll come out, take a look, and give you a quote for ${service}. Reply to this number if you need to reschedule.`
+      ? `You're all set ${name}! ${business.name} will meet you on ${dateStr} at ${timeStr}${addressPart} for a quote on ${cleanService}. See you then!`
+      : `Confirmed! Your quote visit with ${business.name} is scheduled for ${dateStr} at ${timeStr}. They'll come out, take a look, and give you a quote for ${cleanService}. Reply to this number if you need to reschedule.`
 
     if (calendarSyncFailed) {
       msg += ` Note: We had a small technical issue syncing to our calendar, but you're definitely booked. We'll reach out if anything changes.`

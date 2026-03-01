@@ -38,6 +38,7 @@ interface Business {
   bookingPageConfirmation?: string | null
   bookingRequiresAddress?: boolean
   businessType?: string | null
+  maxMessagesPerConversation?: number | null
   createdAt: string
   updatedAt: string
   _count: {
@@ -319,6 +320,7 @@ export default function AdminDashboard() {
       bookingPageConfirmation: business.bookingPageConfirmation ?? '',
       bookingRequiresAddress: business.bookingRequiresAddress ?? true,
       businessType: business.businessType ?? '',
+      maxMessagesPerConversation: business.maxMessagesPerConversation ?? 15,
     })
     setMessage('')
     setNewBlockedPhone('')
@@ -570,6 +572,7 @@ export default function AdminDashboard() {
           bookingPageConfirmation: editData.bookingPageConfirmation || null,
           bookingRequiresAddress: editData.bookingRequiresAddress ?? true,
           businessType: editData.businessType || null,
+          maxMessagesPerConversation: editData.maxMessagesPerConversation != null && editData.maxMessagesPerConversation !== '' ? Number(editData.maxMessagesPerConversation) : undefined,
         }),
       })
 
@@ -1356,6 +1359,19 @@ export default function AdminDashboard() {
                   />
                   <span className="text-sm">Require property address</span>
                 </label>
+              </Field>
+              <Field
+                label="Max Messages Per Conversation"
+                hint="Stop AI responses after this many messages. Helps prevent cost overruns. Default: 15"
+              >
+                <input
+                  type="number"
+                  min={5}
+                  max={50}
+                  value={editData.maxMessagesPerConversation ?? 15}
+                  onChange={e => setEditData({ ...editData, maxMessagesPerConversation: e.target.value })}
+                  className="w-24 bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-white"
+                />
               </Field>
 
               {/* Services Offered */}

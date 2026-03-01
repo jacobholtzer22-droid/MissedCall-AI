@@ -58,7 +58,7 @@ function formatDateFull(isoOrDateStr: string | Date, tz: string): string {
   return `${weekday}, ${month} ${ordinal(day)}`
 }
 
-const MAX_MESSAGES_PER_CONVERSATION = 20
+const DEFAULT_MAX_MESSAGES_PER_CONVERSATION = 15
 const BOOKING_INTENT_WORDS = ['book', 'appointment', 'schedule', 'booking', 'reserve']
 const CONVERSATION_TIMEOUT_HOURS = 24
 const SPAM_WINDOW_SECONDS = 30
@@ -153,9 +153,9 @@ export async function POST(request: NextRequest) {
         })
         await db.conversation.update({ where: { id: conversation.id }, data: { lastMessageAt: new Date() } })
 
-        // appointment_booked: send ONE final message then close; closed/human_needed: no response
+        // appointment_booked: send ONE final message (acknowledge thanks/questions) then close
         if (conversation.status === 'appointment_booked') {
-          const finalMsg = `Your quote visit is all set! If you need to reschedule or have questions, call us directly at ${business.telnyxPhoneNumber}.`
+          const finalMsg = `Thanks for reaching out! If you need to reschedule or have any questions, just give us a call at ${business.telnyxPhoneNumber}.`
           await sendSMSAndLog(business, conversation.id, from, finalMsg)
           await db.conversation.update({ where: { id: conversation.id }, data: { status: 'closed' } })
         }
@@ -190,9 +190,10 @@ export async function POST(request: NextRequest) {
         return new NextResponse('OK', { status: 200 })
       }
 
-      // Message limit guard
-      if (conversation.messages.length >= MAX_MESSAGES_PER_CONVERSATION) {
-        console.log('⚠️ Conversation hit message limit')
+      // Message limit guard (per-business config, default 15)
+      const maxMessages = (business as { maxMessagesPerConversation?: number }).maxMessagesPerConversation ?? DEFAULT_MAX_MESSAGES_PER_CONVERSATION
+      if (conversation.messages.length >= maxMessages) {
+        console.log('⚠️ Conversation hit message limit:', maxMessages)
         await db.conversation.update({
           where: { id: conversation.id },
           data: { status: 'completed', summary: 'Conversation ended - message limit reached' },
@@ -200,7 +201,7 @@ export async function POST(request: NextRequest) {
         await sendSMS(
           business,
           from,
-          `Thanks for chatting! For further assistance, please call us directly at ${business.telnyxPhoneNumber}.`
+          `Thanks for chatting! For further help, please call us directly at ${business.telnyxPhoneNumber}.`
         )
         return new NextResponse('OK', { status: 200 })
       }
@@ -390,7 +391,7 @@ function formatBusinessHoursSummary(businessHoursRaw: unknown): string {
   return `${days} ${range}`.trim()
 }
 
-/** Extract what the customer needs a quote for from conversation — use their words, don't categorize. */
+/** Extract and clean what the customer needs a quote for. Avoid garbled output like "a quote for to book a quote for my lawn". */
 function extractServiceFromConversation(messages: { direction: string; content: string }[]): string {
   for (const m of messages) {
     if (m.direction !== 'inbound') continue
@@ -402,14 +403,26 @@ function extractServiceFromConversation(messages: { direction: string; content: 
     for (const p of patterns) {
       const match = m.content.match(p)
       if (match && match[1]) {
-        const extracted = match[1].trim()
+        let extracted = match[1].trim()
         if (extracted.length >= 2 && extracted.length <= 80 && !/^(book|schedule|appointment)/i.test(extracted)) {
-          return extracted
+          return cleanServiceForDisplay(extracted)
         }
       }
     }
   }
   return 'Quote visit'
+}
+
+/** Clean garbled service text for display: "to book a quote for my lawn" → "your lawn" */
+function cleanServiceForDisplay(s: string): string {
+  let t = s.trim()
+  if (!t || t.length > 100) return 'your property'
+  t = t.replace(/\b(?:to\s+)?book\s+(?:a\s+)?(?:quote\s+)?(?:for\s+)?/gi, '')
+  t = t.replace(/\b(?:a\s+)?quote\s+(?:for|on|about)\s+/gi, '')
+  const myMatch = t.match(/(?:my|the)\s+([^.?!]{2,50}?)(?:\s+(?:work|quote|visit))?\.?$/i)
+  if (myMatch) return 'your ' + myMatch[1].trim().replace(/^(my|the)\s+/i, '')
+  if (t.length >= 2 && t.length <= 60) return /^your\s/i.test(t) ? t : 'your ' + t
+  return 'your property'
 }
 
 function getServicesList(business: { servicesOffered?: unknown }): { value: string; label: string }[] {
@@ -558,7 +571,9 @@ async function handleSmsBookingFlow(
   // ── Step: awaiting_selection (user picking from offered slots) ──
   const inSelectionStep = flowState.step === 'awaiting_selection'
   if (inSelectionStep && offeredSlots.length > 0) {
-    const selectedSlot = parseSlotSelection(trimmed, offeredSlots)
+    const timePref = (flowState.timePreference as string) ? parseTimePreference(String(flowState.timePreference), tz) : null
+    const preferredHour = timePref?.preferredHour
+    const selectedSlot = parseSlotSelection(trimmed, offeredSlots, tz, preferredHour)
     if (selectedSlot) {
       const slotObj = offeredSlots.find(s => s.start === selectedSlot.start)
       // If business requires address, ask for it before confirming
@@ -641,9 +656,9 @@ async function handleSmsBookingFlow(
     }
 
     // User gave a new time preference (e.g. "Thursday afternoon", "next week")
-    const timePref = parseTimePreference(trimmed, tz)
-    if (timePref) {
-      const { startStr, endStr, timeOfDay, isPastDate } = timePref
+    const newTimePref = parseTimePreference(trimmed, tz)
+    if (newTimePref) {
+      const { startStr, endStr, timeOfDay, isPastDate } = newTimePref
       if (isPastDate) {
         const fallback = getNext3BusinessDays(tz, business.businessHours)
         let fallbackSlots = await getAvailableSlots(business.id, fallback.startStr, fallback.endStr)
@@ -675,7 +690,7 @@ async function handleSmsBookingFlow(
       let slots = await getAvailableSlots(business.id, startStr, endStr)
       slots = filterPastSlots(slots, tz)
       slots = filterSlotsByTimeOfDay(slots, timeOfDay, tz)
-      const displaySlots = pickSlotsForPreference(slots, tz, business.businessHours, trimmed)
+      const displaySlots = pickSlotsForPreference(slots, tz, business.businessHours, trimmed, newTimePref?.preferredHour)
       if (displaySlots.length > 0) {
         const msg = formatSlotsMessage(displaySlots, tz)
         await sendSMSAndLog(business, conversation.id, from, msg)
@@ -771,7 +786,7 @@ async function handleSmsBookingFlow(
       let slots = await getAvailableSlots(business.id, startStr, endStr)
       slots = filterPastSlots(slots, tz)
       slots = filterSlotsByTimeOfDay(slots, timeOfDay, tz)
-      const displaySlots = pickSlotsForPreference(slots, tz, business.businessHours, trimmed)
+      const displaySlots = pickSlotsForPreference(slots, tz, business.businessHours, trimmed, timePref?.preferredHour)
       if (displaySlots.length > 0) {
         const msg = formatSlotsMessage(displaySlots, tz)
         await sendSMSAndLog(business, conversation.id, from, msg)
@@ -1018,10 +1033,11 @@ async function handleAwaitingNameAndPreference(
   let slots = await getAvailableSlots(business.id, startStr, endStr)
   slots = filterPastSlots(slots, tz)
   slots = filterSlotsByTimeOfDay(slots, timeOfDay, tz)
-  let displaySlots = pickSlotsForPreference(slots, tz, business.businessHours, trimmed)
-  if (preferredHour !== undefined) {
+  // When specific time requested (e.g. "Friday at noon"): exact match first, else 2-3 closest
+  let displaySlots = pickSlotsForPreference(slots, tz, business.businessHours, trimmed, preferredHour)
+  if (preferredHour !== undefined && displaySlots.length > 1) {
     const hourSlots = filterSlotsByHour(displaySlots, preferredHour, tz)
-    if (hourSlots.length > 0) displaySlots = hourSlots
+    if (hourSlots.length > 0) displaySlots = hourSlots // Exact hour takes precedence
   }
   if (displaySlots.length > 0) {
     const singleSlot = displaySlots.length === 1 ? displaySlots[0] : null
@@ -1226,13 +1242,33 @@ function filterSlotsByHour(slots: SlotLike[], preferredHour: number, tz: string)
   })
 }
 
-/** Pick slots based on preference: tomorrow→2-3, next week→3-4, anytime→3 across days. */
+/** Pick slots based on preference. When preferredHour set: exact match first, else 2-3 closest. */
 function pickSlotsForPreference(
   slots: SlotLike[],
   tz: string,
   businessHoursRaw: unknown,
-  preferenceText: string
+  preferenceText: string,
+  preferredHour?: number
 ): SlotLike[] {
+  // If user asked for specific time (e.g. "Friday at noon"), prioritize exact match then closest
+  if (preferredHour !== undefined && slots.length > 0) {
+    const exact = slots.filter((s) => {
+      const hour = parseInt(new Date(s.start).toLocaleTimeString('en-US', { hour: 'numeric', hour12: false, timeZone: tz }), 10)
+      return hour === preferredHour
+    })
+    if (exact.length > 0) return exact.slice(0, 3) // Exact match(es) only, max 3
+    // No exact match: show 2-3 closest to requested hour
+    const withDist = slots.map((s) => {
+      const hour = parseInt(new Date(s.start).toLocaleTimeString('en-US', { hour: 'numeric', hour12: false, timeZone: tz }), 10)
+      const min = parseInt(new Date(s.start).toLocaleTimeString('en-US', { minute: 'numeric', timeZone: tz }), 10)
+      const totalMins = hour * 60 + min
+      const targetMins = preferredHour * 60
+      return { slot: s, dist: Math.abs(totalMins - targetMins) }
+    })
+    withDist.sort((a, b) => a.dist - b.dist)
+    return withDist.slice(0, 3).map((x) => x.slot)
+  }
+
   const t = preferenceText.toLowerCase()
   if (/\btomorrow\b/.test(t)) {
     return pickSlotsAcrossDays(slots, tz, businessHoursRaw, 1).slice(0, 3)
@@ -1373,7 +1409,7 @@ function parseTimePreference(text: string, tz: string): TimePreferenceResult | n
     }
   }
 
-  // Specific hour: "2pm", "9am", "at 3pm" (require am/pm to avoid matching "march 6" as 6am)
+  // Specific hour: "2pm", "9am", "at 3pm", "noon", "12" (when with day like "Friday at noon")
   let preferredHour: number | undefined
   const hourMatch = t.match(/(?:at\s+)?(\d{1,2})(?::(\d{2}))?\s*(am|pm)\b/i)
   if (hourMatch) {
@@ -1382,6 +1418,10 @@ function parseTimePreference(text: string, tz: string): TimePreferenceResult | n
     if (ampm === 'pm' && h < 12) h += 12
     if (ampm === 'am' && h === 12) h = 0
     if (h >= 0 && h <= 23) preferredHour = h
+  }
+  // "noon" or "12" (standalone when with day, e.g. "Friday at noon") = 12pm
+  if (/\bnoon\b/i.test(t) || (/\b12\b/.test(t) && /\b(at|@|around)\s+12\b/i.test(t))) {
+    preferredHour = 12
   }
 
   // Time of day: morning, afternoon, evening
@@ -1420,22 +1460,61 @@ function parseTimePreference(text: string, tz: string): TimePreferenceResult | n
   return { startStr, endStr, timeOfDay, preferredHour, isPastDate: isPastDate || undefined }
 }
 
-function parseSlotSelection(text: string, slots: { start: string; display: string }[]): { start: string } | null {
-  const num = parseInt(text.replace(/\D/g, ''), 10)
-  if (num >= 1 && num <= slots.length) {
-    return { start: slots[num - 1].start }
+/** preferredHour: when customer previously said "noon" or "12pm", "12" means 12pm not slot #12 */
+function parseSlotSelection(
+  text: string,
+  slots: { start: string; display: string }[],
+  tz: string,
+  preferredHour?: number
+): { start: string } | null {
+  const trimmed = text.trim().toLowerCase()
+
+  // "noon" or "12pm" explicitly → find 12pm slot
+  if (trimmed === 'noon' || trimmed === '12pm' || trimmed === '12 pm') {
+    const noonSlots = slots.filter((s) => {
+      const hour = parseInt(new Date(s.start).toLocaleTimeString('en-US', { hour: 'numeric', hour12: false, timeZone: tz }), 10)
+      return hour === 12
+    })
+    if (noonSlots.length >= 1) return { start: noonSlots[0].start }
   }
-  // Try matching time like "9:00" or "9am"
-  const timeMatch = text.match(/(\d{1,2})(?::(\d{2}))?\s*(am|pm)?/i)
+
+  const num = parseInt(trimmed.replace(/\D/g, ''), 10)
+
+  // If they said "12" and previously asked for noon/12pm, prefer time interpretation over slot #12
+  if (preferredHour !== undefined && (trimmed === '12' || (trimmed === String(num) && num === 12))) {
+    const noonSlots = slots.filter((s) => {
+      const hour = parseInt(new Date(s.start).toLocaleTimeString('en-US', { hour: 'numeric', hour12: false, timeZone: tz }), 10)
+      return hour === preferredHour
+    })
+    if (noonSlots.length === 1) return { start: noonSlots[0].start }
+    if (noonSlots.length > 1) {
+      // Multiple 12pm slots - use first one (or could pick by date from timePreference)
+      return { start: noonSlots[0].start }
+    }
+  }
+
+  // Try matching time like "9:00", "9am", or standalone "12" (12pm) before slot number
+  const timeMatch = trimmed.match(/(\d{1,2})(?::(\d{2}))?\s*(am|pm)?/i)
   if (timeMatch) {
     let hour = parseInt(timeMatch[1], 10)
     const min = timeMatch[2] ? parseInt(timeMatch[2], 10) : 0
     const ampm = (timeMatch[3] || '').toLowerCase()
     if (ampm === 'pm' && hour < 12) hour += 12
     if (ampm === 'am' && hour === 12) hour = 0
-    const displayTarget = `${hour > 12 ? hour - 12 : hour}:${min.toString().padStart(2, '0')} ${ampm || (hour < 12 ? 'AM' : 'PM')}`
-    const found = slots.find(s => s.display.toLowerCase().replace(/\s/g, '') === displayTarget.toLowerCase().replace(/\s/g, ''))
+    // Standalone "12" with no am/pm → assume 12pm (noon)
+    if (!ampm && hour === 12) hour = 12
+    const displayTarget = `${hour > 12 ? hour - 12 : hour === 0 ? 12 : hour}:${min.toString().padStart(2, '0')} ${ampm || (hour >= 12 ? 'PM' : 'AM')}`
+    const found = slots.find((s) => {
+      const norm = s.display.toLowerCase().replace(/\s/g, '')
+      const targetNorm = displayTarget.toLowerCase().replace(/\s/g, '')
+      return norm === targetNorm || (norm.includes('12') && norm.includes('pm') && hour === 12)
+    })
     if (found) return { start: found.start }
+  }
+
+  // Slot number: 1, 2, 3, ...
+  if (num >= 1 && num <= slots.length) {
+    return { start: slots[num - 1].start }
   }
   return null
 }
@@ -1526,13 +1605,14 @@ RULES:
 - Keep responses short — 1-2 sentences max unless listing available times.
 - Don't use excessive emojis. One emoji per conversation max.
 - Don't categorize the customer's request into a service — use exactly what they described. If they say "patio and walkway" say "a quote for your patio and walkway" not "gardening."
+- Never repeat garbled customer text. If they say "a quote for to book a quote for my lawn" use "a quote for your lawn" — extract the actual thing they need (lawn, patio, etc.) and say "your [X]".
 - Be warm and natural, not robotic
 - Don't make up information
 - If someone seems upset or you can't help, add [HUMAN_NEEDED] at the end (optional: [HUMAN_NEEDED: reason="brief reason"] to help the owner)
 ${flowGuidance}
 
 WHEN QUOTE VISIT IS CONFIRMED (you have name + service + date/time${bookingRequiresAddress ? ' + property address' : ''}):
-Say something like: "You're all set! [Business name] will meet you on [Date - use full format: Friday, March 6th] at [Time] to take a look and give you a quote for [service]. See you then!"
+The structured booking flow will send the actual confirmation — it uses the REAL booked date/time from the calendar, never the customer's words. If you output [APPOINTMENT_BOOKED], use the EXACT datetime of the slot being booked. Say something like: "You're all set! [Business name] will meet you on [Date - use full format: Thursday, March 5th] at [Time] at [address if provided] for a quote on [service - clean phrase like "your lawn" not garbled text]. See you then!"
 Then add this EXACT tag at the end of your message:
 [APPOINTMENT_BOOKED: name="John Smith", service="patio and walkway", datetime="2025-03-09 09:00", notes="First time"${bookingRequiresAddress ? ', address="123 Main St"' : ''}]
 CRITICAL: The datetime MUST be in BUSINESS LOCAL TIME (${tz}). If the customer says "9am" they mean 9am in the business timezone — output "09:00" not "14:00". Format: YYYY-MM-DD HH:mm. Example: 9am Monday March 9 = "2025-03-09 09:00". Include address in the tag if the business requires it and the customer provided it.`

@@ -47,6 +47,7 @@ export async function PATCH(
       'bookingPageConfirmation',
       'bookingRequiresAddress',
       'businessType',
+      'maxMessagesPerConversation',
     ]
 
     const data: Record<string, unknown> = {}

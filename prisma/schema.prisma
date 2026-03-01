@@ -69,6 +69,7 @@ model Business {
   bookingPageServiceLabel String?                       // e.g. "What do you need a quote for?"
   bookingPageConfirmation String?   @db.Text            // e.g. "You're all set! Someone from {businessName} will meet you at your scheduled time."
   bookingRequiresAddress Boolean   @default(true)       // Require property address when booking (turn off for businesses that don't need it)
+  maxMessagesPerConversation Int   @default(15)         // Stop responding after this many messages (configurable per business)
 
   // Owner notification preferences (booking created/cancelled)
   ownerEmail            String?                         // Business owner email for notifications
