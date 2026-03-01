@@ -9,7 +9,8 @@
     "lint": "next lint",
     "db:push": "prisma db push",
     "db:studio": "prisma studio",
-    "db:generate": "prisma generate"
+    "db:generate": "prisma generate",
+    "db:cleanup-test-appointments": "npx tsx scripts/cleanup-test-appointments.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.52.0",

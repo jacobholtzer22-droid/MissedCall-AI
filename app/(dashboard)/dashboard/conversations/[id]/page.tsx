@@ -39,7 +39,10 @@ export default async function ConversationDetailPage({ params }: { params: Promi
     completed: { label: 'Completed', color: 'bg-gray-100 text-gray-600' },
     appointment_booked: { label: 'Appointment Booked', color: 'bg-blue-100 text-blue-700' },
     no_response: { label: 'No Response', color: 'bg-yellow-100 text-yellow-700' },
-    needs_review: { label: 'Needs Review', color: 'bg-red-100 text-red-700' }
+    needs_review: { label: 'Needs Review', color: 'bg-red-100 text-red-700' },
+    human_needed: { label: 'Needs Review', color: 'bg-red-100 text-red-700' },
+    closed: { label: 'Closed', color: 'bg-gray-100 text-gray-600' },
+    booking_in_progress: { label: 'Booking', color: 'bg-amber-100 text-amber-700' }
   }
 
   const status = statusConfig[conversation.status] || statusConfig.active
@@ -71,7 +74,7 @@ export default async function ConversationDetailPage({ params }: { params: Promi
         <p className="text-sm text-gray-500">Call Screened ✓ then Missed</p>
       )}
 
-      {conversation.status === 'needs_review' && (
+      {(conversation.status === 'needs_review' || conversation.status === 'human_needed') && (
         <div className="bg-red-50 border border-red-200 rounded-lg p-4 flex items-start space-x-3">
           <AlertTriangle className="h-5 w-5 text-red-600 flex-shrink-0 mt-0.5" />
           <div>

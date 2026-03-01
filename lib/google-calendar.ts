@@ -279,7 +279,10 @@ async function getAvailableSlotsInternal(
     : busy
 
   const slots: TimeSlot[] = []
-  const now = new Date()
+  // Use "now" in business timezone for past filter: a slot at "3pm Eastern today" might appear
+  // as "tomorrow" in UTC, so we must compare against business-time "now"
+  const nowInTz = new TZDate(new Date(), tz)
+  const now = new Date(nowInTz.getTime())
   let slotsBeforeFiltering = 0
   let slotsAfterPastFilter = 0
 

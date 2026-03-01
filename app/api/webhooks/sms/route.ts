@@ -11,6 +11,7 @@ import { db } from '@/lib/db'
 import Telnyx from 'telnyx'
 import Anthropic from '@anthropic-ai/sdk'
 import { addDays } from 'date-fns'
+import { TZDate } from '@date-fns/tz'
 import { getAvailableSlots, parseBusinessHours } from '@/lib/google-calendar'
 import {
   notifyOwnerOnBookingCreated,
@@ -72,23 +73,53 @@ export async function POST(request: NextRequest) {
         return new NextResponse('OK', { status: 200 })
       }
 
-      // Find or create conversation
+      // Find or create conversation (prefer existing, including closed ones — never create new after booking)
+      const NO_AI_RESPONSE_STATUSES = ['appointment_booked', 'closed', 'human_needed', 'needs_review', 'completed'] as const
+      const closedWindowDays = 90
+
+      // First: look for any recent conversation (including closed) for this caller — do NOT create new if one exists
       let conversation = await db.conversation.findFirst({
         where: {
           businessId: business.id,
           callerPhone: from,
-          status: 'active',
-          createdAt: { gte: new Date(Date.now() - CONVERSATION_TIMEOUT_HOURS * 60 * 60 * 1000) },
+          createdAt: { gte: new Date(Date.now() - closedWindowDays * 24 * 60 * 60 * 1000) },
         },
-        include: { messages: { orderBy: { createdAt: 'asc' }, take: 50 } },
+        orderBy: { lastMessageAt: 'desc' },
+        include: { messages: { orderBy: { createdAt: 'asc' }, take: 50 }, appointment: true },
       })
 
+      // If we found a closed/completed conversation, use it — never create a new one
+      if (conversation && NO_AI_RESPONSE_STATUSES.includes(conversation.status as any)) {
+        // Save inbound message
+        await db.message.create({
+          data: { conversationId: conversation.id, direction: 'inbound', content: text, telnyxSid: messageSid },
+        })
+        await db.conversation.update({ where: { id: conversation.id }, data: { lastMessageAt: new Date() } })
+
+        // appointment_booked: send ONE final message then close; closed/human_needed: no response
+        if (conversation.status === 'appointment_booked') {
+          const finalMsg = `Your appointment is all set! If you need to reschedule or have questions, call us directly at ${business.telnyxPhoneNumber}.`
+          await sendSMSAndLog(business, conversation.id, from, finalMsg)
+          await db.conversation.update({ where: { id: conversation.id }, data: { status: 'closed' } })
+        }
+        return new NextResponse('OK', { status: 200 })
+      }
+
+      // If we found a conversation that should get AI responses, use it
       if (!conversation) {
         conversation = await db.conversation.create({
           data: { businessId: business.id, callerPhone: from, status: 'active' },
-          include: { messages: true },
+          include: { messages: true, appointment: true },
         })
       }
+
+      // Ensure we have full conversation data for downstream logic
+      const refreshed = await db.conversation.findUnique({
+        where: { id: conversation.id },
+        include: { messages: { orderBy: { createdAt: 'asc' } }, appointment: true },
+      })
+      if (!refreshed) return new NextResponse('OK', { status: 200 })
+      conversation = refreshed
 
       // Spam guard
       const recentDupe = conversation.messages.find(
@@ -123,12 +154,17 @@ export async function POST(request: NextRequest) {
       })
       await db.conversation.update({ where: { id: conversation.id }, data: { lastMessageAt: new Date() } })
 
-      // Refresh with new message included and bookingFlowState
+      // Refresh with new message included, bookingFlowState, and appointment
       conversation = await db.conversation.findUnique({
         where: { id: conversation.id },
-        include: { messages: { orderBy: { createdAt: 'asc' } } },
+        include: { messages: { orderBy: { createdAt: 'asc' } }, appointment: true },
       })
       if (!conversation) return new NextResponse('OK', { status: 200 })
+
+      // Webhook status check: do not generate AI response for closed/booked/human-needed
+      if (NO_AI_RESPONSE_STATUSES.includes(conversation.status as any) || conversation.appointment) {
+        return new NextResponse('OK', { status: 200 })
+      }
 
       // ── SMS BOOKING FLOW ─────────────────────────────────────────
       const bookingHandled = await handleSmsBookingFlow(business, conversation, text, from)
@@ -151,11 +187,11 @@ export async function POST(request: NextRequest) {
         { direction: 'outbound' as const, content: cleanResponse, createdAt: new Date() },
       ]
 
-      // Appointment booking tag
+      // Appointment booking tag — skip if conversation already has a booking
       const apptMatch = aiResponse.match(
         /\[APPOINTMENT_BOOKED: name="([^"]+)", service="([^"]+)", datetime="([^"]+)"(?:, notes="([^"]*)")?\]/
       )
-      if (apptMatch) {
+      if (apptMatch && conversation.status !== 'appointment_booked' && !conversation.appointment) {
         const [, name, service, datetime, notes] = apptMatch
         const appointment = await db.appointment.create({
           data: {
@@ -212,7 +248,7 @@ export async function POST(request: NextRequest) {
         const [, reason] = humanNeededMatch
         await db.conversation.update({
           where: { id: conversation.id },
-          data: { status: 'needs_review', intent: 'human_needed' },
+          data: { status: 'human_needed', intent: 'human_needed' },
         })
         console.log('🚨 Flagged for human review')
 
@@ -307,10 +343,13 @@ async function handleSmsBookingFlow(
   from: string
 ): Promise<boolean> {
   if (!business.calendarEnabled) return false
+  // Do not restart or continue flow if already confirmed or has booking
+  if (conversation.appointment || conversation.status === 'appointment_booked') return true
+  const rawFlowState = (conversation.bookingFlowState as Record<string, unknown> | null) ?? {}
+  if (rawFlowState.step === 'confirmed') return true
 
   const rawText = text?.trim() || ''
   const trimmed = rawText.toLowerCase()
-  const rawFlowState = (conversation.bookingFlowState as Record<string, unknown> | null) ?? {}
   // Support legacy step names
   const legacyStep = rawFlowState.step as string
   const mappedStep: BookingFlowState['step'] =
@@ -337,6 +376,12 @@ async function handleSmsBookingFlow(
   if (inSelectionStep && offeredSlots.length > 0) {
     const selectedSlot = parseSlotSelection(trimmed, offeredSlots)
     if (selectedSlot) {
+      // Re-check: conversation might have booking from another request
+      const convCheck = await db.conversation.findUnique({
+        where: { id: conversation.id },
+        include: { appointment: true },
+      })
+      if (convCheck?.appointment) return true
       const res = await fetch(`${baseUrl}/api/bookings/create`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -390,6 +435,7 @@ async function handleSmsBookingFlow(
     if (timePref) {
       const { startStr, endStr, timeOfDay } = timePref
       let slots = await getAvailableSlots(business.id, startStr, endStr)
+      slots = filterPastSlots(slots, tz)
       slots = filterSlotsByTimeOfDay(slots, timeOfDay, tz)
       const displaySlots = pickSlotsForPreference(slots, tz, business.businessHours, trimmed)
       if (displaySlots.length > 0) {
@@ -413,7 +459,8 @@ async function handleSmsBookingFlow(
       }
       // Requested time range has no slots — offer alternatives
       const fallback = getNext3BusinessDays(tz, business.businessHours)
-      const fallbackSlots = await getAvailableSlots(business.id, fallback.startStr, fallback.endStr)
+      let fallbackSlots = await getAvailableSlots(business.id, fallback.startStr, fallback.endStr)
+      fallbackSlots = filterPastSlots(fallbackSlots, tz)
       const altSlots = pickSlotsAcrossDays(fallbackSlots, tz, business.businessHours, 3)
       if (altSlots.length > 0) {
         const msg = `That slot is taken, but I've got:\n\n${formatSlotsMessage(altSlots, tz)}`
@@ -453,6 +500,7 @@ async function handleSmsBookingFlow(
     if (timePref) {
       const { startStr, endStr, timeOfDay } = timePref
       let slots = await getAvailableSlots(business.id, startStr, endStr)
+      slots = filterPastSlots(slots, tz)
       slots = filterSlotsByTimeOfDay(slots, timeOfDay, tz)
       const displaySlots = pickSlotsForPreference(slots, tz, business.businessHours, trimmed)
       if (displaySlots.length > 0) {
@@ -476,7 +524,8 @@ async function handleSmsBookingFlow(
       }
       // No slots in that range — offer closest alternatives
       const fallback = getNext3BusinessDays(tz, business.businessHours)
-      const fallbackSlots = await getAvailableSlots(business.id, fallback.startStr, fallback.endStr)
+      let fallbackSlots = await getAvailableSlots(business.id, fallback.startStr, fallback.endStr)
+      fallbackSlots = filterPastSlots(fallbackSlots, tz)
       const altSlots = pickSlotsAcrossDays(fallbackSlots, tz, business.businessHours, 3)
       if (altSlots.length > 0) {
         const msg = `That slot is taken, but I've got:\n\n${formatSlotsMessage(altSlots, tz)}`
@@ -591,6 +640,7 @@ async function handleSmsBookingFlow(
   await db.conversation.update({
     where: { id: conversation.id },
     data: {
+      status: 'booking_in_progress',
       bookingFlowState: JSON.parse(JSON.stringify({
         step: 'awaiting_name',
         sentAt: new Date().toISOString(),
@@ -600,17 +650,19 @@ async function handleSmsBookingFlow(
   return true
 }
 
-/** Get next N business days (skip days when business is closed). */
+/** Get next N business days starting from TODAY in business timezone (skip days when business is closed). */
 function getNext3BusinessDays(tz: string, businessHoursRaw: unknown): { startStr: string; endStr: string } {
   const hours = parseBusinessHours(businessHoursRaw)
-  const now = new Date()
-  const todayStr = now.toLocaleDateString('en-CA', { timeZone: tz })
-  const todayNoon = new Date(todayStr + 'T12:00:00Z')
+  const nowInTz = new TZDate(new Date(), tz)
+  const todayStr = nowInTz.toISOString().slice(0, 10)
+  const [y, m, d] = todayStr.split('-').map(Number)
+  const todayStart = new TZDate(y, m - 1, d, 0, 0, 0, 0, tz)
   const days: string[] = []
   for (let offset = 0; offset < 14 && days.length < 3; offset++) {
-    const d = addDays(todayNoon, offset)
-    const dateStr = d.toLocaleDateString('en-CA', { timeZone: tz })
-    const dayName = DAY_NAMES[d.getDay()]
+    const cursor = addDays(todayStart, offset)
+    const dateStr = new Date(cursor.getTime()).toLocaleDateString('en-CA', { timeZone: tz })
+    const cursorInTz = new TZDate(cursor.getTime(), tz)
+    const dayName = DAY_NAMES[cursorInTz.getDay()]
     if (hours[dayName]) {
       days.push(dateStr)
     }
@@ -662,6 +714,13 @@ function pickBest3ForDay(slots: SlotLike[]): SlotLike[] {
   const midIdx = Math.floor(sorted.length / 2)
   const mid = sorted[midIdx]
   return [first, mid, last]
+}
+
+/** Filter out slots that are in the past (use business timezone). */
+function filterPastSlots(slots: SlotLike[], tz: string): SlotLike[] {
+  const nowInTz = new TZDate(new Date(), tz)
+  const nowMs = nowInTz.getTime()
+  return slots.filter(s => new Date(s.start).getTime() >= nowMs)
 }
 
 /** Filter slots by time of day: morning (<12), afternoon (12-17), evening (17+). */
@@ -723,10 +782,11 @@ function parseTimePreference(
     sunday: 0, monday: 1, tuesday: 2, wednesday: 3, thursday: 4, friday: 5, saturday: 6,
     sun: 0, mon: 1, tue: 2, wed: 3, thu: 4, fri: 5, sat: 6,
   }
-  const now = new Date()
-  const todayStr = now.toLocaleDateString('en-CA', { timeZone: tz })
-  const todayNoon = new Date(todayStr + 'T12:00:00Z')
-  const todayDow = todayNoon.getDay()
+  const nowInTz = new TZDate(new Date(), tz)
+  const todayStr = nowInTz.toISOString().slice(0, 10)
+  const [y, m, d] = todayStr.split('-').map(Number)
+  const todayStart = new TZDate(y, m - 1, d, 0, 0, 0, 0, tz)
+  const todayDow = nowInTz.getDay()
 
   // anytime, whenever, ASAP, as soon as possible → next 3 business days
   if (/\b(anytime|whenever|asap|as\s+soon\s+as\s+possible|soonest|earliest)\b/.test(t)) {
@@ -737,7 +797,7 @@ function parseTimePreference(
   let startDate: Date | null = null
   let timeOfDay: 'morning' | 'afternoon' | 'evening' | undefined
 
-  // "this Friday", "next Monday" etc.
+  // "this Friday", "next Monday" etc. — day names mean NEXT upcoming occurrence (including today)
   if (/\bthis\s+(monday|tuesday|wednesday|thursday|friday|saturday|sunday|mon|tue|wed|thu|fri|sat|sun)\b/i.test(t)) {
     const match = t.match(/this\s+(\w+)/i)
     if (match) {
@@ -745,12 +805,12 @@ function parseTimePreference(
       const dow = dayNames[name] ?? dayNames[name.slice(0, 3)]
       if (dow !== undefined) {
         let daysAhead = dow - todayDow
-        if (daysAhead <= 0) daysAhead += 7
-        startDate = addDays(todayNoon, daysAhead)
+        if (daysAhead < 0) daysAhead += 7
+        startDate = addDays(todayStart, daysAhead)
       }
     }
   } else if (/\bnext\s+week\b/.test(t)) {
-    startDate = addDays(todayNoon, 7)
+    startDate = addDays(todayStart, 7)
   } else if (/\bnext\s+(monday|tuesday|wednesday|thursday|friday|saturday|sunday|mon|tue|wed|thu|fri|sat|sun)\b/i.test(t)) {
     const match = t.match(/next\s+(\w+)/i)
     if (match) {
@@ -760,19 +820,20 @@ function parseTimePreference(
         let daysAhead = dow - todayDow
         if (daysAhead <= 0) daysAhead += 7
         daysAhead += 7 // "next" Monday = Monday of next week
-        startDate = addDays(todayNoon, daysAhead)
+        startDate = addDays(todayStart, daysAhead)
       }
     }
   } else if (/\btomorrow\b/.test(t)) {
-    startDate = addDays(todayNoon, 1)
+    startDate = addDays(todayStart, 1)
   } else if (/\btoday\b/.test(t)) {
-    startDate = todayNoon
+    startDate = todayStart
   } else {
+    // Standalone day name (e.g. "Monday", "Thursday") = next upcoming occurrence, including today
     for (const [name, dow] of Object.entries(dayNames)) {
       if (new RegExp(`\\b${name}\\b`).test(t)) {
         let daysAhead = dow - todayDow
-        if (daysAhead <= 0) daysAhead += 7
-        startDate = addDays(todayNoon, daysAhead)
+        if (daysAhead < 0) daysAhead += 7
+        startDate = addDays(todayStart, daysAhead)
         break
       }
     }

@@ -195,7 +195,7 @@ model Conversation {
   callEndedAt           DateTime?                       // When the dial attempt ended
 
   // Conversation state
-  status                String    @default("active")    // active, completed, appointment_booked, no_response, screening
+  status                String    @default("active")    // active, booking_in_progress, appointment_booked, closed, human_needed, completed, no_response, screening
 
   // AI-generated summary of the conversation
   summary               String?   @db.Text

@@ -12,10 +12,13 @@ import { MessageSquare, Calendar } from 'lucide-react'
 import { formatRelativeTime, formatPhoneNumber } from '@/lib/utils'
 import Link from 'next/link'
 
-// Only show real SMS follow-up conversations (active, no_response, completed)
 const STATUS_TABS: { value: string; label: string }[] = [
   { value: 'all', label: 'All' },
   { value: 'active', label: 'Active' },
+  { value: 'booking_in_progress', label: 'Booking' },
+  { value: 'appointment_booked', label: 'Booked' },
+  { value: 'closed', label: 'Closed' },
+  { value: 'human_needed', label: 'Needs review' },
   { value: 'no_response', label: 'No response' },
   { value: 'completed', label: 'Completed' },
 ]
@@ -26,6 +29,9 @@ function getStatusLabel(status: string): string {
     appointment_booked: 'Booked',
     no_response: 'No response',
     needs_review: 'Needs review',
+    human_needed: 'Needs review',
+    closed: 'Closed',
+    booking_in_progress: 'Booking',
     completed: 'Completed',
     spam_blocked: 'Spam blocked',
     screening_blocked: 'Screening blocked'
@@ -33,7 +39,7 @@ function getStatusLabel(status: string): string {
   return map[status] ?? status.replace(/_/g, ' ')
 }
 
-const CONVERSATION_LIST_STATUSES = ['active', 'no_response', 'completed'] as const
+const CONVERSATION_LIST_STATUSES = ['active', 'booking_in_progress', 'appointment_booked', 'closed', 'human_needed', 'no_response', 'completed'] as const
 
 async function getStatusCounts(businessId: string): Promise<Record<string, number>> {
   const rows = await db.conversation.groupBy({
@@ -217,7 +223,7 @@ export default async function ConversationsPage({
                         ? 'bg-blue-100 text-blue-700'
                         : conversation.status === 'completed'
                         ? 'bg-gray-100 text-gray-600'
-                        : conversation.status === 'no_response' || conversation.status === 'needs_review'
+                        : conversation.status === 'no_response' || conversation.status === 'needs_review' || conversation.status === 'human_needed'
                         ? 'bg-yellow-100 text-yellow-700'
                         : conversation.status === 'spam_blocked'
                         ? 'bg-red-100 text-red-700'

@@ -5,6 +5,7 @@
 // Public API - used by booking page and SMS flow
 
 import { NextRequest, NextResponse } from 'next/server'
+import { TZDate } from '@date-fns/tz'
 import { db } from '@/lib/db'
 import Telnyx from 'telnyx'
 import {
@@ -65,11 +66,50 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid slotStart' }, { status: 400 })
     }
 
+    const tz = business.timezone ?? 'America/New_York'
+    const nowInTz = new TZDate(new Date(), tz)
+    if (startDate.getTime() < nowInTz.getTime()) {
+      return NextResponse.json(
+        { error: 'Cannot book appointments in the past' },
+        { status: 400 }
+      )
+    }
+
+    // Prevent duplicate bookings: conversation already has a confirmed appointment
+    if (conversationId) {
+      const existing = await db.appointment.findFirst({
+        where: {
+          conversationId,
+          status: 'confirmed',
+        },
+      })
+      if (existing) {
+        return NextResponse.json({ error: 'This conversation already has a confirmed appointment' }, { status: 409 })
+      }
+    }
+
     const slotDuration = business.slotDurationMinutes ?? 30
+
+    // Reject duplicate: same customer + business + same slot (within slot duration) + service
+    const marginMs = slotDuration * 60 * 1000
+    const existingDup = await db.appointment.findFirst({
+      where: {
+        businessId: business.id,
+        customerPhone: customerPhone.trim(),
+        status: 'confirmed',
+        serviceType: serviceType.trim(),
+        scheduledAt: {
+          gte: new Date(startDate.getTime() - marginMs),
+          lte: new Date(startDate.getTime() + marginMs),
+        },
+      },
+    })
+    if (existingDup) {
+      return NextResponse.json({ error: 'You already have an appointment for this service at this time' }, { status: 409 })
+    }
     const endDate = new Date(startDate.getTime() + slotDuration * 60 * 1000)
 
     // Verify slot is still available (use business TZ for date to avoid timezone mismatch)
-    const tz = business.timezone ?? 'America/New_York'
     const dateStr = startDate.toLocaleDateString('en-CA', { timeZone: tz }) // YYYY-MM-DD
     const availableSlots = await getAvailableSlots(business.id, dateStr, dateStr)
     const isAvailable = availableSlots.some(

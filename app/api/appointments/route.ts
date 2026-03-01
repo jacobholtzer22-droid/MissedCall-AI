@@ -25,9 +25,26 @@ export async function GET() {
     include: { conversation: true },
   })
 
-  // Sync: if a confirmed appointment has a Google event that no longer exists, mark as cancelled
+  // Mark past confirmed appointments as completed (they're done, not cancelled)
+  const now = new Date()
+  const pastConfirmed = appointments.filter(
+    (a) => a.status === 'confirmed' && a.scheduledAt < now
+  )
+  for (const apt of pastConfirmed) {
+    await db.appointment.update({
+      where: { id: apt.id },
+      data: { status: 'completed' },
+    })
+  }
+
+  // Sync: if a confirmed appointment has a Google event that no longer exists, mark as cancelled.
+  // ONLY run this on appointments older than 1 hour — give new events time to sync to Google.
+  const ONE_HOUR_MS = 60 * 60 * 1000
   const confirmedWithCalendar = appointments.filter(
-    (a) => a.status === 'confirmed' && a.googleCalendarEventId
+    (a) =>
+      a.status === 'confirmed' &&
+      a.googleCalendarEventId &&
+      new Date(a.createdAt).getTime() < Date.now() - ONE_HOUR_MS
   )
   for (const apt of confirmedWithCalendar) {
     if (!apt.googleCalendarEventId) continue

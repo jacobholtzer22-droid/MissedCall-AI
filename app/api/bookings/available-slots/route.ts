@@ -5,6 +5,7 @@
 // Public API - used by booking page and SMS flow
 
 import { NextRequest, NextResponse } from 'next/server'
+import { TZDate } from '@date-fns/tz'
 import { db } from '@/lib/db'
 import { getAvailableSlots } from '@/lib/google-calendar'
 
@@ -37,13 +38,14 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Google Calendar not connected', businessName: business.name, slots: [] }, { status: 200 })
     }
 
-    const today = new Date()
-    today.setHours(0, 0, 0, 0)
-    const defaultEnd = new Date(today)
-    defaultEnd.setDate(defaultEnd.getDate() + 14)
+    const tz = business.timezone ?? 'America/New_York'
+    const nowInTz = new TZDate(new Date(), tz)
+    const todayStr = nowInTz.toISOString().slice(0, 10)
+    const defaultEndDate = new TZDate(nowInTz)
+    defaultEndDate.setDate(defaultEndDate.getDate() + 14)
 
-    const effectiveStart = startStr ?? today.toISOString().slice(0, 10)
-    const effectiveEnd = endStr ?? defaultEnd.toISOString().slice(0, 10)
+    const effectiveStart = startStr ?? todayStr
+    const effectiveEnd = endStr ?? defaultEndDate.toISOString().slice(0, 10)
 
     if (!/^\d{4}-\d{2}-\d{2}$/.test(effectiveStart) || !/^\d{4}-\d{2}-\d{2}$/.test(effectiveEnd)) {
       return NextResponse.json({ error: 'Invalid date range' }, { status: 400 })
