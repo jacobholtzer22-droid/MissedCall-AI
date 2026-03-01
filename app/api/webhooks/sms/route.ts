@@ -20,7 +20,7 @@ import {
 } from '@/lib/notify-owner'
 import { recordMessageSent } from '@/lib/sms-cooldown'
 
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! })
+const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY ?? '' })
 
 const DAY_NAMES = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'] as const
 const MONTH_NAMES: Record<string, number> = {
@@ -1186,7 +1186,9 @@ async function generateAIResponse(
         .sort()
         .slice(0, 14)
       if (uniqueDates.length > 0) {
-        availableDatesForPrompt = `\n- Available dates for quotes (next 2 weeks): ${uniqueDates.map(d => formatDateFull(d + 'T12:00:00', tz)).join(', ')}`
+        // Limit to 7 dates to avoid token limits on Haiku (keep prompt lean)
+        const dates = uniqueDates.slice(0, 7).map(d => formatDateFull(d + 'T12:00:00', tz)).join(', ')
+        availableDatesForPrompt = `\n- Available dates for quotes (next 2 weeks): ${dates}`
       }
     } catch {
       // Ignore — prompt will work without this
@@ -1245,18 +1247,50 @@ Say something like: "You're all set! [Business name] will meet you on [Date - us
 Then add this EXACT tag at the end of your message:
 [APPOINTMENT_BOOKED: name="John Smith", service="Teeth Cleaning", datetime="2024-01-15 14:00", notes="First time patient"]`
 
+  const AI_MODEL = 'claude-haiku-4-5-20251001'
+  const apiKey = process.env.ANTHROPIC_API_KEY
+  if (!apiKey || apiKey.trim() === '') {
+    const msg = 'ANTHROPIC_API_KEY is missing or empty'
+    console.error('❌ [AI]', msg)
+    return `I'm having trouble right now. AI error: ${msg}`
+  }
+
+  // Log full request for debugging
+  const requestPayload = {
+    model: AI_MODEL,
+    max_tokens: 256,
+    systemPromptLength: systemPrompt.length,
+    systemPromptPreview: systemPrompt.slice(0, 200) + (systemPrompt.length > 200 ? '...' : ''),
+    messagesCount: conversationHistory.length,
+    messages: conversationHistory,
+  }
+  console.log('🔍 [AI] Full request:', JSON.stringify(requestPayload, null, 2))
+
   try {
     const response = await anthropic.messages.create({
-      model: 'claude-3-5-haiku-20241022',
+      model: AI_MODEL,
       max_tokens: 256,
       system: systemPrompt,
       messages: conversationHistory,
     })
     const textContent = response.content.find(block => block.type === 'text')
     return textContent?.text || "I'm having trouble right now. Someone will call you back shortly!"
-  } catch (error) {
-    console.error('❌ Error generating AI response:', error)
-    return "I'm having trouble right now. Someone from our team will get back to you shortly!"
+  } catch (error: unknown) {
+    const errMsg = error instanceof Error ? error.message : String(error)
+    const errStack = error instanceof Error ? error.stack : undefined
+    const errObj = error as { status?: number; error?: unknown; [k: string]: unknown }
+    const fullError = {
+      message: errMsg,
+      stack: errStack,
+      status: errObj?.status,
+      error: errObj?.error,
+      ...Object.fromEntries(
+        Object.entries(errObj).filter(([k]) => !['stack', 'message'].includes(k))
+      ),
+    }
+    console.error('❌ [AI] Full error:', JSON.stringify(fullError, null, 2))
+    console.error('❌ [AI] Raw error:', error)
+    return `I'm having trouble right now. AI error: ${errMsg}`
   }
 }
 
