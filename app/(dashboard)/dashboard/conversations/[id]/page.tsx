@@ -2,7 +2,7 @@ import { auth } from '@clerk/nextjs/server'
 import { redirect, notFound } from 'next/navigation'
 import { db } from '@/lib/db'
 import { getBusinessForDashboard } from '@/lib/get-business-for-dashboard'
-import { Phone, ArrowLeft, Calendar, User, Clock, AlertTriangle } from 'lucide-react'
+import { Phone, ArrowLeft, Calendar, User, Clock, AlertTriangle, UserPlus } from 'lucide-react'
 import Link from 'next/link'
 import { formatPhoneNumber } from '@/lib/utils'
 
@@ -38,6 +38,7 @@ export default async function ConversationDetailPage({ params }: { params: Promi
     active: { label: 'Active', color: 'bg-green-100 text-green-700' },
     completed: { label: 'Completed', color: 'bg-gray-100 text-gray-600' },
     appointment_booked: { label: 'Appointment Booked', color: 'bg-blue-100 text-blue-700' },
+    lead_captured: { label: 'Lead Captured', color: 'bg-green-100 text-green-700' },
     no_response: { label: 'No Response', color: 'bg-yellow-100 text-yellow-700' },
     needs_review: { label: 'Needs Review', color: 'bg-red-100 text-red-700' },
     human_needed: { label: 'Needs Review', color: 'bg-red-100 text-red-700' },
@@ -72,6 +73,19 @@ export default async function ConversationDetailPage({ params }: { params: Promi
 
       {conversation.dialCallStatus != null && conversation.dialCallStatus !== '' && (
         <p className="text-sm text-gray-500">Call Screened ✓ then Missed</p>
+      )}
+
+      {conversation.status === 'lead_captured' && conversation.serviceRequested && (
+        <div className="bg-green-50 border border-green-200 rounded-lg p-4 flex items-start space-x-3">
+          <UserPlus className="h-5 w-5 text-green-600 flex-shrink-0 mt-0.5" />
+          <div>
+            <h3 className="font-medium text-green-900">Lead Captured</h3>
+            <p className="text-sm text-green-700">
+              {conversation.callerName || 'Customer'} is interested in {conversation.serviceRequested}. 
+              You were notified by SMS and email. Reply to their text or call them back.
+            </p>
+          </div>
+        </div>
       )}
 
       {(conversation.status === 'needs_review' || conversation.status === 'human_needed') && (

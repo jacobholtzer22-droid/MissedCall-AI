@@ -25,10 +25,14 @@ function formatDateFullForConfirm(d: Date, tz: string): string {
   return `${weekday}, ${month} ${ordinal(day)}`
 }
 
-/** Clean garbled service text for confirmation: "a quote for to book a quote for my lawn" → "your lawn" */
+/** Clean garbled service text for confirmation: "a quote for to book a quote for my lawn" → "your lawn". Pass through defaults like "a free in-person quote". */
 function cleanServiceForConfirmation(service: string): string {
   let s = service.trim()
-  if (!s || s.length > 100) return 'your property'
+  if (!s || s.length > 100) return 'a free in-person quote'
+  // Pass through default / generic phrases as-is
+  if (/^(?:a\s+free\s+in-person\s+quote|an?\s+estimate|an?\s+consultation|quote\s+visit|appointment)$/i.test(s)) {
+    return 'a free in-person quote'
+  }
   // Extract "my lawn", "the patio", "your driveway" etc. — avoid echoing "a quote for to book a quote for"
   const myMatch = s.match(/(?:my|the)\s+([^.?!]{2,40}?)(?:\s+(?:work|quote|visit))?\.?$/i)
   if (myMatch) return 'your ' + myMatch[1].trim().replace(/^(my|the)\s+/i, '')
@@ -41,7 +45,7 @@ function cleanServiceForConfirmation(service: string): string {
     .replace(/\b(?:for|on|about)\s+(?:my|the)\s+/gi, '')
   s = s.replace(/^\s*(?:your|the)\s+/i, '').trim()
   if (s.length >= 2 && s.length <= 50) return /^your\s/i.test(s) ? s : 'your ' + s
-  return 'your property'
+  return 'a free in-person quote'
 }
 
 export type CreateBookingParams = {
@@ -209,7 +213,7 @@ export async function createBooking(params: CreateBookingParams): Promise<Create
     const cleanService = cleanServiceForConfirmation(service)
     const addressPart = customerAddress?.trim() ? ` at ${customerAddress.trim()}` : ''
     let msg = conversationId
-      ? `You're all set ${name}! ${business.name} will meet you on ${dateStr} at ${timeStr}${addressPart} for a quote on ${cleanService}. See you then!`
+      ? `You're all set ${name}! ${business.name} will meet you on ${dateStr} at ${timeStr}${addressPart} for ${cleanService}. See you then!`
       : `Confirmed! Your quote visit with ${business.name} is scheduled for ${dateStr} at ${timeStr}. They'll come out, take a look, and give you a quote for ${cleanService}. Reply to this number if you need to reschedule.`
 
     if (calendarSyncFailed) {

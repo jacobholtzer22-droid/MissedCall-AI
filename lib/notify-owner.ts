@@ -256,6 +256,84 @@ export async function notifyOwnerOnBookingRequestNoCalendar(
   }
 }
 
+// ── Lead captured (no calendar) ─────────────────────────────────────
+// For businesses without calendar: collect name + what they need, notify owner.
+
+export async function notifyOwnerOnLeadCaptured(
+  business: BusinessWithPhone,
+  params: {
+    customerName: string
+    customerPhone: string
+    service: string
+    conversationTranscript: ConversationMessage[]
+    conversationId: string
+  }
+): Promise<void> {
+  const { customerName, customerPhone, service, conversationTranscript, conversationId } = params
+  const conversationUrl = `${baseUrl}/dashboard/conversations/${conversationId}`
+  const tz = business.timezone ?? 'America/New_York'
+
+  // SMS
+  if (business.notifyBySms) {
+    const toPhone = business.ownerPhone || business.forwardingNumber
+    if (toPhone && business.telnyxPhoneNumber) {
+      const smsText = `New lead! ${customerName} is interested in ${service}. Phone: ${customerPhone}. Reply to their text or call them back.`
+      try {
+        const telnyx = new Telnyx({ apiKey: process.env.TELNYX_API_KEY! })
+        await telnyx.messages.send({
+          from: business.telnyxPhoneNumber,
+          to: toPhone.trim(),
+          text: smsText,
+        })
+        console.error('[NOTIFY OWNER] Lead captured SMS sent to', toPhone.trim())
+      } catch (err) {
+        console.error('[NOTIFY OWNER] Lead captured SMS FAILED:', err instanceof Error ? err.message : String(err))
+      }
+    }
+  }
+
+  // Email
+  if (business.notifyByEmail && business.ownerEmail) {
+    const subject = `New Lead - ${customerName} - ${service}`
+    const transcriptText = conversationTranscript
+      .map((m) => {
+        const label = m.direction === 'inbound' ? 'Customer' : business.name
+        const ts = m.createdAt instanceof Date ? m.createdAt.toLocaleString('en-US', { timeZone: tz }) : ''
+        return `[${ts}] ${label}: ${m.content}`
+      })
+      .join('\n\n')
+
+    const body = [
+      `A new lead has been captured for ${business.name}.`,
+      '',
+      'Customer details:',
+      `  Name: ${customerName}`,
+      `  Phone: ${customerPhone}`,
+      `  Interested in: ${service}`,
+      '',
+      'Full conversation transcript:',
+      '─'.repeat(40),
+      transcriptText,
+      '─'.repeat(40),
+      '',
+      'Please reach out to this customer directly to discuss their needs.',
+      '',
+      `View this conversation: ${conversationUrl}`,
+      '',
+      'Powered by MissedCall AI - Align and Acquire',
+    ]
+      .filter(Boolean)
+      .join('\n')
+
+    try {
+      await sendEmail(business.ownerEmail, subject, body)
+      console.error('[NOTIFY OWNER] Lead captured email sent to', business.ownerEmail)
+    } catch (err) {
+      console.error('[NOTIFY OWNER] Lead captured email FAILED:', err instanceof Error ? err.message : String(err))
+    }
+  }
+}
+
 // ── Human needed ────────────────────────────────────────────────────
 // When AI flags [HUMAN_NEEDED] — customer needs personal follow-up.
 

@@ -2,11 +2,11 @@ import { auth } from '@clerk/nextjs/server'
 import { redirect } from 'next/navigation'
 import { db } from '@/lib/db'
 import { getBusinessForDashboard } from '@/lib/get-business-for-dashboard'
-import { Phone, MessageSquare, Calendar, TrendingUp, ArrowRight, ShieldCheck, HelpCircle, Wrench } from 'lucide-react'
+import { Phone, MessageSquare, Calendar, TrendingUp, ArrowRight, ShieldCheck, HelpCircle, Wrench, UserPlus } from 'lucide-react'
 import Link from 'next/link'
 import { formatRelativeTime, formatPhoneNumber } from '@/lib/utils'
 
-async function getDashboardStats(businessId: string) {
+async function getDashboardStats(businessId: string, calendarEnabled: boolean) {
   const now = new Date()
   const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate())
   const weekStart = new Date(todayStart)
@@ -24,7 +24,8 @@ async function getDashboardStats(businessId: string) {
     upcomingAppointments,
     conversationsWithReplies,
     allConversationsWithService,
-    recentInboundMessages
+    recentInboundMessages,
+    capturedLeads
   ] = await Promise.all([
     db.conversation.count({ where: { businessId } }),
     db.conversation.count({ where: { businessId, createdAt: { gte: todayStart } } }),
@@ -62,6 +63,13 @@ async function getDashboardStats(businessId: string) {
       select: { content: true },
       orderBy: { createdAt: 'desc' },
       take: 50
+    }),
+    // Captured leads (for non-calendar businesses only)
+    calendarEnabled ? [] : db.conversation.findMany({
+      where: { businessId, status: 'lead_captured' },
+      orderBy: { lastMessageAt: 'desc' },
+      take: 10,
+      include: { messages: { take: 1, orderBy: { createdAt: 'desc' } } }
     })
   ])
 
@@ -113,7 +121,8 @@ async function getDashboardStats(businessId: string) {
     upcomingAppointments,
     callsSaved: conversationsWithReplies,
     topServices,
-    commonQuestions
+    commonQuestions,
+    capturedLeads: Array.isArray(capturedLeads) ? capturedLeads : []
   }
 }
 
@@ -129,7 +138,7 @@ export default async function DashboardPage() {
   const { business } = await getBusinessForDashboard(userId, user?.business ?? null)
   if (!business) redirect('/onboarding')
 
-  const stats = await getDashboardStats(business.id)
+  const stats = await getDashboardStats(business.id, business.calendarEnabled ?? false)
 
   return (
     <div className="space-y-8">
@@ -145,6 +154,47 @@ export default async function DashboardPage() {
         <StatCard title="Quote Visits Booked" value={stats.weeklyAppointments.toString()} description="This week" icon={Calendar} />
         <StatCard title="Response Rate" value={`${stats.responseRate}%`} description="Callers who replied" icon={TrendingUp} />
       </div>
+
+      {/* Lead Notifications (non-calendar businesses only) */}
+      {!business.calendarEnabled && (
+        <div className="bg-white rounded-xl border border-gray-200">
+          <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+            <div className="flex items-center">
+              <UserPlus className="h-5 w-5 text-green-600 mr-2" />
+              <h2 className="text-lg font-semibold text-gray-900">Lead Notifications</h2>
+            </div>
+            {stats.capturedLeads.length > 0 && (
+              <Link href="/dashboard/conversations" className="text-sm text-blue-600 hover:text-blue-700 flex items-center">
+                View all<ArrowRight className="h-4 w-4 ml-1" />
+              </Link>
+            )}
+          </div>
+          {stats.capturedLeads.length === 0 ? (
+            <div className="p-6 text-center py-8">
+              <UserPlus className="h-10 w-10 text-gray-300 mx-auto mb-3" />
+              <p className="text-gray-500">No leads captured yet</p>
+              <p className="text-sm text-gray-400 mt-1">When customers share their name and what they need, they'll appear here</p>
+            </div>
+          ) : (
+            <div className="divide-y divide-gray-100">
+              {stats.capturedLeads.map((lead) => (
+                <Link key={lead.id} href={`/dashboard/conversations/${lead.id}`} className="block px-6 py-4 hover:bg-gray-50 transition">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="font-medium text-gray-900">{lead.callerName || formatPhoneNumber(lead.callerPhone)}</p>
+                      <p className="text-sm text-gray-500">{lead.serviceRequested || 'General inquiry'} · {formatPhoneNumber(lead.callerPhone)}</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-sm text-gray-500">{formatRelativeTime(lead.lastMessageAt)}</p>
+                      <span className="text-xs px-2 py-1 rounded-full bg-green-100 text-green-700">Lead captured</span>
+                    </div>
+                  </div>
+                </Link>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Upcoming Appointments */}
       {stats.upcomingAppointments.length > 0 && (
@@ -270,8 +320,8 @@ export default async function DashboardPage() {
                   </div>
                   <div className="text-right">
                     <p className="text-sm text-gray-500">{formatRelativeTime(conversation.lastMessageAt)}</p>
-                    <span className={`text-xs px-2 py-1 rounded-full ${conversation.status === 'active' ? 'bg-green-100 text-green-700' : conversation.status === 'appointment_booked' ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-600'}`}>
-                      {conversation.status === 'active' ? 'Active' : conversation.status === 'appointment_booked' ? 'Quote Scheduled' : conversation.status === 'completed' ? 'Completed' : 'No response'}
+                    <span className={`text-xs px-2 py-1 rounded-full ${conversation.status === 'active' ? 'bg-green-100 text-green-700' : conversation.status === 'appointment_booked' ? 'bg-blue-100 text-blue-700' : conversation.status === 'lead_captured' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'}`}>
+                      {conversation.status === 'active' ? 'Active' : conversation.status === 'appointment_booked' ? 'Quote Scheduled' : conversation.status === 'lead_captured' ? 'Lead captured' : conversation.status === 'completed' ? 'Completed' : 'No response'}
                     </span>
                   </div>
                 </div>

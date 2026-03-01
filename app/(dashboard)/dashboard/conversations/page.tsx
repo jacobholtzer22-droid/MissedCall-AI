@@ -17,6 +17,7 @@ const STATUS_TABS: { value: string; label: string }[] = [
   { value: 'active', label: 'Active' },
   { value: 'booking_in_progress', label: 'Booking' },
   { value: 'appointment_booked', label: 'Booked' },
+  { value: 'lead_captured', label: 'Leads' },
   { value: 'closed', label: 'Closed' },
   { value: 'human_needed', label: 'Needs review' },
   { value: 'no_response', label: 'No response' },
@@ -27,6 +28,7 @@ function getStatusLabel(status: string): string {
   const map: Record<string, string> = {
     active: 'Active',
     appointment_booked: 'Booked',
+    lead_captured: 'Lead captured',
     no_response: 'No response',
     needs_review: 'Needs review',
     human_needed: 'Needs review',
@@ -39,7 +41,7 @@ function getStatusLabel(status: string): string {
   return map[status] ?? status.replace(/_/g, ' ')
 }
 
-const CONVERSATION_LIST_STATUSES = ['active', 'booking_in_progress', 'appointment_booked', 'closed', 'human_needed', 'no_response', 'completed'] as const
+const CONVERSATION_LIST_STATUSES = ['active', 'booking_in_progress', 'appointment_booked', 'lead_captured', 'closed', 'human_needed', 'no_response', 'completed'] as const
 
 async function getStatusCounts(businessId: string): Promise<Record<string, number>> {
   const rows = await db.conversation.groupBy({
@@ -133,7 +135,7 @@ export default async function ConversationsPage({
       </div>
 
       {/* Stats bar - counts from real SMS conversations only */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4">
         <MiniStat 
           label="Total" 
           value={totalCount} 
@@ -142,6 +144,10 @@ export default async function ConversationsPage({
           label="Active" 
           value={statusCounts.active ?? 0}
           highlight 
+        />
+        <MiniStat 
+          label="Leads" 
+          value={statusCounts.lead_captured ?? 0} 
         />
         <MiniStat 
           label="No Response" 
@@ -178,6 +184,7 @@ export default async function ConversationsPage({
                     <div className={`w-3 h-3 rounded-full flex-shrink-0 ${
                       conversation.status === 'active' ? 'bg-green-500' : 
                       conversation.status === 'appointment_booked' ? 'bg-blue-500' :
+                      conversation.status === 'lead_captured' ? 'bg-green-500' :
                       conversation.status === 'spam_blocked' ? 'bg-red-500' :
                       conversation.status === 'screening_blocked' ? 'bg-amber-500' :
                       'bg-gray-300'
@@ -193,6 +200,11 @@ export default async function ConversationsPage({
                           <span className="flex items-center text-xs text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full">
                             <Calendar className="h-3 w-3 mr-1" />
                             Booked
+                          </span>
+                        )}
+                        {conversation.status === 'lead_captured' && !conversation.appointment && (
+                          <span className="flex items-center text-xs text-green-600 bg-green-50 px-2 py-0.5 rounded-full">
+                            Lead
                           </span>
                         )}
                       </div>
@@ -221,6 +233,8 @@ export default async function ConversationsPage({
                         ? 'bg-green-100 text-green-700' 
                         : conversation.status === 'appointment_booked'
                         ? 'bg-blue-100 text-blue-700'
+                        : conversation.status === 'lead_captured'
+                        ? 'bg-green-100 text-green-700'
                         : conversation.status === 'completed'
                         ? 'bg-gray-100 text-gray-600'
                         : conversation.status === 'no_response' || conversation.status === 'needs_review' || conversation.status === 'human_needed'
