@@ -75,6 +75,19 @@ interface UsageData {
   recentMessages: { id: string; direction: string; content: string; createdAt: string; callerPhone: string; callerName: string | null; cost: number | null }[]
 }
 
+interface AdminConversation {
+  id: string
+  callerPhone: string
+  callerName: string | null
+  status: string
+  summary: string | null
+  intent: string | null
+  serviceRequested: string | null
+  createdAt: string
+  lastMessageAt: string
+  messages: { id: string; direction: string; content: string; createdAt: string }[]
+}
+
 export default function AdminDashboard() {
   const { user, isLoaded } = useUser()
   const router = useRouter()
@@ -107,6 +120,11 @@ export default function AdminDashboard() {
   const [importError, setImportError] = useState<string | null>(null)
   const [contactsListExpanded, setContactsListExpanded] = useState(false)
   const [contactsSearchFilter, setContactsSearchFilter] = useState('')
+  const [expandedConversationsId, setExpandedConversationsId] = useState<string | null>(null)
+  const [conversationsData, setConversationsData] = useState<Record<string, AdminConversation[]>>({})
+  const [conversationsLoading, setConversationsLoading] = useState<Record<string, boolean>>({})
+  const [expandedConvoId, setExpandedConvoId] = useState<string | null>(null)
+  const [conversationsSearchFilter, setConversationsSearchFilter] = useState<Record<string, string>>({})
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   async function refreshUsageData(businessId: string) {
@@ -155,6 +173,30 @@ export default function AdminDashboard() {
         console.error('Failed to fetch usage:', err)
       } finally {
         setUsageLoading((prev) => ({ ...prev, [businessId]: false }))
+      }
+    }
+  }
+
+  async function toggleConversations(businessId: string) {
+    if (expandedConversationsId === businessId) {
+      setExpandedConversationsId(null)
+      setExpandedConvoId(null)
+      return
+    }
+    setExpandedConversationsId(businessId)
+    setExpandedConvoId(null)
+    if (!conversationsData[businessId] && !conversationsLoading[businessId]) {
+      setConversationsLoading((prev) => ({ ...prev, [businessId]: true }))
+      try {
+        const res = await fetch(`/api/admin/businesses/${businessId}/conversations`)
+        if (res.ok) {
+          const data = await res.json()
+          setConversationsData((prev) => ({ ...prev, [businessId]: data.conversations || [] }))
+        }
+      } catch (err) {
+        console.error('Failed to fetch conversations:', err)
+      } finally {
+        setConversationsLoading((prev) => ({ ...prev, [businessId]: false }))
       }
     }
   }
@@ -670,6 +712,22 @@ export default function AdminDashboard() {
                         ) : null}
                       </div>
                     )}
+
+                    {/* Conversations - expandable panel */}
+                    {expandedConversationsId === business.id && (
+                      <div className="mt-4 pt-4 border-t border-gray-800">
+                        <ConversationsPanel
+                          conversations={conversationsData[business.id] ?? []}
+                          loading={conversationsLoading[business.id]}
+                          searchFilter={conversationsSearchFilter[business.id] ?? ''}
+                          onSearchChange={(v) =>
+                            setConversationsSearchFilter((prev) => ({ ...prev, [business.id]: v }))
+                          }
+                          expandedConvoId={expandedConvoId}
+                          onExpandConvo={setExpandedConvoId}
+                        />
+                      </div>
+                    )}
                   </div>
 
                   {/* Action buttons - grouped */}
@@ -687,12 +745,16 @@ export default function AdminDashboard() {
                       >
                         Edit
                       </button>
-                      <a
-                        href={`/admin/${business.id}/conversations`}
-                        className="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg text-sm font-medium transition"
+                      <button
+                        onClick={() => toggleConversations(business.id)}
+                        className={`px-4 py-2 rounded-lg text-sm font-medium transition ${
+                          expandedConversationsId === business.id
+                            ? 'bg-indigo-600 hover:bg-indigo-700'
+                            : 'bg-gray-700 hover:bg-gray-600'
+                        }`}
                       >
-                        View Conversations
-                      </a>
+                        {expandedConversationsId === business.id ? 'Hide Conversations' : 'View Conversations'}
+                      </button>
                     </div>
                     {business.calendarEnabled && (
                       <a
@@ -1371,6 +1433,146 @@ function UsagePanel({
         {showDetails ? 'Hide details' : 'Show details'}
       </button>
     </div>
+  )
+}
+
+function ConversationsPanel({
+  conversations,
+  loading,
+  searchFilter,
+  onSearchChange,
+  expandedConvoId,
+  onExpandConvo,
+}: {
+  conversations: AdminConversation[]
+  loading: boolean
+  searchFilter: string
+  onSearchChange: (v: string) => void
+  expandedConvoId: string | null
+  onExpandConvo: (id: string | null) => void
+}) {
+  const q = searchFilter.trim().toLowerCase()
+  const filtered = !q
+    ? conversations
+    : conversations.filter((c) => c.callerPhone.toLowerCase().includes(q))
+
+  if (loading) {
+    return <p className="text-gray-500 text-sm">Loading conversations...</p>
+  }
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between gap-4">
+        <h4 className="text-sm font-medium text-gray-300">Conversations</h4>
+        <input
+          type="text"
+          value={searchFilter}
+          onChange={(e) => onSearchChange(e.target.value)}
+          placeholder="Search by phone number..."
+          className="flex-1 max-w-xs bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500"
+        />
+      </div>
+      <div className="max-h-[480px] overflow-y-auto space-y-2 border border-gray-800 rounded-xl bg-gray-900/50 p-2">
+        {filtered.length === 0 ? (
+          <p className="text-gray-500 text-sm py-6 text-center">
+            {q ? 'No conversations match that phone number' : 'No conversations yet'}
+          </p>
+        ) : (
+          filtered.map((convo) => {
+            const isExpanded = expandedConvoId === convo.id
+            const lastMsg = convo.messages[convo.messages.length - 1]
+            const lastMsgPreview = lastMsg?.content?.slice(0, 60) ?? '—'
+            return (
+              <div
+                key={convo.id}
+                className="rounded-lg border border-gray-800 overflow-hidden bg-gray-800/50"
+              >
+                <button
+                  type="button"
+                  onClick={() => onExpandConvo(isExpanded ? null : convo.id)}
+                  className="w-full text-left p-3 hover:bg-gray-800/80 transition"
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="font-mono text-sm text-white">
+                      {convo.callerPhone}
+                    </span>
+                    <ConvoStatusBadge status={convo.status} />
+                  </div>
+                  <div className="flex flex-wrap gap-3 mt-1 text-xs text-gray-400">
+                    <span>
+                      First: {new Date(convo.createdAt).toLocaleString()}
+                    </span>
+                    <span>
+                      Last: {new Date(convo.lastMessageAt).toLocaleString()}
+                    </span>
+                    <span>{convo.messages.length} messages</span>
+                  </div>
+                  <p className="text-xs text-gray-500 mt-1 truncate" title={lastMsg?.content}>
+                    Last: {lastMsgPreview}
+                    {(lastMsg?.content?.length ?? 0) > 60 ? '…' : ''}
+                  </p>
+                </button>
+                {isExpanded && (
+                  <div className="border-t border-gray-800 p-4 bg-gray-900/50 max-h-[320px] overflow-y-auto">
+                    <div className="space-y-2">
+                      {convo.messages.map((msg) => (
+                        <div
+                          key={msg.id}
+                          className={`flex ${msg.direction === 'outbound' ? 'justify-end' : 'justify-start'}`}
+                        >
+                          <div
+                            className={`max-w-[85%] rounded-xl px-3 py-2 text-sm ${
+                              msg.direction === 'outbound'
+                                ? 'bg-indigo-600 text-white'
+                                : 'bg-gray-700 text-gray-200'
+                            }`}
+                          >
+                            <p className="whitespace-pre-wrap break-words">{msg.content}</p>
+                            <p className="text-xs opacity-70 mt-1">
+                              {new Date(msg.createdAt).toLocaleString()}
+                            </p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )
+          })
+        )}
+      </div>
+    </div>
+  )
+}
+
+function ConvoStatusBadge({ status }: { status: string }) {
+  const styles: Record<string, string> = {
+    active: 'bg-green-500/10 text-green-400 border-green-500/20',
+    closed: 'bg-gray-500/10 text-gray-400 border-gray-500/20',
+    booking_in_progress: 'bg-amber-500/10 text-amber-400 border-amber-500/20',
+    appointment_booked: 'bg-blue-500/10 text-blue-400 border-blue-500/20',
+    completed: 'bg-gray-500/10 text-gray-400 border-gray-500/20',
+    no_response: 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20',
+    human_needed: 'bg-orange-500/10 text-orange-400 border-orange-500/20',
+    screening: 'bg-purple-500/10 text-purple-400 border-purple-500/20',
+  }
+  const labels: Record<string, string> = {
+    active: 'Active',
+    closed: 'Closed',
+    booking_in_progress: 'Booking in progress',
+    appointment_booked: 'Booked',
+    completed: 'Completed',
+    no_response: 'No reply',
+    human_needed: 'Human needed',
+    screening: 'Screening',
+  }
+  return (
+    <span
+      className={`text-xs px-2 py-0.5 rounded-full border ${styles[status] ?? 'bg-gray-500/10 text-gray-400 border-gray-500/20'}`}
+    >
+      {labels[status] ?? status.replace(/_/g, ' ')}
+    </span>
   )
 }
 

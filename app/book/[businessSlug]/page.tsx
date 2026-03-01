@@ -27,6 +27,7 @@ export default function BookingPage() {
   const [selectedDate, setSelectedDate] = useState<string>('')
   const [slots, setSlots] = useState<TimeSlot[]>([])
   const [slotsLoading, setSlotsLoading] = useState(false)
+  const [noMoreAvailabilityToday, setNoMoreAvailabilityToday] = useState(false)
   const [selectedSlot, setSelectedSlot] = useState<TimeSlot | null>(null)
 
   const [name, setName] = useState('')
@@ -60,6 +61,7 @@ export default function BookingPage() {
   useEffect(() => {
     if (!slug || !selectedDate) {
       setSlots([])
+      setNoMoreAvailabilityToday(false)
       return
     }
     setSlotsLoading(true)
@@ -68,10 +70,12 @@ export default function BookingPage() {
       .then(res => res.json())
       .then(data => {
         setSlots(data.slots ?? [])
+        setNoMoreAvailabilityToday(data.noMoreAvailabilityToday === true)
         setSlotsLoading(false)
       })
       .catch(() => {
         setSlots([])
+        setNoMoreAvailabilityToday(false)
         setSlotsLoading(false)
       })
   }, [slug, selectedDate])
@@ -220,7 +224,11 @@ export default function BookingPage() {
                   {slotsLoading ? (
                     <p className="text-sm" style={{ color: '#6b7280' }}>Loading...</p>
                   ) : slots.length === 0 ? (
-                    <p className="text-sm" style={{ color: '#6b7280' }}>No availability on this date</p>
+                    <p className="text-sm" style={{ color: '#6b7280' }}>
+                      {noMoreAvailabilityToday
+                        ? 'No more availability today — pick another date'
+                        : 'No availability on this date'}
+                    </p>
                   ) : (
                     <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
                       {slots.map(slot => (

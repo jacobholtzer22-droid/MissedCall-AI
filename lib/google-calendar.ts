@@ -166,6 +166,15 @@ export async function getAvailableSlots(
   return result.slots
 }
 
+export async function getAvailableSlotsWithMeta(
+  businessId: string,
+  startStr: string,
+  endStr: string
+): Promise<{ slots: TimeSlot[]; noMoreAvailabilityToday?: boolean }> {
+  const result = await getAvailableSlotsInternal(businessId, startStr, endStr, false)
+  return { slots: result.slots, noMoreAvailabilityToday: result.noMoreAvailabilityToday }
+}
+
 export interface AvailableSlotsDebug {
   businessId: string
   businessSlug?: string
@@ -201,7 +210,7 @@ async function getAvailableSlotsInternal(
   endStr: string,
   withDebug: boolean,
   businessSlug?: string
-): Promise<{ slots: TimeSlot[]; debug?: AvailableSlotsDebug }> {
+): Promise<{ slots: TimeSlot[]; debug?: AvailableSlotsDebug; noMoreAvailabilityToday?: boolean }> {
   const business = await db.business.findUnique({
     where: { id: businessId },
     select: {
@@ -282,9 +291,12 @@ async function getAvailableSlotsInternal(
   // Use "now" in business timezone for past filter: a slot at "3pm Eastern today" might appear
   // as "tomorrow" in UTC, so we must compare against business-time "now"
   const nowInTz = new TZDate(new Date(), tz)
-  const now = new Date(nowInTz.getTime())
+  const nowMs = nowInTz.getTime()
   let slotsBeforeFiltering = 0
   let slotsAfterPastFilter = 0
+  const todayStrTz = `${nowInTz.getFullYear()}-${String(nowInTz.getMonth() + 1).padStart(2, '0')}-${String(nowInTz.getDate()).padStart(2, '0')}`
+  let todaySlotsBeforePast = 0
+  let todaySlotsAfterPast = 0
 
   const slotStepMins = slotMins + bufferMins // next slot starts slotMins + bufferMins after previous
 
@@ -307,14 +319,19 @@ async function getAvailableSlotsInternal(
     let slotStart = new Date(dayStart.getTime())
     const dayEndMs = dayEnd.getTime()
 
+    const cursorDateStr = `${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, '0')}-${String(cursor.getDate()).padStart(2, '0')}`
+    const isToday = cursorDateStr === todayStrTz
+
     while (slotStart.getTime() < dayEndMs) {
       const slotEnd = addMinutes(slotStart, slotMins)
       if (slotEnd.getTime() <= dayEndMs) {
         slotsBeforeFiltering++
+        if (isToday) todaySlotsBeforePast++
         const overlapsBusy = slotOverlapsBusy(slotStart, slotEnd, busyWithBuffer)
-        const isPast = slotStart < now
+        const isPast = slotStart.getTime() < nowMs
         if (!overlapsBusy && !isPast) {
           slotsAfterPastFilter++
+          if (isToday) todaySlotsAfterPast++
           slots.push({
             start: slotStart.toISOString(),
             end: slotEnd.toISOString(),
@@ -337,7 +354,13 @@ async function getAvailableSlotsInternal(
   debug.finalSlotCount = slots.length
   debug.finalSlots = slots
 
-  return withDebug ? { slots, debug } : { slots }
+  const noMoreAvailabilityToday =
+    startStr === endStr &&
+    startStr === todayStrTz &&
+    todaySlotsBeforePast > 0 &&
+    todaySlotsAfterPast === 0
+
+  return withDebug ? { slots, debug, noMoreAvailabilityToday } : { slots, noMoreAvailabilityToday }
 }
 
 /** Get busy times from Google Calendar freebusy API - used by getAvailableSlots */

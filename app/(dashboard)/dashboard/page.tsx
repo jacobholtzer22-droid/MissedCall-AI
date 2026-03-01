@@ -82,16 +82,25 @@ async function getDashboardStats(businessId: string) {
     .slice(0, 5)
     .map(([service, count]) => ({ service, count }))
 
-  // Extract common questions from inbound messages
+  // Extract common questions from inbound messages - only show those asked 2+ times
   const questionKeywords = ['how', 'what', 'when', 'where', 'can', 'do you', 'is there', 'price', 'cost', 'available', 'open', 'hour', 'appointment', 'book', 'schedule']
-  const questions: string[] = []
+  const normalizeQuestion = (s: string) => s.trim().toLowerCase().replace(/[?.!]$/, '')
+  const questionCounts: Record<string, { count: number; displayText: string }> = {}
   recentInboundMessages.forEach(msg => {
-    const content = msg.content.toLowerCase()
-    if (questionKeywords.some(kw => content.includes(kw)) && msg.content.length < 200) {
-      questions.push(msg.content)
+    const content = (msg.content || '').trim()
+    const contentLower = content.toLowerCase()
+    if (questionKeywords.some(kw => contentLower.includes(kw)) && content.length < 200) {
+      const key = normalizeQuestion(content)
+      if (!questionCounts[key]) {
+        questionCounts[key] = { count: 0, displayText: content }
+      }
+      questionCounts[key].count++
     }
   })
-  const commonQuestions = questions.slice(0, 5)
+  const commonQuestions = Object.entries(questionCounts)
+    .filter(([, data]) => data.count >= 2)
+    .sort((a, b) => b[1].count - a[1].count)
+    .map(([, data]) => ({ question: data.displayText, count: data.count }))
 
   return { 
     totalConversations, 
@@ -211,16 +220,19 @@ export default async function DashboardPage() {
           {stats.commonQuestions.length === 0 ? (
             <div className="p-6 text-center py-8">
               <HelpCircle className="h-10 w-10 text-gray-300 mx-auto mb-3" />
-              <p className="text-gray-500">No questions yet</p>
-              <p className="text-sm text-gray-400 mt-1">Customer questions will appear here</p>
+              <p className="text-gray-500">No recurring questions yet</p>
+              <p className="text-sm text-gray-400 mt-1">Questions asked 2+ times will appear here</p>
             </div>
           ) : (
             <div className="p-4">
               <div className="space-y-3">
-                {stats.commonQuestions.map((question, index) => (
-                  <div key={index} className="flex items-start space-x-3 p-3 bg-gray-50 rounded-lg">
-                    <span className="text-purple-600 font-bold">?</span>
-                    <p className="text-sm text-gray-700 line-clamp-2">{question}</p>
+                {stats.commonQuestions.map((item, index) => (
+                  <div key={index} className="flex items-start justify-between space-x-3 p-3 bg-gray-50 rounded-lg">
+                    <div className="flex items-start space-x-3 min-w-0 flex-1">
+                      <span className="text-purple-600 font-bold shrink-0">?</span>
+                      <p className="text-sm text-gray-700 line-clamp-2">{item.question}</p>
+                    </div>
+                    <span className="text-sm font-medium text-purple-600 shrink-0">{item.count}×</span>
                   </div>
                 ))}
               </div>

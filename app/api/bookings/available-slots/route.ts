@@ -7,7 +7,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { TZDate } from '@date-fns/tz'
 import { db } from '@/lib/db'
-import { getAvailableSlots } from '@/lib/google-calendar'
+import { getAvailableSlotsWithMeta } from '@/lib/google-calendar'
 
 export async function GET(request: NextRequest) {
   try {
@@ -55,7 +55,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Start date must be before end date' }, { status: 400 })
     }
 
-    const slots = await getAvailableSlots(business.id, effectiveStart, effectiveEnd)
+    const { slots, noMoreAvailabilityToday } = await getAvailableSlotsWithMeta(business.id, effectiveStart, effectiveEnd)
 
     // Parse services for booking dropdown: supports { name, price? } or plain strings (duration not shown to customers)
     const rawServices = business.servicesOffered
@@ -78,6 +78,7 @@ export async function GET(request: NextRequest) {
       slotDurationMinutes: business.slotDurationMinutes ?? 30,
       calendarEnabled: true,
       servicesOffered,
+      noMoreAvailabilityToday: noMoreAvailabilityToday ?? false,
     })
   } catch (error) {
     console.error('Available slots error:', error)

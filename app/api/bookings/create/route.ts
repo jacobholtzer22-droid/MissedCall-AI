@@ -76,8 +76,8 @@ export async function POST(request: NextRequest) {
     const nowInTz = new TZDate(new Date(), tz)
     if (startDate.getTime() < nowInTz.getTime()) {
       return NextResponse.json(
-        { error: 'Cannot schedule quote visits in the past' },
-        { status: 400 }
+        { error: 'This time slot is no longer available' },
+        { status: 409 }
       )
     }
 
