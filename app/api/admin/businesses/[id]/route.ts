@@ -42,6 +42,9 @@ export async function PATCH(
       'slotDurationMinutes',
       'bufferMinutes',
       'cooldownBypassNumbers',
+      'bookingPageTitle',
+      'bookingPageServiceLabel',
+      'bookingPageConfirmation',
     ]
 
     const data: Record<string, unknown> = {}

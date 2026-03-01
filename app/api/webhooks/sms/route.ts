@@ -796,7 +796,7 @@ function pickSlotsForPreference(
 }
 
 function formatSlotsMessage(slots: SlotLike[], tz: string): string {
-  const lines: string[] = ["Here are some times for your free quote visit:", '']
+  const lines: string[] = ["Here are some times to schedule your free in-person quote:", '']
   slots.forEach((s, i) => {
     const d = new Date(s.start)
     const dayLabel = d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', timeZone: tz })

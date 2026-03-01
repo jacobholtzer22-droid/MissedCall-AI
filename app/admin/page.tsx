@@ -32,6 +32,9 @@ interface Business {
   callScreenerEnabled: boolean
   callScreenerMessage: string | null
   cooldownBypassNumbers?: string[] | null
+  bookingPageTitle?: string | null
+  bookingPageServiceLabel?: string | null
+  bookingPageConfirmation?: string | null
   createdAt: string
   updatedAt: string
   _count: {
@@ -282,6 +285,9 @@ export default function AdminDashboard() {
       cooldownBypassNumbers: Array.isArray(business.cooldownBypassNumbers)
         ? (business.cooldownBypassNumbers as string[]).join(', ')
         : '',
+      bookingPageTitle: business.bookingPageTitle ?? '',
+      bookingPageServiceLabel: business.bookingPageServiceLabel ?? '',
+      bookingPageConfirmation: business.bookingPageConfirmation ?? '',
     })
     setMessage('')
     setNewBlockedPhone('')
@@ -528,6 +534,9 @@ export default function AdminDashboard() {
           servicesOffered,
           businessHours,
           cooldownBypassNumbers: editData.cooldownBypassNumbers ?? '',
+          bookingPageTitle: editData.bookingPageTitle || null,
+          bookingPageServiceLabel: editData.bookingPageServiceLabel || null,
+          bookingPageConfirmation: editData.bookingPageConfirmation || null,
         }),
       })
 
@@ -1182,6 +1191,44 @@ export default function AdminDashboard() {
                   onChange={e => setEditData({ ...editData, aiContext: e.target.value })}
                   rows={6}
                   placeholder="We are a mobile auto detailing business in Bloomington, IL. We use Griot's products..."
+                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-white placeholder-gray-600"
+                />
+              </Field>
+
+              {/* Booking Page Labels */}
+              <Field
+                label="Booking Page Title"
+                hint='e.g. "Schedule a Free In-Person Quote"'
+              >
+                <input
+                  type="text"
+                  value={editData.bookingPageTitle ?? ''}
+                  onChange={e => setEditData({ ...editData, bookingPageTitle: e.target.value })}
+                  placeholder="Schedule a Free In-Person Quote"
+                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-white placeholder-gray-600"
+                />
+              </Field>
+              <Field
+                label="Booking Page Service Label"
+                hint='e.g. "What do you need a quote for?"'
+              >
+                <input
+                  type="text"
+                  value={editData.bookingPageServiceLabel ?? ''}
+                  onChange={e => setEditData({ ...editData, bookingPageServiceLabel: e.target.value })}
+                  placeholder="What do you need a quote for?"
+                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-white placeholder-gray-600"
+                />
+              </Field>
+              <Field
+                label="Booking Page Confirmation Message"
+                hint='Use {businessName}, {date}, {time}, {service} as placeholders'
+              >
+                <textarea
+                  value={editData.bookingPageConfirmation ?? ''}
+                  onChange={e => setEditData({ ...editData, bookingPageConfirmation: e.target.value })}
+                  rows={3}
+                  placeholder="You're all set! Someone from {businessName} will meet you at your scheduled time for a free in-person quote."
                   className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-white placeholder-gray-600"
                 />
               </Field>

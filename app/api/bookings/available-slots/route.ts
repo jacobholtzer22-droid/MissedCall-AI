@@ -72,6 +72,12 @@ export async function GET(request: NextRequest) {
       })
     }
 
+    const bookingPageTitle = business.bookingPageTitle ?? 'Schedule a Free In-Person Quote'
+    const bookingPageServiceLabel = business.bookingPageServiceLabel ?? 'What do you need a quote for?'
+    const bookingPageConfirmation =
+      business.bookingPageConfirmation ??
+      `You're all set! Someone from {businessName} will meet you at your scheduled time for a free in-person quote.`
+
     return NextResponse.json({
       slots,
       businessName: business.name,
@@ -79,6 +85,9 @@ export async function GET(request: NextRequest) {
       calendarEnabled: true,
       servicesOffered,
       noMoreAvailabilityToday: noMoreAvailabilityToday ?? false,
+      bookingPageTitle,
+      bookingPageServiceLabel,
+      bookingPageConfirmation,
     })
   } catch (error) {
     console.error('Available slots error:', error)

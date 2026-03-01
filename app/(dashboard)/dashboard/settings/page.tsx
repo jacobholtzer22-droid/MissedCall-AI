@@ -50,6 +50,9 @@ export default async function SettingsPage({
     const aiInstructions = formData.get('aiInstructions') as string
     const aiContext = formData.get('aiContext') as string
     const missedCallVoiceMessage = formData.get('missedCallVoiceMessage') as string
+    const bookingPageTitle = (formData.get('bookingPageTitle') as string)?.trim() || null
+    const bookingPageServiceLabel = (formData.get('bookingPageServiceLabel') as string)?.trim() || null
+    const bookingPageConfirmation = (formData.get('bookingPageConfirmation') as string)?.trim() || null
     const ownerEmail = (formData.get('ownerEmail') as string)?.trim() || null
     const ownerPhone = (formData.get('ownerPhone') as string)?.trim() || null
     const notifyBySms = formData.get('notifyBySms') === 'on'
@@ -73,6 +76,9 @@ export default async function SettingsPage({
         ownerPhone,
         notifyBySms,
         notifyByEmail,
+        bookingPageTitle,
+        bookingPageServiceLabel,
+        bookingPageConfirmation,
         ...(user.business.calendarEnabled && {
           slotDurationMinutes: [15, 30, 45, 60, 90, 120].includes(slotDurationMinutes) ? slotDurationMinutes : 30,
           bufferMinutes: [0, 15, 30, 45, 60].includes(bufferMinutes) ? bufferMinutes : 0,
@@ -159,6 +165,35 @@ export default async function SettingsPage({
             </div>
           </div>
         </div>
+
+        {business.calendarEnabled && (
+        <div className="bg-white rounded-xl border border-gray-200 p-6">
+          <div className="flex items-start space-x-4 mb-4">
+            <div className="bg-blue-50 p-2 rounded-lg"><Calendar className="h-5 w-5 text-blue-600" /></div>
+            <div>
+              <h2 className="text-lg font-semibold text-gray-900">Booking Page</h2>
+              <p className="text-sm text-gray-500">Customize the wording on your online booking page</p>
+            </div>
+          </div>
+          <div className="ml-11 space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Booking Page Title</label>
+              <input type="text" name="bookingPageTitle" defaultValue={business.bookingPageTitle ?? ''} placeholder="Schedule a Free In-Person Quote" className="w-full px-3 py-2 bg-white text-gray-900 border border-gray-200 rounded-lg placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+              <p className="text-xs text-gray-500 mt-1">Main heading shown on the booking page.</p>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Service Field Label</label>
+              <input type="text" name="bookingPageServiceLabel" defaultValue={business.bookingPageServiceLabel ?? ''} placeholder="What do you need a quote for?" className="w-full px-3 py-2 bg-white text-gray-900 border border-gray-200 rounded-lg placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+              <p className="text-xs text-gray-500 mt-1">Label for the service/quote type field.</p>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Confirmation Message</label>
+              <textarea name="bookingPageConfirmation" rows={3} defaultValue={business.bookingPageConfirmation ?? ''} placeholder="You're all set! Someone from {businessName} will meet you at your scheduled time for a free in-person quote." className="w-full px-3 py-2 bg-white text-gray-900 border border-gray-200 rounded-lg placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+              <p className="text-xs text-gray-500 mt-1">Use {'{businessName}'}, {'{date}'}, {'{time}'}, {'{service}'} as placeholders.</p>
+            </div>
+          </div>
+        </div>
+        )}
 
         {business.calendarEnabled && (
         <div className="bg-white rounded-xl border border-gray-200 p-6">

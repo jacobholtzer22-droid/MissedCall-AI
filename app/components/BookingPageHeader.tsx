@@ -3,7 +3,13 @@
 import Link from 'next/link'
 import { Logo } from './Logo'
 
-export function BookingPageHeader({ businessName }: { businessName: string | null }) {
+export function BookingPageHeader({
+  businessName,
+  bookingPageTitle = 'Schedule a Free In-Person Quote',
+}: {
+  businessName: string | null
+  bookingPageTitle?: string
+}) {
   return (
     <header
       className="sticky top-0 z-40 border-b"
@@ -27,7 +33,7 @@ export function BookingPageHeader({ businessName }: { businessName: string | nul
           </Link>
           {businessName && (
             <span className="text-sm font-medium truncate max-w-[200px] sm:max-w-none" style={{ color: '#374151' }}>
-              Schedule a quote with {businessName}
+              {bookingPageTitle} with {businessName}
             </span>
           )}
         </div>

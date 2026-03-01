@@ -1,6 +1,6 @@
 /** Force light mode for embed - overrides root dark body */
 export const metadata = {
-  title: 'Schedule a Free Quote',
+  title: 'Schedule a Free In-Person Quote',
 }
 
 export default function EmbedLayout({ children }: { children: React.ReactNode }) {

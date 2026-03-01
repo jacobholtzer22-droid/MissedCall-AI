@@ -22,6 +22,11 @@ export default function BookingPage() {
   const slug = params.businessSlug as string
 
   const [businessName, setBusinessName] = useState<string | null>(null)
+  const [bookingPageTitle, setBookingPageTitle] = useState('Schedule a Free In-Person Quote')
+  const [bookingPageServiceLabel, setBookingPageServiceLabel] = useState('What do you need a quote for?')
+  const [bookingPageConfirmation, setBookingPageConfirmation] = useState(
+    "You're all set! Someone from {businessName} will meet you at your scheduled time for a free in-person quote."
+  )
   const [loading, setLoading] = useState(true)
   const [calendarConnected, setCalendarConnected] = useState(false)
   const [selectedDate, setSelectedDate] = useState<string>('')
@@ -48,6 +53,12 @@ export default function BookingPage() {
       .then(res => res.json())
       .then(data => {
         setBusinessName(data.businessName ?? null)
+        setBookingPageTitle(data.bookingPageTitle ?? 'Schedule a Free In-Person Quote')
+        setBookingPageServiceLabel(data.bookingPageServiceLabel ?? 'What do you need a quote for?')
+        setBookingPageConfirmation(
+          data.bookingPageConfirmation ??
+            "You're all set! Someone from {businessName} will meet you at your scheduled time for a free in-person quote."
+        )
         setCalendarConnected(data.calendarEnabled === true && !data.error?.includes('not connected') && !!data.businessName)
         setServicesOffered(Array.isArray(data.servicesOffered) ? data.servicesOffered : [])
         setLoading(false)
@@ -127,7 +138,7 @@ export default function BookingPage() {
   if (loading) {
     return (
       <div className="min-h-screen" style={{ backgroundColor: '#f9fafb' }}>
-        <BookingPageHeader businessName={null} />
+        <BookingPageHeader businessName={null} bookingPageTitle={bookingPageTitle} />
         <div className="flex items-center justify-center py-20">
           <div style={{ color: '#374151' }}>Loading...</div>
         </div>
@@ -138,7 +149,7 @@ export default function BookingPage() {
   if (!calendarConnected || !businessName) {
     return (
       <div className="min-h-screen flex flex-col" style={{ backgroundColor: '#f9fafb' }}>
-        <BookingPageHeader businessName={businessName} />
+        <BookingPageHeader businessName={businessName} bookingPageTitle={bookingPageTitle} />
         <div className="flex-1 flex items-center justify-center p-6">
         <div className="rounded-2xl shadow-lg border p-8 max-w-md text-center" style={{ backgroundColor: '#ffffff', borderColor: '#e5e7eb' }}>
           <Calendar className="h-12 w-12 mx-auto mb-4" style={{ color: '#d1d5db' }} />
@@ -160,19 +171,34 @@ export default function BookingPage() {
   if (confirmation) {
     const d = new Date(confirmation.scheduledAt)
     const tzOpt = confirmation.timezone ? { timeZone: confirmation.timezone } : {}
+    const formattedDate = d.toLocaleDateString('en-US', {
+      weekday: 'long',
+      month: 'long',
+      day: 'numeric',
+      ...tzOpt,
+    })
+    const formattedTime = d.toLocaleTimeString('en-US', {
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true,
+      ...tzOpt,
+    })
+    const confirmMsg = bookingPageConfirmation
+      .replace(/{businessName}/g, businessName ?? '')
+      .replace(/{date}/g, formattedDate)
+      .replace(/{time}/g, formattedTime)
+      .replace(/{service}/g, confirmation.serviceType)
     return (
       <div className="min-h-screen flex items-center justify-center p-6" style={{ backgroundColor: '#f9fafb' }}>
         <div className="rounded-2xl shadow-lg border p-8 max-w-md text-center" style={{ backgroundColor: '#ffffff', borderColor: '#e5e7eb' }}>
           <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-6">
             <CheckCircle className="h-10 w-10" style={{ color: '#16a34a' }} />
           </div>
-          <h1 className="text-2xl font-bold mb-2" style={{ color: '#111827' }}>Your Quote Visit is Scheduled!</h1>
+          <h1 className="text-2xl font-bold mb-2" style={{ color: '#111827' }}>You&apos;re all set!</h1>
           <p className="mb-6" style={{ color: '#374151' }}>
-            {businessName} will meet you on{' '}
-            {d.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', ...tzOpt })} at{' '}
-            {d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true, ...tzOpt })} to give you a quote for {confirmation.serviceType}.
+            {confirmMsg}
           </p>
-          <p className="text-sm" style={{ color: '#374151' }}>You'll receive a confirmation text shortly.</p>
+          <p className="text-sm" style={{ color: '#374151' }}>You&apos;ll receive a confirmation text shortly.</p>
         </div>
       </div>
     )
@@ -187,7 +213,7 @@ export default function BookingPage() {
       <div className="py-10 px-4">
         <div className="max-w-2xl mx-auto">
           <div className="text-center mb-8">
-            <h1 className="text-2xl font-bold" style={{ color: '#111827' }}>Schedule a Free Quote</h1>
+            <h1 className="text-2xl font-bold" style={{ color: '#111827' }}>{bookingPageTitle}</h1>
             <p className="mt-1" style={{ color: '#6b7280' }}>Select a date and time for your in-person quote visit</p>
           </div>
 
@@ -301,7 +327,7 @@ export default function BookingPage() {
                 <div>
                   <label className="flex items-center gap-2 text-sm font-medium mb-2" style={labelStyle}>
                     <FileText className="h-4 w-4" />
-                    What do you need a quote for? *
+                    {bookingPageServiceLabel} *
                   </label>
                   <select
                     value={service}
@@ -322,7 +348,7 @@ export default function BookingPage() {
                 <div>
                   <label className="flex items-center gap-2 text-sm font-medium mb-2" style={labelStyle}>
                     <FileText className="h-4 w-4" />
-                    What do you need a quote for? *
+                    {bookingPageServiceLabel} *
                   </label>
                   <input
                     type="text"

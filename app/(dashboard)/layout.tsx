@@ -4,14 +4,13 @@ import { redirect } from 'next/navigation'
 import { auth } from '@clerk/nextjs/server'
 import { db } from '@/lib/db'
 import { getBusinessForDashboard } from '@/lib/get-business-for-dashboard'
-import { LayoutDashboard, MessageSquare, Calendar, Settings, FlaskConical } from 'lucide-react'
+import { LayoutDashboard, MessageSquare, Calendar, Settings } from 'lucide-react'
 import { Logo } from '@/app/components/Logo'
 
 const navigation = [
   { name: 'Overview', href: '/dashboard', icon: LayoutDashboard },
   { name: 'Conversations', href: '/dashboard/conversations', icon: MessageSquare },
   { name: 'Scheduled Quotes', href: '/dashboard/appointments', icon: Calendar },
-  { name: 'Test Mode', href: '/dashboard/test', icon: FlaskConical },
   { name: 'Settings', href: '/dashboard/settings', icon: Settings },
 ]
 

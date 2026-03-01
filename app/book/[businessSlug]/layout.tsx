@@ -1,6 +1,6 @@
 /** Force light mode for booking page - overrides root dark body */
 export const metadata = {
-  title: 'Schedule a Free Quote',
+  title: 'Schedule a Free In-Person Quote',
 }
 
 export default function BookLayout({ children }: { children: React.ReactNode }) {

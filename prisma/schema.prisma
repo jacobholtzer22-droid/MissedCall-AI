@@ -63,6 +63,11 @@ model Business {
   smsCooldownDays       Int?                            // Cooldown period in days (null = use env SMS_COOLDOWN_DAYS or default 7)
   cooldownBypassNumbers Json?     @default("[]")        // Admin: phone numbers that skip cooldown (for testing)
 
+  // Booking page customization (per-business labels)
+  bookingPageTitle      String?                         // e.g. "Schedule a Free In-Person Quote"
+  bookingPageServiceLabel String?                       // e.g. "What do you need a quote for?"
+  bookingPageConfirmation String?   @db.Text            // e.g. "You're all set! Someone from {businessName} will meet you at your scheduled time."
+
   // Owner notification preferences (booking created/cancelled)
   ownerEmail            String?                         // Business owner email for notifications
   ownerPhone            String?                         // Owner's phone for SMS (falls back to forwardingNumber)

@@ -50,7 +50,7 @@ export type IndustryConfig = {
       ],
       specialInstructions: 'If they request a specific stylist, note it. Color appointments take longer.',
       urgencyKeywords: ['wedding', 'event', 'today', 'urgent'],
-      sampleGreeting: "Hi! Sorry we missed your call at [Business Name]. Looking to book an appointment? What service are you interested in?",
+      sampleGreeting: "Hi! Sorry we missed your call at [Business Name]. Looking to schedule a free in-person quote? What service are you interested in?",
       cannotHelpPlaceholder: 'Exact pricing, product recommendations, canceling another location...',
     },
   
