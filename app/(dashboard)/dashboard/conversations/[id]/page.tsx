@@ -2,7 +2,7 @@ import { auth } from '@clerk/nextjs/server'
 import { redirect, notFound } from 'next/navigation'
 import { db } from '@/lib/db'
 import { getBusinessForDashboard } from '@/lib/get-business-for-dashboard'
-import { Phone, ArrowLeft, Calendar, User, Clock, AlertTriangle, UserPlus } from 'lucide-react'
+import { Phone, ArrowLeft, Calendar, User, Clock, AlertTriangle, UserPlus, Mail, MapPin } from 'lucide-react'
 import Link from 'next/link'
 import { formatPhoneNumber } from '@/lib/utils'
 
@@ -81,7 +81,8 @@ export default async function ConversationDetailPage({ params }: { params: Promi
           <div>
             <h3 className="font-medium text-green-900">Lead Captured</h3>
             <p className="text-sm text-green-700">
-              {conversation.callerName || 'Customer'} is interested in {conversation.serviceRequested}. 
+              {conversation.callerName || 'Customer'} is interested in {conversation.serviceRequested}.
+              {conversation.customerTimeframe && ` Preferred: ${conversation.customerTimeframe}.`}{' '}
               You were notified by SMS and email. Reply to their text or call them back.
             </p>
           </div>
@@ -138,6 +139,24 @@ export default async function ConversationDetailPage({ params }: { params: Promi
                 <Phone className="h-4 w-4 text-gray-400 mr-3" />
                 <span className="text-gray-600">{formatPhoneNumber(conversation.callerPhone)}</span>
               </div>
+              {conversation.customerEmail && (
+                <div className="flex items-center text-sm">
+                  <Mail className="h-4 w-4 text-gray-400 mr-3" />
+                  <span className="text-gray-600">{conversation.customerEmail}</span>
+                </div>
+              )}
+              {conversation.customerAddress && (
+                <div className="flex items-center text-sm">
+                  <MapPin className="h-4 w-4 text-gray-400 mr-3" />
+                  <span className="text-gray-600">{conversation.customerAddress}</span>
+                </div>
+              )}
+              {conversation.customerTimeframe && (
+                <div className="flex items-center text-sm">
+                  <Calendar className="h-4 w-4 text-gray-400 mr-3" />
+                  <span className="text-gray-600">Preferred: {conversation.customerTimeframe}</span>
+                </div>
+              )}
               <div className="flex items-center text-sm">
                 <Clock className="h-4 w-4 text-gray-400 mr-3" />
                 <span className="text-gray-600">Started {new Date(conversation.createdAt).toLocaleDateString()}</span>

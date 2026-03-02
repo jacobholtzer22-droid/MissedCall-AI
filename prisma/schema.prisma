@@ -215,6 +215,11 @@ model Conversation {
   intent                String?                         // "book_appointment", "question", "emergency", etc.
   serviceRequested      String?                         // "teeth cleaning", "oil change", etc.
 
+  // Lead capture fields (calendar-disabled flow)
+  customerEmail         String?
+  customerAddress       String?   @db.Text
+  customerTimeframe     String?                         // "this week", "next week", "no rush", etc.
+
   // Timestamps
   createdAt             DateTime  @default(now())
   updatedAt             DateTime  @updatedAt

@@ -257,7 +257,7 @@ export async function notifyOwnerOnBookingRequestNoCalendar(
 }
 
 // ── Lead captured (no calendar) ─────────────────────────────────────
-// For businesses without calendar: collect name + what they need, notify owner.
+// For businesses without calendar: collect name, email, address, timeframe; notify owner.
 
 export async function notifyOwnerOnLeadCaptured(
   business: BusinessWithPhone,
@@ -265,19 +265,39 @@ export async function notifyOwnerOnLeadCaptured(
     customerName: string
     customerPhone: string
     service: string
+    customerEmail?: string
+    customerAddress?: string
+    customerTimeframe?: string
     conversationTranscript: ConversationMessage[]
     conversationId: string
   }
 ): Promise<void> {
-  const { customerName, customerPhone, service, conversationTranscript, conversationId } = params
+  const {
+    customerName,
+    customerPhone,
+    service,
+    customerEmail,
+    customerAddress,
+    customerTimeframe,
+    conversationTranscript,
+    conversationId,
+  } = params
   const conversationUrl = `${baseUrl}/dashboard/conversations/${conversationId}`
   const tz = business.timezone ?? 'America/New_York'
 
-  // SMS
+  // SMS: "New lead! [Name] wants [service] around [timeframe]. Address: [address]. Phone: [phone]. Email: [email]. Check your email for the full conversation."
   if (business.notifyBySms) {
     const toPhone = business.ownerPhone || business.forwardingNumber
     if (toPhone && business.telnyxPhoneNumber) {
-      const smsText = `New lead! ${customerName} is interested in ${service}. Phone: ${customerPhone}. Reply to their text or call them back.`
+      const timeframePart = customerTimeframe ? ` around ${customerTimeframe}` : ''
+      const parts = [
+        `New lead! ${customerName} wants ${service}${timeframePart}.`,
+        `Address: ${customerAddress || 'N/A'}.`,
+        `Phone: ${customerPhone}.`,
+        `Email: ${customerEmail || 'N/A'}.`,
+        'Check your email for the full conversation.',
+      ]
+      const smsText = parts.join(' ')
       try {
         const telnyx = new Telnyx({ apiKey: process.env.TELNYX_API_KEY! })
         await telnyx.messages.send({
@@ -292,7 +312,7 @@ export async function notifyOwnerOnLeadCaptured(
     }
   }
 
-  // Email
+  // Email: Subject "New Lead - [Name] - [Service]", all customer info + full transcript
   if (business.notifyByEmail && business.ownerEmail) {
     const subject = `New Lead - ${customerName} - ${service}`
     const transcriptText = conversationTranscript
@@ -303,13 +323,20 @@ export async function notifyOwnerOnLeadCaptured(
       })
       .join('\n\n')
 
+    const details = [
+      `Name: ${customerName}`,
+      `Phone: ${customerPhone}`,
+      ...(customerEmail ? [`Email: ${customerEmail}`] : []),
+      ...(customerAddress ? [`Address: ${customerAddress}`] : []),
+      `Service: ${service}`,
+      ...(customerTimeframe ? [`Preferred timeframe: ${customerTimeframe}`] : []),
+    ]
+
     const body = [
       `A new lead has been captured for ${business.name}.`,
       '',
       'Customer details:',
-      `  Name: ${customerName}`,
-      `  Phone: ${customerPhone}`,
-      `  Interested in: ${service}`,
+      ...details.map((d) => `  ${d}`),
       '',
       'Full conversation transcript:',
       '─'.repeat(40),
