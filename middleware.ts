@@ -15,13 +15,21 @@ const isPublicApiRoute = createRouteMatcher([
   '/api/webhooks/(.*)',
 ])
 
-export default clerkMiddleware(async (auth, request) => {
+const clerkHandler = clerkMiddleware(async (auth, request) => {
   if (isPublicRoute(request)) return
   if (isPublicApiRoute(request)) return
   if (isProtectedRoute(request)) {
     await auth.protect()
   }
 })
+
+export default async function middleware(request: Request) {
+  const response = await clerkHandler(request)
+  // Remove all frame restrictions so any page can be embedded in an iframe from any domain
+  response.headers.delete('X-Frame-Options')
+  response.headers.set('Content-Security-Policy', 'frame-ancestors *')
+  return response
+}
 
 export const config = {
   matcher: [
