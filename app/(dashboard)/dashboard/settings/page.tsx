@@ -273,16 +273,17 @@ export default async function SettingsPage({
                   </div>
                 </div>
               </div>
+            ) : isAdminViewAs ? (
+              <span
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-lg font-medium bg-gray-100 text-gray-400 cursor-not-allowed"
+                aria-disabled
+              >
+                Connect Google Calendar
+              </span>
             ) : (
               <a
-                href={isAdminViewAs ? '#' : `/api/auth/google?businessId=${business.id}`}
-                className={`inline-flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition ${
-                  isAdminViewAs
-                    ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                    : 'bg-blue-600 text-white hover:bg-blue-700'
-                }`}
-                onClick={e => isAdminViewAs && e.preventDefault()}
-                aria-disabled={isAdminViewAs}
+                href={`/api/auth/google?businessId=${business.id}`}
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition bg-blue-600 text-white hover:bg-blue-700"
               >
                 Connect Google Calendar
               </a>
