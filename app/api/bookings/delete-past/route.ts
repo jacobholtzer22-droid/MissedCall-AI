@@ -2,6 +2,8 @@
 // Clears old appointments from the dashboard
 
 import { NextResponse } from 'next/server'
+
+export const dynamic = 'force-dynamic'
 import { auth } from '@clerk/nextjs/server'
 import { db } from '@/lib/db'
 import { getBusinessForDashboard } from '@/lib/get-business-for-dashboard'

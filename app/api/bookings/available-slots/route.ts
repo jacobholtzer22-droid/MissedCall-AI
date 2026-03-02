@@ -5,6 +5,8 @@
 // Public API - used by booking page and SMS flow
 
 import { NextRequest, NextResponse } from 'next/server'
+
+export const dynamic = 'force-dynamic'
 import { TZDate } from '@date-fns/tz'
 import { db } from '@/lib/db'
 import { getAvailableSlotsWithMeta } from '@/lib/google-calendar'
