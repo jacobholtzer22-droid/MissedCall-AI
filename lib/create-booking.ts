@@ -25,6 +25,24 @@ function formatDateFullForConfirm(d: Date, tz: string): string {
   return `${weekday}, ${month} ${ordinal(day)}`
 }
 
+/** Clean service for owner-facing use (notifications, calendar, dashboard): "your lawn" → "lawn", "my patio" → "patio". Strip "my", "the", "your", "I need", "I want" but keep the actual service description. Exported for use in lead capture flow. */
+export function cleanServiceForOwner(service: string): string {
+  let s = service.trim()
+  if (!s || s.length > 100) return 'Free quote'
+  // Pass through generic phrases
+  if (/^(?:a\s+free\s+in-person\s+quote|an?\s+estimate|an?\s+consultation|quote\s+visit|appointment)$/i.test(s)) {
+    return 'Free quote'
+  }
+  // Strip "your ", "my ", "the " prefix
+  s = s.replace(/^(?:your|my|the)\s+/i, '').trim()
+  // Strip "I need ...", "I want ..." and similar
+  s = s.replace(/^(?:i\s+)?(?:need|want)\s+(?:a\s+)?(?:quote\s+)?(?:for\s+)?(?:my|the)?\s*/gi, '').trim()
+  if (s.length >= 2 && s.length <= 80) {
+    return s.charAt(0).toUpperCase() + s.slice(1)
+  }
+  return 'Free quote'
+}
+
 /** Clean garbled service text for confirmation: "a quote for to book a quote for my lawn" → "your lawn". Pass through defaults like "a free in-person quote". */
 function cleanServiceForConfirmation(service: string): string {
   let s = service.trim()
@@ -89,6 +107,7 @@ export async function createBooking(params: CreateBookingParams): Promise<Create
   const name = customerName.trim()
   const phone = customerPhone.trim()
   const service = serviceType.trim()
+  const ownerFacingService = cleanServiceForOwner(service)
   const startDate = typeof slotStart === 'string' ? new Date(slotStart) : slotStart
   const tz = business.timezone ?? 'America/New_York'
 
@@ -128,7 +147,7 @@ export async function createBooking(params: CreateBookingParams): Promise<Create
       businessId: business.id,
       customerPhone: phone,
       status: 'confirmed',
-      serviceType: service,
+      serviceType: ownerFacingService,
       scheduledAt: {
         gte: new Date(startDate.getTime() - marginMs),
         lte: new Date(startDate.getTime() + marginMs),
@@ -178,7 +197,7 @@ export async function createBooking(params: CreateBookingParams): Promise<Create
         startDate,
         endDate,
         name,
-        service,
+        ownerFacingService,
         phone,
         {
           customerEmail: customerEmail?.trim() || null,
@@ -202,7 +221,7 @@ export async function createBooking(params: CreateBookingParams): Promise<Create
       customerName: name,
       customerPhone: phone,
       customerEmail: customerEmail?.trim() || null,
-      serviceType: service,
+      serviceType: ownerFacingService,
       scheduledAt: startDate,
       duration: slotDuration,
       notes: notes?.trim() || null,
@@ -268,7 +287,7 @@ export async function createBooking(params: CreateBookingParams): Promise<Create
       customerName: name,
       customerPhone: phone,
       customerEmail: customerEmail?.trim() || null,
-      serviceType: service,
+      serviceType: ownerFacingService,
       scheduledAt: startDate,
       source,
       notes: notes?.trim() || null,

@@ -13,7 +13,7 @@ import Anthropic from '@anthropic-ai/sdk'
 import { addDays, addMonths, addYears } from 'date-fns'
 import { TZDate } from '@date-fns/tz'
 import { getAvailableSlots, parseBusinessHours } from '@/lib/google-calendar'
-import { createBooking } from '@/lib/create-booking'
+import { createBooking, cleanServiceForOwner } from '@/lib/create-booking'
 import { notifyOwnerOnHumanNeeded, notifyOwnerOnLeadCaptured } from '@/lib/notify-owner'
 import { recordMessageSent } from '@/lib/sms-cooldown'
 
@@ -343,7 +343,7 @@ export async function POST(request: NextRequest) {
               customerEmail: extracted.customerEmail?.trim() || undefined,
               customerAddress: extracted.customerAddress?.trim() || undefined,
               customerTimeframe: extracted.customerTimeframe?.trim() || undefined,
-              service: extracted.customerService?.trim() || cleanServiceForDisplay('service'),
+              service: cleanServiceForOwner(extracted.customerService?.trim() || 'service'),
               conversationTranscript: conversationTranscript.slice(0, -1),
               conversationId: conversation.id,
             })
@@ -356,7 +356,7 @@ export async function POST(request: NextRequest) {
               status: 'lead_captured',
               callerName: extracted.customerName.trim(),
               intent: 'lead_capture',
-              serviceRequested: extracted.customerService?.trim() || 'service',
+              serviceRequested: cleanServiceForOwner(extracted.customerService?.trim() || 'service'),
               customerEmail: extracted.customerEmail?.trim() || null,
               customerAddress: extracted.customerAddress?.trim() || null,
               customerTimeframe: extracted.customerTimeframe?.trim() || null,
@@ -569,6 +569,15 @@ type BookingFlowState = {
   offeredSlots?: { start: string; end: string; display: string }[]
   services?: { value: string; label: string }[]
   sentAt?: string
+}
+
+/** Check if the business is closed on a given date (YYYY-MM-DD) in the given timezone. */
+function isBusinessClosedOnDate(dateStr: string, tz: string, businessHoursRaw: unknown): boolean {
+  const hours = parseBusinessHours(businessHoursRaw)
+  const [y, m, d] = dateStr.split('-').map(Number)
+  const dayIndex = new TZDate(y, m - 1, d, 12, 0, 0, 0, tz).getDay()
+  const dayName = DAY_NAMES[dayIndex] as keyof typeof hours
+  return !hours[dayName]
 }
 
 /** Format business hours as "Mon-Fri 9am-5pm" for SMS. */
@@ -1057,6 +1066,7 @@ async function handleSmsBookingFlow(
       if (rejectionTimePref) {
         const { startStr: rejStart, endStr: rejEnd, timeOfDay: rejTimeOfDay, isPastDate: rejPast, notBeforeMinutes: rejNotBefore } = rejectionTimePref
         if (!rejPast) {
+          console.log('[SLOTS DEBUG] Fetching slots for:', rejStart, 'to', rejEnd)
           let rejSlots = await getAvailableSlots(business.id, rejStart, rejEnd)
           rejSlots = filterPastSlots(rejSlots, tz)
           rejSlots = filterSlotsByTimeOfDay(rejSlots, rejTimeOfDay, tz)
@@ -1108,6 +1118,7 @@ async function handleSmsBookingFlow(
       const { startStr, endStr, timeOfDay, isPastDate } = newTimePref
       if (isPastDate) {
         const fallback = getNext3BusinessDays(tz, business.businessHours)
+        console.log('[SLOTS DEBUG] Fetching slots for (past-date fallback, newTimePref):', fallback.startStr, 'to', fallback.endStr)
         let fallbackSlots = await getAvailableSlots(business.id, fallback.startStr, fallback.endStr)
         fallbackSlots = filterPastSlots(fallbackSlots, tz)
         const altSlots = pickSlotsAcrossDays(fallbackSlots, tz, business.businessHours, 3)
@@ -1134,6 +1145,7 @@ async function handleSmsBookingFlow(
         await db.conversation.update({ where: { id: conversation.id }, data: { bookingFlowState: Prisma.DbNull } })
         return true
       }
+      console.log('[SLOTS DEBUG] Fetching slots for (newTimePref customer request):', startStr, 'to', endStr)
       let slots = await getAvailableSlots(business.id, startStr, endStr)
       slots = filterPastSlots(slots, tz)
       slots = filterSlotsByTimeOfDay(slots, timeOfDay, tz)
@@ -1161,14 +1173,17 @@ async function handleSmsBookingFlow(
         })
         return true
       }
-      // Requested date has no availability — offer alternatives
+      // Requested date has no availability — offer alternatives (NEVER silently show different date; always explain why)
       const dateLabel = formatDateFull(startStr + 'T12:00:00', tz)
+      const closedThatDay = isBusinessClosedOnDate(startStr, tz, business.businessHours)
+      const reason = closedThatDay ? `We're closed on ${dateLabel}` : `${dateLabel} is fully booked`
       const fallback = getNext3BusinessDays(tz, business.businessHours)
+      console.log('[SLOTS DEBUG] Fetching slots for (no-slots fallback, newTimePref):', fallback.startStr, 'to', fallback.endStr)
       let fallbackSlots = await getAvailableSlots(business.id, fallback.startStr, fallback.endStr)
       fallbackSlots = filterPastSlots(fallbackSlots, tz)
       const altSlots = pickSlotsAcrossDays(fallbackSlots, tz, business.businessHours, 3)
       if (altSlots.length > 0) {
-        const msg = `Sorry, ${dateLabel} is fully booked. How about one of these times?\n\n${formatSlotsMessage(altSlots, tz)}`
+        const msg = `Sorry, ${reason}. How about one of these times?\n\n${formatSlotsMessage(altSlots, tz)}`
         await sendSMSAndLog(business, conversation.id, from, msg)
         await db.conversation.update({
           where: { id: conversation.id },
@@ -1207,6 +1222,7 @@ async function handleSmsBookingFlow(
       const { startStr, endStr, timeOfDay, isPastDate } = timePref
       if (isPastDate) {
         const fallback = getNext3BusinessDays(tz, business.businessHours)
+        console.log('[SLOTS DEBUG] Fetching slots for (past-date fallback, awaiting_preference):', fallback.startStr, 'to', fallback.endStr)
         let fallbackSlots = await getAvailableSlots(business.id, fallback.startStr, fallback.endStr)
         fallbackSlots = filterPastSlots(fallbackSlots, tz)
         const altSlots = pickSlotsAcrossDays(fallbackSlots, tz, business.businessHours, 3)
@@ -1233,6 +1249,7 @@ async function handleSmsBookingFlow(
         await db.conversation.update({ where: { id: conversation.id }, data: { bookingFlowState: Prisma.DbNull } })
         return true
       }
+      console.log('[SLOTS DEBUG] Fetching slots for (awaiting_preference customer request):', startStr, 'to', endStr)
       let slots = await getAvailableSlots(business.id, startStr, endStr)
       slots = filterPastSlots(slots, tz)
       slots = filterSlotsByTimeOfDay(slots, timeOfDay, tz)
@@ -1260,14 +1277,17 @@ async function handleSmsBookingFlow(
         })
         return true
       }
-      // No slots on that date — offer closest alternatives (date is fully booked)
+      // No slots on that date — offer closest alternatives (NEVER silently show different date; always explain why)
       const dateLabel = formatDateFull(startStr + 'T12:00:00', tz)
+      const closedThatDay = isBusinessClosedOnDate(startStr, tz, business.businessHours)
+      const reason = closedThatDay ? `We're closed on ${dateLabel}` : `${dateLabel} is fully booked`
       const fallback = getNext3BusinessDays(tz, business.businessHours)
+      console.log('[SLOTS DEBUG] Fetching slots for (no-slots fallback, awaiting_preference):', fallback.startStr, 'to', fallback.endStr)
       let fallbackSlots = await getAvailableSlots(business.id, fallback.startStr, fallback.endStr)
       fallbackSlots = filterPastSlots(fallbackSlots, tz)
       const altSlots = pickSlotsAcrossDays(fallbackSlots, tz, business.businessHours, 3)
       if (altSlots.length > 0) {
-        const msg = `Sorry, ${dateLabel} is fully booked. How about one of these times?\n\n${formatSlotsMessage(altSlots, tz)}`
+        const msg = `Sorry, ${reason}. How about one of these times?\n\n${formatSlotsMessage(altSlots, tz)}`
         await sendSMSAndLog(business, conversation.id, from, msg)
         await db.conversation.update({
           where: { id: conversation.id },
@@ -1502,6 +1522,7 @@ async function handleAwaitingNameAndPreference(
 
   if (isPastDate) {
     const fallback = getNext3BusinessDays(tz, business.businessHours)
+    console.log('[SLOTS DEBUG] Fetching slots for (past-date fallback, name+preference):', fallback.startStr, 'to', fallback.endStr)
     let fallbackSlots = await getAvailableSlots(business.id, fallback.startStr, fallback.endStr)
     fallbackSlots = filterPastSlots(fallbackSlots, tz)
     const altSlots = pickSlotsAcrossDays(fallbackSlots, tz, business.businessHours, 3)
@@ -1528,6 +1549,7 @@ async function handleAwaitingNameAndPreference(
     return true
   }
 
+  console.log('[SLOTS DEBUG] Fetching slots for (name+preference customer request):', startStr, 'to', endStr)
   let slots = await getAvailableSlots(business.id, startStr, endStr)
   slots = filterPastSlots(slots, tz)
   slots = filterSlotsByTimeOfDay(slots, timeOfDay, tz)
@@ -1562,12 +1584,15 @@ async function handleAwaitingNameAndPreference(
   }
 
   const dateLabel = formatDateFull(startStr + 'T12:00:00', tz)
+  const closedThatDay = isBusinessClosedOnDate(startStr, tz, business.businessHours)
+  const reason = closedThatDay ? `We're closed on ${dateLabel}` : `${dateLabel} is fully booked`
   const fallback = getNext3BusinessDays(tz, business.businessHours)
+  console.log('[SLOTS DEBUG] Fetching slots for (no-slots fallback, name+preference):', fallback.startStr, 'to', fallback.endStr)
   let fallbackSlots = await getAvailableSlots(business.id, fallback.startStr, fallback.endStr)
   fallbackSlots = filterPastSlots(fallbackSlots, tz)
   const altSlots = pickSlotsAcrossDays(fallbackSlots, tz, business.businessHours, 3)
   if (altSlots.length > 0) {
-    const msg = `Sorry, ${dateLabel} is fully booked. How about one of these?\n\n${formatSlotsMessage(altSlots, tz)}`
+    const msg = `Sorry, ${reason}. How about one of these?\n\n${formatSlotsMessage(altSlots, tz)}`
     await sendSMSAndLog(business, conversation.id, from, msg)
     await db.conversation.update({
       where: { id: conversation.id },
@@ -1773,9 +1798,9 @@ function parseTimePreference(text: string, tz: string): TimePreferenceResult | n
   const todayDow = nowInTz.getDay()
   const todayMs = nowInTz.getTime()
 
-  // Debug: log today and tomorrow for date resolution verification
+  // Debug: log exactly what getTomorrowInTimezone returns for date resolution verification
   const tomorrowStr = getTomorrowInTimezone(tz)
-  console.log('[SMS date] parseTimePreference:', { tz, todayStr, tomorrowStr, input: text.slice(0, 80) })
+  console.log('[DATE DEBUG] today:', todayStr, 'tomorrow:', tomorrowStr, 'input:', text)
 
   // anytime, whenever, ASAP, as soon as possible → next 3 business days
   if (/\b(anytime|whenever|asap|as\s+soon\s+as\s+possible|soonest|earliest)\b/.test(t)) {
@@ -1931,15 +1956,14 @@ function parseTimePreference(text: string, tz: string): TimePreferenceResult | n
   const startStr = startDate.toLocaleDateString('en-CA', { timeZone: tz })
   const isPastDate = startStr < todayStr
 
-  const endDate = new Date(startDate)
-  if (/\bnext\s+week\b/.test(t)) {
-    endDate.setDate(endDate.getDate() + 6)
-  } else if (timeOfDay) {
-    endDate.setDate(endDate.getDate() + 1)
+  // "tomorrow" = fetch ONLY that single day. "today" = same. Never use getNext3BusinessDays for explicit day requests.
+  let endStr: string
+  if (/\btomorrow\b/.test(t) || /\btoday\b/.test(t)) {
+    endStr = startStr
   } else {
-    endDate.setDate(endDate.getDate() + 2)
+    const endDate = addDays(startDate, /\bnext\s+week\b/.test(t) ? 6 : timeOfDay ? 1 : 2)
+    endStr = endDate.toLocaleDateString('en-CA', { timeZone: tz })
   }
-  const endStr = endDate.toLocaleDateString('en-CA', { timeZone: tz })
   return { startStr, endStr, timeOfDay, preferredHour, isPastDate: isPastDate || undefined, notBeforeMinutes }
 }
 

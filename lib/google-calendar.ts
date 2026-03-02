@@ -417,8 +417,8 @@ export async function createCalendarEvent(
   })
   const tz = business?.timezone ?? 'America/New_York'
 
-  const sourceLabel = source === 'sms' ? '📱 Missed Call Lead' : '🌐 Website Lead'
-  const summary = `${sourceLabel} Quote - ${customerName} - ${serviceType}`
+  const sourceLabel = source === 'sms' ? '📱 ' : '🌐 '
+  const summary = `${sourceLabel}${customerName} - Free Quote (${serviceType})`
 
   const sourceDesc = source === 'sms' ? 'Source: Missed Call SMS - In-person quote visit' : 'Source: Website - In-person quote visit'
   const descriptionLines = [
