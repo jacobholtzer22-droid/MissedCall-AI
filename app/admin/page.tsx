@@ -320,7 +320,7 @@ export default function AdminDashboard() {
       bookingPageConfirmation: business.bookingPageConfirmation ?? '',
       bookingRequiresAddress: business.bookingRequiresAddress ?? true,
       businessType: business.businessType ?? '',
-      maxMessagesPerConversation: business.maxMessagesPerConversation ?? 15,
+      maxMessagesPerConversation: business.maxMessagesPerConversation ?? 23,
     })
     setMessage('')
     setNewBlockedPhone('')
@@ -1368,7 +1368,7 @@ export default function AdminDashboard() {
                   type="number"
                   min={5}
                   max={50}
-                  value={editData.maxMessagesPerConversation ?? 15}
+                  value={editData.maxMessagesPerConversation ?? 23}
                   onChange={e => setEditData({ ...editData, maxMessagesPerConversation: e.target.value })}
                   className="w-24 bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-white"
                 />

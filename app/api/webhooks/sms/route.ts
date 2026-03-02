@@ -71,7 +71,7 @@ function formatDateFull(isoOrDateStr: string | Date, tz: string): string {
   return `${weekday}, ${month} ${ordinal(day)}`
 }
 
-const DEFAULT_MAX_MESSAGES_PER_CONVERSATION = 15
+const DEFAULT_MAX_MESSAGES_PER_CONVERSATION = 23
 const BOOKING_INTENT_WORDS = ['book', 'appointment', 'schedule', 'booking', 'reserve']
 
 /** Returns customer-facing "call us" phrase. Uses forwardingNumber (owner's real number), never Telnyx. */
@@ -215,9 +215,11 @@ export async function POST(request: NextRequest) {
         return new NextResponse('OK', { status: 200 })
       }
 
-      // Message limit guard (per-business config, default 15)
+      // Message limit guard (per-business config, default 23)
+      // CRITICAL: Never cut off a booking in progress — only enforce for open/general chat
       const maxMessages = (business as { maxMessagesPerConversation?: number }).maxMessagesPerConversation ?? DEFAULT_MAX_MESSAGES_PER_CONVERSATION
-      if (conversation.messages.length >= maxMessages) {
+      const inBookingFlow = Boolean((conversation.bookingFlowState as Record<string, unknown> | null)?.step)
+      if (!inBookingFlow && conversation.messages.length >= maxMessages) {
         console.log('⚠️ Conversation hit message limit:', maxMessages)
         await db.conversation.update({
           where: { id: conversation.id },
