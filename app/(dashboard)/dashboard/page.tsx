@@ -6,7 +6,18 @@ import { Phone, MessageSquare, Calendar, TrendingUp, ArrowRight, ShieldCheck, He
 import Link from 'next/link'
 import { formatRelativeTime, formatPhoneNumber } from '@/lib/utils'
 
-async function getDashboardStats(businessId: string, calendarEnabled: boolean) {
+function matchesOfferedService(requested: string, offeredList: string[]): string | null {
+  const r = requested.toLowerCase().trim()
+  for (const offered of offeredList) {
+    const o = String(offered).toLowerCase().trim()
+    if (!o) continue
+    if (r === o) return offered
+    if (r.includes(o) || o.includes(r)) return offered
+  }
+  return null
+}
+
+async function getDashboardStats(businessId: string, calendarEnabled: boolean, servicesOffered: string[] = []) {
   const now = new Date()
   const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate())
   const weekStart = new Date(todayStart)
@@ -77,18 +88,36 @@ async function getDashboardStats(businessId: string, calendarEnabled: boolean) {
     ? Math.round((conversationsWithReplies / totalConversations) * 100) 
     : 0
 
-  // Calculate top requested services
+  // Calculate top requested services - only show offered services; put non-matches under "Other"
+  const offeredList = Array.isArray(servicesOffered)
+    ? servicesOffered.map(s => (typeof s === 'string' ? s : String(s)).trim()).filter(Boolean)
+    : []
   const serviceCounts: Record<string, number> = {}
+  let otherCount = 0
   allConversationsWithService.forEach(conv => {
     if (conv.serviceRequested) {
-      const service = conv.serviceRequested.toLowerCase().trim()
-      serviceCounts[service] = (serviceCounts[service] || 0) + 1
+      const requested = conv.serviceRequested.trim()
+      if (offeredList.length === 0) {
+        // No services configured: show all requested services as before
+        const service = requested.toLowerCase()
+        serviceCounts[service] = (serviceCounts[service] || 0) + 1
+      } else {
+        const matched = matchesOfferedService(requested, offeredList)
+        if (matched) {
+          serviceCounts[matched] = (serviceCounts[matched] || 0) + 1
+        } else {
+          otherCount++
+        }
+      }
     }
   })
-  const topServices = Object.entries(serviceCounts)
+  let topServices = Object.entries(serviceCounts)
     .sort((a, b) => b[1] - a[1])
     .slice(0, 5)
     .map(([service, count]) => ({ service, count }))
+  if (offeredList.length > 0 && otherCount > 0) {
+    topServices = [...topServices, { service: 'Other', count: otherCount }]
+  }
 
   // Extract common questions from inbound messages - only show those asked 2+ times
   const questionKeywords = ['how', 'what', 'when', 'where', 'can', 'do you', 'is there', 'price', 'cost', 'available', 'open', 'hour', 'appointment', 'book', 'schedule']
@@ -138,7 +167,11 @@ export default async function DashboardPage() {
   const { business } = await getBusinessForDashboard(userId, user?.business ?? null)
   if (!business) redirect('/onboarding')
 
-  const stats = await getDashboardStats(business.id, business.calendarEnabled ?? false)
+  const stats = await getDashboardStats(
+    business.id,
+    business.calendarEnabled ?? false,
+    Array.isArray(business.servicesOffered) ? business.servicesOffered as string[] : []
+  )
 
   return (
     <div className="space-y-8">

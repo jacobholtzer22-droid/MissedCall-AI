@@ -12,10 +12,11 @@ import Telnyx from 'telnyx'
 import Anthropic from '@anthropic-ai/sdk'
 import { addDays, addMonths, addYears } from 'date-fns'
 import { TZDate } from '@date-fns/tz'
-import { getAvailableSlots, parseBusinessHours } from '@/lib/google-calendar'
+import { getAvailableSlots, getTwoClosestSlotsOnDay, isSpecificSlotAvailable, parseBusinessHours } from '@/lib/google-calendar'
 import { createBooking, cleanServiceForOwner } from '@/lib/create-booking'
 import { notifyOwnerOnHumanNeeded, notifyOwnerOnLeadCaptured } from '@/lib/notify-owner'
 import { recordMessageSent } from '@/lib/sms-cooldown'
+import { formatPhoneNumber } from '@/lib/utils'
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY ?? '' })
 
@@ -83,7 +84,10 @@ const BOOKING_INTENT_WORDS = [
 
 /** Returns customer-facing "call us" phrase. Uses forwardingNumber (owner's real number), never Telnyx. */
 function getCallUsPhrase(business: { forwardingNumber?: string | null }): string {
-  if (business.forwardingNumber?.trim()) return `give us a call at ${business.forwardingNumber.trim()}`
+  if (business.forwardingNumber?.trim()) {
+    const formatted = formatPhoneNumber(business.forwardingNumber.trim())
+    return `give us a call at ${formatted}`
+  }
   return 'call us directly'
 }
 const CONVERSATION_TIMEOUT_HOURS = 24
@@ -559,14 +563,15 @@ export async function POST(request: NextRequest) {
 // Fully conversational — NO booking links. AI handles everything via text.
 
 type BookingFlowState = {
-  step: 'greeting' | 'awaiting_name' | 'awaiting_name_and_preference' | 'awaiting_service' | 'awaiting_notes' | 'awaiting_address' | 'awaiting_preference' | 'awaiting_selection' | 'awaiting_confirmation' | 'awaiting_address_after_slot' | 'confirmed'
+  step: 'greeting' | 'awaiting_name' | 'awaiting_name_and_preference' | 'awaiting_service' | 'awaiting_notes' | 'awaiting_address' | 'awaiting_time' | 'awaiting_confirmation' | 'awaiting_name_and_address' | 'awaiting_address_after_slot' | 'confirmed'
   customerName?: string
   serviceType?: string
   notes?: string
   customerAddress?: string
-  selectedSlot?: { start: string; end: string; display: string }  // Stored when user picks slot, before we ask for address
-  timePreference?: string  // Raw text: "tomorrow afternoon", "next week", etc.
-  offeredSlots?: { start: string; end: string; display: string }[]
+  selectedSlot?: { start: string; end: string; display: string }  // Stored when slot is confirmed
+  timePreference?: string  // Raw text: "Friday at 2pm", etc.
+  suggestedSlots?: { start: string; end: string; display: string }[]  // When we suggest "2:30pm or 3pm" — stored for matching
+  lastDiscussedDate?: string  // YYYY-MM-DD when we suggested alternatives on a specific day
   services?: { value: string; label: string }[]
   sentAt?: string
 }
@@ -874,8 +879,8 @@ async function handleSmsBookingFlow(
   // Support legacy step names
   const legacyStep = rawFlowState.step as string
   const mappedStep: BookingFlowState['step'] =
-    legacyStep === 'awaiting_slot' || legacyStep === 'awaiting_time'
-      ? 'awaiting_selection'
+    legacyStep === 'awaiting_slot' || legacyStep === 'awaiting_time' || legacyStep === 'awaiting_selection' || legacyStep === 'awaiting_preference'
+      ? 'awaiting_time'
       : legacyStep === 'awaiting_name_and_preference'
         ? 'awaiting_name_and_preference'
         : (legacyStep as BookingFlowState['step']) || 'greeting'
@@ -890,34 +895,14 @@ async function handleSmsBookingFlow(
     serviceType: rawFlowState.serviceType ?? conversation.serviceRequested,
   } as BookingFlowState
   const tz = business.timezone ?? 'America/New_York'
+  const suggestedSlots = (flowState.suggestedSlots ?? []) as SlotLike[]
+  const lastDiscussedDate = flowState.lastDiscussedDate as string | undefined
 
-  // Resolve slots from state (support legacy 'slots' or new 'offeredSlots')
-  const offeredSlots = (flowState.offeredSlots ?? (rawFlowState.slots as SlotLike[] | undefined) ?? []) as SlotLike[]
-
-  // ── Step: awaiting_confirmation (user picked slot, we asked "Just to confirm...?" — wait for yes) ──
+  // ── Step: awaiting_confirmation (have slot + name + address, asked "Just to confirm...?" — wait for yes) ──
   if (flowState.step === 'awaiting_confirmation' && flowState.selectedSlot) {
     const confirmed = /\b(yes|yeah|yep|yup|sure|ok|okay|confirm|confirmed|that works|sounds good)\b/i.test(trimmed)
     const rejected = /\b(no|nope|wrong|actually|different|change)\b/i.test(trimmed)
     if (confirmed) {
-      if (bookingRequiresAddress) {
-        const msg = `Perfect! What's the address where we should meet you for the quote?`
-        await sendSMSAndLog(business, conversation.id, from, msg)
-        await db.conversation.update({
-          where: { id: conversation.id },
-          data: {
-            bookingFlowState: JSON.parse(JSON.stringify({
-              step: 'awaiting_address_after_slot',
-              customerName: flowState.customerName,
-              serviceType: flowState.serviceType,
-              notes: flowState.notes,
-              selectedSlot: flowState.selectedSlot,
-              offeredSlots: flowState.offeredSlots,
-              sentAt: new Date().toISOString(),
-            })),
-          },
-        })
-        return true
-      }
       const convCheck = await db.conversation.findUnique({
         where: { id: conversation.id },
         include: { appointment: true },
@@ -955,13 +940,14 @@ async function handleSmsBookingFlow(
       return true
     }
     if (rejected) {
-      const msg = `No problem! What day and time works better for you? (e.g. tomorrow afternoon, March 2nd)`
+      const hoursSummary = formatBusinessHoursSummary(business.businessHours)
+      const msg = `No problem! What day and time works better for you? We're available ${hoursSummary}.`
       await sendSMSAndLog(business, conversation.id, from, msg)
       await db.conversation.update({
         where: { id: conversation.id },
         data: {
           bookingFlowState: JSON.parse(JSON.stringify({
-            step: 'awaiting_preference',
+            step: 'awaiting_time',
             customerName: flowState.customerName,
             serviceType: flowState.serviceType,
             notes: flowState.notes,
@@ -975,7 +961,60 @@ async function handleSmsBookingFlow(
     return true
   }
 
-  // ── Step: awaiting_address_after_slot (user picked slot, now need address before confirming) ──
+  // ── Step: awaiting_name_and_address (time confirmed, need name + address) ──
+  if (flowState.step === 'awaiting_name_and_address' && flowState.selectedSlot) {
+    if (looksLikeQuestion(rawText)) return false
+    const name = parseNameFromMessage(rawText) || flowState.customerName
+    const address = parseAddressFromMessage(rawText)
+    if (!name || name.length > 100) return false
+
+    const convCheck = await db.conversation.findUnique({
+      where: { id: conversation.id },
+      include: { appointment: true },
+    })
+    if (convCheck?.appointment) return true
+
+    const dateLabel = formatDateFull(flowState.selectedSlot.start, tz)
+    const timeStr = flowState.selectedSlot.display || new Date(flowState.selectedSlot.start).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true, timeZone: tz })
+
+    if (address || !bookingRequiresAddress) {
+      const confirmMsg = `Perfect! Just to confirm: ${dateLabel} at ${timeStr} for ${name}${address ? ` at ${address}` : ''}. Reply yes to confirm.`
+      await sendSMSAndLog(business, conversation.id, from, confirmMsg)
+      await db.conversation.update({
+        where: { id: conversation.id },
+        data: {
+          bookingFlowState: JSON.parse(JSON.stringify({
+            step: 'awaiting_confirmation',
+            customerName: name,
+            serviceType: flowState.serviceType,
+            notes: flowState.notes,
+            selectedSlot: flowState.selectedSlot,
+            customerAddress: address ?? undefined,
+            sentAt: new Date().toISOString(),
+          })),
+        },
+      })
+      return true
+    }
+    const msg = `Thanks ${name}! What's the property address where we should meet you?`
+    await sendSMSAndLog(business, conversation.id, from, msg)
+    await db.conversation.update({
+      where: { id: conversation.id },
+      data: {
+        bookingFlowState: JSON.parse(JSON.stringify({
+          step: 'awaiting_address_after_slot',
+          customerName: name,
+          serviceType: flowState.serviceType,
+          notes: flowState.notes,
+          selectedSlot: flowState.selectedSlot,
+          sentAt: new Date().toISOString(),
+        })),
+      },
+    })
+    return true
+  }
+
+  // ── Step: awaiting_address_after_slot (have name, need address) ──
   if (flowState.step === 'awaiting_address_after_slot' && flowState.selectedSlot) {
     if (looksLikeQuestion(rawText)) return false
     const address = rawText.trim()
@@ -986,125 +1025,132 @@ async function handleSmsBookingFlow(
     })
     if (convCheck?.appointment) return true
 
-    console.log('[SMS BOOKING] Creating appointment...')
-    const result = await createBooking({
-      business,
-      customerName: flowState.customerName || 'Customer',
-      customerPhone: from,
-      serviceType: flowState.serviceType || 'Appointment',
-      notes: flowState.notes ?? undefined,
-      customerAddress: address,
-      slotStart: flowState.selectedSlot.start,
-      conversationId: conversation.id,
-      skipSlotVerification: true,
-      logPrefix: '[SMS BOOKING]',
+    const dateLabel = formatDateFull(flowState.selectedSlot.start, tz)
+    const timeStr = flowState.selectedSlot.display || new Date(flowState.selectedSlot.start).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true, timeZone: tz })
+    const confirmMsg = `Perfect! Just to confirm: ${dateLabel} at ${timeStr} for ${flowState.customerName || 'you'} at ${address}. Reply yes to confirm.`
+    await sendSMSAndLog(business, conversation.id, from, confirmMsg)
+    await db.conversation.update({
+      where: { id: conversation.id },
+      data: {
+        bookingFlowState: JSON.parse(JSON.stringify({
+          step: 'awaiting_confirmation',
+          customerName: flowState.customerName,
+          serviceType: flowState.serviceType,
+          notes: flowState.notes,
+          selectedSlot: flowState.selectedSlot,
+          customerAddress: address,
+          sentAt: new Date().toISOString(),
+        })),
+      },
     })
-
-    if (result.ok) {
-      await db.conversation.update({
-        where: { id: conversation.id },
-        data: {
-          status: 'appointment_booked',
-          callerName: flowState.customerName,
-          intent: 'book_appointment',
-          serviceRequested: flowState.serviceType,
-          bookingFlowState: Prisma.DbNull,
-        },
-      })
-      console.log('[SMS BOOKING] Appointment created:', result.appointment.id)
-      if (result.calendarSyncFailed) {
-        console.log('[SMS BOOKING] Calendar FAILED (appointment saved with calendarSyncFailed)')
-      } else {
-        console.log('[SMS BOOKING] Google Calendar event created (or calendar off)')
-      }
-      console.log('[SMS BOOKING] Owner notified')
-      return true
-    }
-    console.error('[SMS BOOKING] createBooking failed:', result.error)
-    await sendSMSAndLog(
-      business,
-      conversation.id,
-      from,
-      `Sorry, we had trouble saving that. Please try again or ${getCallUsPhrase(business)}.`
-    )
     return true
   }
 
-  // ── Step: awaiting_selection (user picking from offered slots) ──
-  const inSelectionStep = flowState.step === 'awaiting_selection'
-  if (inSelectionStep && offeredSlots.length > 0) {
-    const timePref = (flowState.timePreference as string) ? parseTimePreference(String(flowState.timePreference), tz) : null
-    const preferredHour = timePref?.preferredHour
-    const selectedSlot = parseSlotSelection(trimmed, offeredSlots, tz, preferredHour)
-    if (selectedSlot) {
-      const slotObj = offeredSlots.find(s => s.start === selectedSlot.start)
-      const slot = slotObj ?? { start: selectedSlot.start, end: '', display: '' }
+
+  // ── Step: awaiting_time (customer gives date/time, we check exact slot — no slot lists) ──
+  if (flowState.step === 'awaiting_time') {
+    if (looksLikeQuestion(rawText)) return false
+
+    // If we suggested alternatives (e.g. "2:30pm or 3pm"), try to match their reply to one of those
+    if (suggestedSlots.length > 0 && lastDiscussedDate) {
+      const timeMatch = trimmed.match(/(\d{1,2})(?::(\d{2}))?\s*(am|pm)\b/i)
+      if (timeMatch) {
+        let h = parseInt(timeMatch[1], 10)
+        const min = timeMatch[2] ? parseInt(timeMatch[2], 10) : 0
+        const ampm = (timeMatch[3] || '').toLowerCase()
+        if (ampm === 'pm' && h < 12) h += 12
+        if (ampm === 'am' && h === 12) h = 0
+        const matched = suggestedSlots.find((s) => {
+          const d = new Date(s.start)
+          const sh = parseInt(d.toLocaleTimeString('en-US', { hour: 'numeric', hour12: false, timeZone: tz }), 10)
+          const sm = parseInt(d.toLocaleTimeString('en-US', { minute: 'numeric', timeZone: tz }), 10)
+          return sh === h && sm === min
+        })
+        if (matched) {
+          const dateLabel = formatDateFull(matched.start, tz)
+          const msg = `${dateLabel} at ${matched.display} is open! What's your name and property address?`
+          await sendSMSAndLog(business, conversation.id, from, msg)
+          await db.conversation.update({
+            where: { id: conversation.id },
+            data: {
+              bookingFlowState: JSON.parse(JSON.stringify({
+                step: 'awaiting_name_and_address',
+                customerName: flowState.customerName,
+                serviceType: flowState.serviceType,
+                notes: flowState.notes,
+                selectedSlot: matched,
+                sentAt: new Date().toISOString(),
+              })),
+            },
+          })
+          return true
+        }
+      }
+    }
+
+    const timePref = parseTimePreference(trimmed, tz)
+    if (!timePref) {
+      const hoursSummary = formatBusinessHoursSummary(business.businessHours)
+      const msg = `What day and time work best for you? (e.g. Friday at 2pm, tomorrow at 9am) We're available ${hoursSummary}.`
+      await sendSMSAndLog(business, conversation.id, from, msg)
+      return true
+    }
+
+    const { startStr, timeOfDay, preferredHour, preferredMinute, isPastDate } = timePref
+    if (isPastDate) {
+      const msg = `That date has already passed. What day and time works better for you?`
+      await sendSMSAndLog(business, conversation.id, from, msg)
+      return true
+    }
+
+    if (isBusinessClosedOnDate(startStr, tz, business.businessHours)) {
+      const dateLabel = formatDateFull(startStr + 'T12:00:00', tz)
+      const msg = `Sorry, we're closed on ${dateLabel}. Tell us another day and time that works for you.`
+      await sendSMSAndLog(business, conversation.id, from, msg)
+      return true
+    }
+
+    const hour = preferredHour ?? (timeOfDay === 'morning' ? 9 : timeOfDay === 'evening' ? 17 : 14)
+    const minute = preferredMinute ?? 0
+
+    const slot = await isSpecificSlotAvailable(business.id, startStr, hour, minute, tz)
+    if (slot) {
       const dateLabel = formatDateFull(slot.start, tz)
-      // ALWAYS ask for explicit confirmation before booking — never skip this step
-      const msg = `Just to confirm, ${dateLabel} at ${slot.display || new Date(slot.start).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true, timeZone: tz })}? Reply yes to confirm.`
+      const msg = `${dateLabel} at ${slot.display} is open! What's your name and property address?`
       await sendSMSAndLog(business, conversation.id, from, msg)
       await db.conversation.update({
         where: { id: conversation.id },
         data: {
           bookingFlowState: JSON.parse(JSON.stringify({
-            step: 'awaiting_confirmation',
+            step: 'awaiting_name_and_address',
             customerName: flowState.customerName,
             serviceType: flowState.serviceType,
             notes: flowState.notes,
             selectedSlot: slot,
-            offeredSlots: flowState.offeredSlots,
             sentAt: new Date().toISOString(),
           })),
         },
       })
       return true
     }
-    // "No March 2nd" = REJECTION of offered slots + REQUEST for that date — parse the date and show slots
-    const wantsDifferentTimes = /\b(no|none|nope|those don't|doesn't work|something else|different|other)\b/.test(trimmed)
-    if (wantsDifferentTimes) {
-      const rejectionTimePref = parseTimePreference(trimmed, tz)
-      if (rejectionTimePref) {
-        const { startStr: rejStart, endStr: rejEnd, timeOfDay: rejTimeOfDay, isPastDate: rejPast, notBeforeMinutes: rejNotBefore } = rejectionTimePref
-        if (!rejPast) {
-          console.log('[SLOTS DEBUG] Fetching slots for:', rejStart, 'to', rejEnd)
-          let rejSlots = await getAvailableSlots(business.id, rejStart, rejEnd)
-          rejSlots = filterPastSlots(rejSlots, tz)
-          rejSlots = filterSlotsByTimeOfDay(rejSlots, rejTimeOfDay, tz)
-          if (rejNotBefore !== undefined) rejSlots = filterSlotsNotBefore(rejSlots, rejNotBefore, tz)
-          const rejDisplay = pickSlotsForPreference(rejSlots, tz, business.businessHours, trimmed, rejectionTimePref?.preferredHour)
-          if (rejDisplay.length > 0) {
-            const rejMsg = formatSlotsMessage(rejDisplay, tz)
-            await sendSMSAndLog(business, conversation.id, from, rejMsg)
-            await db.conversation.update({
-              where: { id: conversation.id },
-              data: {
-                bookingFlowState: JSON.parse(JSON.stringify({
-                  step: 'awaiting_selection',
-                  customerName: flowState.customerName,
-                  serviceType: flowState.serviceType,
-                  notes: flowState.notes,
-                  customerAddress: flowState.customerAddress,
-                  timePreference: trimmed,
-                  offeredSlots: rejDisplay,
-                  sentAt: new Date().toISOString(),
-                })),
-              },
-            })
-            return true
-          }
-        }
-      }
-      const msg = `No problem! What day and time would be better for you?`
+
+    const closest = await getTwoClosestSlotsOnDay(business.id, startStr, hour, minute, tz)
+    if (closest.length > 0) {
+      const timesStr = closest.map((s) => s.display).join(' or ')
+      const dateLabel = formatDateFull(startStr + 'T12:00:00', tz)
+      const reqTime = `${hour > 12 ? hour - 12 : hour === 0 ? 12 : hour}${minute ? ':' + String(minute).padStart(2, '0') : ''}${hour >= 12 ? 'pm' : 'am'}`
+      const msg = `Sorry, ${dateLabel} at ${reqTime} is taken. How about ${timesStr} that same day? Or tell me another day and time that works for you.`
       await sendSMSAndLog(business, conversation.id, from, msg)
       await db.conversation.update({
         where: { id: conversation.id },
         data: {
           bookingFlowState: JSON.parse(JSON.stringify({
-            step: 'awaiting_preference',
+            step: 'awaiting_time',
             customerName: flowState.customerName,
             serviceType: flowState.serviceType,
             notes: flowState.notes,
-            customerAddress: flowState.customerAddress,
+            suggestedSlots: closest,
+            lastDiscussedDate: startStr,
             sentAt: new Date().toISOString(),
           })),
         },
@@ -1112,211 +1158,21 @@ async function handleSmsBookingFlow(
       return true
     }
 
-    // User gave a new time preference (e.g. "Thursday afternoon", "next week")
-    const newTimePref = parseTimePreference(trimmed, tz)
-    if (newTimePref) {
-      const { startStr, endStr, timeOfDay, isPastDate } = newTimePref
-      if (isPastDate) {
-        const fallback = getNext3BusinessDays(tz, business.businessHours)
-        console.log('[SLOTS DEBUG] Fetching slots for (past-date fallback, newTimePref):', fallback.startStr, 'to', fallback.endStr)
-        let fallbackSlots = await getAvailableSlots(business.id, fallback.startStr, fallback.endStr)
-        fallbackSlots = filterPastSlots(fallbackSlots, tz)
-        const altSlots = pickSlotsAcrossDays(fallbackSlots, tz, business.businessHours, 3)
-        if (altSlots.length > 0) {
-          const msg = `That date has already passed. Would you like to book for one of these times instead?\n\n${formatSlotsMessage(altSlots, tz)}`
-          await sendSMSAndLog(business, conversation.id, from, msg)
-          await db.conversation.update({
-            where: { id: conversation.id },
-            data: {
-              bookingFlowState: JSON.parse(JSON.stringify({
-                step: 'awaiting_selection',
-                customerName: flowState.customerName,
-                serviceType: flowState.serviceType,
-                notes: flowState.notes,
-                customerAddress: flowState.customerAddress,
-                offeredSlots: altSlots,
-                sentAt: new Date().toISOString(),
-              })),
-            },
-          })
-          return true
-        }
-        await sendSMSAndLog(business, conversation.id, from, `That date has already passed. We don't have availability in the next few days — text back when you'd like to try again or give us a call!`)
-        await db.conversation.update({ where: { id: conversation.id }, data: { bookingFlowState: Prisma.DbNull } })
-        return true
-      }
-      console.log('[SLOTS DEBUG] Fetching slots for (newTimePref customer request):', startStr, 'to', endStr)
-      let slots = await getAvailableSlots(business.id, startStr, endStr)
-      slots = filterPastSlots(slots, tz)
-      slots = filterSlotsByTimeOfDay(slots, timeOfDay, tz)
-      if (newTimePref?.notBeforeMinutes !== undefined) {
-        slots = filterSlotsNotBefore(slots, newTimePref.notBeforeMinutes, tz)
-      }
-      const displaySlots = pickSlotsForPreference(slots, tz, business.businessHours, trimmed, newTimePref?.preferredHour)
-      if (displaySlots.length > 0) {
-        const msg = formatSlotsMessage(displaySlots, tz)
-        await sendSMSAndLog(business, conversation.id, from, msg)
-        await db.conversation.update({
-          where: { id: conversation.id },
-          data: {
-            bookingFlowState: JSON.parse(JSON.stringify({
-              step: 'awaiting_selection',
-              customerName: flowState.customerName,
-              serviceType: flowState.serviceType,
-              notes: flowState.notes,
-              customerAddress: flowState.customerAddress,
-              timePreference: trimmed,
-              offeredSlots: displaySlots,
-              sentAt: new Date().toISOString(),
-            })),
-          },
-        })
-        return true
-      }
-      // Requested date has no availability — offer alternatives (NEVER silently show different date; always explain why)
-      const dateLabel = formatDateFull(startStr + 'T12:00:00', tz)
-      const closedThatDay = isBusinessClosedOnDate(startStr, tz, business.businessHours)
-      const reason = closedThatDay ? `We're closed on ${dateLabel}` : `${dateLabel} is fully booked`
-      const fallback = getNext3BusinessDays(tz, business.businessHours)
-      console.log('[SLOTS DEBUG] Fetching slots for (no-slots fallback, newTimePref):', fallback.startStr, 'to', fallback.endStr)
-      let fallbackSlots = await getAvailableSlots(business.id, fallback.startStr, fallback.endStr)
-      fallbackSlots = filterPastSlots(fallbackSlots, tz)
-      const altSlots = pickSlotsAcrossDays(fallbackSlots, tz, business.businessHours, 3)
-      if (altSlots.length > 0) {
-        const msg = `Sorry, ${reason}. How about one of these times?\n\n${formatSlotsMessage(altSlots, tz)}`
-        await sendSMSAndLog(business, conversation.id, from, msg)
-        await db.conversation.update({
-          where: { id: conversation.id },
-          data: {
-            bookingFlowState: JSON.parse(JSON.stringify({
-              step: 'awaiting_selection',
-              customerName: flowState.customerName,
-              serviceType: flowState.serviceType,
-              notes: flowState.notes,
-              customerAddress: flowState.customerAddress,
-              offeredSlots: altSlots,
-              sentAt: new Date().toISOString(),
-            })),
-          },
-        })
-        return true
-      }
-      await sendSMSAndLog(
-        business,
-        conversation.id,
-        from,
-        `We don't have any availability in the next few days. Text us back when you'd like to try again or give us a call!`
-      )
-      await db.conversation.update({ where: { id: conversation.id }, data: { bookingFlowState: Prisma.DbNull } })
-      return true
-    }
-    // Invalid or unclear — let AI handle
-    return false
-  }
-
-  // ── Step: awaiting_preference (asked "when works best?", waiting for answer) ──
-  if (flowState.step === 'awaiting_preference') {
-    if (looksLikeQuestion(rawText)) return false
-    const timePref = parseTimePreference(trimmed, tz)
-    if (timePref) {
-      const { startStr, endStr, timeOfDay, isPastDate } = timePref
-      if (isPastDate) {
-        const fallback = getNext3BusinessDays(tz, business.businessHours)
-        console.log('[SLOTS DEBUG] Fetching slots for (past-date fallback, awaiting_preference):', fallback.startStr, 'to', fallback.endStr)
-        let fallbackSlots = await getAvailableSlots(business.id, fallback.startStr, fallback.endStr)
-        fallbackSlots = filterPastSlots(fallbackSlots, tz)
-        const altSlots = pickSlotsAcrossDays(fallbackSlots, tz, business.businessHours, 3)
-        if (altSlots.length > 0) {
-          const msg = `That date has already passed. Would you like to book for one of these times instead?\n\n${formatSlotsMessage(altSlots, tz)}`
-          await sendSMSAndLog(business, conversation.id, from, msg)
-          await db.conversation.update({
-            where: { id: conversation.id },
-            data: {
-              bookingFlowState: JSON.parse(JSON.stringify({
-                step: 'awaiting_selection',
-                customerName: flowState.customerName,
-                serviceType: flowState.serviceType,
-                notes: flowState.notes,
-                customerAddress: flowState.customerAddress,
-                offeredSlots: altSlots,
-                sentAt: new Date().toISOString(),
-              })),
-            },
-          })
-          return true
-        }
-        await sendSMSAndLog(business, conversation.id, from, `That date has already passed. We don't have availability in the next few days — text back when you'd like to try again or give us a call!`)
-        await db.conversation.update({ where: { id: conversation.id }, data: { bookingFlowState: Prisma.DbNull } })
-        return true
-      }
-      console.log('[SLOTS DEBUG] Fetching slots for (awaiting_preference customer request):', startStr, 'to', endStr)
-      let slots = await getAvailableSlots(business.id, startStr, endStr)
-      slots = filterPastSlots(slots, tz)
-      slots = filterSlotsByTimeOfDay(slots, timeOfDay, tz)
-      if (timePref?.notBeforeMinutes !== undefined) {
-        slots = filterSlotsNotBefore(slots, timePref.notBeforeMinutes, tz)
-      }
-      const displaySlots = pickSlotsForPreference(slots, tz, business.businessHours, trimmed, timePref?.preferredHour)
-      if (displaySlots.length > 0) {
-        const msg = formatSlotsMessage(displaySlots, tz)
-        await sendSMSAndLog(business, conversation.id, from, msg)
-        await db.conversation.update({
-          where: { id: conversation.id },
-          data: {
-            bookingFlowState: JSON.parse(JSON.stringify({
-              step: 'awaiting_selection',
-              customerName: flowState.customerName,
-              serviceType: flowState.serviceType,
-              notes: flowState.notes,
-              customerAddress: flowState.customerAddress,
-              timePreference: trimmed,
-              offeredSlots: displaySlots,
-              sentAt: new Date().toISOString(),
-            })),
-          },
-        })
-        return true
-      }
-      // No slots on that date — offer closest alternatives (NEVER silently show different date; always explain why)
-      const dateLabel = formatDateFull(startStr + 'T12:00:00', tz)
-      const closedThatDay = isBusinessClosedOnDate(startStr, tz, business.businessHours)
-      const reason = closedThatDay ? `We're closed on ${dateLabel}` : `${dateLabel} is fully booked`
-      const fallback = getNext3BusinessDays(tz, business.businessHours)
-      console.log('[SLOTS DEBUG] Fetching slots for (no-slots fallback, awaiting_preference):', fallback.startStr, 'to', fallback.endStr)
-      let fallbackSlots = await getAvailableSlots(business.id, fallback.startStr, fallback.endStr)
-      fallbackSlots = filterPastSlots(fallbackSlots, tz)
-      const altSlots = pickSlotsAcrossDays(fallbackSlots, tz, business.businessHours, 3)
-      if (altSlots.length > 0) {
-        const msg = `Sorry, ${reason}. How about one of these times?\n\n${formatSlotsMessage(altSlots, tz)}`
-        await sendSMSAndLog(business, conversation.id, from, msg)
-        await db.conversation.update({
-          where: { id: conversation.id },
-          data: {
-            bookingFlowState: JSON.parse(JSON.stringify({
-              step: 'awaiting_selection',
-              customerName: flowState.customerName,
-              serviceType: flowState.serviceType,
-              notes: flowState.notes,
-              customerAddress: flowState.customerAddress,
-              offeredSlots: altSlots,
-              sentAt: new Date().toISOString(),
-            })),
-          },
-        })
-        return true
-      }
-      await sendSMSAndLog(
-        business,
-        conversation.id,
-        from,
-        `We don't have any availability in the next few days. Text us back when you'd like to try again or give us a call!`
-      )
-      await db.conversation.update({ where: { id: conversation.id }, data: { bookingFlowState: Prisma.DbNull } })
-      return true
-    }
-    // Couldn't parse — ask for clarification
-    const msg = `No problem! What day and time would be better for you? (e.g. "tomorrow afternoon", "next week", "anytime")`
+    const dateLabel = formatDateFull(startStr + 'T12:00:00', tz)
+    const msg = `Sorry, ${dateLabel} is fully booked. Tell us another day and time that works better for you and I'll check.`
     await sendSMSAndLog(business, conversation.id, from, msg)
+    await db.conversation.update({
+      where: { id: conversation.id },
+      data: {
+        bookingFlowState: JSON.parse(JSON.stringify({
+          step: 'awaiting_time',
+          customerName: flowState.customerName,
+          serviceType: flowState.serviceType,
+          notes: flowState.notes,
+          sentAt: new Date().toISOString(),
+        })),
+      },
+    })
     return true
   }
 
@@ -1332,13 +1188,14 @@ async function handleSmsBookingFlow(
     if (looksLikeQuestion(rawText)) return false
     const name = parseNameFromMessage(rawText)
     if (!name || name.length > 100) return false
-    const msg = `Thanks ${name}! What day and time works best for you? We're available ${formatBusinessHoursSummary(business.businessHours)}.`
+    const hoursSummary = formatBusinessHoursSummary(business.businessHours)
+    const msg = `Thanks ${name}! What day and time works best for you? We're available ${hoursSummary}.`
     await sendSMSAndLog(business, conversation.id, from, msg)
     await db.conversation.update({
       where: { id: conversation.id },
       data: {
         bookingFlowState: JSON.parse(JSON.stringify({
-          step: 'awaiting_name_and_preference',
+          step: 'awaiting_time',
           customerName: name,
           sentAt: new Date().toISOString(),
         })),
@@ -1373,13 +1230,14 @@ async function handleSmsBookingFlow(
   if (flowState.step === 'awaiting_notes') {
     if (looksLikeQuestion(rawText)) return false
     const notes = parseNotesFromMessage(rawText)
-    const msg = `When works best for a quote visit? Do you have a day or time of day in mind?`
+    const hoursSummary = formatBusinessHoursSummary(business.businessHours)
+    const msg = `What day and time work best for you? We're available ${hoursSummary}.`
     await sendSMSAndLog(business, conversation.id, from, msg)
     await db.conversation.update({
       where: { id: conversation.id },
       data: {
         bookingFlowState: JSON.parse(JSON.stringify({
-          step: 'awaiting_preference',
+          step: 'awaiting_time',
           customerName: flowState.customerName,
           serviceType: flowState.serviceType,
           notes: notes || undefined,
@@ -1396,13 +1254,14 @@ async function handleSmsBookingFlow(
     if (looksLikeQuestion(rawText)) return false
     const address = rawText.trim()
     if (!address || address.length > 500) return false
-    const msg = `When works best for a quote visit? Do you have a day or time of day in mind?`
+    const hoursSummary = formatBusinessHoursSummary(business.businessHours)
+    const msg = `What day and time work best for you? We're available ${hoursSummary}.`
     await sendSMSAndLog(business, conversation.id, from, msg)
     await db.conversation.update({
       where: { id: conversation.id },
       data: {
         bookingFlowState: JSON.parse(JSON.stringify({
-          step: 'awaiting_preference',
+          step: 'awaiting_time',
           customerName: flowState.customerName,
           serviceType: flowState.serviceType,
           notes: flowState.notes,
@@ -1450,26 +1309,26 @@ async function handleSmsBookingFlow(
   const existingName = conversation.callerName || undefined
   const hoursSummary = formatBusinessHoursSummary(business.businessHours)
   const msg = existingName
-    ? `I'd love to set that up, ${existingName}! What day/time works best for you? We're available ${hoursSummary}.`
-    : `I'd love to set that up! What's your name, and what day/time works best for you? We're available ${hoursSummary}.`
+    ? `I'd love to set that up, ${existingName}! What day and time work best for you? We're available ${hoursSummary}.`
+    : `I'd love to set that up! What day and time work best for you? We're available ${hoursSummary}.`
   await sendSMSAndLog(business, conversation.id, from, msg)
   await db.conversation.update({
     where: { id: conversation.id },
     data: {
       status: 'booking_in_progress',
       bookingFlowState: JSON.parse(JSON.stringify({
-        step: 'awaiting_name_and_preference',
+        step: existingName ? 'awaiting_time' : 'awaiting_name_and_preference',
         customerName: existingName,
         serviceType: svcType,
         sentAt: new Date().toISOString(),
       })),
     },
   })
-  console.log('[SMS BOOKING] Booking flow started', { step: 'awaiting_name_and_preference', customerName: existingName, serviceType: svcType })
+  console.log('[SMS BOOKING] Booking flow started', { step: existingName ? 'awaiting_time' : 'awaiting_name_and_preference', customerName: existingName, serviceType: svcType })
   return true
 }
 
-/** Handle combined name + time preference in one response (e.g. "John, Monday 9am" or "Sarah - tomorrow afternoon"). */
+/** Handle combined name + time in one response (e.g. "John, Friday at 2pm"). Checks exact slot, no slot lists. */
 async function handleAwaitingNameAndPreference(
   business: any,
   conversation: any,
@@ -1482,10 +1341,8 @@ async function handleAwaitingNameAndPreference(
   let name = parseNameFromMessage(rawText)
   if (!name || name.length > 100) return false
 
-  // Reject common non-name words that parseNameFromMessage might return as fallback
   const NOT_A_NAME = /^(yes|yeah|yep|yup|sure|ok|okay|no|nope|please|thanks|thank you|hi|hey|hello|sounds good|that works|definitely|absolutely|let's do it|i'm interested|great)$/i
   if (NOT_A_NAME.test(name.trim())) {
-    // If we already have a name from the flow state, use it; otherwise return false to let AI handle
     if (flowState.customerName) {
       name = flowState.customerName
     } else {
@@ -1495,19 +1352,21 @@ async function handleAwaitingNameAndPreference(
 
   const tz = business.timezone ?? 'America/New_York'
   const timePref = parseTimePreference(trimmed, tz)
-  // If message looks like time-only (e.g. "Monday 9am") and we already have name from prior message, use it
   if (timePref && flowState.customerName && (name === rawText.trim() || name.length > 30)) {
     name = flowState.customerName
   }
   if (!timePref) {
-    const msg = `Thanks ${name}! What day and time works for you? (e.g. tomorrow 9am, Monday afternoon)`
+    const hoursSummary = formatBusinessHoursSummary(business.businessHours)
+    const msg = `Thanks ${name}! What day and time works for you? (e.g. Friday at 2pm) We're available ${hoursSummary}.`
     await sendSMSAndLog(business, conversation.id, from, msg)
     await db.conversation.update({
       where: { id: conversation.id },
       data: {
         bookingFlowState: JSON.parse(JSON.stringify({
-          step: 'awaiting_name_and_preference',
+          step: 'awaiting_time',
           customerName: name,
+          serviceType: flowState.serviceType,
+          notes: flowState.notes,
           sentAt: new Date().toISOString(),
         })),
       },
@@ -1515,67 +1374,88 @@ async function handleAwaitingNameAndPreference(
     return true
   }
 
-  const { startStr, endStr, timeOfDay, preferredHour, isPastDate, notBeforeMinutes } = timePref
-  const serviceType = extractServiceFromConversation(conversation.messages)
-  const notes = parseNotesFromMessage(rawText)
-  const bookingRequiresAddress = business.bookingRequiresAddress ?? true
+  const { startStr, timeOfDay, preferredHour, preferredMinute, isPastDate } = timePref
+  const serviceType = extractServiceFromConversation(conversation.messages) || flowState.serviceType
+  const notes = parseNotesFromMessage(rawText) || flowState.notes
 
   if (isPastDate) {
-    const fallback = getNext3BusinessDays(tz, business.businessHours)
-    console.log('[SLOTS DEBUG] Fetching slots for (past-date fallback, name+preference):', fallback.startStr, 'to', fallback.endStr)
-    let fallbackSlots = await getAvailableSlots(business.id, fallback.startStr, fallback.endStr)
-    fallbackSlots = filterPastSlots(fallbackSlots, tz)
-    const altSlots = pickSlotsAcrossDays(fallbackSlots, tz, business.businessHours, 3)
-    if (altSlots.length > 0) {
-      const msg = `That date has passed. Would one of these work?\n\n${formatSlotsMessage(altSlots, tz)}`
-      await sendSMSAndLog(business, conversation.id, from, msg)
-      await db.conversation.update({
-        where: { id: conversation.id },
-        data: {
-          bookingFlowState: JSON.parse(JSON.stringify({
-            step: 'awaiting_selection',
-            customerName: name,
-            serviceType,
-            notes: notes || undefined,
-            offeredSlots: altSlots,
-            sentAt: new Date().toISOString(),
-          })),
-        },
-      })
-      return true
-    }
-    await sendSMSAndLog(business, conversation.id, from, `That date has passed. Text back when you'd like to try again!`)
-    await db.conversation.update({ where: { id: conversation.id }, data: { bookingFlowState: Prisma.DbNull } })
-    return true
-  }
-
-  console.log('[SLOTS DEBUG] Fetching slots for (name+preference customer request):', startStr, 'to', endStr)
-  let slots = await getAvailableSlots(business.id, startStr, endStr)
-  slots = filterPastSlots(slots, tz)
-  slots = filterSlotsByTimeOfDay(slots, timeOfDay, tz)
-  if (notBeforeMinutes !== undefined) {
-    slots = filterSlotsNotBefore(slots, notBeforeMinutes, tz)
-  }
-  // When specific time requested (e.g. "Friday at noon"): exact match first, else 2-3 closest
-  let displaySlots = pickSlotsForPreference(slots, tz, business.businessHours, trimmed, preferredHour)
-  if (preferredHour !== undefined && displaySlots.length > 1) {
-    const hourSlots = filterSlotsByHour(displaySlots, preferredHour, tz)
-    if (hourSlots.length > 0) displaySlots = hourSlots // Exact hour takes precedence
-  }
-  if (displaySlots.length > 0) {
-    // Always show slots and require explicit selection + confirmation — never auto-book
-    const msg = formatSlotsMessage(displaySlots, tz)
+    const msg = `That date has passed. What day and time works better for you?`
     await sendSMSAndLog(business, conversation.id, from, msg)
     await db.conversation.update({
       where: { id: conversation.id },
       data: {
         bookingFlowState: JSON.parse(JSON.stringify({
-          step: 'awaiting_selection',
+          step: 'awaiting_time',
           customerName: name,
           serviceType,
           notes: notes || undefined,
-          timePreference: trimmed,
-          offeredSlots: displaySlots,
+          sentAt: new Date().toISOString(),
+        })),
+      },
+    })
+    return true
+  }
+
+  if (isBusinessClosedOnDate(startStr, tz, business.businessHours)) {
+    const dateLabel = formatDateFull(startStr + 'T12:00:00', tz)
+    const msg = `Sorry, we're closed on ${dateLabel}. Tell us another day and time that works for you.`
+    await sendSMSAndLog(business, conversation.id, from, msg)
+    await db.conversation.update({
+      where: { id: conversation.id },
+      data: {
+        bookingFlowState: JSON.parse(JSON.stringify({
+          step: 'awaiting_time',
+          customerName: name,
+          serviceType,
+          notes: notes || undefined,
+          sentAt: new Date().toISOString(),
+        })),
+      },
+    })
+    return true
+  }
+
+  const hour = preferredHour ?? (timeOfDay === 'morning' ? 9 : timeOfDay === 'evening' ? 17 : 14)
+  const minute = preferredMinute ?? 0
+
+  const slot = await isSpecificSlotAvailable(business.id, startStr, hour, minute, tz)
+  if (slot) {
+    const dateLabel = formatDateFull(slot.start, tz)
+    const msg = `${dateLabel} at ${slot.display} is open! What's your name and property address?`
+    await sendSMSAndLog(business, conversation.id, from, msg)
+    await db.conversation.update({
+      where: { id: conversation.id },
+      data: {
+        bookingFlowState: JSON.parse(JSON.stringify({
+          step: 'awaiting_name_and_address',
+          customerName: name,
+          serviceType,
+          notes: notes || undefined,
+          selectedSlot: slot,
+          sentAt: new Date().toISOString(),
+        })),
+      },
+    })
+    return true
+  }
+
+  const closest = await getTwoClosestSlotsOnDay(business.id, startStr, hour, minute, tz)
+  if (closest.length > 0) {
+    const timesStr = closest.map((s) => s.display).join(' or ')
+    const dateLabel = formatDateFull(startStr + 'T12:00:00', tz)
+    const reqTime = `${hour > 12 ? hour - 12 : hour === 0 ? 12 : hour}:${String(minute).padStart(2, '0')}${hour >= 12 ? 'pm' : 'am'}`
+    const msg = `Sorry, ${dateLabel} at ${reqTime} is taken. How about ${timesStr} that same day? Or tell me another day and time that works for you.`
+    await sendSMSAndLog(business, conversation.id, from, msg)
+    await db.conversation.update({
+      where: { id: conversation.id },
+      data: {
+        bookingFlowState: JSON.parse(JSON.stringify({
+          step: 'awaiting_time',
+          customerName: name,
+          serviceType,
+          notes: notes || undefined,
+          suggestedSlots: closest,
+          lastDiscussedDate: startStr,
           sentAt: new Date().toISOString(),
         })),
       },
@@ -1584,33 +1464,20 @@ async function handleAwaitingNameAndPreference(
   }
 
   const dateLabel = formatDateFull(startStr + 'T12:00:00', tz)
-  const closedThatDay = isBusinessClosedOnDate(startStr, tz, business.businessHours)
-  const reason = closedThatDay ? `We're closed on ${dateLabel}` : `${dateLabel} is fully booked`
-  const fallback = getNext3BusinessDays(tz, business.businessHours)
-  console.log('[SLOTS DEBUG] Fetching slots for (no-slots fallback, name+preference):', fallback.startStr, 'to', fallback.endStr)
-  let fallbackSlots = await getAvailableSlots(business.id, fallback.startStr, fallback.endStr)
-  fallbackSlots = filterPastSlots(fallbackSlots, tz)
-  const altSlots = pickSlotsAcrossDays(fallbackSlots, tz, business.businessHours, 3)
-  if (altSlots.length > 0) {
-    const msg = `Sorry, ${reason}. How about one of these?\n\n${formatSlotsMessage(altSlots, tz)}`
-    await sendSMSAndLog(business, conversation.id, from, msg)
-    await db.conversation.update({
-      where: { id: conversation.id },
-      data: {
-        bookingFlowState: JSON.parse(JSON.stringify({
-          step: 'awaiting_selection',
-          customerName: name,
-          serviceType,
-          notes: notes || undefined,
-          offeredSlots: altSlots,
-          sentAt: new Date().toISOString(),
-        })),
-      },
-    })
-    return true
-  }
-  await sendSMSAndLog(business, conversation.id, from, `We don't have availability in the next few days. Text back when you'd like to try again!`)
-  await db.conversation.update({ where: { id: conversation.id }, data: { bookingFlowState: Prisma.DbNull } })
+  const msg = `Sorry, ${dateLabel} is fully booked. Tell us another day and time that works better for you and I'll check.`
+  await sendSMSAndLog(business, conversation.id, from, msg)
+  await db.conversation.update({
+    where: { id: conversation.id },
+    data: {
+      bookingFlowState: JSON.parse(JSON.stringify({
+        step: 'awaiting_time',
+        customerName: name,
+        serviceType,
+        notes: notes || undefined,
+        sentAt: new Date().toISOString(),
+      })),
+    },
+  })
   return true
 }
 
@@ -1638,147 +1505,12 @@ function getNext3BusinessDays(tz: string, businessHoursRaw: unknown): { startStr
 
 type SlotLike = { start: string; end: string; display: string }
 
-/** Pick up to 3 slots per day (morning, midday, afternoon) across multiple days. */
-function pickSlotsAcrossDays(
-  slots: SlotLike[],
-  tz: string,
-  _businessHoursRaw: unknown,
-  targetDays: number
-): SlotLike[] {
-  const byDay = new Map<string, SlotLike[]>()
-  for (const s of slots) {
-    const d = new Date(s.start)
-    const dateStr = d.toLocaleDateString('en-CA', { timeZone: tz })
-    if (!byDay.has(dateStr)) byDay.set(dateStr, [])
-    byDay.get(dateStr)!.push(s)
-  }
-  const sortedDays = Array.from(byDay.keys()).sort()
-  const result: SlotLike[] = []
-  let globalIndex = 1
-  for (let i = 0; i < Math.min(targetDays, sortedDays.length); i++) {
-    const daySlots = byDay.get(sortedDays[i])!.sort(
-      (a, b) => new Date(a.start).getTime() - new Date(b.start).getTime()
-    )
-    const picked = pickBest3ForDay(daySlots)
-    for (const slot of picked) {
-      result.push(slot)
-      globalIndex++
-    }
-  }
-  return result
-}
-
-/** Pick up to 3 slots for one day: morning, midday, afternoon. */
-function pickBest3ForDay(slots: SlotLike[]): SlotLike[] {
-  if (slots.length <= 3) return slots
-  const sorted = [...slots].sort((a, b) => new Date(a.start).getTime() - new Date(b.start).getTime())
-  const first = sorted[0]
-  const last = sorted[sorted.length - 1]
-  const midIdx = Math.floor(sorted.length / 2)
-  const mid = sorted[midIdx]
-  return [first, mid, last]
-}
-
-/** Filter out slots that are in the past (use business timezone). */
-function filterPastSlots(slots: SlotLike[], tz: string): SlotLike[] {
-  const nowInTz = new TZDate(new Date(), tz)
-  const nowMs = nowInTz.getTime()
-  return slots.filter(s => new Date(s.start).getTime() >= nowMs)
-}
-
-/** Filter slots to only those starting at or after notBeforeMinutes (minutes since midnight in business TZ). */
-function filterSlotsNotBefore(slots: SlotLike[], notBeforeMinutes: number, tz: string): SlotLike[] {
-  return slots.filter(s => {
-    const d = new Date(s.start)
-    const hour = parseInt(d.toLocaleTimeString('en-US', { hour: 'numeric', hour12: false, timeZone: tz }), 10)
-    const min = parseInt(d.toLocaleTimeString('en-US', { minute: 'numeric', timeZone: tz }), 10)
-    const slotMins = hour * 60 + min
-    return slotMins >= notBeforeMinutes
-  })
-}
-
-/** Filter slots by time of day: morning (<12), afternoon (12-17), evening (17+). */
-function filterSlotsByTimeOfDay(
-  slots: SlotLike[],
-  timeOfDay: 'morning' | 'afternoon' | 'evening' | undefined,
-  tz: string
-): SlotLike[] {
-  if (!timeOfDay) return slots
-  return slots.filter(s => {
-    const d = new Date(s.start)
-    const hour = parseInt(d.toLocaleTimeString('en-US', { hour: 'numeric', hour12: false, timeZone: tz }), 10)
-    if (timeOfDay === 'morning') return hour < 12
-    if (timeOfDay === 'afternoon') return hour >= 12 && hour < 17
-    if (timeOfDay === 'evening') return hour >= 17
-    return true
-  })
-}
-
-/** Filter slots to those matching a specific hour (0-23). Returns slots that start in that hour. */
-function filterSlotsByHour(slots: SlotLike[], preferredHour: number, tz: string): SlotLike[] {
-  return slots.filter(s => {
-    const d = new Date(s.start)
-    const hour = parseInt(d.toLocaleTimeString('en-US', { hour: 'numeric', hour12: false, timeZone: tz }), 10)
-    return hour === preferredHour
-  })
-}
-
-/** Pick slots based on preference. When preferredHour set: exact match first, else 2-3 closest. */
-function pickSlotsForPreference(
-  slots: SlotLike[],
-  tz: string,
-  businessHoursRaw: unknown,
-  preferenceText: string,
-  preferredHour?: number
-): SlotLike[] {
-  // If user asked for specific time (e.g. "Friday at noon"), prioritize exact match then closest
-  if (preferredHour !== undefined && slots.length > 0) {
-    const exact = slots.filter((s) => {
-      const hour = parseInt(new Date(s.start).toLocaleTimeString('en-US', { hour: 'numeric', hour12: false, timeZone: tz }), 10)
-      return hour === preferredHour
-    })
-    if (exact.length > 0) return exact.slice(0, 3) // Exact match(es) only, max 3
-    // No exact match: show 2-3 closest to requested hour
-    const withDist = slots.map((s) => {
-      const hour = parseInt(new Date(s.start).toLocaleTimeString('en-US', { hour: 'numeric', hour12: false, timeZone: tz }), 10)
-      const min = parseInt(new Date(s.start).toLocaleTimeString('en-US', { minute: 'numeric', timeZone: tz }), 10)
-      const totalMins = hour * 60 + min
-      const targetMins = preferredHour * 60
-      return { slot: s, dist: Math.abs(totalMins - targetMins) }
-    })
-    withDist.sort((a, b) => a.dist - b.dist)
-    return withDist.slice(0, 3).map((x) => x.slot)
-  }
-
-  const t = preferenceText.toLowerCase()
-  if (/\btomorrow\b/.test(t)) {
-    return pickSlotsAcrossDays(slots, tz, businessHoursRaw, 1).slice(0, 3)
-  }
-  if (/\bnext\s+week\b/.test(t)) {
-    return pickSlotsAcrossDays(slots, tz, businessHoursRaw, 7).slice(0, 4)
-  }
-  if (/\b(anytime|whenever|asap|as\s+soon\s+as\s+possible)\b/.test(t)) {
-    return pickSlotsAcrossDays(slots, tz, businessHoursRaw, 3).slice(0, 3)
-  }
-  return pickSlotsAcrossDays(slots, tz, businessHoursRaw, 3).slice(0, 4)
-}
-
-function formatSlotsMessage(slots: SlotLike[], tz: string): string {
-  const lines: string[] = ["Here are some times to schedule your free in-person quote:", '']
-  slots.forEach((s, i) => {
-    const dayLabel = formatDateFull(s.start, tz)
-    lines.push(`${i + 1}. ${dayLabel} at ${s.display}`)
-  })
-  lines.push('')
-  lines.push("Reply with a number or tell me something else that works!")
-  return lines.join('\n').trim()
-}
-
 type TimePreferenceResult = {
   startStr: string
   endStr: string
   timeOfDay?: 'morning' | 'afternoon' | 'evening'
   preferredHour?: number // 0-23 when user says "2pm", "9am", etc.
+  preferredMinute?: number // 0-59 when user says "2:30pm", "9:15am", etc.
   isPastDate?: boolean
   /** Minutes since midnight — only show slots AFTER this time (e.g. "until 9:30" → 570) */
   notBeforeMinutes?: number
@@ -1896,11 +1628,14 @@ function parseTimePreference(text: string, tz: string): TimePreferenceResult | n
     }
   }
 
-  // Specific hour: "2pm", "9am", "at 3pm", "noon", "12" (when with day like "Friday at noon")
+  // Specific hour: "2pm", "9am", "2:30pm", "at 3pm", "noon", "12" (when with day like "Friday at noon")
   let preferredHour: number | undefined
+  let preferredMinute: number | undefined
   const hourMatch = t.match(/(?:at\s+)?(\d{1,2})(?::(\d{2}))?\s*(am|pm)\b/i)
   if (hourMatch) {
     let h = parseInt(hourMatch[1], 10)
+    const minStr = hourMatch[2]
+    preferredMinute = minStr ? Math.min(59, parseInt(minStr, 10)) : 0
     const ampm = (hourMatch[3] || '').toLowerCase()
     if (ampm === 'pm' && h < 12) h += 12
     if (ampm === 'am' && h === 12) h = 0
@@ -1909,6 +1644,7 @@ function parseTimePreference(text: string, tz: string): TimePreferenceResult | n
   // "noon" or "12" (standalone when with day, e.g. "Friday at noon") = 12pm
   if (/\bnoon\b/i.test(t) || (/\b12\b/.test(t) && /\b(at|@|around)\s+12\b/i.test(t))) {
     preferredHour = 12
+    preferredMinute = preferredMinute ?? 0
   }
 
   // "until 9:30" / "until 9" / "until 9am" / "until 10" — customer busy until then, show slots AFTER
@@ -1964,66 +1700,7 @@ function parseTimePreference(text: string, tz: string): TimePreferenceResult | n
     const endDate = addDays(startDate, /\bnext\s+week\b/.test(t) ? 6 : timeOfDay ? 1 : 2)
     endStr = endDate.toLocaleDateString('en-CA', { timeZone: tz })
   }
-  return { startStr, endStr, timeOfDay, preferredHour, isPastDate: isPastDate || undefined, notBeforeMinutes }
-}
-
-/** preferredHour: when customer previously said "noon" or "12pm", "12" means 12pm not slot #12 */
-function parseSlotSelection(
-  text: string,
-  slots: { start: string; display: string }[],
-  tz: string,
-  preferredHour?: number
-): { start: string } | null {
-  const trimmed = text.trim().toLowerCase()
-
-  // "noon" or "12pm" explicitly → find 12pm slot
-  if (trimmed === 'noon' || trimmed === '12pm' || trimmed === '12 pm') {
-    const noonSlots = slots.filter((s) => {
-      const hour = parseInt(new Date(s.start).toLocaleTimeString('en-US', { hour: 'numeric', hour12: false, timeZone: tz }), 10)
-      return hour === 12
-    })
-    if (noonSlots.length >= 1) return { start: noonSlots[0].start }
-  }
-
-  const num = parseInt(trimmed.replace(/\D/g, ''), 10)
-
-  // If they said "12" and previously asked for noon/12pm, prefer time interpretation over slot #12
-  if (preferredHour !== undefined && (trimmed === '12' || (trimmed === String(num) && num === 12))) {
-    const noonSlots = slots.filter((s) => {
-      const hour = parseInt(new Date(s.start).toLocaleTimeString('en-US', { hour: 'numeric', hour12: false, timeZone: tz }), 10)
-      return hour === preferredHour
-    })
-    if (noonSlots.length === 1) return { start: noonSlots[0].start }
-    if (noonSlots.length > 1) {
-      // Multiple 12pm slots - use first one (or could pick by date from timePreference)
-      return { start: noonSlots[0].start }
-    }
-  }
-
-  // Try matching time like "9:00", "9am", or standalone "12" (12pm) before slot number
-  const timeMatch = trimmed.match(/(\d{1,2})(?::(\d{2}))?\s*(am|pm)?/i)
-  if (timeMatch) {
-    let hour = parseInt(timeMatch[1], 10)
-    const min = timeMatch[2] ? parseInt(timeMatch[2], 10) : 0
-    const ampm = (timeMatch[3] || '').toLowerCase()
-    if (ampm === 'pm' && hour < 12) hour += 12
-    if (ampm === 'am' && hour === 12) hour = 0
-    // Standalone "12" with no am/pm → assume 12pm (noon)
-    if (!ampm && hour === 12) hour = 12
-    const displayTarget = `${hour > 12 ? hour - 12 : hour === 0 ? 12 : hour}:${min.toString().padStart(2, '0')} ${ampm || (hour >= 12 ? 'PM' : 'AM')}`
-    const found = slots.find((s) => {
-      const norm = s.display.toLowerCase().replace(/\s/g, '')
-      const targetNorm = displayTarget.toLowerCase().replace(/\s/g, '')
-      return norm === targetNorm || (norm.includes('12') && norm.includes('pm') && hour === 12)
-    })
-    if (found) return { start: found.start }
-  }
-
-  // Slot number: 1, 2, 3, ...
-  if (num >= 1 && num <= slots.length) {
-    return { start: slots[num - 1].start }
-  }
-  return null
+  return { startStr, endStr, timeOfDay, preferredHour, preferredMinute, isPastDate: isPastDate || undefined, notBeforeMinutes }
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────
@@ -2189,9 +1866,10 @@ THINGS YOU MUST NEVER DO:
 BOOKING FLOW CONTEXT: The customer is in a booking flow for a FREE IN-PERSON QUOTE. Current step: ${flowState!.step}.
 
 STEP GUIDANCE:
-- awaiting_name_and_preference: Ask for name AND preferred time together: "What's your name, and when works best for you? We're available ${hoursSummary}."
-- awaiting_selection: They've been shown time slots. Say "Reply with a number to pick a time."
+- awaiting_name_and_preference: Customer may give name + time together (e.g. "John, Friday at 2pm"). The system checks the exact time — never show slot lists.
+- awaiting_time: Customer gives date/time (e.g. "Friday at 2pm"). System checks exact slot and confirms or suggests alternatives. No numbered slot lists.
 - awaiting_confirmation: The system asked them to confirm. Wait for "yes". Don't repeat the confirmation question.
+- awaiting_name_and_address: Ask "What's your name and property address?"
 - awaiting_address_after_slot: Ask "What's the property address so we know where to meet you?"
 - NEVER output [APPOINTMENT_BOOKED]. The structured booking flow handles all booking. You must NOT create appointments.
 - If they ask a question mid-flow: answer briefly (1 sentence), then guide back to the current step.
@@ -2209,9 +1887,9 @@ PERSONALITY:
 - Casual and friendly. Sound like a real person texting, not a robot.
 - Use the customer's name once you know it.
 - Max 1-2 emojis per entire conversation. Nothing inappropriate.
-- Keep every message under 160 characters when possible. Never more than 3 sentences unless listing time slots.
+- Keep every message under 160 characters when possible. Never more than 3 sentences.
 - NEVER use markdown formatting (no **bold**, no bullet points, no dashes for lists). Plain text only.
-- When listing time slots, use numbered plain text like: 1. Friday March 7th at 2pm  2. Friday March 7th at 2:30pm
+- NEVER show numbered slot lists. The system checks the customer's requested date/time directly and confirms or suggests 1-2 alternatives.
 - After the first greeting, never mention being automated or an AI again.
 
 GREETING:
@@ -2221,15 +1899,15 @@ GREETING:
 
 IDEAL CONVERSATION (3-5 messages from you):
 1. Customer describes need -> You: "We'd love to help with that! Would you like to set up a free in-person quote so ${business.name} can take a look and give you an exact price?"
-2. Customer: "Yes" -> You: "Great! What's your name, and when works best for you? We're available ${hoursSummary}."
-3. Customer: "John, Friday at 2pm" -> System checks calendar, shows available slots or confirms
-4. Customer picks/confirms slot -> You ask for property address
-5. Customer gives address -> System books, you confirm with exact date/time/address
+2. Customer: "Yes" -> You: "Great! What day and time work best for you? We're available ${hoursSummary}."
+3. Customer: "Friday at 2pm" -> System checks that exact time, confirms if open or suggests alternatives (e.g. "2:30pm or 3pm")
+4. Once time confirmed -> System asks for name and property address
+5. Customer gives name/address -> System confirms, they reply yes -> Booking created
 
 BOOKING RULES:
-- Always ask for name AND preferred time together to reduce messages.
-- If customer gives a specific time and it's available, confirm it. Don't show a list unnecessarily.
-- If their preferred time isn't available, show 2-3 nearby alternatives.
+- Ask for date and time together. Customer picks a specific time (e.g. "Friday at 2pm"); system checks it.
+- NEVER show numbered slot lists. The system confirms or denies the exact time they asked for.
+- If their time is taken, system suggests 1-2 alternatives on the same day or asks for another day.
 - ALWAYS confirm exact date, time, and address before booking. Never auto-book.
 - Ask for property address: "What's the property address so we know where to meet you?"
 - After booking, tell them "The owner will give you a call beforehand to confirm."

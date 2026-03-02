@@ -364,6 +364,46 @@ async function getAvailableSlotsInternal(
   return withDebug ? { slots, debug, noMoreAvailabilityToday } : { slots, noMoreAvailabilityToday }
 }
 
+/** Check if a specific date/time slot is available. Returns the matching slot if free, null if taken or invalid. */
+export async function isSpecificSlotAvailable(
+  businessId: string,
+  dateStr: string,
+  hour: number,
+  minute: number,
+  tz: string
+): Promise<TimeSlot | null> {
+  const slots = await getAvailableSlots(businessId, dateStr, dateStr)
+  for (const slot of slots) {
+    const d = new Date(slot.start)
+    const slotHour = parseInt(d.toLocaleTimeString('en-US', { hour: 'numeric', hour12: false, timeZone: tz }), 10)
+    const slotMinute = parseInt(d.toLocaleTimeString('en-US', { minute: 'numeric', timeZone: tz }), 10)
+    if (slotHour === hour && slotMinute === minute) return slot
+  }
+  return null
+}
+
+/** Get the 2 closest available slots on a day to a target time. Returns up to 2 slots, sorted by proximity. */
+export async function getTwoClosestSlotsOnDay(
+  businessId: string,
+  dateStr: string,
+  targetHour: number,
+  targetMinute: number,
+  tz: string
+): Promise<TimeSlot[]> {
+  const slots = await getAvailableSlots(businessId, dateStr, dateStr)
+  if (slots.length === 0) return []
+  const targetMins = targetHour * 60 + targetMinute
+  const withDist = slots.map((s) => {
+    const d = new Date(s.start)
+    const h = parseInt(d.toLocaleTimeString('en-US', { hour: 'numeric', hour12: false, timeZone: tz }), 10)
+    const m = parseInt(d.toLocaleTimeString('en-US', { minute: 'numeric', timeZone: tz }), 10)
+    const slotMins = h * 60 + m
+    return { slot: s, dist: Math.abs(slotMins - targetMins) }
+  })
+  withDist.sort((a, b) => a.dist - b.dist)
+  return withDist.slice(0, 2).map((x) => x.slot)
+}
+
 /** Get busy times from Google Calendar freebusy API - used by getAvailableSlots */
 async function getBusyTimesWithRange(
   businessId: string,
