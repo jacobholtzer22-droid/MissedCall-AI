@@ -72,7 +72,14 @@ function formatDateFull(isoOrDateStr: string | Date, tz: string): string {
 }
 
 const DEFAULT_MAX_MESSAGES_PER_CONVERSATION = 25
-const BOOKING_INTENT_WORDS = ['book', 'appointment', 'schedule', 'booking', 'reserve']
+const BOOKING_INTENT_WORDS = [
+  'book', 'appointment', 'schedule', 'booking', 'reserve',
+  'quote', 'estimate', 'come out', 'come by', 'stop by',
+  'take a look', 'set up', 'set me up', 'sign me up',
+  'available', 'availability', 'free quote', 'free estimate',
+  'in-person', 'in person', 'get on the schedule',
+  'when can you', 'what times', 'open slots',
+]
 
 /** Returns customer-facing "call us" phrase. Uses forwardingNumber (owner's real number), never Telnyx. */
 function getCallUsPhrase(business: { forwardingNumber?: string | null }): string {
@@ -359,6 +366,82 @@ export async function POST(request: NextRequest) {
           await sendSMSAndLog(business, conversation.id, from, thanksMsg, timing)
           const totalMs = Date.now() - new Date(timing.webhookReceivedAt).getTime()
           return NextResponse.json({ ok: true, timing: { ...timing, totalMs } }, { status: 200 })
+        }
+      }
+
+      // ── AI-triggered booking flow engagement (calendar-enabled safety net) ──
+      // If the AI generated a response for a calendar-enabled business but the structured
+      // booking flow never engaged, detect two critical scenarios:
+      // 1. AI fake-confirmed a booking ("you're all set!") → intercept and redirect to real flow
+      // 2. AI is guiding toward booking (asking for name/time) → set bookingFlowState for next message
+      if (
+        business.calendarEnabled &&
+        business.googleCalendarConnected &&
+        conversation.status !== 'appointment_booked' &&
+        !conversation.appointment
+      ) {
+        const currentFlowStep = (conversation.bookingFlowState as Record<string, unknown> | null)?.step
+        if (!currentFlowStep) {
+          // SCENARIO 1: AI fake-confirmed a booking without createBooking — intercept immediately
+          const isFakeConfirmation =
+            /you[''\u2019]re all set|your (appointment|booking) is (set|confirmed|booked)|booked (you )?for|confirmed for|see you (on|at)|appointment is scheduled/i.test(cleanResponse) &&
+            !/would you like|want to|shall we|should we|let me/i.test(cleanResponse)
+
+          if (isFakeConfirmation) {
+            console.log('[SMS BOOKING] ⚠️ AI fake-confirmed booking without createBooking — intercepting')
+            console.log('[SMS BOOKING] Suppressed AI response:', cleanResponse.slice(0, 120))
+            const hoursSummary = formatBusinessHoursSummary(business.businessHours)
+            const callerName = conversation.callerName
+            const redirectMsg = callerName
+              ? `Almost there, ${callerName}! Let me check our calendar and lock in that time for you. What day and time works best? We're available ${hoursSummary}.`
+              : `Almost there! Let me check our calendar and get you on the schedule. What's your name, and what day/time works best? We're available ${hoursSummary}.`
+            await sendSMSAndLog(business, conversation.id, from, redirectMsg, timing)
+            await db.conversation.update({
+              where: { id: conversation.id },
+              data: {
+                status: 'booking_in_progress',
+                bookingFlowState: JSON.parse(JSON.stringify({
+                  step: 'awaiting_name_and_preference',
+                  customerName: callerName || undefined,
+                  serviceType: conversation.serviceRequested || extractServiceFromConversation(conversation.messages) || undefined,
+                  sentAt: new Date().toISOString(),
+                })),
+              },
+            })
+            const totalMs = Date.now() - new Date(timing.webhookReceivedAt).getTime()
+            console.log('[SMS BOOKING] Redirected to structured flow after fake confirmation. Total:', totalMs, 'ms')
+            return NextResponse.json({ ok: true, timing: { ...timing, totalMs } }, { status: 200 })
+          }
+
+          // SCENARIO 2: AI is asking for name AND time/day together — set flow state
+          // so the NEXT customer message enters the structured booking state machine.
+          // Be conservative: only trigger when the AI asks for BOTH name and scheduling
+          // info, not just yes/no offers like "Would you like a quote?"
+          const asksForName = /what[''\u2019]?s your name|\byour name\b/i.test(cleanResponse)
+          const asksForTime = /when works|what day|what time|day.?\/?.?time|when.* best/i.test(cleanResponse)
+          const isGuidingToBooking = asksForName && asksForTime
+
+          if (isGuidingToBooking) {
+            console.log('[SMS BOOKING] AI is guiding toward booking — engaging structured flow for next message')
+            const svcType = conversation.serviceRequested || extractServiceFromConversation(conversation.messages) || undefined
+            await db.conversation.update({
+              where: { id: conversation.id },
+              data: {
+                status: 'booking_in_progress',
+                bookingFlowState: JSON.parse(JSON.stringify({
+                  step: 'awaiting_name_and_preference',
+                  customerName: conversation.callerName || undefined,
+                  serviceType: svcType,
+                  sentAt: new Date().toISOString(),
+                })),
+              },
+            })
+            // Send the AI's response — it already asked for name/time naturally
+            await sendSMSAndLog(business, conversation.id, from, cleanResponse, timing)
+            const totalMs = Date.now() - new Date(timing.webhookReceivedAt).getTime()
+            console.log('[SMS BOOKING] Structured flow engaged via AI guidance. Total:', totalMs, 'ms')
+            return NextResponse.json({ ok: true, timing: { ...timing, totalMs } }, { status: 200 })
+          }
         }
       }
 
@@ -754,11 +837,28 @@ async function handleSmsBookingFlow(
   text: string,
   from: string
 ): Promise<boolean> {
-  if (!business.calendarEnabled) return false
+  console.log('[SMS BOOKING] handleSmsBookingFlow called', {
+    calendarEnabled: business.calendarEnabled,
+    googleCalendarConnected: business.googleCalendarConnected,
+    conversationStatus: conversation.status,
+    hasAppointment: !!conversation.appointment,
+    bookingFlowState: conversation.bookingFlowState,
+    customerMessage: text?.slice(0, 80),
+  })
+  if (!business.calendarEnabled) {
+    console.log('[SMS BOOKING] Calendar not enabled — skipping booking flow')
+    return false
+  }
   // Do not restart or continue flow if already confirmed or has booking
-  if (conversation.appointment || conversation.status === 'appointment_booked') return true
+  if (conversation.appointment || conversation.status === 'appointment_booked') {
+    console.log('[SMS BOOKING] Already booked — skipping')
+    return true
+  }
   const rawFlowState = (conversation.bookingFlowState as Record<string, unknown> | null) ?? {}
-  if (rawFlowState.step === 'confirmed') return true
+  if (rawFlowState.step === 'confirmed') {
+    console.log('[SMS BOOKING] Already confirmed — skipping')
+    return true
+  }
 
   const rawText = text?.trim() || ''
   const trimmed = rawText.toLowerCase()
@@ -772,6 +872,7 @@ async function handleSmsBookingFlow(
         : (legacyStep as BookingFlowState['step']) || 'greeting'
 
   const bookingRequiresAddress = business.bookingRequiresAddress ?? true
+  console.log('[SMS BOOKING] Current step:', mappedStep, '| customerName:', rawFlowState.customerName, '| serviceType:', rawFlowState.serviceType)
 
   const flowState: BookingFlowState = {
     ...rawFlowState,
@@ -1295,11 +1396,42 @@ async function handleSmsBookingFlow(
   }
 
   // ── Detect booking intent (start flow) ──
-  const hasBookingIntent = BOOKING_INTENT_WORDS.some(w => trimmed.includes(w))
-  if (!hasBookingIntent || !business.calendarEnabled || !business.googleCalendarConnected) return false
+  // Check current message AND conversation history for booking intent
+  const hasBookingIntentInMessage = BOOKING_INTENT_WORDS.some(w => trimmed.includes(w))
+  const hasBookingIntentInConversation = !hasBookingIntentInMessage && conversation.messages
+    .filter((m: any) => m.direction === 'inbound')
+    .some((m: any) => {
+      const c = m.content?.toLowerCase() || ''
+      return BOOKING_INTENT_WORDS.some(w => c.includes(w))
+    })
+  // Also detect implicit intent: customer agreeing to AI's booking offer ("yes", "sure", "yeah")
+  const aiOfferedBooking = conversation.messages
+    .filter((m: any) => m.direction === 'outbound')
+    .some((m: any) => {
+      const c = m.content?.toLowerCase() || ''
+      return /free.*quote|in-person quote|set up a.*quote|like to (book|schedule)|come out.*look/i.test(c)
+    })
+  const customerAgreeing = /^(yes|yeah|yep|yup|sure|ok|okay|please|let's do it|sounds good|that works|i'm interested|definitely|absolutely)\b/i.test(trimmed)
+  const implicitBookingIntent = aiOfferedBooking && customerAgreeing
+  const hasBookingIntent = hasBookingIntentInMessage || hasBookingIntentInConversation || implicitBookingIntent
+  if (!hasBookingIntent || !business.calendarEnabled || !business.googleCalendarConnected) {
+    console.log('[SMS BOOKING] No booking intent detected in message or conversation history, returning false')
+    return false
+  }
+  console.log('[SMS BOOKING] Booking intent detected!', {
+    inMessage: hasBookingIntentInMessage,
+    inHistory: hasBookingIntentInConversation,
+    implicitAgreement: implicitBookingIntent,
+    text: trimmed.slice(0, 60),
+  })
 
+  // Extract any info already provided in conversation before starting flow
+  const svcType = conversation.serviceRequested || extractServiceFromConversation(conversation.messages) || undefined
+  const existingName = conversation.callerName || undefined
   const hoursSummary = formatBusinessHoursSummary(business.businessHours)
-  const msg = `I'd love to set that up! What's your name, and what day/time works best for you? We're available ${hoursSummary}.`
+  const msg = existingName
+    ? `I'd love to set that up, ${existingName}! What day/time works best for you? We're available ${hoursSummary}.`
+    : `I'd love to set that up! What's your name, and what day/time works best for you? We're available ${hoursSummary}.`
   await sendSMSAndLog(business, conversation.id, from, msg)
   await db.conversation.update({
     where: { id: conversation.id },
@@ -1307,10 +1439,13 @@ async function handleSmsBookingFlow(
       status: 'booking_in_progress',
       bookingFlowState: JSON.parse(JSON.stringify({
         step: 'awaiting_name_and_preference',
+        customerName: existingName,
+        serviceType: svcType,
         sentAt: new Date().toISOString(),
       })),
     },
   })
+  console.log('[SMS BOOKING] Booking flow started', { step: 'awaiting_name_and_preference', customerName: existingName, serviceType: svcType })
   return true
 }
 
@@ -1326,6 +1461,17 @@ async function handleAwaitingNameAndPreference(
   if (looksLikeQuestion(rawText)) return false
   let name = parseNameFromMessage(rawText)
   if (!name || name.length > 100) return false
+
+  // Reject common non-name words that parseNameFromMessage might return as fallback
+  const NOT_A_NAME = /^(yes|yeah|yep|yup|sure|ok|okay|no|nope|please|thanks|thank you|hi|hey|hello|sounds good|that works|definitely|absolutely|let's do it|i'm interested|great)$/i
+  if (NOT_A_NAME.test(name.trim())) {
+    // If we already have a name from the flow state, use it; otherwise return false to let AI handle
+    if (flowState.customerName) {
+      name = flowState.customerName
+    } else {
+      return false
+    }
+  }
 
   const tz = business.timezone ?? 'America/New_York'
   const timePref = parseTimePreference(trimmed, tz)
