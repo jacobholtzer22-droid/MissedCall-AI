@@ -10,12 +10,13 @@ import { BusinessTypeSelector } from './SettingsFormWithIndustry'
 export default async function SettingsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ google_connected?: string; google_error?: string }>
+  searchParams: Promise<{ google_connected?: string; google_error?: string }> | { google_connected?: string; google_error?: string }
 }) {
   const { userId } = await auth()
   if (!userId) redirect('/sign-in')
 
-  const params = await searchParams
+  // Next.js 14 passes searchParams as object; Next.js 15+ as Promise
+  const params = await Promise.resolve(searchParams)
   const googleConnected = params.google_connected === '1'
   const googleError = params.google_error
 
