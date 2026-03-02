@@ -58,6 +58,10 @@ export default function EmbedBookingPage() {
   const [confirmation, setConfirmation] = useState<{ scheduledAt: string; serviceType: string; timezone?: string } | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [serverToday, setServerToday] = useState<string>('')
+  /** Visible status for mobile debugging: fetch progress and errors */
+  const [fetchStatus, setFetchStatus] = useState<string>('Fetching business data...')
+  /** Caught mount/fetch error shown on screen (for mobile debugging) */
+  const [mountError, setMountError] = useState<string | null>(null)
 
   const reportHeight = useCallback(() => {
     if (containerRef.current) {
@@ -81,9 +85,17 @@ export default function EmbedBookingPage() {
 
   useEffect(() => {
     if (!slug) return
+    setFetchStatus('Fetching business data...')
+    setMountError(null)
+    let cancelled = false
     fetch(`/api/bookings/available-slots?businessSlug=${slug}`)
-      .then(res => res.json())
+      .then(res => {
+        if (cancelled) return res
+        if (!res.ok) throw new Error(`HTTP ${res.status}`)
+        return res.json()
+      })
       .then(data => {
+        if (cancelled) return
         setBusinessName(data.businessName ?? null)
         setBookingPageTitle(data.bookingPageTitle ?? 'Schedule a Free In-Person Quote')
         setBookingPageServiceLabel(data.bookingPageServiceLabel ?? 'What do you need a quote for?')
@@ -95,12 +107,18 @@ export default function EmbedBookingPage() {
         setCalendarConnected(data.calendarEnabled === true && !data.error?.includes('not connected') && !!data.businessName)
         setServicesOffered(Array.isArray(data.servicesOffered) ? data.servicesOffered : [])
         if (data.today) setServerToday(data.today)
+        setFetchStatus('Data loaded')
         setLoading(false)
       })
-      .catch(() => {
+      .catch(err => {
+        if (cancelled) return
+        const msg = err?.message ?? String(err)
+        setFetchStatus('Fetch failed: ' + msg)
+        setMountError('Fetch failed: ' + msg)
         setLoading(false)
         setError('Failed to load booking page')
       })
+    return () => { cancelled = true }
   }, [slug])
 
   useEffect(() => {
@@ -174,8 +192,14 @@ export default function EmbedBookingPage() {
     return (
       <div ref={containerRef} className="min-h-[200px]" style={{ backgroundColor: '#ffffff' }}>
         <BookingPageHeader businessName={null} bookingPageTitle={bookingPageTitle} />
-        <div className="flex items-center justify-center p-6">
+        <div className="flex flex-col items-center justify-center p-6 gap-3">
           <div style={{ color: '#6b7280' }}>Loading...</div>
+          <div data-embed-status style={{ color: '#374151', fontSize: 14 }}>{fetchStatus}</div>
+          {mountError && (
+            <div data-embed-error style={{ color: '#b91c1c', padding: 12, fontSize: 14, border: '2px solid #b91c1c', backgroundColor: '#fef2f2' }}>
+              {mountError}
+            </div>
+          )}
         </div>
       </div>
     )
