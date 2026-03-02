@@ -252,11 +252,13 @@ export async function POST(request: NextRequest) {
       }
 
       // ── SMS LEAD FLOW (calendar disabled) ─────────────────────────
+      // Non-calendar: AI handles lead capture conversationally. No rigid state machine.
+      // handleSmsLeadFlow only returns true when already lead_captured (skip processing).
       if (!business.calendarEnabled) {
         const leadHandled = await handleSmsLeadFlow(business, conversation, text, from)
         if (leadHandled) {
           const totalMs = Date.now() - new Date(timing.webhookReceivedAt).getTime()
-          console.log('⏱️ [SMS] Total time (lead flow):', totalMs, 'ms', { timing: { ...timing, totalMs } })
+          console.log('⏱️ [SMS] Total time (lead flow skip):', totalMs, 'ms', { timing: { ...timing, totalMs } })
           return NextResponse.json({ ok: true, timing: { ...timing, totalMs } }, { status: 200 })
         }
       }
@@ -279,8 +281,52 @@ export async function POST(request: NextRequest) {
       const cleanResponse = aiResponse
         .replace(/\[APPOINTMENT_BOOKED:.*?\]/g, '')
         .replace(/\[LEAD_CAPTURED:.*?\]/g, '')
+        .replace(/\[READY_TO_CAPTURE\]/g, '')
         .replace(/\[HUMAN_NEEDED(?:: reason="[^"]*")?\]/g, '')
         .trim()
+
+      // Lead capture via AI (non-calendar): extract structured data and create lead
+      const readyToCapture = aiResponse.includes('[READY_TO_CAPTURE]')
+      if (!business.calendarEnabled && readyToCapture && conversation.status !== 'lead_captured') {
+        const extracted = await extractLeadFromConversation(anthropic, business, conversation)
+        if (extracted && extracted.customerName?.trim()) {
+          const thanksMsg = `Perfect! I've passed your info along to our team. Someone will reach out shortly. Talk soon!`
+          const conversationTranscript = [
+            ...conversation.messages.map((m: any) => ({ direction: m.direction, content: m.content, createdAt: m.createdAt })),
+            { direction: 'outbound' as const, content: thanksMsg, createdAt: new Date() },
+          ]
+          try {
+            await notifyOwnerOnLeadCaptured(business, {
+              customerName: extracted.customerName.trim(),
+              customerPhone: from,
+              customerEmail: extracted.customerEmail?.trim() || undefined,
+              customerAddress: extracted.customerAddress?.trim() || undefined,
+              customerTimeframe: extracted.customerTimeframe?.trim() || undefined,
+              service: extracted.customerService?.trim() || cleanServiceForDisplay('service'),
+              conversationTranscript: conversationTranscript.slice(0, -1),
+              conversationId: conversation.id,
+            })
+          } catch (err) {
+            console.error('❌ Failed to notify owner of lead:', err)
+          }
+          await db.conversation.update({
+            where: { id: conversation.id },
+            data: {
+              status: 'lead_captured',
+              callerName: extracted.customerName.trim(),
+              intent: 'lead_capture',
+              serviceRequested: extracted.customerService?.trim() || 'service',
+              customerEmail: extracted.customerEmail?.trim() || null,
+              customerAddress: extracted.customerAddress?.trim() || null,
+              customerTimeframe: extracted.customerTimeframe?.trim() || null,
+              bookingFlowState: Prisma.DbNull,
+            },
+          })
+          await sendSMSAndLog(business, conversation.id, from, thanksMsg, timing)
+          const totalMs = Date.now() - new Date(timing.webhookReceivedAt).getTime()
+          return NextResponse.json({ ok: true, timing: { ...timing, totalMs } }, { status: 200 })
+        }
+      }
 
       const conversationTranscript = [
         ...conversation.messages.map((m) => ({
@@ -593,9 +639,9 @@ function extractNeedFromMessage(text: string): string | null {
   return t
 }
 
-/** Extract email from message. Handles "john@example.com", "email: john@example.com", etc. */
+/** Extract email from message. Accept any email with @ and a dot after it (e.g. richard@iu.edu, test@gmail.com). */
 function parseEmailFromMessage(text: string): string | null {
-  const match = text.trim().match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/)
+  const match = text.trim().match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z0-9]+/)
   return match ? match[0].trim() : null
 }
 
@@ -618,229 +664,53 @@ function parseTimeframeFromMessage(text: string): string | null {
   return t
 }
 
+/** Extract structured lead data from conversation via AI. Returns null if extraction fails or name missing. */
+async function extractLeadFromConversation(
+  anthropic: Anthropic,
+  business: { name: string },
+  conversation: { messages: { direction: string; content: string }[] }
+): Promise<{ customerName: string; customerEmail?: string; customerAddress?: string; customerService?: string; customerTimeframe?: string } | null> {
+  const transcript = conversation.messages
+    .map((m) => `${m.direction === 'inbound' ? 'Customer' : 'Assistant'}: ${m.content}`)
+    .join('\n')
+  const prompt = `Extract from this SMS conversation between Customer and Assistant for ${business.name}. Return a JSON object with these keys only: customerName (string, required), customerEmail (string or null), customerAddress (string or null), customerService (what they need, string or null), customerTimeframe (when they want it, string or null). Use null for any missing field. customerName is required — if you cannot determine a name, use "Customer". Use the FIRST/CANONICAL value for each field (e.g. if they said their name early, use that — never overwrite a valid name with later message text).`
+
+  try {
+    const response = await anthropic.messages.create({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 256,
+      messages: [{ role: 'user', content: `Conversation:\n${transcript}\n\n${prompt}\n\nRespond with only valid JSON, no markdown.` }],
+    })
+    const textBlock = response.content.find((b: { type: string }) => b.type === 'text')
+    const text = (textBlock as { text?: string })?.text?.trim() || ''
+    const jsonMatch = text.match(/\{[\s\S]*\}/)
+    if (!jsonMatch) return null
+    const parsed = JSON.parse(jsonMatch[0]) as Record<string, unknown>
+    const customerName = typeof parsed.customerName === 'string' ? parsed.customerName.trim() : null
+    if (!customerName) return null
+    return {
+      customerName,
+      customerEmail: typeof parsed.customerEmail === 'string' ? parsed.customerEmail : undefined,
+      customerAddress: typeof parsed.customerAddress === 'string' ? parsed.customerAddress : undefined,
+      customerService: typeof parsed.customerService === 'string' ? parsed.customerService : undefined,
+      customerTimeframe: typeof parsed.customerTimeframe === 'string' ? parsed.customerTimeframe : undefined,
+    }
+  } catch (err) {
+    console.error('❌ [AI] Lead extraction failed:', err)
+    return null
+  }
+}
+
+/** Non-calendar: AI handles lead capture conversationally. This only skips when already lead_captured. */
 async function handleSmsLeadFlow(
   business: any,
   conversation: any,
-  text: string,
-  from: string
+  _text: string,
+  _from: string
 ): Promise<boolean> {
   if (business.calendarEnabled) return false
-  if (conversation.status === 'lead_captured') return true // Handled in NO_AI_RESPONSE block
-
-  const rawText = text?.trim() || ''
-  const trimmed = rawText.toLowerCase()
-  const rawFlowState = (conversation.bookingFlowState as Record<string, unknown> | null) ?? {}
-  const isLeadFlow = rawFlowState.leadFlow === true
-  const leadStep = (rawFlowState.step as string) || 'awaiting_name'
-  const hasBookingIntent = BOOKING_INTENT_WORDS.some(w => trimmed.includes(w))
-
-  // ── TRIGGER: Customer describes a service need OR says book/schedule ──
-  const serviceFromMsg = extractNeedFromMessage(rawText)
-
-  if (!isLeadFlow && (hasBookingIntent || serviceFromMsg)) {
-    // Start lead flow
-    const service = serviceFromMsg ? cleanServiceForDisplay(serviceFromMsg) : undefined
-    const nextStep = hasBookingIntent && !service ? 'awaiting_service' : 'awaiting_name'
-    const msg =
-      nextStep === 'awaiting_service'
-        ? `I'd love to help! What are you looking to get done? (e.g. lawn care, patio quote, etc.)`
-        : `I'd love to help get that set up for you! What's your name?`
-    await sendSMSAndLog(business, conversation.id, from, msg)
-    await db.conversation.update({
-      where: { id: conversation.id },
-      data: {
-        bookingFlowState: JSON.parse(JSON.stringify({
-          leadFlow: true,
-          step: nextStep,
-          serviceRequested: service,
-          sentAt: new Date().toISOString(),
-        })),
-      },
-    })
-    return true
-  }
-
-  if (!isLeadFlow) return false // Let AI handle general conversation
-
-  // Defer questions to AI (e.g. "what are your hours?")
-  if (looksLikeQuestion(rawText) && !/^(what'?s?|my|it'?s|i'?m)\s/i.test(trimmed)) return false
-
-  const updateState = (patch: Record<string, unknown>) =>
-    db.conversation.update({
-      where: { id: conversation.id },
-      data: {
-        bookingFlowState: JSON.parse(
-          JSON.stringify({
-            ...rawFlowState,
-            ...patch,
-            sentAt: new Date().toISOString(),
-          })
-        ),
-      },
-    })
-
-  // ── Step: awaiting_service (said "book" but didn't give service) ──
-  if (leadStep === 'awaiting_service') {
-    const need = extractNeedFromMessage(rawText)
-    if (need) {
-      const service = cleanServiceForDisplay(need)
-      await sendSMSAndLog(business, conversation.id, from, `I'd love to help get that set up for you! What's your name?`)
-      await updateState({ step: 'awaiting_name', serviceRequested: service })
-    } else {
-      await sendSMSAndLog(business, conversation.id, from, `What are you looking to get done? (e.g. lawn care, patio quote, etc.)`)
-    }
-    return true
-  }
-
-  // ── Step: awaiting_name ── (collect name; may also get email if volunteered)
-  if (leadStep === 'awaiting_name') {
-    const name = parseNameFromMessage(rawText)
-    const email = parseEmailFromMessage(rawText)
-    const hasName = !!name && name.length <= 100
-    const hasEmail = !!email
-
-    if (hasName) {
-      const state = { ...rawFlowState, customerName: name, customerEmail: hasEmail ? email : rawFlowState.customerEmail }
-      if (hasEmail) {
-        await sendSMSAndLog(business, conversation.id, from, `Thanks ${name}! And what's the best address for the service?`)
-        await updateState({ step: 'awaiting_address', customerName: name, customerEmail: email })
-      } else {
-        await sendSMSAndLog(business, conversation.id, from, `Thanks ${name}! What's your email address?`)
-        await updateState({ step: 'awaiting_email', customerName: name })
-      }
-    } else {
-      await sendSMSAndLog(business, conversation.id, from, `What's your name?`)
-    }
-    return true
-  }
-
-  // ── Step: awaiting_email ── (may also get address if volunteered)
-  if (leadStep === 'awaiting_email') {
-    const email = parseEmailFromMessage(rawText)
-    const address = parseAddressFromMessage(rawText.replace(email || '', '').trim())
-    const name = (rawFlowState.customerName as string) || conversation.callerName || 'there'
-    if (email) {
-      if (address) {
-        await sendSMSAndLog(business, conversation.id, from, `When are you thinking you'd like to get this done? (This week, next week, no rush, etc.)`)
-        await updateState({ step: 'awaiting_timeframe', customerEmail: email, customerAddress: address })
-      } else {
-        await sendSMSAndLog(business, conversation.id, from, `And what's the best address for the service?`)
-        await updateState({ step: 'awaiting_address', customerEmail: email })
-      }
-    } else {
-      await sendSMSAndLog(business, conversation.id, from, `What's your email address?`)
-    }
-    return true
-  }
-
-  // ── Step: awaiting_address ── (may also get timeframe if volunteered)
-  if (leadStep === 'awaiting_address') {
-    let address = parseAddressFromMessage(rawText)
-    let timeframe: string | null = null
-    // "123 Main St, next week" → address + timeframe
-    const commaIdx = rawText.lastIndexOf(',')
-    if (commaIdx > 0) {
-      const before = rawText.slice(0, commaIdx).trim()
-      const after = rawText.slice(commaIdx + 1).trim()
-      if (parseAddressFromMessage(before) && parseTimeframeFromMessage(after)) {
-        address = before
-        timeframe = after
-      }
-    }
-    if (!timeframe && address) timeframe = parseTimeframeFromMessage(rawText.replace(address, '').replace(/,/g, ' ').trim())
-    const name = (rawFlowState.customerName as string) || conversation.callerName || 'there'
-    if (address) {
-      if (timeframe && timeframe.length >= 2) {
-        // They gave both address and timeframe
-        const thanksMsg = `Perfect! I've passed your info along to our team. Someone will reach out to set up a date that works for both of you around that time. Talk soon!`
-        const conversationTranscript = [
-          ...conversation.messages.map((m: any) => ({ direction: m.direction, content: m.content, createdAt: m.createdAt })),
-          { direction: 'outbound' as const, content: thanksMsg, createdAt: new Date() },
-        ]
-        try {
-          await notifyOwnerOnLeadCaptured(business, {
-            customerName: name,
-            customerPhone: from,
-            customerEmail: (rawFlowState.customerEmail as string) || undefined,
-            customerAddress: address,
-            customerTimeframe: timeframe,
-            service: cleanServiceForDisplay((rawFlowState.serviceRequested as string) || 'service'),
-            conversationTranscript: conversationTranscript.slice(0, -1),
-            conversationId: conversation.id,
-          })
-        } catch (err) {
-          console.error('❌ Failed to notify owner of lead:', err)
-        }
-        await db.conversation.update({
-          where: { id: conversation.id },
-          data: {
-            status: 'lead_captured',
-            callerName: name,
-            intent: 'lead_capture',
-            serviceRequested: cleanServiceForDisplay((rawFlowState.serviceRequested as string) || 'service'),
-            customerEmail: (rawFlowState.customerEmail as string) || null,
-            customerAddress: address,
-            customerTimeframe: timeframe,
-            bookingFlowState: Prisma.DbNull,
-          },
-        })
-        await sendSMSAndLog(business, conversation.id, from, thanksMsg)
-      } else {
-        await sendSMSAndLog(business, conversation.id, from, `When are you thinking you'd like to get this done? (This week, next week, no rush, etc.)`)
-        await updateState({ step: 'awaiting_timeframe', customerAddress: address })
-      }
-    } else {
-      await sendSMSAndLog(business, conversation.id, from, `What's the best address for the service?`)
-    }
-    return true
-  }
-
-  // ── Step: awaiting_timeframe ── → complete lead capture
-  if (leadStep === 'awaiting_timeframe') {
-    const timeframe = parseTimeframeFromMessage(rawText)
-    const name = (rawFlowState.customerName as string) || conversation.callerName || 'Customer'
-    const service = cleanServiceForDisplay((rawFlowState.serviceRequested as string) || 'service')
-    if (!timeframe) {
-      await sendSMSAndLog(business, conversation.id, from, `When are you thinking you'd like to get this done? (This week, next week, no rush, etc.)`)
-      return true
-    }
-
-    const thanksMsg = `Perfect! I've passed your info along to our team. Someone will reach out to set up a date that works for both of you around that time. Talk soon!`
-    const conversationTranscript = [
-      ...conversation.messages.map((m: any) => ({ direction: m.direction, content: m.content, createdAt: m.createdAt })),
-      { direction: 'outbound' as const, content: thanksMsg, createdAt: new Date() },
-    ]
-    try {
-      await notifyOwnerOnLeadCaptured(business, {
-        customerName: name,
-        customerPhone: from,
-        customerEmail: (rawFlowState.customerEmail as string) || undefined,
-        customerAddress: (rawFlowState.customerAddress as string) || undefined,
-        customerTimeframe: timeframe,
-        service,
-        conversationTranscript: conversationTranscript.slice(0, -1),
-        conversationId: conversation.id,
-      })
-    } catch (err) {
-      console.error('❌ Failed to notify owner of lead:', err)
-    }
-    await db.conversation.update({
-      where: { id: conversation.id },
-      data: {
-        status: 'lead_captured',
-        callerName: name,
-        intent: 'lead_capture',
-        serviceRequested: service,
-        customerEmail: (rawFlowState.customerEmail as string) || null,
-        customerAddress: (rawFlowState.customerAddress as string) || null,
-        customerTimeframe: timeframe,
-        bookingFlowState: Prisma.DbNull,
-      },
-    })
-    await sendSMSAndLog(business, conversation.id, from, thanksMsg)
-    return true
-  }
-
+  if (conversation.status === 'lead_captured') return true // Skip — handled in NO_AI_RESPONSE block
+  // All other messages go to AI for conversational lead capture
   return false
 }
 
@@ -2000,17 +1870,18 @@ async function generateAIResponse(
 
   // ── LEAD-ONLY MODE (no calendar) ──────────────────────────────────
   if (!calendarEnabled) {
-    const leadSystemPrompt = `You are a friendly SMS assistant for ${business.name}. You're helping someone who tried to call.
+    const leadSystemPrompt = `You are a friendly assistant for ${business.name}. Have a natural conversation. Your goal is to understand what the customer needs and collect their name, email, address, and preferred timeframe.
 
-IMPORTANT: This business does NOT offer online scheduling. A structured flow collects lead info (name, email, address, timeframe) when customers describe what they need or say "book". You are only used when they ask general questions.
+NEVER jump into lead capture from a greeting. When someone says "hey", "hi", "hello", "what's up", etc., respond naturally first and ask what they need help with. Only start collecting info AFTER they have described what they want.
 
-GOALS:
-1. Answer questions about the business briefly (hours, services, etc.)
-2. Be helpful and conversational
-3. Do NOT offer booking, time slots, scheduling, or appointments
-4. Do NOT try to collect their info — the system handles that
-5. If you can't help or they're upset, add [HUMAN_NEEDED] at the end (optional: [HUMAN_NEEDED: reason="brief reason"])
-6. If they seem ready to get a quote, you can say "Text back with what you're looking for and we'll get you set up!" — the system will then collect their info
+FLOW:
+- Customer: "Hey" → You: "Hey! Thanks for reaching out to ${business.name}. What can I help you with?"
+- Customer describes what they need → Have a natural conversation, then naturally ask for their info
+- Combine questions when it makes sense ("What's your name and email?")
+- If they already volunteered their name, never ask again
+- Parse info from ANY message — e.g. "I'm Richard and I want hydro seeding tomorrow at 9am" = name + service + timeframe in one message
+
+When you have collected: name, email, address, and timeframe (or as much as they're willing to give), tell them someone will reach out. Then output [READY_TO_CAPTURE] at the very end of your message.
 
 BUSINESS INFO:
 - Name: ${business.name}
@@ -2019,9 +1890,11 @@ ${business.aiContext ? `- About: ${business.aiContext}` : ''}
 ${business.aiInstructions ? `- Instructions: ${business.aiInstructions}` : ''}
 
 RULES:
+- Don't be robotic — have a real conversation
 - Keep responses short (1-2 sentences, under 160 chars when possible)
 - Never ask for phone number — you're texting them
-- Never output [LEAD_CAPTURED] — the structured flow handles lead capture`
+- If you can't help or they're upset, add [HUMAN_NEEDED] at the end (optional: [HUMAN_NEEDED: reason="brief reason"])
+- Never ask for information they already provided`
 
     const AI_MODEL = 'claude-haiku-4-5-20251001'
     const apiKey = process.env.ANTHROPIC_API_KEY
