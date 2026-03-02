@@ -6,11 +6,17 @@ const isProtectedRoute = createRouteMatcher([
   '/settings(.*)',
 ])
 
+// Explicitly mark public routes (no auth / redirects)
+const isPublicRoute = createRouteMatcher([
+  '/book/(.*)',
+])
+
 const isPublicApiRoute = createRouteMatcher([
   '/api/webhooks/(.*)',
 ])
 
 export default clerkMiddleware(async (auth, request) => {
+  if (isPublicRoute(request)) return
   if (isPublicApiRoute(request)) return
   if (isProtectedRoute(request)) {
     await auth.protect()
