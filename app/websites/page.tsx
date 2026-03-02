@@ -18,6 +18,15 @@ type Project = {
 
 const projects: Project[] = [
   {
+    title: 'Jack of All Blades Landscaping',
+    category: 'Landscaping',
+    description: 'A modern, professional website built for a full-service landscaping company in the Grand Rapids, MI area. Features include online quote request booking, mobile-responsive design, service showcase, and AI-powered missed call recovery to ensure no lead goes unanswered.',
+    image1: '/images/portfolio/jack-of-all-blades-1.png',
+    image2: '/images/portfolio/jack-of-all-blades-2.png',
+    url: 'https://jackofallbladeslandscaping.com',
+    features: ['Custom Website Design', 'MissedCall AI Integration', 'SEO Optimization', 'Online Quote Booking'],
+  },
+  {
     title: 'Learning Logs',
     category: 'SaaS Application',
     description: 'Educational platform that helps users turn passive content into durable memory. Full authentication system with user accounts.',
