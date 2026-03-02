@@ -6,6 +6,7 @@
 import Telnyx from 'telnyx'
 import nodemailer from 'nodemailer'
 import { TZDate } from '@date-fns/tz'
+import { normalizeToE164 } from '@/lib/phone-utils'
 import type { Business, Appointment } from '@prisma/client'
 
 /** Parse "YYYY-MM-DD HH:mm" as business local time (not UTC). */
@@ -86,27 +87,28 @@ export async function notifyOwnerOnBookingCreated(
   // SMS
   if (business.notifyBySms) {
     console.error('[NOTIFY OWNER] SMS enabled, checking phone numbers...')
-    const toPhone = business.ownerPhone || business.forwardingNumber
+    const rawPhone = business.ownerPhone || business.forwardingNumber
+    const toPhone = rawPhone ? normalizeToE164(rawPhone.trim()) : ''
     if (!toPhone) {
-      console.error('[NOTIFY OWNER] SMS SKIP: No ownerPhone or forwardingNumber set for business', { businessId: business.id })
+      console.error('[NOTIFY OWNER] SMS SKIP: No ownerPhone or forwardingNumber set for business (or invalid format)', { businessId: business.id, ownerPhone: business.ownerPhone ?? 'null', forwardingNumber: business.forwardingNumber ?? 'null' })
     } else if (!business.telnyxPhoneNumber) {
       console.error('[NOTIFY OWNER] SMS SKIP: No telnyxPhoneNumber set for business', { businessId: business.id })
     } else {
       const addressLine = appointment.customerAddress ? `\n📍 Address: ${appointment.customerAddress}` : ''
       const smsText = `📅 New Quote Request! ${appointment.customerName} wants a quote for ${appointment.serviceType} on ${dateStr} at ${timeStr}.\nPhone: ${appointment.customerPhone}${addressLine}${notesTruncated ? `\nNotes: ${notesTruncated}` : ''}\nFull details in your email and dashboard.`
-      console.error('[NOTIFY OWNER] Sending SMS to', toPhone.trim(), 'from', business.telnyxPhoneNumber)
+      console.error('[NOTIFY OWNER] Sending SMS to', toPhone, 'from', business.telnyxPhoneNumber)
       try {
         const telnyx = new Telnyx({ apiKey: process.env.TELNYX_API_KEY! })
         const response = await telnyx.messages.send({
           from: business.telnyxPhoneNumber,
-          to: toPhone.trim(),
+          to: toPhone,
           text: smsText,
         })
-        console.error('[NOTIFY OWNER] SMS sent successfully', { to: toPhone.trim(), telnyxResponse: JSON.stringify(response.data) })
+        console.error('[NOTIFY OWNER] SMS sent successfully', { to: toPhone, telnyxResponse: JSON.stringify(response.data) })
         result.smsSent = true
       } catch (err) {
         console.error('[NOTIFY OWNER] SMS FAILED:', {
-          to: toPhone.trim(),
+          to: toPhone,
           from: business.telnyxPhoneNumber,
           error: err instanceof Error ? err.message : String(err),
           fullError: err,

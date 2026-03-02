@@ -563,7 +563,7 @@ export async function POST(request: NextRequest) {
 // Fully conversational — NO booking links. AI handles everything via text.
 
 type BookingFlowState = {
-  step: 'greeting' | 'awaiting_name' | 'awaiting_name_and_preference' | 'awaiting_service' | 'awaiting_notes' | 'awaiting_address' | 'awaiting_time' | 'awaiting_confirmation' | 'awaiting_name_and_address' | 'awaiting_address_after_slot' | 'confirmed'
+  step: 'greeting' | 'awaiting_name' | 'awaiting_name_and_preference' | 'awaiting_service' | 'awaiting_notes' | 'awaiting_address' | 'awaiting_time' | 'awaiting_confirmation' | 'awaiting_name_and_address' | 'awaiting_name_after_slot' | 'awaiting_address_after_slot' | 'confirmed'
   customerName?: string
   serviceType?: string
   notes?: string
@@ -787,6 +787,22 @@ function parseAddressFromMessage(text: string): string | null {
   return t
 }
 
+/** Detect when customer is requesting a TIME CHANGE (e.g. "lets do 5pm", "how about 3", "5pm") — NOT name or address. */
+function looksLikeTimeChange(text: string): boolean {
+  const t = text.toLowerCase().trim()
+  if (!t || t.length > 80) return false
+  // Explicit time-change phrases + time
+  if (/\b(lets?|let'?s|how\s+about|can\s+we\s+do|what\s+about|rather\s+do|actually|instead)\s+(.+)/i.test(t)) {
+    const rest = t.replace(/^(lets?|let'?s|how\s+about|can\s+we\s+do|what\s+about|rather\s+do|actually|instead)\s+/i, '').trim()
+    if (/\d{1,2}(?::\d{2})?\s*(am|pm)\b|\d{1,2}\s*(am|pm)\b|noon|morning|afternoon|evening/i.test(rest) || /^\d{1,2}$/.test(rest)) return true
+  }
+  // Standalone time: "5pm", "3pm", "9am", "2:30pm"
+  if (/^\d{1,2}(?::\d{2})?\s*(am|pm)\s*$/i.test(t)) return true
+  // "5" or "3" when short (often "how about 5" meaning 5pm)
+  if (/^\d{1,2}\s*$/.test(t)) return true
+  return false
+}
+
 /** Accept timeframe as free text: "this week", "next week", "no rush", etc. */
 function parseTimeframeFromMessage(text: string): string | null {
   const t = text.trim()
@@ -961,9 +977,178 @@ async function handleSmsBookingFlow(
     return true
   }
 
-  // ── Step: awaiting_name_and_address (time confirmed, need name + address) ──
+  /** Helper: when customer requests a time change (e.g. "lets do 5pm") while we have a selected slot. */
+  async function handleTimeChangeFromSlotChoice(
+    flowState: BookingFlowState,
+    rawText: string
+  ): Promise<boolean> {
+    if (!flowState.selectedSlot || !looksLikeTimeChange(rawText)) return false
+    const t = rawText.toLowerCase().trim()
+    const timeMatch = t.match(/(\d{1,2})(?::(\d{2}))?\s*(am|pm)\b/i)
+    if (!timeMatch) {
+      const bareNum = t.match(/(\d{1,2})\s*$/)
+      if (!bareNum) return false
+      let h = parseInt(bareNum[1], 10)
+      if (h >= 1 && h <= 7) h += 12
+      const minute = 0
+      const startStr = new Date(flowState.selectedSlot.start).toLocaleDateString('en-CA', { timeZone: tz })
+      const slot = await isSpecificSlotAvailable(business.id, startStr, h, minute, tz)
+      if (slot) {
+        const dateLabel = formatDateFull(slot.start, tz)
+        const msg = `${dateLabel} at ${slot.display} is open! What's your name?`
+        await sendSMSAndLog(business, conversation.id, from, msg)
+        await db.conversation.update({
+          where: { id: conversation.id },
+          data: {
+            bookingFlowState: JSON.parse(JSON.stringify({
+              step: 'awaiting_name_after_slot',
+              customerName: flowState.customerName,
+              serviceType: flowState.serviceType,
+              notes: flowState.notes,
+              selectedSlot: slot,
+              sentAt: new Date().toISOString(),
+            })),
+          },
+        })
+        return true
+      }
+      const closest = await getTwoClosestSlotsOnDay(business.id, startStr, h, minute, tz)
+      if (closest.length > 0) {
+        const timesStr = closest.map((s) => s.display).join(' or ')
+        const dateLabel = formatDateFull(startStr + 'T12:00:00', tz)
+        const msg = `Sorry, that time is taken. How about ${timesStr} that same day? Or tell me another day and time.`
+        await sendSMSAndLog(business, conversation.id, from, msg)
+        await db.conversation.update({
+          where: { id: conversation.id },
+          data: {
+            bookingFlowState: JSON.parse(JSON.stringify({
+              step: 'awaiting_time',
+              customerName: flowState.customerName,
+              serviceType: flowState.serviceType,
+              notes: flowState.notes,
+              suggestedSlots: closest,
+              lastDiscussedDate: startStr,
+              sentAt: new Date().toISOString(),
+            })),
+          },
+        })
+        return true
+      }
+      return false
+    }
+    let h = parseInt(timeMatch[1], 10)
+    const minute = timeMatch[2] ? parseInt(timeMatch[2], 10) : 0
+    const ampm = (timeMatch[3] || '').toLowerCase()
+    if (ampm === 'pm' && h < 12) h += 12
+    if (ampm === 'am' && h === 12) h = 0
+    const startStr = new Date(flowState.selectedSlot.start).toLocaleDateString('en-CA', { timeZone: tz })
+    const slot = await isSpecificSlotAvailable(business.id, startStr, h, minute, tz)
+    if (slot) {
+      const dateLabel = formatDateFull(slot.start, tz)
+      const msg = `${dateLabel} at ${slot.display} is open! What's your name?`
+      await sendSMSAndLog(business, conversation.id, from, msg)
+      await db.conversation.update({
+        where: { id: conversation.id },
+        data: {
+          bookingFlowState: JSON.parse(JSON.stringify({
+            step: 'awaiting_name_after_slot',
+            customerName: flowState.customerName,
+            serviceType: flowState.serviceType,
+            notes: flowState.notes,
+            selectedSlot: slot,
+            sentAt: new Date().toISOString(),
+          })),
+        },
+      })
+      return true
+    }
+    const closest = await getTwoClosestSlotsOnDay(business.id, startStr, h, minute, tz)
+    if (closest.length > 0) {
+      const timesStr = closest.map((s) => s.display).join(' or ')
+      const dateLabel = formatDateFull(startStr + 'T12:00:00', tz)
+      const msg = `Sorry, that time is taken. How about ${timesStr} that same day? Or tell me another day and time.`
+      await sendSMSAndLog(business, conversation.id, from, msg)
+      await db.conversation.update({
+        where: { id: conversation.id },
+        data: {
+          bookingFlowState: JSON.parse(JSON.stringify({
+            step: 'awaiting_time',
+            customerName: flowState.customerName,
+            serviceType: flowState.serviceType,
+            notes: flowState.notes,
+            suggestedSlots: closest,
+            lastDiscussedDate: startStr,
+            sentAt: new Date().toISOString(),
+          })),
+        },
+      })
+      return true
+    }
+    return false
+  }
+
+  // ── Step: awaiting_name_after_slot (time confirmed, ask for name FIRST — separate from address) ──
+  if (flowState.step === 'awaiting_name_after_slot' && flowState.selectedSlot) {
+    if (looksLikeQuestion(rawText)) return false
+    const timeChangeHandled = await handleTimeChangeFromSlotChoice(flowState, rawText)
+    if (timeChangeHandled) return true
+    const name = parseNameFromMessage(rawText) || flowState.customerName
+    const address = parseAddressFromMessage(rawText)
+    if (!name || name.length > 100) return false
+    const NOT_A_NAME = /^(yes|yeah|lets?|let'?s|how\s+about|can\s+we|what\s+about|5pm|3pm|9am|\d{1,2}(?::\d{2})?\s*(am|pm))\b/i
+    if (NOT_A_NAME.test(name.trim()) && !flowState.customerName) return false
+
+    const convCheck = await db.conversation.findUnique({
+      where: { id: conversation.id },
+      include: { appointment: true },
+    })
+    if (convCheck?.appointment) return true
+
+    const dateLabel = formatDateFull(flowState.selectedSlot.start, tz)
+    const timeStr = flowState.selectedSlot.display || new Date(flowState.selectedSlot.start).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true, timeZone: tz })
+
+    if (address || !bookingRequiresAddress) {
+      const confirmMsg = `Perfect! Just to confirm: ${dateLabel} at ${timeStr} for ${name}${address ? ` at ${address}` : ''}. Reply yes to confirm.`
+      await sendSMSAndLog(business, conversation.id, from, confirmMsg)
+      await db.conversation.update({
+        where: { id: conversation.id },
+        data: {
+          bookingFlowState: JSON.parse(JSON.stringify({
+            step: 'awaiting_confirmation',
+            customerName: name,
+            serviceType: flowState.serviceType,
+            notes: flowState.notes,
+            selectedSlot: flowState.selectedSlot,
+            customerAddress: address ?? undefined,
+            sentAt: new Date().toISOString(),
+          })),
+        },
+      })
+      return true
+    }
+    const msg = `Thanks ${name}! What's the property address where we should meet you?`
+    await sendSMSAndLog(business, conversation.id, from, msg)
+    await db.conversation.update({
+      where: { id: conversation.id },
+      data: {
+        bookingFlowState: JSON.parse(JSON.stringify({
+          step: 'awaiting_address_after_slot',
+          customerName: name,
+          serviceType: flowState.serviceType,
+          notes: flowState.notes,
+          selectedSlot: flowState.selectedSlot,
+          sentAt: new Date().toISOString(),
+        })),
+      },
+    })
+    return true
+  }
+
+  // ── Step: awaiting_name_and_address (legacy — combined question; add time-change check first) ──
   if (flowState.step === 'awaiting_name_and_address' && flowState.selectedSlot) {
     if (looksLikeQuestion(rawText)) return false
+    const timeChangeHandled = await handleTimeChangeFromSlotChoice(flowState, rawText)
+    if (timeChangeHandled) return true
     const name = parseNameFromMessage(rawText) || flowState.customerName
     const address = parseAddressFromMessage(rawText)
     if (!name || name.length > 100) return false
@@ -1017,6 +1202,8 @@ async function handleSmsBookingFlow(
   // ── Step: awaiting_address_after_slot (have name, need address) ──
   if (flowState.step === 'awaiting_address_after_slot' && flowState.selectedSlot) {
     if (looksLikeQuestion(rawText)) return false
+    const timeChangeHandled = await handleTimeChangeFromSlotChoice(flowState, rawText)
+    if (timeChangeHandled) return true
     const address = rawText.trim()
     if (!address || address.length > 500) return false
     const convCheck = await db.conversation.findUnique({
@@ -1068,13 +1255,13 @@ async function handleSmsBookingFlow(
         })
         if (matched) {
           const dateLabel = formatDateFull(matched.start, tz)
-          const msg = `${dateLabel} at ${matched.display} is open! What's your name and property address?`
+          const msg = `${dateLabel} at ${matched.display} is open! What's your name?`
           await sendSMSAndLog(business, conversation.id, from, msg)
           await db.conversation.update({
             where: { id: conversation.id },
             data: {
               bookingFlowState: JSON.parse(JSON.stringify({
-                step: 'awaiting_name_and_address',
+                step: 'awaiting_name_after_slot',
                 customerName: flowState.customerName,
                 serviceType: flowState.serviceType,
                 notes: flowState.notes,
@@ -1116,13 +1303,13 @@ async function handleSmsBookingFlow(
     const slot = await isSpecificSlotAvailable(business.id, startStr, hour, minute, tz)
     if (slot) {
       const dateLabel = formatDateFull(slot.start, tz)
-      const msg = `${dateLabel} at ${slot.display} is open! What's your name and property address?`
+      const msg = `${dateLabel} at ${slot.display} is open! What's your name?`
       await sendSMSAndLog(business, conversation.id, from, msg)
       await db.conversation.update({
         where: { id: conversation.id },
         data: {
           bookingFlowState: JSON.parse(JSON.stringify({
-            step: 'awaiting_name_and_address',
+            step: 'awaiting_name_after_slot',
             customerName: flowState.customerName,
             serviceType: flowState.serviceType,
             notes: flowState.notes,
@@ -1421,13 +1608,13 @@ async function handleAwaitingNameAndPreference(
   const slot = await isSpecificSlotAvailable(business.id, startStr, hour, minute, tz)
   if (slot) {
     const dateLabel = formatDateFull(slot.start, tz)
-    const msg = `${dateLabel} at ${slot.display} is open! What's your name and property address?`
+    const msg = `${dateLabel} at ${slot.display} is open! What's your name?`
     await sendSMSAndLog(business, conversation.id, from, msg)
     await db.conversation.update({
       where: { id: conversation.id },
       data: {
         bookingFlowState: JSON.parse(JSON.stringify({
-          step: 'awaiting_name_and_address',
+          step: 'awaiting_name_after_slot',
           customerName: name,
           serviceType,
           notes: notes || undefined,
@@ -1865,12 +2052,13 @@ THINGS YOU MUST NEVER DO:
     ? `
 BOOKING FLOW CONTEXT: The customer is in a booking flow for a FREE IN-PERSON QUOTE. Current step: ${flowState!.step}.
 
-STEP GUIDANCE:
+STEP GUIDANCE — NEVER combine questions; ask ONE thing per message:
 - awaiting_name_and_preference: Customer may give name + time together (e.g. "John, Friday at 2pm"). The system checks the exact time — never show slot lists.
 - awaiting_time: Customer gives date/time (e.g. "Friday at 2pm"). System checks exact slot and confirms or suggests alternatives. No numbered slot lists.
-- awaiting_confirmation: The system asked them to confirm. Wait for "yes". Don't repeat the confirmation question.
-- awaiting_name_and_address: Ask "What's your name and property address?"
-- awaiting_address_after_slot: Ask "What's the property address so we know where to meet you?"
+- awaiting_name_after_slot / awaiting_name_and_address: Ask for NAME ONLY — "What's your name?" Never ask for name and address in the same message.
+- awaiting_address_after_slot: Ask for ADDRESS ONLY — "What's the property address where we should meet you?"
+- awaiting_confirmation: The system repeated back ALL details (date, time, name, address). Wait for "yes". Don't repeat the confirmation question.
+- TIME CHANGE: If customer says "lets do 5pm", "how about 3", "5pm works" etc. when a time was suggested, that is a TIME CHANGE request — the system handles it. Do NOT treat it as their name or address.
 - NEVER output [APPOINTMENT_BOOKED]. The structured booking flow handles all booking. You must NOT create appointments.
 - If they ask a question mid-flow: answer briefly (1 sentence), then guide back to the current step.
 - Use their exact words for services (e.g. "hydro seeding" not "landscaping").`
@@ -1897,19 +2085,23 @@ GREETING:
 - When the customer replies, respond naturally based on what they said. If they just said "hey" or "hi", say something like "Hey! What can I help you with today?"
 - NEVER jump into booking from a greeting. Wait until the customer describes what they need.
 
-IDEAL CONVERSATION (3-5 messages from you):
+IDEAL CONVERSATION — ask ONE thing per message, never combined:
 1. Customer describes need -> You: "We'd love to help with that! Would you like to set up a free in-person quote so ${business.name} can take a look and give you an exact price?"
 2. Customer: "Yes" -> You: "Great! What day and time work best for you? We're available ${hoursSummary}."
 3. Customer: "Friday at 2pm" -> System checks that exact time, confirms if open or suggests alternatives (e.g. "2:30pm or 3pm")
-4. Once time confirmed -> System asks for name and property address
-5. Customer gives name/address -> System confirms, they reply yes -> Booking created
+4. If they say "lets do 5pm" or "how about 3" -> That is a TIME CHANGE; system checks and confirms the new time. Never treat time changes as name or address.
+5. Once time confirmed -> System asks for name ONLY: "What's your name?"
+6. After name -> System asks for address ONLY: "What's the property address where we should meet you?"
+7. Before booking -> System repeats back ALL details (date, time, name, address) and asks for confirmation. Customer replies yes -> Booking created.
 
 BOOKING RULES:
 - Ask for date and time together. Customer picks a specific time (e.g. "Friday at 2pm"); system checks it.
+- NEVER combine questions: name, address, and time must be asked in SEPARATE messages.
+- "lets do 5pm", "how about 3", "5pm works" = TIME CHANGE, not name or address. The system handles it.
 - NEVER show numbered slot lists. The system confirms or denies the exact time they asked for.
 - If their time is taken, system suggests 1-2 alternatives on the same day or asks for another day.
-- ALWAYS confirm exact date, time, and address before booking. Never auto-book.
-- Ask for property address: "What's the property address so we know where to meet you?"
+- ALWAYS repeat back ALL details (date, time, name, address) before final confirmation. Never auto-book.
+- Ask for name first, then address — never "What's your name and address?" in one message.
 - After booking, tell them "The owner will give you a call beforehand to confirm."
 - The confirmation must include the ACTUAL booked date/time, not the customer's original words.
 - Verify phone: "Is this the best number to reach you at?"

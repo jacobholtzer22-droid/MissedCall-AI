@@ -308,9 +308,9 @@ export default async function SettingsPage({
               <p className="text-xs text-gray-500 mt-1">Email address to receive booking and cancellation notifications.</p>
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Owner Phone (optional)</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Owner Phone (for SMS notifications)</label>
               <input type="tel" name="ownerPhone" defaultValue={business.ownerPhone ?? ''} placeholder={business.forwardingNumber ?? '+1234567890'} className="w-full px-3 py-2 bg-white text-gray-900 border border-gray-200 rounded-lg placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500" />
-              <p className="text-xs text-gray-500 mt-1">SMS notifications go here. Leave blank to use your forwarding number.</p>
+              <p className="text-xs text-gray-500 mt-1">Required for SMS notifications when bookings are made. Uses your forwarding number if blank. Use E.164 format (e.g. +12025551234).</p>
             </div>
             <div className="flex items-center gap-4">
               <label className="flex items-center gap-2">
