@@ -191,7 +191,7 @@ export default function EmbedBookingPage() {
   if (loading) {
     return (
       <div ref={containerRef} className="min-h-[200px]" style={{ backgroundColor: '#ffffff' }}>
-        <BookingPageHeader businessName={null} bookingPageTitle={bookingPageTitle} />
+        <BookingPageHeader businessName={null} bookingPageTitle={bookingPageTitle} embed />
         <div className="flex flex-col items-center justify-center p-6 gap-3">
           <div style={{ color: '#6b7280' }}>Loading...</div>
           <div data-embed-status style={{ color: '#374151', fontSize: 14 }}>{fetchStatus}</div>
@@ -208,7 +208,7 @@ export default function EmbedBookingPage() {
   if (!calendarConnected || !businessName) {
     return (
       <div ref={containerRef} style={{ backgroundColor: '#ffffff' }}>
-        <BookingPageHeader businessName={businessName} bookingPageTitle={bookingPageTitle} />
+        <BookingPageHeader businessName={businessName} bookingPageTitle={bookingPageTitle} embed />
         <div className="p-6">
         <div className="max-w-md mx-auto text-center">
           <Calendar className="h-12 w-12 mx-auto mb-4" style={{ color: '#d1d5db' }} />
@@ -263,7 +263,7 @@ export default function EmbedBookingPage() {
 
   return (
     <div ref={containerRef} style={{ backgroundColor: '#ffffff' }}>
-      <BookingPageHeader businessName={businessName} />
+      <BookingPageHeader businessName={businessName} bookingPageTitle={bookingPageTitle} embed />
       <div className="p-4 sm:p-6 md:p-8">
         <div className="max-w-2xl mx-auto">
           <div className="text-center mb-6">
