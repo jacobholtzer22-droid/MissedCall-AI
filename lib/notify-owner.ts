@@ -441,6 +441,79 @@ export async function notifyOwnerOnHumanNeeded(
   }
 }
 
+// ── AI failed (e.g. Claude 529 overload) ─────────────────────────────
+// Customer was sent a friendly fallback; owner should follow up.
+
+export async function notifyOwnerOnAIFailed(
+  business: BusinessWithPhone,
+  params: {
+    customerName: string
+    customerPhone: string
+    conversationTranscript: ConversationMessage[]
+    conversationId: string
+  }
+): Promise<void> {
+  const { customerName, customerPhone, conversationTranscript, conversationId } = params
+  const conversationUrl = `${baseUrl}/dashboard/conversations/${conversationId}`
+  const tz = business.timezone ?? 'America/New_York'
+
+  if (business.notifyBySms) {
+    const toPhone = business.ownerPhone || business.forwardingNumber
+    if (toPhone && business.telnyxPhoneNumber) {
+      const smsText = `⚠️ AI was temporarily unavailable. We sent ${customerName} (${customerPhone}) a fallback message. Please follow up when you can.`
+      try {
+        const telnyx = new Telnyx({ apiKey: process.env.TELNYX_API_KEY! })
+        await telnyx.messages.send({
+          from: business.telnyxPhoneNumber,
+          to: toPhone.trim(),
+          text: smsText,
+        })
+        console.error('[NOTIFY OWNER] AI failed SMS sent to', toPhone.trim())
+      } catch (err) {
+        console.error('[NOTIFY OWNER] AI failed SMS FAILED:', err instanceof Error ? err.message : String(err))
+      }
+    }
+  }
+
+  if (business.notifyByEmail && business.ownerEmail) {
+    const subject = `AI Unavailable - ${customerName} - Please Follow Up`
+    const transcriptText = conversationTranscript
+      .map((m) => {
+        const label = m.direction === 'inbound' ? 'Customer' : business.name
+        const ts = m.createdAt instanceof Date ? m.createdAt.toLocaleString('en-US', { timeZone: tz }) : ''
+        return `[${ts}] ${label}: ${m.content}`
+      })
+      .join('\n\n')
+
+    const body = [
+      `The AI was temporarily unavailable (e.g. API overload).`,
+      `We sent this customer a friendly fallback: "Thanks for reaching out! Let me have someone from the team get back to you shortly."`,
+      '',
+      'Customer details:',
+      `  Name: ${customerName}`,
+      `  Phone: ${customerPhone}`,
+      '',
+      'Conversation transcript:',
+      '─'.repeat(40),
+      transcriptText,
+      '─'.repeat(40),
+      '',
+      'Please follow up with this customer when you can.',
+      '',
+      `View this conversation: ${conversationUrl}`,
+      '',
+      'Powered by MissedCall AI - Align and Acquire',
+    ].join('\n')
+
+    try {
+      await sendEmail(business.ownerEmail, subject, body)
+      console.error('[NOTIFY OWNER] AI failed email sent to', business.ownerEmail)
+    } catch (err) {
+      console.error('[NOTIFY OWNER] AI failed email FAILED:', err instanceof Error ? err.message : String(err))
+    }
+  }
+}
+
 let transporter: ReturnType<typeof nodemailer.createTransport> | null = null
 
 function getTransporter() {

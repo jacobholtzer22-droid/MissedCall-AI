@@ -14,7 +14,7 @@ import { addDays, addMonths, addYears } from 'date-fns'
 import { TZDate } from '@date-fns/tz'
 import { getAvailableSlots, getTwoClosestSlotsOnDay, isSpecificSlotAvailable, parseBusinessHours } from '@/lib/google-calendar'
 import { createBooking, cleanServiceForOwner } from '@/lib/create-booking'
-import { notifyOwnerOnHumanNeeded, notifyOwnerOnLeadCaptured } from '@/lib/notify-owner'
+import { notifyOwnerOnHumanNeeded, notifyOwnerOnLeadCaptured, notifyOwnerOnAIFailed } from '@/lib/notify-owner'
 import { recordMessageSent } from '@/lib/sms-cooldown'
 import { formatPhoneNumber } from '@/lib/utils'
 
@@ -319,10 +319,32 @@ export async function POST(request: NextRequest) {
       // AI response (pass bookingFlowState so AI can guide back when customer goes off-topic)
       timing.aiStartAt = timing.now()
       console.log('⏱️ [SMS] AI processing started at:', timing.aiStartAt)
-      const aiResponse = await generateAIResponse(business, conversation, text, conversation.bookingFlowState, business.calendarEnabled)
+      const aiResult = await generateAIResponse(business, conversation, text, conversation.bookingFlowState, business.calendarEnabled)
       timing.aiEndAt = timing.now()
       console.log('⏱️ [SMS] AI processing finished at:', timing.aiEndAt)
 
+      if (aiResult.aiFailed) {
+        await sendSMSAndLog(business, conversation.id, from, aiResult.response, timing)
+        const conversationTranscript = conversation.messages.map((m: any) => ({
+          direction: m.direction,
+          content: m.content,
+          createdAt: m.createdAt as Date,
+        }))
+        try {
+          await notifyOwnerOnAIFailed(business, {
+            customerName: conversation.callerName || 'Customer',
+            customerPhone: from,
+            conversationTranscript,
+            conversationId: conversation.id,
+          })
+        } catch (err) {
+          console.error('❌ Failed to notify owner of AI failure:', err)
+        }
+        const totalMs = Date.now() - new Date(timing.webhookReceivedAt).getTime()
+        return NextResponse.json({ ok: true, aiFailed: true, timing: { ...timing, totalMs } }, { status: 200 })
+      }
+
+      const aiResponse = aiResult.response
       const cleanResponse = aiResponse
         .replace(/\[APPOINTMENT_BOOKED:.*?\]/g, '')
         .replace(/\[LEAD_CAPTURED:.*?\]/g, '')
@@ -508,9 +530,9 @@ export async function POST(request: NextRequest) {
           return NextResponse.json({ ok: true, timing: { ...timing, totalMs } }, { status: 200 })
         }
 
-        // createBooking failed — send error to customer
+        // createBooking failed — send friendly message (never raw error to customer)
         console.error('[SMS BOOKING] createBooking failed:', result.error)
-        const fallbackMsg = `Sorry, we had trouble saving that (${result.error}). Please text back to try again or ${getCallUsPhrase(business)}.`
+        const fallbackMsg = `Sorry, we had trouble saving that. Please text back to try again or ${getCallUsPhrase(business)}.`
         await sendSMSAndLog(business, conversation.id, from, fallbackMsg, timing)
         const totalMs = Date.now() - new Date(timing.webhookReceivedAt).getTime()
         return NextResponse.json({ ok: false, error: result.error, timing: { ...timing, totalMs } }, { status: 200 })
@@ -1892,13 +1914,15 @@ function parseTimePreference(text: string, tz: string): TimePreferenceResult | n
 
 // ── Helpers ─────────────────────────────────────────────────────────
 
+const AI_FALLBACK_MESSAGE = "Thanks for reaching out! Let me have someone from the team get back to you shortly."
+
 async function generateAIResponse(
   business: any,
   conversation: any,
   latestMessage: string,
   bookingFlowState?: unknown,
   calendarEnabled?: boolean
-): Promise<string> {
+): Promise<{ response: string; aiFailed?: boolean }> {
   const conversationHistory = conversation.messages.map((msg: any) => ({
     role: msg.direction === 'inbound' ? ('user' as const) : ('assistant' as const),
     content: msg.content,
@@ -2177,9 +2201,8 @@ THINGS YOU MUST NEVER DO:
   const AI_MODEL = 'claude-haiku-4-5-20251001'
   const apiKey = process.env.ANTHROPIC_API_KEY
   if (!apiKey || apiKey.trim() === '') {
-    const msg = 'ANTHROPIC_API_KEY is missing or empty'
-    console.error('❌ [AI]', msg)
-    return `I'm having trouble right now. AI error: ${msg}`
+    console.error('❌ [AI] ANTHROPIC_API_KEY is missing or empty')
+    return { response: AI_FALLBACK_MESSAGE, aiFailed: true }
   }
 
   // Log full request for debugging
@@ -2193,32 +2216,50 @@ THINGS YOU MUST NEVER DO:
   }
   console.log('🔍 [AI] Full request:', JSON.stringify(requestPayload, null, 2))
 
-  try {
-    const response = await anthropic.messages.create({
-      model: AI_MODEL,
-      max_tokens: 256,
-      system: systemPrompt,
-      messages: conversationHistory,
-    })
-    const textContent = response.content.find(block => block.type === 'text')
-    return textContent?.text || "I'm having trouble right now. Someone will call you back shortly!"
-  } catch (error: unknown) {
-    const errMsg = error instanceof Error ? error.message : String(error)
-    const errStack = error instanceof Error ? error.stack : undefined
-    const errObj = error as { status?: number; error?: unknown; [k: string]: unknown }
-    const fullError = {
-      message: errMsg,
-      stack: errStack,
-      status: errObj?.status,
-      error: errObj?.error,
-      ...Object.fromEntries(
-        Object.entries(errObj).filter(([k]) => !['stack', 'message'].includes(k))
-      ),
+  const maxRetries = 3
+  const retryDelayMs = 3000
+
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      const response = await anthropic.messages.create({
+        model: AI_MODEL,
+        max_tokens: 256,
+        system: systemPrompt,
+        messages: conversationHistory,
+      })
+      const textContent = response.content.find(block => block.type === 'text')
+      const text = textContent?.text || AI_FALLBACK_MESSAGE
+      return { response: text }
+    } catch (error: unknown) {
+      const errMsg = error instanceof Error ? error.message : String(error)
+      const errObj = error as { status?: number; statusCode?: number; error?: unknown; [k: string]: unknown }
+      const status = errObj?.status ?? errObj?.statusCode
+      const is529 = status === 529
+
+      console.error(`❌ [AI] Attempt ${attempt}/${maxRetries} failed:`, errMsg, { status, is529 })
+
+      if (is529 && attempt < maxRetries) {
+        console.log(`⏳ [AI] Claude API overloaded (529). Waiting ${retryDelayMs}ms before retry ${attempt + 1}/${maxRetries}...`)
+        await new Promise((resolve) => setTimeout(resolve, retryDelayMs))
+        continue
+      }
+
+      // Final failure or non-retryable error: log full details, never expose to customer
+      const fullError = {
+        message: errMsg,
+        stack: error instanceof Error ? error.stack : undefined,
+        status: errObj?.status,
+        error: errObj?.error,
+        ...Object.fromEntries(
+          Object.entries(errObj).filter(([k]) => !['stack', 'message'].includes(k))
+        ),
+      }
+      console.error('❌ [AI] Full error (not shown to customer):', JSON.stringify(fullError, null, 2))
+      return { response: AI_FALLBACK_MESSAGE, aiFailed: true }
     }
-    console.error('❌ [AI] Full error:', JSON.stringify(fullError, null, 2))
-    console.error('❌ [AI] Raw error:', error)
-    return `I'm having trouble right now. AI error: ${errMsg}`
   }
+
+  return { response: AI_FALLBACK_MESSAGE, aiFailed: true }
 }
 
 async function sendSMS(business: any, to: string, message: string) {
