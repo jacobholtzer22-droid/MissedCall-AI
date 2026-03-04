@@ -2054,7 +2054,7 @@ THINGS YOU MUST NEVER DO:
     if (!apiKey || apiKey.trim() === '') {
       const msg = 'ANTHROPIC_API_KEY is missing or empty'
       console.error('❌ [AI]', msg)
-      return `I'm having trouble right now. AI error: ${msg}`
+      return { response: AI_FALLBACK_MESSAGE, aiFailed: true }
     }
     try {
       const response = await anthropic.messages.create({
@@ -2064,11 +2064,13 @@ THINGS YOU MUST NEVER DO:
         messages: conversationHistory,
       })
       const textContent = response.content.find(block => block.type === 'text')
-      return textContent?.text || "I'm having trouble right now. Someone will call you back shortly!"
+      return textContent?.text
+        ? { response: textContent.text }
+        : { response: AI_FALLBACK_MESSAGE, aiFailed: true }
     } catch (error: unknown) {
       const errMsg = error instanceof Error ? error.message : String(error)
       console.error('❌ [AI] Lead mode error:', errMsg)
-      return `I'm having trouble right now. AI error: ${errMsg}`
+      return { response: AI_FALLBACK_MESSAGE, aiFailed: true }
     }
   }
 
