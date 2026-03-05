@@ -206,10 +206,14 @@ export async function POST(request: NextRequest) {
       if (state.forwardingPending) {
         console.log('📞 "Please hold" finished — creating forwarding call to owner')
 
-        await (telnyx.calls.actions as any).playAudio(callControlId, {
-          audio_url: 'http://com.twilio.music.classical.s3.amazonaws.com/BusssyBoy_-_Thats_not_how_the_world_works.mp3',
-          loop: 'infinity',
-        })
+        try {
+          await (telnyx.calls.actions as any).playbackStart(callControlId, {
+            audio_url: 'http://com.twilio.music.classical.s3.amazonaws.com/BusssyBoy_-_Thats_not_how_the_world_works.mp3',
+            loop: 'infinity',
+          })
+        } catch (err) {
+          console.warn('⚠️ Hold music playback failed (forwarding will still proceed):', err)
+        }
 
         const business = await db.business.findUnique({ where: { id: state.businessId! } })
         if (!business?.forwardingNumber) {
