@@ -207,9 +207,16 @@ export async function POST(request: NextRequest) {
         console.log('📞 "Please hold" finished — creating forwarding call to owner')
 
         try {
-          await (telnyx.calls.actions as any).playbackStart(callControlId, {
-            audio_url: 'http://com.twilio.music.classical.s3.amazonaws.com/BusssyBoy_-_Thats_not_how_the_world_works.mp3',
-            loop: 'infinity',
+          await fetch(`https://api.telnyx.com/v2/calls/${callControlId}/actions/playback_start`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${process.env.TELNYX_API_KEY}`,
+            },
+            body: JSON.stringify({
+              audio_url: 'http://com.twilio.music.classical.s3.amazonaws.com/BusssyBoy_-_Thats_not_how_the_world_works.mp3',
+              loop: 'infinity',
+            }),
           })
         } catch (err) {
           console.warn('⚠️ Hold music playback failed (forwarding will still proceed):', err)
@@ -510,7 +517,7 @@ export async function POST(request: NextRequest) {
                 const smsBody = [
                   `New voicemail from ${callerPhone}`,
                   transcriptionText || 'Transcription not available',
-                  `Listen: ${urlToSave}`,
+                  'View: https://www.alignandacquire.com/dashboard/voicemails',
                 ].join('\n')
                 await telnyx.messages.send({
                   from: business.telnyxPhoneNumber,
@@ -540,7 +547,7 @@ export async function POST(request: NextRequest) {
   <p><strong>From:</strong> ${callerPhone}</p>
   <p><strong>Date &amp; time:</strong> ${dateTime}</p>
   ${transcriptionHtml}
-  <p><a href="${urlToSave}" style="color: #2563eb;">Listen to recording</a></p>
+  <p><a href="https://www.alignandacquire.com/dashboard/voicemails" style="color: #2563eb;">View in Dashboard</a></p>
 </body>
 </html>`
                 await resend.emails.send({
