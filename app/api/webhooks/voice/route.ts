@@ -51,6 +51,8 @@ const NO_SMS_VOICE_MESSAGE =
 const FORWARDING_TIMEOUT_SECS = 25       // When missedCallAiEnabled: ring out quickly → missed call SMS flow
 const FORWARDING_TIMEOUT_VOICEMAIL_SECS = 20  // When missedCallAiDisabled: longer ring so owner voicemail can pick up (~4-5 rings)
 const HOLD_MUSIC_URL = 'https://raw.githubusercontent.com/nickleus27/hold-music/master/holdmusic.mp3'
+const VOICEMAIL_GREETING =
+  'Sorry, no one is available to take your call right now. Please leave a message after the tone.'
 
 interface ClientState {
   businessId?: string
@@ -136,17 +138,27 @@ export async function POST(request: NextRequest) {
       } else {
         if (business.missedCallAiEnabled) {
           await sendMissedCallSMS(telnyx, business, callControlId, from, timing)
+          const normalMsg = business.missedCallVoiceMessage || DEFAULT_VOICE_MESSAGE
+          console.log('🔊 Speaking missed call message:', { callControlId, message: normalMsg })
+          await telnyx.calls.actions.speak(callControlId, {
+            payload: normalMsg,
+            voice: VOICE,
+          })
         } else {
-          console.log('MissedCall AI disabled, skipping SMS')
+          // Voicemail-only mode (no screener): create conversation and route to voicemail recording
+          console.log('📞 AI disabled + no screener, routing to voicemail')
+          await db.conversation.upsert({
+            where: { callSid: callControlId },
+            create: { businessId: business.id, callerPhone: from, callSid: callControlId, status: 'active' },
+            update: {},
+          })
+          const greeting = business.missedCallVoiceMessage || VOICEMAIL_GREETING
+          await telnyx.calls.actions.speak(callControlId, {
+            payload: greeting,
+            voice: VOICE,
+            client_state: toB64({ businessId: business.id, callerPhone: from, voicemailPending: true }),
+          } as any)
         }
-        const normalMsg = business.missedCallAiEnabled
-          ? (business.missedCallVoiceMessage || DEFAULT_VOICE_MESSAGE)
-          : (business.missedCallVoiceMessage || NO_SMS_VOICE_MESSAGE)
-        console.log('🔊 Speaking missed call message:', { callControlId, message: normalMsg })
-        await telnyx.calls.actions.speak(callControlId, {
-          payload: normalMsg,
-          voice: VOICE,
-        })
       }
 
       timing.totalMs = Date.now() - new Date(webhookReceivedAt).getTime()
@@ -222,17 +234,22 @@ export async function POST(request: NextRequest) {
           if (business) {
             if (business.missedCallAiEnabled) {
               await sendMissedCallSMS(telnyx, business, callControlId, state.callerPhone!, timing)
+              const fallbackMsg = business.missedCallVoiceMessage || DEFAULT_VOICE_MESSAGE
+              await telnyx.calls.actions.speak(callControlId, {
+                payload: fallbackMsg,
+                voice: VOICE,
+                client_state: toB64({ businessId: state.businessId, callerPhone: state.callerPhone }),
+              })
             } else {
-              console.log('MissedCall AI disabled, skipping SMS')
+              // AI disabled: route to voicemail
+              console.log('📞 AI disabled + no forwarding number in forwardingPending, routing to voicemail')
+              const greeting = business.missedCallVoiceMessage || VOICEMAIL_GREETING
+              await telnyx.calls.actions.speak(callControlId, {
+                payload: greeting,
+                voice: VOICE,
+                client_state: toB64({ businessId: state.businessId, callerPhone: state.callerPhone, voicemailPending: true }),
+              } as any)
             }
-            const fallbackMsg = business.missedCallAiEnabled
-              ? (business.missedCallVoiceMessage || DEFAULT_VOICE_MESSAGE)
-              : (business.missedCallVoiceMessage || NO_SMS_VOICE_MESSAGE)
-            await telnyx.calls.actions.speak(callControlId, {
-              payload: fallbackMsg,
-              voice: VOICE,
-              client_state: toB64({ businessId: state.businessId, callerPhone: state.callerPhone }),
-            })
           } else {
             await telnyx.calls.actions.hangup(callControlId, {})
           }
@@ -244,17 +261,22 @@ export async function POST(request: NextRequest) {
           console.error('❌ No connection_id available for outbound call, falling back')
           if (business.missedCallAiEnabled) {
             await sendMissedCallSMS(telnyx, business, callControlId, state.callerPhone!, timing)
+            const fallbackMsg = business.missedCallVoiceMessage || DEFAULT_VOICE_MESSAGE
+            await telnyx.calls.actions.speak(callControlId, {
+              payload: fallbackMsg,
+              voice: VOICE,
+              client_state: toB64({ businessId: state.businessId, callerPhone: state.callerPhone }),
+            })
           } else {
-            console.log('MissedCall AI disabled, skipping SMS')
+            // AI disabled: route to voicemail
+            console.log('📞 AI disabled + no connectionId, routing to voicemail')
+            const greeting = business.missedCallVoiceMessage || VOICEMAIL_GREETING
+            await telnyx.calls.actions.speak(callControlId, {
+              payload: greeting,
+              voice: VOICE,
+              client_state: toB64({ businessId: state.businessId, callerPhone: state.callerPhone, voicemailPending: true }),
+            } as any)
           }
-          const fallbackMsg = business.missedCallAiEnabled
-            ? (business.missedCallVoiceMessage || DEFAULT_VOICE_MESSAGE)
-            : (business.missedCallVoiceMessage || NO_SMS_VOICE_MESSAGE)
-          await telnyx.calls.actions.speak(callControlId, {
-            payload: fallbackMsg,
-            voice: VOICE,
-            client_state: toB64({ businessId: state.businessId, callerPhone: state.callerPhone }),
-          })
           return NextResponse.json({}, { status: 200 })
         }
 
@@ -302,17 +324,22 @@ export async function POST(request: NextRequest) {
           console.error('❌ Failed to create forwarding call:', dialResult.reason)
           if (business.missedCallAiEnabled) {
             await sendMissedCallSMS(telnyx, business, callControlId, state.callerPhone!, timing)
+            const fallbackMsg = business.missedCallVoiceMessage || DEFAULT_VOICE_MESSAGE
+            await telnyx.calls.actions.speak(callControlId, {
+              payload: fallbackMsg,
+              voice: VOICE,
+              client_state: toB64({ businessId: state.businessId, callerPhone: state.callerPhone }),
+            })
           } else {
-            console.log('MissedCall AI disabled, skipping SMS')
+            // AI disabled: route to voicemail
+            console.log('📞 AI disabled + dial failed, routing to voicemail')
+            const greeting = business.missedCallVoiceMessage || VOICEMAIL_GREETING
+            await telnyx.calls.actions.speak(callControlId, {
+              payload: greeting,
+              voice: VOICE,
+              client_state: toB64({ businessId: state.businessId, callerPhone: state.callerPhone, voicemailPending: true }),
+            } as any)
           }
-          const fallbackMsg = business.missedCallAiEnabled
-            ? (business.missedCallVoiceMessage || DEFAULT_VOICE_MESSAGE)
-            : (business.missedCallVoiceMessage || NO_SMS_VOICE_MESSAGE)
-          await telnyx.calls.actions.speak(callControlId, {
-            payload: fallbackMsg,
-            voice: VOICE,
-            client_state: toB64({ businessId: state.businessId, callerPhone: state.callerPhone }),
-          })
         } else {
           const dialValue = dialResult.status === 'fulfilled' ? (dialResult.value as { data?: { call_control_id?: string } }) : null
           console.log('📞 Forwarding call created:', dialValue?.data?.call_control_id)
@@ -380,17 +407,26 @@ export async function POST(request: NextRequest) {
           // ---- STANDARD SCREENING FLOW (no forwarding) ----
           if (business.missedCallAiEnabled) {
             await sendMissedCallSMS(telnyx, business, callControlId, callerPhone, timing)
+            const missedMsg = business.missedCallVoiceMessage || DEFAULT_VOICE_MESSAGE
+            console.log('🔊 Speaking missed call message:', { callControlId, message: missedMsg })
+            await telnyx.calls.actions.speak(callControlId, {
+              payload: missedMsg,
+              voice: VOICE,
+            })
           } else {
-            console.log('MissedCall AI disabled, skipping SMS')
+            // Voicemail-only (screener passed, no forwarding): route to voicemail recording
+            console.log('📞 AI disabled + no forwarding, routing to voicemail')
+            await db.conversation.updateMany({
+              where: { callSid: callControlId },
+              data: { status: 'active' },
+            })
+            const greeting = business.missedCallVoiceMessage || VOICEMAIL_GREETING
+            await telnyx.calls.actions.speak(callControlId, {
+              payload: greeting,
+              voice: VOICE,
+              client_state: toB64({ businessId, callerPhone, voicemailPending: true }),
+            } as any)
           }
-          const missedMsg = business.missedCallAiEnabled
-            ? (business.missedCallVoiceMessage || DEFAULT_VOICE_MESSAGE)
-            : (business.missedCallVoiceMessage || NO_SMS_VOICE_MESSAGE)
-          console.log('🔊 Speaking missed call message:', { callControlId, message: missedMsg })
-          await telnyx.calls.actions.speak(callControlId, {
-            payload: missedMsg,
-            voice: VOICE,
-          })
         }
       } else {
         const noInput = digits == null || digits === ''
@@ -481,25 +517,81 @@ export async function POST(request: NextRequest) {
     // RECORDING SAVED (voicemail flow)
     // =============================================
     if (eventType === 'call.recording.saved') {
-      const recordingUrls = payload?.recording_urls ?? payload?.public_recording_urls
-      const telnyxRecordingUrl = recordingUrls?.mp3 as string | undefined
+      const privateUrls = payload?.recording_urls
+      const publicUrls = payload?.public_recording_urls
+      const telnyxPrivateUrl = (privateUrls?.mp3 as string | undefined)
+      const telnyxPublicUrl = (publicUrls?.mp3 as string | undefined)
+      const telnyxRecordingUrl = telnyxPrivateUrl || telnyxPublicUrl
+
       if (telnyxRecordingUrl) {
         const conv = await db.conversation.findUnique({ where: { callSid: callControlId } })
         if (conv) {
-          let urlToSave = telnyxRecordingUrl
-          try {
-            const response = await fetch(telnyxRecordingUrl)
-            if (!response.ok) throw new Error(`Fetch failed: ${response.status}`)
-            const arrayBuffer = await response.arrayBuffer()
-            const buffer = Buffer.from(arrayBuffer)
-            const { url: blobUrl } = await put(`voicemails/${callControlId}.mp3`, buffer, {
-              access: 'public',
-              contentType: 'audio/mpeg',
-            })
-            urlToSave = blobUrl
-          } catch (err) {
-            console.error('❌ Failed to fetch or upload recording to Vercel Blob, using Telnyx URL:', err)
+          let urlToSave: string | null = null
+
+          // Attempt 1: fetch with auth from private URL, upload to Vercel Blob
+          if (telnyxPrivateUrl) {
+            try {
+              const response = await fetch(telnyxPrivateUrl, {
+                headers: { 'Authorization': `Bearer ${process.env.TELNYX_API_KEY}` },
+              })
+              if (!response.ok) throw new Error(`Private fetch failed: ${response.status}`)
+              const buffer = Buffer.from(await response.arrayBuffer())
+              const { url: blobUrl } = await put(`voicemails/${callControlId}.mp3`, buffer, {
+                access: 'public',
+                contentType: 'audio/mpeg',
+              })
+              urlToSave = blobUrl
+              console.log('✅ Recording uploaded to Vercel Blob (private URL):', blobUrl)
+            } catch (err) {
+              console.error('❌ Blob upload attempt 1 (private URL) failed:', err)
+            }
           }
+
+          // Attempt 2: fetch from public URL, upload to Vercel Blob
+          if (!urlToSave && telnyxPublicUrl) {
+            try {
+              const response = await fetch(telnyxPublicUrl)
+              if (!response.ok) throw new Error(`Public fetch failed: ${response.status}`)
+              const buffer = Buffer.from(await response.arrayBuffer())
+              const { url: blobUrl } = await put(`voicemails/${callControlId}.mp3`, buffer, {
+                access: 'public',
+                contentType: 'audio/mpeg',
+              })
+              urlToSave = blobUrl
+              console.log('✅ Recording uploaded to Vercel Blob (public URL):', blobUrl)
+            } catch (err) {
+              console.error('❌ Blob upload attempt 2 (public URL) failed:', err)
+            }
+          }
+
+          // Attempt 3: retry once more with whichever URL is available
+          if (!urlToSave) {
+            const retryUrl = telnyxPrivateUrl || telnyxPublicUrl!
+            const useAuth = retryUrl === telnyxPrivateUrl
+            try {
+              await new Promise((r) => setTimeout(r, 1000))
+              const headers: Record<string, string> = {}
+              if (useAuth) headers['Authorization'] = `Bearer ${process.env.TELNYX_API_KEY}`
+              const response = await fetch(retryUrl, { headers })
+              if (!response.ok) throw new Error(`Retry fetch failed: ${response.status}`)
+              const buffer = Buffer.from(await response.arrayBuffer())
+              const { url: blobUrl } = await put(`voicemails/${callControlId}.mp3`, buffer, {
+                access: 'public',
+                contentType: 'audio/mpeg',
+              })
+              urlToSave = blobUrl
+              console.log('✅ Recording uploaded to Vercel Blob (retry):', blobUrl)
+            } catch (err) {
+              console.error('❌ Blob upload attempt 3 (retry) failed:', err)
+              // Last resort: save the public Telnyx URL (temporary — will expire)
+              urlToSave = telnyxPublicUrl || telnyxPrivateUrl!
+              console.warn('⚠️ All Vercel Blob uploads failed — saving temporary Telnyx URL. Recording WILL expire!', {
+                callControlId,
+                url: urlToSave,
+              })
+            }
+          }
+
           await db.conversation.update({
             where: { id: conv.id },
             data: { recordingUrl: urlToSave } as Prisma.ConversationUpdateInput,
@@ -704,12 +796,11 @@ async function handleForwardingFallback(
       } catch {}
     }
   } else {
-    // Spam-screening-only: play voicemail greeting then record
-    const voicemailGreeting =
-      'Sorry, no one is available to take your call right now. Please leave a message after the tone.'
+    // Voicemail-only: play voicemail greeting then record
     try {
+      const greeting = business.missedCallVoiceMessage || VOICEMAIL_GREETING
       await telnyx.calls.actions.speak(state.aLegCallControlId, {
-        payload: voicemailGreeting,
+        payload: greeting,
         voice: VOICE,
         client_state: toB64({
           businessId: state.businessId,
