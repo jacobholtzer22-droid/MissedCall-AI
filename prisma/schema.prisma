@@ -202,6 +202,9 @@ model Conversation {
   durationSeconds       Int?                            // Dial leg duration in seconds
   callEndedAt           DateTime?                       // When the dial attempt ended
 
+  // Voicemail (spam-screening-only flow when missedCallAiEnabled is false)
+  recordingUrl          String?                         // URL of voicemail recording (mp3)
+
   // Conversation state
   status                String    @default("active")    // active, booking_in_progress, appointment_booked, closed, human_needed, completed, no_response, screening
 

@@ -32,6 +32,7 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import type { Business } from '@prisma/client'
+import { Prisma } from '@prisma/client'
 import { db } from '@/lib/db'
 import Telnyx from 'telnyx'
 import { checkCooldown, recordMessageSent, logCooldownSkip, isCooldownBypassNumber } from '@/lib/sms-cooldown'
@@ -52,6 +53,7 @@ interface ClientState {
   forwardingPending?: boolean
   isForwardingLeg?: boolean
   aLegCallControlId?: string
+  voicemailPending?: boolean
 }
 
 export async function POST(request: NextRequest) {
@@ -177,6 +179,26 @@ export async function POST(request: NextRequest) {
     // SPEAK ENDED
     // =============================================
     if (eventType === 'call.speak.ended') {
+      // Voicemail flow (spam-screening-only): greeting finished → start recording
+      if (state.voicemailPending) {
+        console.log('📞 Voicemail greeting ended — starting recording')
+        try {
+          await (telnyx.calls.actions as any).startRecording(callControlId, {
+            format: 'mp3',
+            channels: 'single',
+            max_length: 120,
+            timeout_secs: 5,
+            play_beep: true,
+          })
+        } catch (err) {
+          console.error('❌ Failed to start voicemail recording:', err)
+          try {
+            await telnyx.calls.actions.hangup(callControlId, {})
+          } catch {}
+        }
+        return NextResponse.json({}, { status: 200 })
+      }
+
       if (state.forwardingPending) {
         console.log('📞 "Please hold" finished — creating forwarding call to owner')
 
@@ -419,6 +441,30 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ ok: true, timing }, { status: 200 })
     }
 
+    // =============================================
+    // RECORDING SAVED (voicemail flow)
+    // =============================================
+    if (eventType === 'call.recording.saved') {
+      const recordingUrls = payload?.recording_urls ?? payload?.public_recording_urls
+      const recordingUrl = recordingUrls?.mp3 as string | undefined
+      if (recordingUrl) {
+        const conv = await db.conversation.findUnique({ where: { callSid: callControlId } })
+        if (conv) {
+          await db.conversation.update({
+            where: { id: conv.id },
+            data: { recordingUrl } as Prisma.ConversationUpdateInput,
+          })
+          console.log('📞 Voicemail recording saved to conversation:', { callControlId, recordingUrl })
+        }
+      }
+      try {
+        await telnyx.calls.actions.hangup(callControlId, {})
+      } catch (err) {
+        console.error('❌ Failed to hangup after recording saved:', err)
+      }
+      return NextResponse.json({}, { status: 200 })
+    }
+
     // Acknowledge all other events
     return NextResponse.json({}, { status: 200 })
   } catch (error) {
@@ -515,10 +561,24 @@ async function handleForwardingFallback(
       } catch {}
     }
   } else {
+    // Spam-screening-only: play voicemail greeting then record
+    const voicemailGreeting =
+      'Sorry, no one is available to take your call right now. Please leave a message after the tone.'
     try {
-      await telnyx.calls.actions.hangup(state.aLegCallControlId, {})
+      await telnyx.calls.actions.speak(state.aLegCallControlId, {
+        payload: voicemailGreeting,
+        voice: VOICE,
+        client_state: toB64({
+          businessId: state.businessId,
+          callerPhone: state.callerPhone,
+          voicemailPending: true,
+        }),
+      })
     } catch (err) {
-      console.error('❌ Failed to hangup A-leg:', err)
+      console.error('❌ Failed to speak voicemail greeting on A-leg:', err)
+      try {
+        await telnyx.calls.actions.hangup(state.aLegCallControlId, {})
+      } catch {}
     }
   }
 }
