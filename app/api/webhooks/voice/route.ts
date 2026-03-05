@@ -608,6 +608,7 @@ export async function POST(request: NextRequest) {
               ownerEmail: true,
               name: true,
               telnyxPhoneNumber: true,
+              timezone: true,
             },
           })
           if (business && !business.missedCallAiEnabled) {
@@ -617,10 +618,19 @@ export async function POST(request: NextRequest) {
             const transcriptionText = (convUpdated as { voicemailTranscription?: string | null } | null)?.voicemailTranscription?.trim() || null
             const callerPhone = convUpdated?.callerPhone ?? conv.callerPhone ?? 'Unknown'
 
+            const tz = business.timezone || 'America/New_York'
+            const voicemailDate = convUpdated?.createdAt ?? new Date()
+            const formattedDateTime = new Intl.DateTimeFormat('en-US', {
+              timeZone: tz,
+              dateStyle: 'medium',
+              timeStyle: 'short',
+            }).format(voicemailDate)
+
             if (business.notifyBySms && business.ownerPhone && business.telnyxPhoneNumber) {
               try {
                 const smsBody = [
                   `New voicemail from ${callerPhone}`,
+                  `Received: ${formattedDateTime}`,
                   transcriptionText || 'Transcription not available',
                   'View: https://www.alignandacquire.com/dashboard/voicemails',
                 ].join('\n')
@@ -638,9 +648,7 @@ export async function POST(request: NextRequest) {
             if (business.notifyByEmail && business.ownerEmail) {
               try {
                 const resend = new Resend(process.env.RESEND_API_KEY)
-                const dateTime = convUpdated?.createdAt
-                  ? format(convUpdated.createdAt, 'PPpp')
-                  : new Date().toISOString()
+                const dateTime = formattedDateTime
                 const transcriptionHtml = transcriptionText
                   ? `<p><strong>Transcription:</strong></p><p style="white-space: pre-wrap; background: #f5f5f5; padding: 12px; border-radius: 6px;">${transcriptionText.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</p>`
                   : '<p><em>Transcription not available.</em></p>'
