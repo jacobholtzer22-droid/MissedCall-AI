@@ -764,9 +764,7 @@ export default function AdminDashboard() {
 
         {/* Business List */}
         <div className="space-y-6">
-          {businesses.map(business => {
-            console.log('Business:', business.name, 'missedCallAiEnabled:', business.missedCallAiEnabled)
-            return (
+          {businesses.map(business => (
             <div
               key={business.id}
               className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden"
@@ -877,8 +875,8 @@ export default function AdminDashboard() {
                       </div>
                     )}
 
-                    {/* Conversations - only when missedCallAiEnabled is true (full AI clients) */}
-                    {business.missedCallAiEnabled && expandedConversationsId === business.id && (
+                    {/* Conversations - only when missedCallAiEnabled !== false (full AI clients) */}
+                    {business.missedCallAiEnabled !== false && expandedConversationsId === business.id && (
                       <div className="mt-4 pt-4 border-t border-gray-800">
                         <ConversationsPanel
                           conversations={conversationsData[business.id] ?? []}
@@ -893,8 +891,8 @@ export default function AdminDashboard() {
                       </div>
                     )}
 
-                    {/* Screened Calls - only when missedCallAiEnabled is false (spam-screening-only) */}
-                    {!business.missedCallAiEnabled && expandedScreenedCallsId === business.id && (
+                    {/* Screened Calls - only when missedCallAiEnabled === false (spam-screening-only) */}
+                    {business.missedCallAiEnabled === false && expandedScreenedCallsId === business.id && (
                       <div className="mt-4 pt-4 border-t border-gray-800">
                         <ScreenedCallsPanel
                           data={screenedCallsData[business.id]}
@@ -903,8 +901,8 @@ export default function AdminDashboard() {
                       </div>
                     )}
 
-                    {/* Voicemails - only when missedCallAiEnabled is false (spam-screening-only) */}
-                    {!business.missedCallAiEnabled && expandedVoicemailsId === business.id && (
+                    {/* Voicemails - only when missedCallAiEnabled === false (spam-screening-only) */}
+                    {business.missedCallAiEnabled === false && expandedVoicemailsId === business.id && (
                       <div className="mt-4 pt-4 border-t border-gray-800">
                         <VoicemailsPanel
                           voicemails={voicemailsData[business.id] ?? []}
@@ -929,7 +927,7 @@ export default function AdminDashboard() {
                       >
                         Edit
                       </button>
-                      {business.missedCallAiEnabled && (
+                      {business.missedCallAiEnabled !== false && (
                         <button
                           onClick={() => toggleConversations(business.id)}
                           className={`px-4 py-2 rounded-lg text-sm font-medium transition ${
@@ -941,7 +939,7 @@ export default function AdminDashboard() {
                           {expandedConversationsId === business.id ? 'Hide Conversations' : 'View Conversations'}
                         </button>
                       )}
-                      {!business.missedCallAiEnabled && (
+                      {business.missedCallAiEnabled === false && (
                         <>
                           <button
                             onClick={() => toggleScreenedCalls(business.id)}
@@ -988,8 +986,7 @@ export default function AdminDashboard() {
                 </div>
               </div>
             </div>
-          );
-          })}
+          ))}
 
           {businesses.length === 0 && (
             <div className="text-center py-16 text-gray-500">
