@@ -38,6 +38,7 @@ export async function PATCH(
       'callScreenerEnabled',
       'callScreenerMessage',
       'missedCallVoiceMessage',
+      'voicemailGreeting',
       'missedCallAiEnabled',
       'slotDurationMinutes',
       'bufferMinutes',

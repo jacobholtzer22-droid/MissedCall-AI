@@ -153,7 +153,7 @@ export async function POST(request: NextRequest) {
             update: {},
           })
           await telnyx.calls.actions.speak(callControlId, {
-            payload: VOICEMAIL_GREETING,
+            payload: business.voicemailGreeting || VOICEMAIL_GREETING,
             voice: VOICE,
             client_state: toB64({ businessId: business.id, callerPhone: from, voicemailPending: true }),
           } as any)
@@ -242,7 +242,7 @@ export async function POST(request: NextRequest) {
             } else {
               // AI disabled: route to voicemail
               console.log('📞 AI disabled + no forwarding number in forwardingPending, routing to voicemail')
-              const greeting = VOICEMAIL_GREETING
+              const greeting = business.voicemailGreeting || VOICEMAIL_GREETING
               await telnyx.calls.actions.speak(callControlId, {
                 payload: greeting,
                 voice: VOICE,
@@ -269,7 +269,7 @@ export async function POST(request: NextRequest) {
           } else {
             // AI disabled: route to voicemail
             console.log('📞 AI disabled + no connectionId, routing to voicemail')
-            const greeting = VOICEMAIL_GREETING
+            const greeting = business.voicemailGreeting || VOICEMAIL_GREETING
             await telnyx.calls.actions.speak(callControlId, {
               payload: greeting,
               voice: VOICE,
@@ -332,7 +332,7 @@ export async function POST(request: NextRequest) {
           } else {
             // AI disabled: route to voicemail
             console.log('📞 AI disabled + dial failed, routing to voicemail')
-            const greeting = VOICEMAIL_GREETING
+            const greeting = business.voicemailGreeting || VOICEMAIL_GREETING
             await telnyx.calls.actions.speak(callControlId, {
               payload: greeting,
               voice: VOICE,
@@ -419,7 +419,7 @@ export async function POST(request: NextRequest) {
               where: { callSid: callControlId },
               data: { status: 'active' },
             })
-            const greeting = VOICEMAIL_GREETING
+            const greeting = business.voicemailGreeting || VOICEMAIL_GREETING
             await telnyx.calls.actions.speak(callControlId, {
               payload: greeting,
               voice: VOICE,
@@ -797,7 +797,7 @@ async function handleForwardingFallback(
   } else {
     // Voicemail-only: play voicemail greeting then record
     try {
-      const greeting = VOICEMAIL_GREETING
+      const greeting = business.voicemailGreeting || VOICEMAIL_GREETING
       await telnyx.calls.actions.speak(state.aLegCallControlId, {
         payload: greeting,
         voice: VOICE,

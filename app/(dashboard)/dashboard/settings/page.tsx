@@ -52,6 +52,7 @@ export default async function SettingsPage({
     const aiInstructions = formData.get('aiInstructions') as string
     const aiContext = formData.get('aiContext') as string
     const missedCallVoiceMessage = formData.get('missedCallVoiceMessage') as string
+    const voicemailGreeting = (formData.get('voicemailGreeting') as string)?.trim() || null
     const bookingPageTitle = (formData.get('bookingPageTitle') as string)?.trim() || null
     const bookingPageServiceLabel = (formData.get('bookingPageServiceLabel') as string)?.trim() || null
     const bookingPageConfirmation = (formData.get('bookingPageConfirmation') as string)?.trim() || null
@@ -76,6 +77,7 @@ export default async function SettingsPage({
         aiInstructions: aiInstructions || null,
         aiContext: aiContext || null,
         missedCallVoiceMessage: missedCallVoiceMessage || null,
+        voicemailGreeting,
         ownerEmail,
         ownerPhone,
         notifyBySms,
@@ -335,11 +337,19 @@ export default async function SettingsPage({
             </div>
           </div>
           <div className="ml-11 space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Missed Call Voice Message</label>
-              <textarea name="missedCallVoiceMessage" rows={3} defaultValue={business.missedCallVoiceMessage ?? ''} placeholder="We're sorry we can't get to the phone right now. You should receive a text message shortly." className="w-full px-3 py-2 bg-white text-gray-900 border border-gray-200 rounded-lg placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500" />
-              <p className="text-xs text-gray-500 mt-1">This message plays to callers when you don&apos;t answer the phone.</p>
-            </div>
+            {business.missedCallAiEnabled ? (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Missed Call Voice Message</label>
+                <textarea name="missedCallVoiceMessage" rows={3} defaultValue={business.missedCallVoiceMessage ?? ''} placeholder="We're sorry we can't get to the phone right now. You should receive a text message shortly." className="w-full px-3 py-2 bg-white text-gray-900 border border-gray-200 rounded-lg placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                <p className="text-xs text-gray-500 mt-1">This message plays to callers when you don&apos;t answer the phone.</p>
+              </div>
+            ) : (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Voicemail Greeting</label>
+                <textarea name="voicemailGreeting" rows={3} defaultValue={business.voicemailGreeting ?? ''} placeholder="Sorry, no one is available to take your call right now. Please leave a message after the tone." className="w-full px-3 py-2 bg-white text-gray-900 border border-gray-200 rounded-lg placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                <p className="text-xs text-gray-500 mt-1">This message plays before callers can leave a voicemail.</p>
+              </div>
+            )}
           </div>
           <div className="ml-11 bg-blue-50 rounded-lg p-4 mt-4">
             <h4 className="font-medium text-blue-900 mb-2">Call Forwarding Setup</h4>
