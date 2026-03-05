@@ -98,6 +98,28 @@ interface AdminConversation {
   messages: { id: string; direction: string; content: string; createdAt: string }[]
 }
 
+interface AdminVoicemail {
+  conversationId: string
+  callerPhone: string
+  recordingUrl: string
+  voicemailTranscription: string | null
+  createdAt: string
+}
+
+interface ScreenedCallRecord {
+  id: string
+  businessId: string
+  callerPhone: string
+  callSid: string | null
+  result: string
+  createdAt: string
+}
+
+interface ScreenedCallsResponse {
+  stats: { blocked: number; passed: number; total: number; blockRate: number; days: number }
+  recentCalls: ScreenedCallRecord[]
+}
+
 export default function AdminDashboard() {
   const { user, isLoaded } = useUser()
   const router = useRouter()
@@ -139,6 +161,12 @@ export default function AdminDashboard() {
   const [conversationsLoading, setConversationsLoading] = useState<Record<string, boolean>>({})
   const [expandedConvoId, setExpandedConvoId] = useState<string | null>(null)
   const [conversationsSearchFilter, setConversationsSearchFilter] = useState<Record<string, string>>({})
+  const [expandedVoicemailsId, setExpandedVoicemailsId] = useState<string | null>(null)
+  const [voicemailsData, setVoicemailsData] = useState<Record<string, AdminVoicemail[]>>({})
+  const [voicemailsLoading, setVoicemailsLoading] = useState<Record<string, boolean>>({})
+  const [expandedScreenedCallsId, setExpandedScreenedCallsId] = useState<string | null>(null)
+  const [screenedCallsData, setScreenedCallsData] = useState<Record<string, ScreenedCallsResponse | null>>({})
+  const [screenedCallsLoading, setScreenedCallsLoading] = useState<Record<string, boolean>>({})
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   async function refreshUsageData(businessId: string) {
@@ -230,6 +258,50 @@ export default function AdminDashboard() {
         console.error('Failed to fetch conversations:', err)
       } finally {
         setConversationsLoading((prev) => ({ ...prev, [businessId]: false }))
+      }
+    }
+  }
+
+  async function toggleVoicemails(businessId: string) {
+    if (expandedVoicemailsId === businessId) {
+      setExpandedVoicemailsId(null)
+      return
+    }
+    setExpandedVoicemailsId(businessId)
+    if (!voicemailsData[businessId] && !voicemailsLoading[businessId]) {
+      setVoicemailsLoading((prev) => ({ ...prev, [businessId]: true }))
+      try {
+        const res = await fetch(`/api/admin/businesses/${businessId}/voicemails`)
+        if (res.ok) {
+          const data = await res.json()
+          setVoicemailsData((prev) => ({ ...prev, [businessId]: data.voicemails || [] }))
+        }
+      } catch (err) {
+        console.error('Failed to fetch voicemails:', err)
+      } finally {
+        setVoicemailsLoading((prev) => ({ ...prev, [businessId]: false }))
+      }
+    }
+  }
+
+  async function toggleScreenedCalls(businessId: string) {
+    if (expandedScreenedCallsId === businessId) {
+      setExpandedScreenedCallsId(null)
+      return
+    }
+    setExpandedScreenedCallsId(businessId)
+    if (!screenedCallsData[businessId] && !screenedCallsLoading[businessId]) {
+      setScreenedCallsLoading((prev) => ({ ...prev, [businessId]: true }))
+      try {
+        const res = await fetch(`/api/admin/businesses/${businessId}/screened-calls?days=30`)
+        if (res.ok) {
+          const data = await res.json()
+          setScreenedCallsData((prev) => ({ ...prev, [businessId]: data }))
+        }
+      } catch (err) {
+        console.error('Failed to fetch screened calls:', err)
+      } finally {
+        setScreenedCallsLoading((prev) => ({ ...prev, [businessId]: false }))
       }
     }
   }
@@ -803,8 +875,8 @@ export default function AdminDashboard() {
                       </div>
                     )}
 
-                    {/* Conversations - expandable panel */}
-                    {expandedConversationsId === business.id && (
+                    {/* Conversations - only when missedCallAiEnabled is true (full AI clients) */}
+                    {business.missedCallAiEnabled && expandedConversationsId === business.id && (
                       <div className="mt-4 pt-4 border-t border-gray-800">
                         <ConversationsPanel
                           conversations={conversationsData[business.id] ?? []}
@@ -815,6 +887,26 @@ export default function AdminDashboard() {
                           }
                           expandedConvoId={expandedConvoId}
                           onExpandConvo={setExpandedConvoId}
+                        />
+                      </div>
+                    )}
+
+                    {/* Screened Calls - only when missedCallAiEnabled is false (spam-screening-only) */}
+                    {!business.missedCallAiEnabled && expandedScreenedCallsId === business.id && (
+                      <div className="mt-4 pt-4 border-t border-gray-800">
+                        <ScreenedCallsPanel
+                          data={screenedCallsData[business.id]}
+                          loading={screenedCallsLoading[business.id]}
+                        />
+                      </div>
+                    )}
+
+                    {/* Voicemails - only when missedCallAiEnabled is false (spam-screening-only) */}
+                    {!business.missedCallAiEnabled && expandedVoicemailsId === business.id && (
+                      <div className="mt-4 pt-4 border-t border-gray-800">
+                        <VoicemailsPanel
+                          voicemails={voicemailsData[business.id] ?? []}
+                          loading={voicemailsLoading[business.id]}
                         />
                       </div>
                     )}
@@ -835,16 +927,42 @@ export default function AdminDashboard() {
                       >
                         Edit
                       </button>
-                      <button
-                        onClick={() => toggleConversations(business.id)}
-                        className={`px-4 py-2 rounded-lg text-sm font-medium transition ${
-                          expandedConversationsId === business.id
-                            ? 'bg-indigo-600 hover:bg-indigo-700'
-                            : 'bg-gray-700 hover:bg-gray-600'
-                        }`}
-                      >
-                        {expandedConversationsId === business.id ? 'Hide Conversations' : 'View Conversations'}
-                      </button>
+                      {business.missedCallAiEnabled && (
+                        <button
+                          onClick={() => toggleConversations(business.id)}
+                          className={`px-4 py-2 rounded-lg text-sm font-medium transition ${
+                            expandedConversationsId === business.id
+                              ? 'bg-indigo-600 hover:bg-indigo-700'
+                              : 'bg-gray-700 hover:bg-gray-600'
+                          }`}
+                        >
+                          {expandedConversationsId === business.id ? 'Hide Conversations' : 'View Conversations'}
+                        </button>
+                      )}
+                      {!business.missedCallAiEnabled && (
+                        <>
+                          <button
+                            onClick={() => toggleScreenedCalls(business.id)}
+                            className={`px-4 py-2 rounded-lg text-sm font-medium transition ${
+                              expandedScreenedCallsId === business.id
+                                ? 'bg-amber-600 hover:bg-amber-700'
+                                : 'bg-gray-700 hover:bg-gray-600'
+                            }`}
+                          >
+                            {expandedScreenedCallsId === business.id ? 'Hide Screened Calls' : 'Screened Calls'}
+                          </button>
+                          <button
+                            onClick={() => toggleVoicemails(business.id)}
+                            className={`px-4 py-2 rounded-lg text-sm font-medium transition ${
+                              expandedVoicemailsId === business.id
+                                ? 'bg-violet-600 hover:bg-violet-700'
+                                : 'bg-gray-700 hover:bg-gray-600'
+                            }`}
+                          >
+                            {expandedVoicemailsId === business.id ? 'Hide Voicemails' : 'Voicemails'}
+                          </button>
+                        </>
+                      )}
                     </div>
                     {business.calendarEnabled && (
                       <a
@@ -1745,6 +1863,138 @@ function ConversationsPanel({
               </div>
             )
           })
+        )}
+      </div>
+    </div>
+  )
+}
+
+function ScreenedCallsPanel({
+  data,
+  loading,
+}: {
+  data: ScreenedCallsResponse | null | undefined
+  loading: boolean
+}) {
+  const [tab, setTab] = useState<'passed' | 'blocked'>('passed')
+  const recentCalls = data?.recentCalls ?? []
+  const passed = recentCalls.filter((c) => c.result === 'passed')
+  const blocked = recentCalls.filter((c) => c.result === 'blocked')
+  const list = tab === 'passed' ? passed : blocked
+
+  if (loading) {
+    return <p className="text-gray-500 text-sm">Loading screened calls...</p>
+  }
+
+  return (
+    <div className="space-y-3">
+      <h4 className="text-sm font-medium text-gray-300">Screened Calls</h4>
+      <div className="flex gap-2 border-b border-gray-800 pb-2">
+        <button
+          type="button"
+          onClick={() => setTab('passed')}
+          className={`px-3 py-1.5 rounded-lg text-sm font-medium transition ${
+            tab === 'passed' ? 'bg-green-600 text-white' : 'bg-gray-800 text-gray-400 hover:text-white'
+          }`}
+        >
+          Passed ({passed.length})
+        </button>
+        <button
+          type="button"
+          onClick={() => setTab('blocked')}
+          className={`px-3 py-1.5 rounded-lg text-sm font-medium transition ${
+            tab === 'blocked' ? 'bg-red-600 text-white' : 'bg-gray-800 text-gray-400 hover:text-white'
+          }`}
+        >
+          Blocked ({blocked.length})
+        </button>
+      </div>
+      <div className="max-h-[360px] overflow-y-auto border border-gray-800 rounded-xl bg-gray-900/50 overflow-hidden">
+        {list.length === 0 ? (
+          <p className="text-gray-500 text-sm py-6 text-center">
+            {tab === 'passed' ? 'No passed calls' : 'No blocked calls'}
+          </p>
+        ) : (
+          <table className="w-full text-sm">
+            <thead className="bg-gray-900 sticky top-0">
+              <tr>
+                <th className="text-left px-3 py-2 text-gray-500 font-medium">Caller</th>
+                <th className="text-left px-3 py-2 text-gray-500 font-medium">Date / Time</th>
+                <th className="text-left px-3 py-2 text-gray-500 font-medium">Result</th>
+              </tr>
+            </thead>
+            <tbody>
+              {list.map((call) => (
+                <tr key={call.id} className="border-t border-gray-800/50">
+                  <td className="px-3 py-2 font-mono text-gray-200">{call.callerPhone}</td>
+                  <td className="px-3 py-2 text-gray-400">{new Date(call.createdAt).toLocaleString()}</td>
+                  <td className="px-3 py-2">
+                    <span
+                      className={
+                        call.result === 'passed'
+                          ? 'text-green-400'
+                          : 'text-red-400'
+                      }
+                    >
+                      {call.result === 'passed' ? 'Passed' : 'Blocked'}
+                    </span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function VoicemailsPanel({
+  voicemails,
+  loading,
+}: {
+  voicemails: AdminVoicemail[]
+  loading: boolean
+}) {
+  if (loading) {
+    return <p className="text-gray-500 text-sm">Loading voicemails...</p>
+  }
+
+  return (
+    <div className="space-y-3">
+      <h4 className="text-sm font-medium text-gray-300">Voicemails</h4>
+      <div className="max-h-[480px] overflow-y-auto space-y-3 border border-gray-800 rounded-xl bg-gray-900/50 p-3">
+        {voicemails.length === 0 ? (
+          <p className="text-gray-500 text-sm py-6 text-center">No voicemails yet</p>
+        ) : (
+          voicemails.map((vm) => (
+            <div
+              key={vm.conversationId}
+              className="rounded-lg border border-gray-800 bg-gray-800/50 p-4 space-y-3"
+            >
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span className="font-mono text-sm text-white">{vm.callerPhone}</span>
+                <span className="text-xs text-gray-500">
+                  {new Date(vm.createdAt).toLocaleString()}
+                </span>
+              </div>
+              {vm.recordingUrl && (
+                <audio
+                  controls
+                  src={vm.recordingUrl}
+                  className="w-full max-w-md h-9"
+                  preload="metadata"
+                >
+                  Your browser does not support the audio element.
+                </audio>
+              )}
+              {vm.voicemailTranscription && (
+                <p className="text-sm text-gray-400 whitespace-pre-wrap border-t border-gray-800 pt-3 mt-1">
+                  {vm.voicemailTranscription}
+                </p>
+              )}
+            </div>
+          ))
         )}
       </div>
     </div>

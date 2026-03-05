@@ -125,7 +125,8 @@ export async function POST(request: NextRequest) {
           maximum_digits: 1,
           timeout_millis: 8000,
           valid_digits: '0123456789',
-        })
+          number_of_tries: 1,
+        } as Parameters<typeof telnyx.calls.actions.gatherUsingSpeak>[1] & { number_of_tries: number })
       } else {
         if (business.missedCallAiEnabled) {
           await sendMissedCallSMS(telnyx, business, callControlId, from, timing)
@@ -461,6 +462,28 @@ export async function POST(request: NextRequest) {
         await telnyx.calls.actions.hangup(callControlId, {})
       } catch (err) {
         console.error('❌ Failed to hangup after recording saved:', err)
+      }
+      return NextResponse.json({}, { status: 200 })
+    }
+
+    // =============================================
+    // TRANSCRIPTION (voicemail flow — save to conversation)
+    // =============================================
+    // call.transcription = real-time; call.recording.transcription.saved = when recording transcription is ready
+    if (eventType === 'call.transcription' || eventType === 'call.recording.transcription.saved') {
+      const text =
+        (payload?.transcription_text as string) ??
+        (payload?.text as string) ??
+        (payload?.content as string)
+      if (text && typeof text === 'string') {
+        const conv = await db.conversation.findUnique({ where: { callSid: callControlId } })
+        if (conv) {
+          await db.conversation.update({
+            where: { id: conv.id },
+            data: { voicemailTranscription: text } as Prisma.ConversationUpdateInput,
+          })
+          console.log('📞 Voicemail transcription saved to conversation:', { callControlId, length: text.length })
+        }
       }
       return NextResponse.json({}, { status: 200 })
     }

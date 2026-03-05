@@ -204,6 +204,7 @@ model Conversation {
 
   // Voicemail (spam-screening-only flow when missedCallAiEnabled is false)
   recordingUrl          String?                         // URL of voicemail recording (mp3)
+  voicemailTranscription String?   @db.Text             // Transcription of voicemail (from Telnyx)
 
   // Conversation state
   status                String    @default("active")    // active, booking_in_progress, appointment_booked, closed, human_needed, completed, no_response, screening
