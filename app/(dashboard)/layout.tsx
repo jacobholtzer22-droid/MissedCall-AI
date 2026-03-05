@@ -7,12 +7,17 @@ import { getBusinessForDashboard } from '@/lib/get-business-for-dashboard'
 import { LayoutDashboard, MessageSquare, Calendar, Settings } from 'lucide-react'
 import { Logo } from '@/app/components/Logo'
 
-const navigation = [
-  { name: 'Overview', href: '/dashboard', icon: LayoutDashboard },
-  { name: 'Conversations', href: '/dashboard/conversations', icon: MessageSquare },
-  { name: 'Scheduled Quotes', href: '/dashboard/appointments', icon: Calendar },
-  { name: 'Settings', href: '/dashboard/settings', icon: Settings },
-]
+function getNavigation(missedCallAiEnabled: boolean) {
+  const items = [
+    { name: 'Overview', href: '/dashboard', icon: LayoutDashboard },
+    ...(missedCallAiEnabled !== false
+      ? [{ name: 'Conversations', href: '/dashboard/conversations', icon: MessageSquare }]
+      : []),
+    { name: 'Scheduled Quotes', href: '/dashboard/appointments', icon: Calendar },
+    { name: 'Settings', href: '/dashboard/settings', icon: Settings },
+  ]
+  return items as { name: string; href: string; icon: typeof LayoutDashboard }[]
+}
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   const { userId } = await auth()
@@ -46,7 +51,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
         </div>
 
         <nav className="px-4 py-6 space-y-1">
-          {navigation.map((item) => (
+          {getNavigation(business.missedCallAiEnabled ?? true).map((item) => (
             <Link
               key={item.name}
               href={item.href}
@@ -78,7 +83,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
           <UserButton afterSignOutUrl="/" />
         </div>
         <nav className="flex overflow-x-auto px-4 py-2 space-x-4 border-t border-gray-100">
-          {navigation.map((item) => (
+          {getNavigation(business.missedCallAiEnabled ?? true).map((item) => (
             <Link
               key={item.name}
               href={item.href}

@@ -5,6 +5,7 @@ import { getBusinessForDashboard } from '@/lib/get-business-for-dashboard'
 import { Phone, MessageSquare, Calendar, TrendingUp, ArrowRight, ShieldCheck, HelpCircle, Wrench, UserPlus } from 'lucide-react'
 import Link from 'next/link'
 import { formatRelativeTime, formatPhoneNumber } from '@/lib/utils'
+import { SpamOnlyDashboard } from './SpamOnlyDashboard'
 
 function matchesOfferedService(requested: string, offeredList: string[]): string | null {
   const r = requested.toLowerCase().trim()
@@ -166,6 +167,11 @@ export default async function DashboardPage() {
 
   const { business } = await getBusinessForDashboard(userId, user?.business ?? null)
   if (!business) redirect('/onboarding')
+
+  // Spam-screening-only clients: show Call Activity, Recent Calls, Voicemails only
+  if (business.missedCallAiEnabled === false) {
+    return <SpamOnlyDashboard />
+  }
 
   const stats = await getDashboardStats(
     business.id,

@@ -99,6 +99,9 @@ export default async function ConversationsPage({
   const { business } = await getBusinessForDashboard(userId, user?.business ?? null)
   if (!business) redirect('/onboarding')
 
+  // Spam-screening-only clients: no SMS/AI conversation UI
+  if (business.missedCallAiEnabled === false) redirect('/dashboard')
+
   const { status: statusParam } = await searchParams
   const [conversations, statusCounts] = await Promise.all([
     getConversations(business.id, statusParam),

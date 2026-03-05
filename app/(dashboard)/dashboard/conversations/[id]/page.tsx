@@ -20,6 +20,8 @@ export default async function ConversationDetailPage({ params }: { params: Promi
   const { business } = await getBusinessForDashboard(userId, user?.business ?? null)
   if (!business) redirect('/onboarding')
 
+  if (business.missedCallAiEnabled === false) redirect('/dashboard')
+
   const conversation = await db.conversation.findUnique({
     where: { id },
     include: {
