@@ -764,7 +764,9 @@ export default function AdminDashboard() {
 
         {/* Business List */}
         <div className="space-y-6">
-          {businesses.map(business => (
+          {businesses.map(business => {
+            console.log('Business:', business.name, 'missedCallAiEnabled:', business.missedCallAiEnabled)
+            return (
             <div
               key={business.id}
               className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden"
@@ -986,7 +988,8 @@ export default function AdminDashboard() {
                 </div>
               </div>
             </div>
-          ))}
+          );
+          })}
 
           {businesses.length === 0 && (
             <div className="text-center py-16 text-gray-500">

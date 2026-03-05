@@ -19,6 +19,7 @@ export async function GET() {
   }
 
   try {
+    // No select: return all business fields so admin UI has missedCallAiEnabled (Conversations vs Screened Calls/Voicemails).
     const businesses = await db.business.findMany({
       orderBy: { createdAt: 'desc' },
       include: {
