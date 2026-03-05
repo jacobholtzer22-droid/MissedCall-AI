@@ -25,8 +25,9 @@
 // NOTE: We intentionally do NOT use answering machine detection (AMD).
 // AMD produces false positives with Google Voice, carrier voicemail
 // greetings, and other systems that answer before the human does.
-// Instead we rely on a simple 25-second timeout: if nobody picks up
-// the B-leg rings out and the caller gets the missed-call message.
+// Ring timeout on the B-leg: if missedCallAiEnabled, we use a shorter
+// timeout so unanswered calls return and trigger the missed-call SMS flow;
+// if missedCallAiDisabled, we use 30s so the owner's voicemail can pick up.
 
 import { NextRequest, NextResponse } from 'next/server'
 import type { Business } from '@prisma/client'
@@ -38,7 +39,8 @@ import { isExistingContact, logContactSkip } from '@/lib/contacts-check'
 const VOICE = 'AWS.Polly.Joanna'
 const DEFAULT_VOICE_MESSAGE =
   "We're sorry we can't get to the phone right now. You should receive a text message shortly."
-const FORWARDING_TIMEOUT_SECS = 25
+const FORWARDING_TIMEOUT_SECS = 25       // When missedCallAiEnabled: ring out quickly → missed call SMS flow
+const FORWARDING_TIMEOUT_VOICEMAIL_SECS = 30  // When missedCallAiDisabled: longer ring so owner voicemail can pick up
 
 interface ClientState {
   businessId?: string
@@ -205,11 +207,15 @@ export async function POST(request: NextRequest) {
             aLegCallControlId: callControlId,
           })
 
+          const ringTimeoutSecs = business.missedCallAiEnabled
+            ? FORWARDING_TIMEOUT_SECS
+            : FORWARDING_TIMEOUT_VOICEMAIL_SECS
+          console.log('📞 B-leg ring timeout:', ringTimeoutSecs, 's (missedCallAiEnabled:', business.missedCallAiEnabled, ')')
           const outboundCall = await telnyx.calls.dial({
             connection_id: connectionId,
             to: business.forwardingNumber,
             from: state.callerPhone!,
-            timeout_secs: FORWARDING_TIMEOUT_SECS,
+            timeout_secs: ringTimeoutSecs,
             client_state: bLegState,
           })
 
