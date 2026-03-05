@@ -33,6 +33,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import type { Business } from '@prisma/client'
 import { Prisma } from '@prisma/client'
+import { put } from '@vercel/blob'
 import { db } from '@/lib/db'
 import Telnyx from 'telnyx'
 import { checkCooldown, recordMessageSent, logCooldownSkip, isCooldownBypassNumber } from '@/lib/sms-cooldown'
@@ -447,15 +448,31 @@ export async function POST(request: NextRequest) {
     // =============================================
     if (eventType === 'call.recording.saved') {
       const recordingUrls = payload?.recording_urls ?? payload?.public_recording_urls
-      const recordingUrl = recordingUrls?.mp3 as string | undefined
-      if (recordingUrl) {
+      const telnyxRecordingUrl = recordingUrls?.mp3 as string | undefined
+      if (telnyxRecordingUrl) {
         const conv = await db.conversation.findUnique({ where: { callSid: callControlId } })
         if (conv) {
+          let urlToSave = telnyxRecordingUrl
+          if (state.businessId) {
+            try {
+              const res = await fetch(telnyxRecordingUrl)
+              if (!res.ok) throw new Error(`Fetch failed: ${res.status}`)
+              const buffer = await res.arrayBuffer()
+              const blob = await put(
+                `voicemails/${state.businessId}/${callControlId}.mp3`,
+                buffer,
+                { access: 'public' },
+              )
+              urlToSave = blob.url
+            } catch (err) {
+              console.error('❌ Failed to fetch or upload recording to Vercel Blob, using Telnyx URL:', err)
+            }
+          }
           await db.conversation.update({
             where: { id: conv.id },
-            data: { recordingUrl } as Prisma.ConversationUpdateInput,
+            data: { recordingUrl: urlToSave } as Prisma.ConversationUpdateInput,
           })
-          console.log('📞 Voicemail recording saved to conversation:', { callControlId, recordingUrl })
+          console.log('📞 Voicemail recording saved to conversation:', { callControlId, recordingUrl: urlToSave })
         }
       }
       try {
