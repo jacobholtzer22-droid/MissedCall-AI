@@ -48,7 +48,7 @@ export async function POST(request: NextRequest) {
     }
 
     // =============================================
-    // CALLER PRESSED 1 → SEND MISSED-CALL SMS
+    // CALLER PRESSED 1 → SEND MISSED-CALL SMS (if enabled) OR FORWARD
     // =============================================
     if (digits === '1') {
       console.log('✅ Caller passed IVR screening:', callerPhone)
@@ -61,6 +61,15 @@ export async function POST(request: NextRequest) {
           result: 'passed',
         },
       })
+
+      if (business.missedCallAiEnabled === false) {
+        console.log('MissedCall AI disabled, skipping SMS')
+        timing.totalMs = Date.now() - new Date(webhookReceivedAt).getTime()
+        console.log('⏱️ [VOICE-GATHER] Total time (digit 1, AI disabled):', timing.totalMs, 'ms', timing)
+        return xmlResponse(
+          '<Response><Say voice="Polly.Joanna">Please hold while we connect your call.</Say></Response>'
+        )
+      }
 
       await triggerMissedCallSMS(business, callerPhone, timing)
 

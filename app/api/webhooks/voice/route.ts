@@ -12,7 +12,8 @@
 // Event flow — IVR screener (no forwarding number):
 //   call.initiated  → answer → gatherUsingSpeak "press 1"
 //   call.gather.ended (digit=1) → speak missed-call message + SMS
-//   call.gather.ended (other)   → speak "goodbye"
+//   call.gather.ended (wrong digit) → speak "goodbye" then hangup
+//   call.gather.ended (timeout, no DTMF) → hangup immediately (no message, no SMS; e.g. robocall)
 //   call.speak.ended            → hangup
 //
 // Event flow — IVR screener WITH forwarding number:
@@ -299,7 +300,8 @@ export async function POST(request: NextRequest) {
           })
         }
       } else {
-        console.log('🚫 Caller blocked (wrong digit/timeout):', callerPhone)
+        const noInput = digits == null || digits === ''
+        console.log(noInput ? '🚫 Gather timeout (no DTMF) — hanging up' : '🚫 Caller blocked (wrong digit):', callerPhone)
         await db.conversation.updateMany({
           where: { callSid: callControlId },
           data: { status: 'screening_blocked' },
@@ -307,10 +309,15 @@ export async function POST(request: NextRequest) {
         await db.screenedCall.create({
           data: { businessId, callerPhone, callSid: callControlId, result: 'blocked' },
         })
-        await telnyx.calls.actions.speak(callControlId, {
-          payload: 'Thanks for calling. Goodbye.',
-          voice: VOICE,
-        })
+        if (noInput) {
+          // Timeout with no keypress (e.g. robocall): end call immediately, no message, no SMS
+          await telnyx.calls.actions.hangup(callControlId, {})
+        } else {
+          await telnyx.calls.actions.speak(callControlId, {
+            payload: 'Thanks for calling. Goodbye.',
+            voice: VOICE,
+          })
+        }
       }
 
       timing.totalMs = Date.now() - new Date(webhookReceivedAt).getTime()
