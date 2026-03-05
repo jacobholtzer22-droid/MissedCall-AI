@@ -39,6 +39,8 @@ interface Business {
   bookingRequiresAddress?: boolean
   businessType?: string | null
   maxMessagesPerConversation?: number | null
+  ownerEmail?: string | null
+  ownerPhone?: string | null
   createdAt: string
   updatedAt: string
   _count: {
@@ -393,6 +395,8 @@ export default function AdminDashboard() {
       bookingRequiresAddress: business.bookingRequiresAddress ?? true,
       businessType: business.businessType ?? '',
       maxMessagesPerConversation: business.maxMessagesPerConversation ?? 23,
+      ownerEmail: business.ownerEmail ?? '',
+      ownerPhone: business.ownerPhone ?? '',
     })
     setMessage('')
     setNewBlockedPhone('')
@@ -645,6 +649,8 @@ export default function AdminDashboard() {
           bookingRequiresAddress: editData.bookingRequiresAddress ?? true,
           businessType: editData.businessType || null,
           maxMessagesPerConversation: editData.maxMessagesPerConversation != null && editData.maxMessagesPerConversation !== '' ? Number(editData.maxMessagesPerConversation) : undefined,
+          ownerEmail: editData.ownerEmail?.trim() || null,
+          ownerPhone: editData.ownerPhone?.trim() || null,
         }),
       })
 
@@ -1079,6 +1085,29 @@ export default function AdminDashboard() {
                   <option value="canceled">Canceled</option>
                 </select>
               </Field>
+
+              {/* Owner Notifications */}
+              <div className="space-y-4 pt-2 border-t border-gray-800">
+                <h3 className="text-sm font-semibold text-gray-200">Owner Notifications</h3>
+                <Field label="Owner Email" hint="Email for voicemail and booking notifications">
+                  <input
+                    type="email"
+                    value={editData.ownerEmail ?? ''}
+                    onChange={e => setEditData({ ...editData, ownerEmail: e.target.value })}
+                    placeholder="owner@business.com"
+                    className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-white placeholder-gray-600"
+                  />
+                </Field>
+                <Field label="Owner Phone" hint="Phone for SMS notifications (e.g. voicemail alerts). E.164 format">
+                  <input
+                    type="tel"
+                    value={editData.ownerPhone ?? ''}
+                    onChange={e => setEditData({ ...editData, ownerPhone: e.target.value })}
+                    placeholder={editData.forwardingNumber || '+13095551234'}
+                    className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-white placeholder-gray-600"
+                  />
+                </Field>
+              </div>
 
               <label className="flex items-center gap-3 cursor-pointer">
                 <input type="checkbox" checked={editData.calendarEnabled} onChange={e => setEditData({...editData, calendarEnabled: e.target.checked})} className="w-5 h-5 rounded" />

@@ -25,10 +25,11 @@ export async function GET() {
       include: {
         _count: {
           select: {
-            conversations: true,
+            // Only count conversations that have at least one message (exclude empty call-screening records)
+            conversations: { where: { messages: { some: {} } } },
             appointments: true,
             users: true,
-            screenedCalls: true,  // <-- NEW: total screened calls
+            screenedCalls: true,
           },
         },
       },

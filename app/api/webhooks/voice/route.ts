@@ -34,8 +34,10 @@ import { NextRequest, NextResponse } from 'next/server'
 import type { Business } from '@prisma/client'
 import { Prisma } from '@prisma/client'
 import { put } from '@vercel/blob'
+import { Resend } from 'resend'
 import { db } from '@/lib/db'
 import Telnyx from 'telnyx'
+import { format } from 'date-fns'
 import { checkCooldown, recordMessageSent, logCooldownSkip, isCooldownBypassNumber } from '@/lib/sms-cooldown'
 import { isExistingContact, logContactSkip } from '@/lib/contacts-check'
 
@@ -478,6 +480,77 @@ export async function POST(request: NextRequest) {
             data: { recordingUrl: urlToSave } as Prisma.ConversationUpdateInput,
           })
           console.log('📞 Voicemail recording saved to conversation:', { callControlId, recordingUrl: urlToSave })
+
+          // Voicemail notifications to business owner (only when missedCallAiEnabled is false)
+          const business = await db.business.findUnique({
+            where: { id: conv.businessId },
+            select: {
+              missedCallAiEnabled: true,
+              notifyBySms: true,
+              ownerPhone: true,
+              notifyByEmail: true,
+              ownerEmail: true,
+              name: true,
+              telnyxPhoneNumber: true,
+            },
+          })
+          if (business && !business.missedCallAiEnabled) {
+            // Brief wait for transcription (call.transcription may have already saved it)
+            await new Promise((r) => setTimeout(r, 2500))
+            const convUpdated = await db.conversation.findUnique({ where: { id: conv.id } })
+            const transcriptionText = (convUpdated as { voicemailTranscription?: string | null } | null)?.voicemailTranscription?.trim() || null
+            const callerPhone = convUpdated?.callerPhone ?? conv.callerPhone ?? 'Unknown'
+
+            if (business.notifyBySms && business.ownerPhone && business.telnyxPhoneNumber) {
+              try {
+                const smsBody = [
+                  `New voicemail from ${callerPhone}`,
+                  transcriptionText || 'Transcription not available',
+                  `Listen: ${urlToSave}`,
+                ].join('\n')
+                await telnyx.messages.send({
+                  from: business.telnyxPhoneNumber,
+                  to: business.ownerPhone,
+                  text: smsBody,
+                })
+                console.log('📞 Voicemail SMS notification sent to owner:', business.ownerPhone)
+              } catch (err) {
+                console.error('❌ Failed to send voicemail SMS notification:', err)
+              }
+            }
+
+            if (business.notifyByEmail && business.ownerEmail) {
+              try {
+                const resend = new Resend(process.env.RESEND_API_KEY)
+                const dateTime = convUpdated?.createdAt
+                  ? format(convUpdated.createdAt, 'PPpp')
+                  : new Date().toISOString()
+                const transcriptionHtml = transcriptionText
+                  ? `<p><strong>Transcription:</strong></p><p style="white-space: pre-wrap; background: #f5f5f5; padding: 12px; border-radius: 6px;">${transcriptionText.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</p>`
+                  : '<p><em>Transcription not available.</em></p>'
+                const htmlBody = `<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><title>New Voicemail</title></head>
+<body style="font-family: system-ui, sans-serif; max-width: 560px; margin: 0 auto; padding: 24px; color: #111;">
+  <h2 style="margin-top: 0;">New Voicemail</h2>
+  <p><strong>From:</strong> ${callerPhone}</p>
+  <p><strong>Date &amp; time:</strong> ${dateTime}</p>
+  ${transcriptionHtml}
+  <p><a href="${urlToSave}" style="color: #2563eb;">Listen to recording</a></p>
+</body>
+</html>`
+                await resend.emails.send({
+                  from: 'notifications@alignandacquire.com',
+                  to: business.ownerEmail,
+                  subject: `New Voicemail - ${business.name}`,
+                  html: htmlBody,
+                })
+                console.log('📞 Voicemail email notification sent to owner:', business.ownerEmail)
+              } catch (err) {
+                console.error('❌ Failed to send voicemail email notification:', err)
+              }
+            }
+          }
         }
       }
       try {

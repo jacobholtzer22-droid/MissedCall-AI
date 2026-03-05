@@ -48,6 +48,8 @@ export async function PATCH(
       'bookingRequiresAddress',
       'businessType',
       'maxMessagesPerConversation',
+      'ownerEmail',
+      'ownerPhone',
     ]
 
     const data: Record<string, unknown> = {}
