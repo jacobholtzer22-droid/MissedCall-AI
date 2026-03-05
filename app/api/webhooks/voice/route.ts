@@ -40,6 +40,8 @@ import { isExistingContact, logContactSkip } from '@/lib/contacts-check'
 const VOICE = 'AWS.Polly.Joanna'
 const DEFAULT_VOICE_MESSAGE =
   "We're sorry we can't get to the phone right now. You should receive a text message shortly."
+const NO_SMS_VOICE_MESSAGE =
+  "We're sorry, no one is available. Please try again later. Goodbye."
 const FORWARDING_TIMEOUT_SECS = 25       // When missedCallAiEnabled: ring out quickly → missed call SMS flow
 const FORWARDING_TIMEOUT_VOICEMAIL_SECS = 30  // When missedCallAiDisabled: longer ring so owner voicemail can pick up
 
@@ -123,8 +125,14 @@ export async function POST(request: NextRequest) {
           valid_digits: '0123456789',
         })
       } else {
-        await sendMissedCallSMS(telnyx, business, callControlId, from, timing)
-        const normalMsg = business.missedCallVoiceMessage || DEFAULT_VOICE_MESSAGE
+        if (business.missedCallAiEnabled) {
+          await sendMissedCallSMS(telnyx, business, callControlId, from, timing)
+        } else {
+          console.log('MissedCall AI disabled, skipping SMS')
+        }
+        const normalMsg = business.missedCallAiEnabled
+          ? (business.missedCallVoiceMessage || DEFAULT_VOICE_MESSAGE)
+          : (business.missedCallVoiceMessage || NO_SMS_VOICE_MESSAGE)
         console.log('🔊 Speaking missed call message:', { callControlId, message: normalMsg })
         await telnyx.calls.actions.speak(callControlId, {
           payload: normalMsg,
@@ -176,9 +184,16 @@ export async function POST(request: NextRequest) {
         if (!business?.forwardingNumber) {
           console.error('❌ No forwarding number found, falling back to missed call flow')
           if (business) {
-            await sendMissedCallSMS(telnyx, business, callControlId, state.callerPhone!, timing)
+            if (business.missedCallAiEnabled) {
+              await sendMissedCallSMS(telnyx, business, callControlId, state.callerPhone!, timing)
+            } else {
+              console.log('MissedCall AI disabled, skipping SMS')
+            }
+            const fallbackMsg = business.missedCallAiEnabled
+              ? (business.missedCallVoiceMessage || DEFAULT_VOICE_MESSAGE)
+              : (business.missedCallVoiceMessage || NO_SMS_VOICE_MESSAGE)
             await telnyx.calls.actions.speak(callControlId, {
-              payload: business.missedCallVoiceMessage || DEFAULT_VOICE_MESSAGE,
+              payload: fallbackMsg,
               voice: VOICE,
               client_state: toB64({ businessId: state.businessId, callerPhone: state.callerPhone }),
             })
@@ -191,9 +206,16 @@ export async function POST(request: NextRequest) {
         const connectionId = state.connectionId || process.env.TELNYX_CONNECTION_ID
         if (!connectionId) {
           console.error('❌ No connection_id available for outbound call, falling back')
-          await sendMissedCallSMS(telnyx, business, callControlId, state.callerPhone!, timing)
+          if (business.missedCallAiEnabled) {
+            await sendMissedCallSMS(telnyx, business, callControlId, state.callerPhone!, timing)
+          } else {
+            console.log('MissedCall AI disabled, skipping SMS')
+          }
+          const fallbackMsg = business.missedCallAiEnabled
+            ? (business.missedCallVoiceMessage || DEFAULT_VOICE_MESSAGE)
+            : (business.missedCallVoiceMessage || NO_SMS_VOICE_MESSAGE)
           await telnyx.calls.actions.speak(callControlId, {
-            payload: business.missedCallVoiceMessage || DEFAULT_VOICE_MESSAGE,
+            payload: fallbackMsg,
             voice: VOICE,
             client_state: toB64({ businessId: state.businessId, callerPhone: state.callerPhone }),
           })
@@ -223,9 +245,16 @@ export async function POST(request: NextRequest) {
           console.log('📞 Forwarding call created:', (outboundCall as any)?.data?.call_control_id)
         } catch (err) {
           console.error('❌ Failed to create forwarding call:', err)
-          await sendMissedCallSMS(telnyx, business, callControlId, state.callerPhone!, timing)
+          if (business.missedCallAiEnabled) {
+            await sendMissedCallSMS(telnyx, business, callControlId, state.callerPhone!, timing)
+          } else {
+            console.log('MissedCall AI disabled, skipping SMS')
+          }
+          const fallbackMsg = business.missedCallAiEnabled
+            ? (business.missedCallVoiceMessage || DEFAULT_VOICE_MESSAGE)
+            : (business.missedCallVoiceMessage || NO_SMS_VOICE_MESSAGE)
           await telnyx.calls.actions.speak(callControlId, {
-            payload: business.missedCallVoiceMessage || DEFAULT_VOICE_MESSAGE,
+            payload: fallbackMsg,
             voice: VOICE,
             client_state: toB64({ businessId: state.businessId, callerPhone: state.callerPhone }),
           })
@@ -291,8 +320,14 @@ export async function POST(request: NextRequest) {
           } as any)
         } else {
           // ---- STANDARD SCREENING FLOW (no forwarding) ----
-          await sendMissedCallSMS(telnyx, business, callControlId, callerPhone, timing)
-          const missedMsg = business.missedCallVoiceMessage || DEFAULT_VOICE_MESSAGE
+          if (business.missedCallAiEnabled) {
+            await sendMissedCallSMS(telnyx, business, callControlId, callerPhone, timing)
+          } else {
+            console.log('MissedCall AI disabled, skipping SMS')
+          }
+          const missedMsg = business.missedCallAiEnabled
+            ? (business.missedCallVoiceMessage || DEFAULT_VOICE_MESSAGE)
+            : (business.missedCallVoiceMessage || NO_SMS_VOICE_MESSAGE)
           console.log('🔊 Speaking missed call message:', { callControlId, message: missedMsg })
           await telnyx.calls.actions.speak(callControlId, {
             payload: missedMsg,
@@ -459,20 +494,32 @@ async function handleForwardingFallback(
   const business = await db.business.findUnique({ where: { id: state.businessId } })
   if (!business) return
 
-          await sendMissedCallSMS(telnyx, business, state.aLegCallControlId, state.callerPhone, timing)
+  if (business.missedCallAiEnabled) {
+    await sendMissedCallSMS(telnyx, business, state.aLegCallControlId, state.callerPhone, timing)
+  } else {
+    console.log('MissedCall AI disabled, skipping SMS')
+  }
 
-  const missedMsg = business.missedCallVoiceMessage || DEFAULT_VOICE_MESSAGE
-  try {
-    await telnyx.calls.actions.speak(state.aLegCallControlId, {
-      payload: missedMsg,
-      voice: VOICE,
-      client_state: toB64({ businessId: state.businessId, callerPhone: state.callerPhone }),
-    })
-  } catch (err) {
-    console.error('❌ Failed to speak on A-leg (caller may have hung up):', err)
+  if (business.missedCallAiEnabled) {
+    const missedMsg = business.missedCallVoiceMessage || DEFAULT_VOICE_MESSAGE
+    try {
+      await telnyx.calls.actions.speak(state.aLegCallControlId, {
+        payload: missedMsg,
+        voice: VOICE,
+        client_state: toB64({ businessId: state.businessId, callerPhone: state.callerPhone }),
+      })
+    } catch (err) {
+      console.error('❌ Failed to speak on A-leg (caller may have hung up):', err)
+      try {
+        await telnyx.calls.actions.hangup(state.aLegCallControlId, {})
+      } catch {}
+    }
+  } else {
     try {
       await telnyx.calls.actions.hangup(state.aLegCallControlId, {})
-    } catch {}
+    } catch (err) {
+      console.error('❌ Failed to hangup A-leg:', err)
+    }
   }
 }
 
