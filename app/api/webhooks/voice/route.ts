@@ -128,8 +128,8 @@ export async function POST(request: NextRequest) {
           maximum_digits: 1,
           timeout_millis: 8000,
           valid_digits: '0123456789',
-          number_of_tries: 1,
-        } as Parameters<typeof telnyx.calls.actions.gatherUsingSpeak>[1] & { number_of_tries: number })
+          maximum_tries: 1,
+        })
       } else {
         if (business.missedCallAiEnabled) {
           await sendMissedCallSMS(telnyx, business, callControlId, from, timing)
