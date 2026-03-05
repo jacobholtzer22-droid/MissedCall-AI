@@ -4,18 +4,24 @@ import { redirect } from 'next/navigation'
 import { auth } from '@clerk/nextjs/server'
 import { db } from '@/lib/db'
 import { getBusinessForDashboard } from '@/lib/get-business-for-dashboard'
-import { LayoutDashboard, MessageSquare, Calendar, Settings } from 'lucide-react'
+import { LayoutDashboard, MessageSquare, Calendar, Settings, PhoneOff, Mail } from 'lucide-react'
 import { Logo } from '@/app/components/Logo'
 
 function getNavigation(missedCallAiEnabled: boolean) {
-  const items = [
-    { name: 'Overview', href: '/dashboard', icon: LayoutDashboard },
-    ...(missedCallAiEnabled !== false
-      ? [{ name: 'Conversations', href: '/dashboard/conversations', icon: MessageSquare }]
-      : []),
-    { name: 'Scheduled Quotes', href: '/dashboard/appointments', icon: Calendar },
-    { name: 'Settings', href: '/dashboard/settings', icon: Settings },
-  ]
+  const spamOnly = missedCallAiEnabled === false
+  const items = spamOnly
+    ? [
+        { name: 'Overview', href: '/dashboard', icon: LayoutDashboard },
+        { name: 'Blocked Calls', href: '/dashboard/blocked-calls', icon: PhoneOff },
+        { name: 'Voicemails', href: '/dashboard/voicemails', icon: Mail },
+        { name: 'Settings', href: '/dashboard/settings', icon: Settings },
+      ]
+    : [
+        { name: 'Overview', href: '/dashboard', icon: LayoutDashboard },
+        { name: 'Conversations', href: '/dashboard/conversations', icon: MessageSquare },
+        { name: 'Scheduled Quotes', href: '/dashboard/appointments', icon: Calendar },
+        { name: 'Settings', href: '/dashboard/settings', icon: Settings },
+      ]
   return items as { name: string; href: string; icon: typeof LayoutDashboard }[]
 }
 

@@ -28,7 +28,7 @@
 // greetings, and other systems that answer before the human does.
 // Ring timeout on the B-leg: if missedCallAiEnabled, we use a shorter
 // timeout so unanswered calls return and trigger the missed-call SMS flow;
-// if missedCallAiDisabled, we use 30s so the owner's voicemail can pick up.
+// if missedCallAiDisabled, we use 20s so the owner's voicemail can pick up (~4-5 rings).
 
 import { NextRequest, NextResponse } from 'next/server'
 import type { Business } from '@prisma/client'
@@ -45,7 +45,7 @@ const DEFAULT_VOICE_MESSAGE =
 const NO_SMS_VOICE_MESSAGE =
   "We're sorry, no one is available. Please try again later. Goodbye."
 const FORWARDING_TIMEOUT_SECS = 25       // When missedCallAiEnabled: ring out quickly → missed call SMS flow
-const FORWARDING_TIMEOUT_VOICEMAIL_SECS = 30  // When missedCallAiDisabled: longer ring so owner voicemail can pick up
+const FORWARDING_TIMEOUT_VOICEMAIL_SECS = 20  // When missedCallAiDisabled: longer ring so owner voicemail can pick up (~4-5 rings)
 
 interface ClientState {
   businessId?: string
@@ -203,6 +203,11 @@ export async function POST(request: NextRequest) {
 
       if (state.forwardingPending) {
         console.log('📞 "Please hold" finished — creating forwarding call to owner')
+
+        await (telnyx.calls.actions as any).playAudio(callControlId, {
+          audio_url: 'http://com.twilio.music.classical.s3.amazonaws.com/BusssyBoy_-_Thats_not_how_the_world_works.mp3',
+          loop: 'infinity',
+        })
 
         const business = await db.business.findUnique({ where: { id: state.businessId! } })
         if (!business?.forwardingNumber) {

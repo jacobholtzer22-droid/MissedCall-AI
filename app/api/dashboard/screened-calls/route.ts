@@ -24,7 +24,14 @@ export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url)
     const days = Math.min(90, Math.max(1, parseInt(searchParams.get('days') || '30', 10)))
-    const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000)
+    // When days=1, use start of today (midnight) for "today" stats; otherwise rolling window
+    const since =
+      days === 1
+        ? (() => {
+            const now = new Date()
+            return new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0)
+          })()
+        : new Date(Date.now() - days * 24 * 60 * 60 * 1000)
 
     const [blocked, passed, total, recentCalls] = await Promise.all([
       db.screenedCall.count({

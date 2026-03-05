@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { PhoneOff, Phone, PhoneCall, Mail } from 'lucide-react'
+import Link from 'next/link'
 import { formatPhoneNumber } from '@/lib/utils'
 
 type ScreenedCallRow = {
@@ -28,8 +29,13 @@ type VoicemailsResponse = {
   voicemails: VoicemailRow[]
 }
 
+type RecentActivityItem =
+  | { type: 'call'; id: string; callerPhone: string; result: string; createdAt: string }
+  | { type: 'voicemail'; conversationId: string; callerPhone: string; createdAt: string }
+
 export function SpamOnlyDashboard() {
-  const [screened, setScreened] = useState<ScreenedCallsResponse | null>(null)
+  const [todayStats, setTodayStats] = useState<ScreenedCallsResponse | null>(null)
+  const [recentScreened, setRecentScreened] = useState<ScreenedCallsResponse | null>(null)
   const [voicemails, setVoicemails] = useState<VoicemailRow[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -39,12 +45,14 @@ export function SpamOnlyDashboard() {
     setLoading(true)
     setError(null)
     Promise.all([
-      fetch('/api/dashboard/screened-calls?days=30').then((r) => (r.ok ? r.json() : Promise.reject(new Error('Screened calls failed')))),
+      fetch('/api/dashboard/screened-calls?days=1').then((r) => (r.ok ? r.json() : Promise.reject(new Error('Today stats failed')))),
+      fetch('/api/dashboard/screened-calls?days=30').then((r) => (r.ok ? r.json() : Promise.reject(new Error('Recent calls failed')))),
       fetch('/api/dashboard/voicemails').then((r) => (r.ok ? r.json() : Promise.reject(new Error('Voicemails failed')))),
     ])
-      .then(([screenedData, voicemailsData]: [ScreenedCallsResponse, VoicemailsResponse]) => {
+      .then(([todayData, recentData, voicemailsData]: [ScreenedCallsResponse, ScreenedCallsResponse, VoicemailsResponse]) => {
         if (!cancelled) {
-          setScreened(screenedData)
+          setTodayStats(todayData)
+          setRecentScreened(recentData)
           setVoicemails(voicemailsData.voicemails ?? [])
         }
       })
@@ -87,124 +95,111 @@ export function SpamOnlyDashboard() {
     )
   }
 
-  const stats = screened?.stats ?? { blocked: 0, passed: 0, total: 0, days: 30 }
-  const recentCalls = screened?.recentCalls ?? []
+  const today = todayStats?.stats ?? { blocked: 0, passed: 0, total: 0 }
+  const now = new Date()
+  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0)
+  const voicemailsToday = voicemails.filter((v) => new Date(v.createdAt) >= todayStart).length
+
+  const recentCalls = recentScreened?.recentCalls ?? []
+  const activityItems: RecentActivityItem[] = [
+    ...recentCalls.map((c) => ({ type: 'call' as const, id: c.id, callerPhone: c.callerPhone, result: c.result, createdAt: c.createdAt })),
+    ...voicemails.map((v) => ({ type: 'voicemail' as const, conversationId: v.conversationId, callerPhone: v.callerPhone, createdAt: v.createdAt })),
+  ]
+  activityItems.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+  const recentActivity = activityItems.slice(0, 10)
 
   return (
     <div className="space-y-8">
       <div>
         <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
-        <p className="text-gray-500 mt-1">Call activity and voicemails from the last 30 days.</p>
+        <p className="text-gray-500 mt-1">Today&apos;s call activity and recent activity.</p>
       </div>
 
-      {/* Call Activity - two stat cards */}
-      <div>
-        <h2 className="text-lg font-semibold text-gray-900 mb-4">Call Activity</h2>
-        <div className="grid gap-6 md:grid-cols-2">
-          <div className="rounded-xl border border-gray-200 bg-white p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-gray-500">Calls Blocked (Spam)</p>
-                <p className="text-3xl font-bold text-gray-900 mt-1">{stats.blocked}</p>
-                <p className="text-sm text-gray-500 mt-1">Last {stats.days} days</p>
-              </div>
-              <div className="p-3 rounded-lg bg-red-50">
-                <PhoneOff className="h-6 w-6 text-red-600" />
-              </div>
+      {/* Today stats - 3 cards */}
+      <div className="grid gap-6 md:grid-cols-3">
+        <div className="rounded-xl border border-red-200 bg-red-50 p-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium text-red-700">Calls Blocked Today</p>
+              <p className="text-3xl font-bold text-red-900 mt-1">{today.blocked}</p>
+            </div>
+            <div className="p-3 rounded-lg bg-red-100">
+              <PhoneOff className="h-6 w-6 text-red-600" />
             </div>
           </div>
-          <div className="rounded-xl border border-gray-200 bg-white p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-gray-500">Calls Passed (Real Callers)</p>
-                <p className="text-3xl font-bold text-gray-900 mt-1">{stats.passed}</p>
-                <p className="text-sm text-gray-500 mt-1">Last {stats.days} days</p>
-              </div>
-              <div className="p-3 rounded-lg bg-green-50">
-                <Phone className="h-6 w-6 text-green-600" />
-              </div>
+        </div>
+        <div className="rounded-xl border border-green-200 bg-green-50 p-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium text-green-700">Calls Passed Today</p>
+              <p className="text-3xl font-bold text-green-900 mt-1">{today.passed}</p>
+            </div>
+            <div className="p-3 rounded-lg bg-green-100">
+              <Phone className="h-6 w-6 text-green-600" />
+            </div>
+          </div>
+        </div>
+        <div className="rounded-xl border border-blue-200 bg-blue-50 p-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium text-blue-700">Voicemails Today</p>
+              <p className="text-3xl font-bold text-blue-900 mt-1">{voicemailsToday}</p>
+            </div>
+            <div className="p-3 rounded-lg bg-blue-100">
+              <Mail className="h-6 w-6 text-blue-600" />
             </div>
           </div>
         </div>
       </div>
 
-      {/* Recent Calls table */}
+      {/* Recent Activity - calls + voicemails combined */}
       <div className="bg-white rounded-xl border border-gray-200">
-        <div className="px-6 py-4 border-b border-gray-200 flex items-center">
-          <PhoneCall className="h-5 w-5 text-blue-600 mr-2" />
-          <h2 className="text-lg font-semibold text-gray-900">Recent Calls</h2>
+        <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+          <div className="flex items-center">
+            <PhoneCall className="h-5 w-5 text-blue-600 mr-2" />
+            <h2 className="text-lg font-semibold text-gray-900">Recent Activity</h2>
+          </div>
+          <div className="flex gap-2">
+            <Link href="/dashboard/blocked-calls" className="text-sm text-blue-600 hover:text-blue-700">
+              View all calls
+            </Link>
+            <span className="text-gray-300">|</span>
+            <Link href="/dashboard/voicemails" className="text-sm text-blue-600 hover:text-blue-700">
+              View voicemails
+            </Link>
+          </div>
         </div>
-        {recentCalls.length === 0 ? (
+        {recentActivity.length === 0 ? (
           <div className="p-6 text-center py-12">
             <PhoneCall className="h-12 w-12 text-gray-300 mx-auto mb-4" />
-            <p className="text-gray-500">No screened calls in the last 30 days</p>
+            <p className="text-gray-500">No recent calls or voicemails</p>
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="bg-gray-50 border-b border-gray-200">
-                <tr>
-                  <th className="text-left px-6 py-3 text-gray-600 font-medium">Caller Phone</th>
-                  <th className="text-left px-6 py-3 text-gray-600 font-medium">Date / Time</th>
-                  <th className="text-left px-6 py-3 text-gray-600 font-medium">Status</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100">
-                {recentCalls.map((call) => (
-                  <tr key={call.id} className="hover:bg-gray-50/50">
-                    <td className="px-6 py-3 font-mono text-gray-900">{formatPhoneNumber(call.callerPhone)}</td>
-                    <td className="px-6 py-3 text-gray-600">{new Date(call.createdAt).toLocaleString()}</td>
-                    <td className="px-6 py-3">
-                      <span
-                        className={
-                          call.result === 'passed'
-                            ? 'text-green-600 font-medium'
-                            : 'text-red-600 font-medium'
-                        }
-                      >
-                        {call.result === 'passed' ? 'Passed' : 'Blocked'}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
-
-      {/* Voicemails */}
-      <div className="bg-white rounded-xl border border-gray-200">
-        <div className="px-6 py-4 border-b border-gray-200 flex items-center">
-          <Mail className="h-5 w-5 text-purple-600 mr-2" />
-          <h2 className="text-lg font-semibold text-gray-900">Voicemails</h2>
-        </div>
-        {voicemails.length === 0 ? (
-          <div className="p-6 text-center py-12">
-            <Mail className="h-12 w-12 text-gray-300 mx-auto mb-4" />
-            <p className="text-gray-500">No voicemails yet</p>
-          </div>
-        ) : (
-          <div className="divide-y divide-gray-100">
-            {voicemails.map((vm) => (
-              <div key={vm.conversationId} className="px-6 py-4">
-                <div className="flex flex-wrap items-start justify-between gap-2 mb-2">
-                  <p className="font-mono font-medium text-gray-900">{formatPhoneNumber(vm.callerPhone)}</p>
-                  <p className="text-sm text-gray-500">{new Date(vm.createdAt).toLocaleString()}</p>
-                </div>
-                {vm.recordingUrl && (
-                  <div className="mb-2">
-                    <audio controls className="w-full max-w-md" src={vm.recordingUrl} preload="metadata">
-                      Your browser does not support the audio element.
-                    </audio>
+          <ul className="divide-y divide-gray-100">
+            {recentActivity.map((item) =>
+              item.type === 'call' ? (
+                <li key={`call-${item.id}`} className="px-6 py-3 flex items-center justify-between hover:bg-gray-50/50">
+                  <div className="flex items-center gap-3">
+                    <PhoneCall className="h-4 w-4 text-gray-400" />
+                    <span className="font-mono text-gray-900">{formatPhoneNumber(item.callerPhone)}</span>
+                    <span className={item.result === 'passed' ? 'text-green-600 text-sm font-medium' : 'text-red-600 text-sm font-medium'}>
+                      {item.result === 'passed' ? 'Passed' : 'Blocked'}
+                    </span>
                   </div>
-                )}
-                {vm.voicemailTranscription && (
-                  <p className="text-sm text-gray-600 mt-2 p-3 bg-gray-50 rounded-lg">{vm.voicemailTranscription}</p>
-                )}
-              </div>
-            ))}
-          </div>
+                  <span className="text-sm text-gray-500">{new Date(item.createdAt).toLocaleString()}</span>
+                </li>
+              ) : (
+                <li key={`vm-${item.conversationId}`} className="px-6 py-3 flex items-center justify-between hover:bg-gray-50/50">
+                  <div className="flex items-center gap-3">
+                    <Mail className="h-4 w-4 text-blue-500" />
+                    <span className="font-mono text-gray-900">{formatPhoneNumber(item.callerPhone)}</span>
+                    <span className="text-sm text-blue-600 font-medium">Voicemail</span>
+                  </div>
+                  <span className="text-sm text-gray-500">{new Date(item.createdAt).toLocaleString()}</span>
+                </li>
+              )
+            )}
+          </ul>
         )}
       </div>
     </div>
