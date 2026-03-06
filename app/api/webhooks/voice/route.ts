@@ -488,16 +488,23 @@ export async function POST(request: NextRequest) {
         if (conv) {
           let urlToSave = telnyxRecordingUrl
           try {
+            console.log('📦 BLOB_READ_WRITE_TOKEN set:', !!process.env.BLOB_READ_WRITE_TOKEN)
+            console.log('📦 Fetching recording from Telnyx URL:', telnyxRecordingUrl)
             const response = await fetch(telnyxRecordingUrl)
+            console.log('📦 Fetch response status:', response.status)
             if (!response.ok) throw new Error(`Fetch failed: ${response.status}`)
             const arrayBuffer = await response.arrayBuffer()
             const buffer = Buffer.from(arrayBuffer)
+            console.log('📦 Uploading to Vercel Blob...')
             const { url: blobUrl } = await put(`voicemails/${callControlId}.mp3`, buffer, {
               access: 'public',
               contentType: 'audio/mpeg',
             })
+            console.log('📦 Blob upload success:', blobUrl)
             urlToSave = blobUrl
           } catch (err) {
+            const error = err instanceof Error ? err : new Error(String(err))
+            console.log('📦 Blob upload FAILED, using Telnyx URL:', error.message)
             console.error('❌ Failed to fetch or upload recording to Vercel Blob, using Telnyx URL:', err)
           }
           await db.conversation.update({
