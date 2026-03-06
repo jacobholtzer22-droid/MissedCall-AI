@@ -19,9 +19,8 @@
 // Event flow — IVR screener WITH forwarding number:
 //   call.initiated  → answer → gatherUsingSpeak "press 1"
 //   call.gather.ended (digit=1) → speak "please hold" (forwardingPending: true)
-//   call.speak.ended (forwardingPending) → start hold music AND create B-leg in parallel (Promise.allSettled)
-//   B-leg call.answered         → bridge A+B legs immediately (no AMD); music auto-stops
-//   call.playback.ended         → acknowledge only (200)
+//   call.speak.ended (forwardingPending) → start hold speak AND create B-leg in parallel (Promise.allSettled)
+//   B-leg call.answered         → bridge A+B legs immediately (no AMD); hold speak auto-stops
 //   B-leg call.hangup (timeout/no-answer/not connected) → speak msg on A, SMS
 //   call.bridging.failed                                → speak msg on A, SMS
 //
@@ -50,7 +49,6 @@ const NO_SMS_VOICE_MESSAGE =
   "We're sorry, no one is available. Please try again later. Goodbye."
 const FORWARDING_TIMEOUT_SECS = 25       // When missedCallAiEnabled: ring out quickly → missed call SMS flow
 const FORWARDING_TIMEOUT_VOICEMAIL_SECS = 20  // When missedCallAiDisabled: longer ring so owner voicemail can pick up (~4-5 rings)
-const HOLD_MUSIC_URL = 'https://raw.githubusercontent.com/nickleus27/hold-music/master/holdmusic.mp3'
 
 interface ClientState {
   businessId?: string
@@ -183,13 +181,6 @@ export async function POST(request: NextRequest) {
     }
 
     // =============================================
-    // PLAYBACK ENDED — acknowledge only (e.g. hold music stops when bridge connects)
-    // =============================================
-    if (eventType === 'call.playback.ended') {
-      return NextResponse.json({}, { status: 200 })
-    }
-
-    // =============================================
     // SPEAK ENDED
     // =============================================
     if (eventType === 'call.speak.ended') {
@@ -214,7 +205,7 @@ export async function POST(request: NextRequest) {
       }
 
       if (state.forwardingPending) {
-        console.log('📞 "Please hold" finished — starting hold music and creating B-leg in parallel')
+        console.log('📞 "Please hold" finished — starting hold speak and creating B-leg in parallel')
 
         const business = await db.business.findUnique({ where: { id: state.businessId! } })
         if (!business?.forwardingNumber) {
@@ -270,16 +261,10 @@ export async function POST(request: NextRequest) {
 
         console.log('📞 B-leg ring timeout:', ringTimeoutSecs, 's (missedCallAiEnabled:', business.missedCallAiEnabled, ')')
 
-        const playbackPromise = fetch(`https://api.telnyx.com/v2/calls/${callControlId}/actions/playback_start`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${process.env.TELNYX_API_KEY}`,
-          },
-          body: JSON.stringify({
-            audio_url: HOLD_MUSIC_URL,
-            loop: 'infinity',
-          }),
+        const holdSpeakPromise = telnyx.calls.actions.speak(callControlId, {
+          payload: 'Thank you for your patience. We are connecting you now. . . . . . . . . . . . . . . . . . . . . Thank you for holding. Someone will be with you shortly. . . . . . . . . . . . . . . . . . . . .',
+          voice: VOICE,
+          client_state: toB64({ businessId: state.businessId, callerPhone: state.callerPhone }),
         })
 
         const dialPromise = telnyx.calls.dial({
@@ -290,12 +275,10 @@ export async function POST(request: NextRequest) {
           client_state: bLegState,
         })
 
-        const [playbackResult, dialResult] = await Promise.allSettled([playbackPromise, dialPromise])
+        const [speakResult, dialResult] = await Promise.allSettled([holdSpeakPromise, dialPromise])
 
-        if (playbackResult.status === 'rejected') {
-          console.warn('⚠️ Hold music playback failed (forwarding continues):', playbackResult.reason)
-        } else if (playbackResult.status === 'fulfilled' && playbackResult.value && !playbackResult.value.ok) {
-          console.warn('⚠️ Hold music playback returned non-OK:', playbackResult.value.status)
+        if (speakResult.status === 'rejected') {
+          console.warn('⚠️ Hold speak failed (forwarding continues):', speakResult.reason)
         }
 
         if (dialResult.status === 'rejected') {
@@ -528,7 +511,7 @@ export async function POST(request: NextRequest) {
           })
           if (business && !business.missedCallAiEnabled) {
             // Brief wait for transcription (call.transcription may have already saved it)
-            await new Promise((r) => setTimeout(r, 2500))
+            await new Promise((r) => setTimeout(r, 8000))
             const convUpdated = await db.conversation.findUnique({ where: { id: conv.id } })
             const transcriptionText = (convUpdated as { voicemailTranscription?: string | null } | null)?.voicemailTranscription?.trim() || null
             const callerPhone = convUpdated?.callerPhone ?? conv.callerPhone ?? 'Unknown'
