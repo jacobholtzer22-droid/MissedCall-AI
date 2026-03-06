@@ -805,9 +805,8 @@ async function sendMissedCallSMS(
     }
   }
 
-  const greeting = (
+  const greeting =
     business.aiGreeting || `Sorry we missed your call at ${business.name}. How can we help?`
-  ).slice(0, 140)
 
   try {
     if (timing) {
