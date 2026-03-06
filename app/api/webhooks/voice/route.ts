@@ -486,7 +486,7 @@ export async function POST(request: NextRequest) {
             const buffer = Buffer.from(arrayBuffer)
             console.log('📦 Uploading to Vercel Blob...')
             const { url: blobUrl } = await put(`voicemails/${callControlId}.mp3`, buffer, {
-              access: 'public',
+              access: 'private',
               contentType: 'audio/mpeg',
             })
             console.log('📦 Blob upload success:', blobUrl)
