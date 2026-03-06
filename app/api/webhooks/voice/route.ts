@@ -55,6 +55,7 @@ interface ClientState {
   callerPhone?: string
   connectionId?: string
   forwardingPending?: boolean
+  holdMessagePlaying?: boolean
   isForwardingLeg?: boolean
   aLegCallControlId?: string
   voicemailPending?: boolean
@@ -184,6 +185,11 @@ export async function POST(request: NextRequest) {
     // SPEAK ENDED
     // =============================================
     if (eventType === 'call.speak.ended') {
+      // Hold message ("Thank you for your patience") ended — B-leg is dialing/bridging; do nothing
+      if (state.holdMessagePlaying) {
+        return NextResponse.json({}, { status: 200 })
+      }
+
       // Voicemail flow (spam-screening-only): greeting finished → start recording
       if (state.voicemailPending) {
         console.log('📞 Voicemail greeting ended — starting recording')
@@ -264,7 +270,7 @@ export async function POST(request: NextRequest) {
         const holdSpeakPromise = telnyx.calls.actions.speak(callControlId, {
           payload: 'Thank you for your patience. We are connecting you now. . . . . . . . . . . . . . . . . . . . . Thank you for holding. Someone will be with you shortly. . . . . . . . . . . . . . . . . . . . .',
           voice: VOICE,
-          client_state: toB64({ businessId: state.businessId, callerPhone: state.callerPhone }),
+          client_state: toB64({ businessId: state.businessId, callerPhone: state.callerPhone, holdMessagePlaying: true }),
         })
 
         const dialPromise = telnyx.calls.dial({
