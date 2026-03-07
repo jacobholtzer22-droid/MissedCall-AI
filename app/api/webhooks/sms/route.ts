@@ -72,6 +72,21 @@ function formatDateFull(isoOrDateStr: string | Date, tz: string): string {
   return `${weekday}, ${month} ${ordinal(day)}`
 }
 
+/** Build confirmation message using correct fields: name, address, time display, date, service. */
+function buildConfirmationMessage(
+  slot: { start: string; end?: string; display?: string },
+  customerName: string,
+  customerAddress: string | undefined,
+  serviceType: string | undefined,
+  tz: string
+): string {
+  const dateLabel = formatDateFull(slot.start, tz)
+  const timeStr = slot.display ?? new Date(slot.start).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true, timeZone: tz })
+  const service = serviceType || 'your appointment'
+  const addrPart = customerAddress ? ` at ${customerAddress}` : ''
+  return `Perfect! Just to confirm: ${dateLabel} at ${timeStr} for ${customerName}${addrPart} — ${service}. Reply yes to confirm.`
+}
+
 const DEFAULT_MAX_MESSAGES_PER_CONVERSATION = 25
 const BOOKING_INTENT_WORDS = [
   'book', 'appointment', 'schedule', 'booking', 'reserve',
@@ -223,9 +238,29 @@ export async function POST(request: NextRequest) {
         })
         await db.conversation.update({ where: { id: conversation.id }, data: { lastMessageAt: new Date() } })
 
-        // appointment_booked or lead_captured: send ONE final message then close
+        // appointment_booked or lead_captured: answer questions from appointment info, then close
         if (conversation.status === 'appointment_booked' || conversation.status === 'lead_captured') {
-          const finalMsg = `You're welcome! If anything comes up, just ${getCallUsPhrase(business)}.`
+          const trimmed = (text || '').trim().toLowerCase()
+          const isQuestion =
+            trimmed.includes('?') ||
+            /\b(is\s+he|will\s+(you|they|he)|are\s+you|when|where|what\s+time|who\s+is\s+coming|coming\s+to|show\s+up)\b/i.test(trimmed)
+          const appt = conversation.appointment
+          const tz = business.timezone ?? 'America/New_York'
+          const bizName = business.name || 'our team'
+          let finalMsg: string
+          if (isQuestion && appt) {
+            const addr = appt.customerAddress || 'your property'
+            const dateLabel = formatDateFull(appt.scheduledAt, tz)
+            const timeStr = new Date(appt.scheduledAt).toLocaleTimeString('en-US', {
+              hour: 'numeric',
+              minute: '2-digit',
+              hour12: true,
+              timeZone: tz,
+            })
+            finalMsg = `Yes! Someone from ${bizName} will come to ${addr} on ${dateLabel} at ${timeStr} for your quote. If anything changes, just ${getCallUsPhrase(business)}.`
+          } else {
+            finalMsg = `You're welcome! If anything comes up, just ${getCallUsPhrase(business)}.`
+          }
           await sendSMSAndLog(business, conversation.id, from, finalMsg)
           await db.conversation.update({ where: { id: conversation.id }, data: { status: 'closed' } })
         }
@@ -635,21 +670,41 @@ function formatBusinessHoursSummary(businessHoursRaw: unknown): string {
 const SERVICE_BLOCKLIST =
   /\b(monday|tuesday|wednesday|thursday|friday|saturday|sunday|tomorrow|today|noon|morning|afternoon|evening|next\s+week|next\s+month|january|february|march|april|may|june|july|august|september|october|november|december|\d{1,2}(?::\d{2})?\s*(?:am|pm)|\d{1,2}\/\d{1,2})\b/i
 
-/** Extract and clean what the customer needs a quote for. Use FIRST inbound messages only. Never use day/time as service. */
+/** Service keywords — look for these to find the message where customer describes what they need. */
+const SERVICE_KEYWORDS = [
+  'landscaping', 'mowing', 'lawn', 'cleanup', 'clean-up', 'snow', 'plowing', 'plow', 'trimming', 'hedge',
+  'tree', 'mulch', 'weeding', 'seeding', 'aeration', 'detailing', 'wash', 'wax', 'oil change', 'brakes',
+  'tune-up', 'tune up', 'quote', 'estimate', 'service', 'yard', 'garden', 'driveway', 'gutters',
+  'pressure wash', 'painting', 'repair', 'inspection',
+]
+
+/** Extract what the customer needs. Skips first greeting; looks for messages with service keywords; returns customer's actual words. */
 function extractServiceFromConversation(messages: { direction: string; content: string }[]): string {
   const inbound = messages.filter((m) => m.direction === 'inbound')
-  // Only consider first 2 inbound messages (initial request, before booking flow questions)
-  const toCheck = inbound.slice(0, 2)
+  if (inbound.length === 0) return 'a free in-person quote'
+  // Skip first message if it's just a greeting (hi, hello, I need a quote with no specifics, etc.)
+  const greetingOnly = /^(hi|hello|hey|hi there|hello there|good morning|good afternoon|good evening)[\s.!?]*$/i
+  const toCheck = greetingOnly.test(inbound[0].content.trim())
+    ? inbound.slice(1, 6)
+    : inbound.slice(0, 5)
   for (const m of toCheck) {
     const content = m.content.trim()
-    // If customer only said "book" or "I want to book" without a service, skip
-    if (/^(?:i\s+)?(?:want\s+to\s+)?(?:book|schedule|appointment|reserve)(?:\s+(?:an?\s+)?(?:appointment|slot))?\.?$/i.test(content)) {
-      continue
+    if (!content || content.length < 3) continue
+    // Skip pure booking phrases with no service description
+    if (/^(?:i\s+)?(?:want\s+to\s+)?(?:book|schedule|appointment|reserve)(?:\s+(?:an?\s+)?(?:appointment|slot))?\.?$/i.test(content)) continue
+    const lower = content.toLowerCase()
+    const hasKeyword = SERVICE_KEYWORDS.some((kw) => lower.includes(kw))
+    if (hasKeyword) {
+      // Return customer's actual words; strip leading/trailing fluff but don't rewrite
+      let phrase = content
+      if (phrase.length > 120) phrase = phrase.slice(0, 117) + '...'
+      if (!SERVICE_BLOCKLIST.test(phrase)) return phrase
     }
+    // Fallback: patterns that extract a described need
     const patterns = [
       /(?:quote|estimate|need|want|looking for)\s+(?:a|for|on|about)?\s*(?:my|the)?\s*([^.?!]+)/i,
       /(?:need|want)\s+(?:someone|help)\s+(?:to|for)?\s*([^.?!]+)/i,
-      /(?:for|on|about)\s+(?:my|the)?\s*([^.?!]{3,40})(?:\s+work|\s+quote)?/i,
+      /(?:for|on|about)\s+(?:my|the)?\s*([^.?!]{3,80})(?:\s+work|\s+quote)?/i,
     ]
     for (const p of patterns) {
       const match = content.match(p)
@@ -661,7 +716,7 @@ function extractServiceFromConversation(messages: { direction: string; content: 
           !/^(book|schedule|appointment)/i.test(extracted) &&
           !SERVICE_BLOCKLIST.test(extracted)
         ) {
-          return cleanServiceForDisplay(extracted)
+          return extracted
         }
       }
     }
@@ -1129,8 +1184,27 @@ async function handleSmsBookingFlow(
     const dateLabel = formatDateFull(flowState.selectedSlot.start, tz)
     const timeStr = flowState.selectedSlot.display || new Date(flowState.selectedSlot.start).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true, timeZone: tz })
 
-    if (address || !bookingRequiresAddress) {
-      const confirmMsg = `Perfect! Just to confirm: ${dateLabel} at ${timeStr} for ${name}${address ? ` at ${address}` : ''}. Reply yes to confirm.`
+    // When bookingRequiresAddress, ALWAYS go to address step — never skip with parsed "address" from name message
+    if (bookingRequiresAddress) {
+      const msg = `Thanks ${name}! What's the property address where we should meet you?`
+      await sendSMSAndLog(business, conversation.id, from, msg)
+      await db.conversation.update({
+        where: { id: conversation.id },
+        data: {
+          bookingFlowState: JSON.parse(JSON.stringify({
+            step: 'awaiting_address_after_slot',
+            customerName: name,
+            serviceType: flowState.serviceType,
+            notes: flowState.notes,
+            selectedSlot: flowState.selectedSlot,
+            sentAt: new Date().toISOString(),
+          })),
+        },
+      })
+      return true
+    }
+    if (address) {
+      const confirmMsg = buildConfirmationMessage(flowState.selectedSlot, name, address, flowState.serviceType, tz)
       await sendSMSAndLog(business, conversation.id, from, confirmMsg)
       await db.conversation.update({
         where: { id: conversation.id },
@@ -1141,7 +1215,7 @@ async function handleSmsBookingFlow(
             serviceType: flowState.serviceType,
             notes: flowState.notes,
             selectedSlot: flowState.selectedSlot,
-            customerAddress: address ?? undefined,
+            customerAddress: address,
             sentAt: new Date().toISOString(),
           })),
         },
@@ -1181,11 +1255,27 @@ async function handleSmsBookingFlow(
     })
     if (convCheck?.appointment) return true
 
-    const dateLabel = formatDateFull(flowState.selectedSlot.start, tz)
-    const timeStr = flowState.selectedSlot.display || new Date(flowState.selectedSlot.start).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true, timeZone: tz })
-
-    if (address || !bookingRequiresAddress) {
-      const confirmMsg = `Perfect! Just to confirm: ${dateLabel} at ${timeStr} for ${name}${address ? ` at ${address}` : ''}. Reply yes to confirm.`
+    // When bookingRequiresAddress, ALWAYS go to address step — never skip
+    if (bookingRequiresAddress) {
+      const msg = `Thanks ${name}! What's the property address where we should meet you?`
+      await sendSMSAndLog(business, conversation.id, from, msg)
+      await db.conversation.update({
+        where: { id: conversation.id },
+        data: {
+          bookingFlowState: JSON.parse(JSON.stringify({
+            step: 'awaiting_address_after_slot',
+            customerName: name,
+            serviceType: flowState.serviceType,
+            notes: flowState.notes,
+            selectedSlot: flowState.selectedSlot,
+            sentAt: new Date().toISOString(),
+          })),
+        },
+      })
+      return true
+    }
+    if (address) {
+      const confirmMsg = buildConfirmationMessage(flowState.selectedSlot, name, address, flowState.serviceType, tz)
       await sendSMSAndLog(business, conversation.id, from, confirmMsg)
       await db.conversation.update({
         where: { id: conversation.id },
@@ -1196,7 +1286,7 @@ async function handleSmsBookingFlow(
             serviceType: flowState.serviceType,
             notes: flowState.notes,
             selectedSlot: flowState.selectedSlot,
-            customerAddress: address ?? undefined,
+            customerAddress: address,
             sentAt: new Date().toISOString(),
           })),
         },
@@ -1234,9 +1324,13 @@ async function handleSmsBookingFlow(
     })
     if (convCheck?.appointment) return true
 
-    const dateLabel = formatDateFull(flowState.selectedSlot.start, tz)
-    const timeStr = flowState.selectedSlot.display || new Date(flowState.selectedSlot.start).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true, timeZone: tz })
-    const confirmMsg = `Perfect! Just to confirm: ${dateLabel} at ${timeStr} for ${flowState.customerName || 'you'} at ${address}. Reply yes to confirm.`
+    const confirmMsg = buildConfirmationMessage(
+      flowState.selectedSlot,
+      flowState.customerName || 'you',
+      address,
+      flowState.serviceType,
+      tz
+    )
     await sendSMSAndLog(business, conversation.id, from, confirmMsg)
     await db.conversation.update({
       where: { id: conversation.id },
@@ -1837,10 +1931,13 @@ function parseTimePreference(text: string, tz: string): TimePreferenceResult | n
     }
   }
 
-  // Specific hour: "2pm", "9am", "2:30pm", "at 3pm", "noon", "12" (when with day like "Friday at noon")
+  // Specific hour: "1 pm", "1pm", "at 1 pm", "1:00 pm", "Tuesday the 10 at 1 pm" — space before am/pm allowed
   let preferredHour: number | undefined
   let preferredMinute: number | undefined
-  const hourMatch = t.match(/(?:at\s+)?(\d{1,2})(?::(\d{2}))?\s*(am|pm)\b/i)
+  const timeRegex = /(?:at\s+)?(\d{1,2})(?::(\d{2}))?\s*(am|pm)/i
+  // Prefer time that appears after "at" so "Tuesday the 10 at 1 pm" gives 1pm not 10
+  const afterAt = t.match(/\bat\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)/i)
+  const hourMatch = afterAt ?? t.match(timeRegex)
   if (hourMatch) {
     let h = parseInt(hourMatch[1], 10)
     const minStr = hourMatch[2]
