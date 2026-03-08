@@ -51,7 +51,7 @@ const FORWARDING_TIMEOUT_SECS = 25       // When missedCallAiEnabled: ring out q
 const FORWARDING_TIMEOUT_VOICEMAIL_SECS = 20  // When missedCallAiDisabled: longer ring so owner voicemail can pick up (~4-5 rings)
 
 const HOLD_MESSAGE_PAYLOAD =
-  'We are connecting you. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . Thank you for being patient, please stay on the line. . . . . . . . . . . . . . . . . . . . . . . . . . . .'
+  'We are connecting you. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . Please stay on the line. . . . . . . . . . . . . . . . . . . . . . . . . . . .'
 
 interface ClientState {
   businessId?: string
