@@ -50,11 +50,15 @@ const NO_SMS_VOICE_MESSAGE =
 const FORWARDING_TIMEOUT_SECS = 25       // When missedCallAiEnabled: ring out quickly → missed call SMS flow
 const FORWARDING_TIMEOUT_VOICEMAIL_SECS = 20  // When missedCallAiDisabled: longer ring so owner voicemail can pick up (~4-5 rings)
 
+const HOLD_MESSAGE_PAYLOAD =
+  'We are connecting you. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . Thank you for being patient, please stay on the line. . . . . . . . . . . . . . . . . . . . . . . . . . . .'
+
 interface ClientState {
   businessId?: string
   callerPhone?: string
   connectionId?: string
   forwardingPending?: boolean
+  dialAlreadyStarted?: boolean
   isForwardingLeg?: boolean
   aLegCallControlId?: string
   voicemailPending?: boolean
@@ -205,6 +209,10 @@ export async function POST(request: NextRequest) {
       }
 
       if (state.forwardingPending) {
+        if (state.dialAlreadyStarted) {
+          console.log('📞 Hold message finished — B-leg was already dialed in parallel, nothing to do')
+          return NextResponse.json({}, { status: 200 })
+        }
         console.log('📞 "Please hold" finished — dialing B-leg (caller hears ringback until answer)')
 
         const business = await db.business.findUnique({ where: { id: state.businessId! } })
@@ -336,17 +344,66 @@ export async function POST(request: NextRequest) {
             update: { aLegCallControlId: callControlId, status: 'forwarding' },
           })
 
+          const connectionId = state.connectionId || process.env.TELNYX_CONNECTION_ID
+          const ringTimeoutSecs = business.missedCallAiEnabled
+            ? FORWARDING_TIMEOUT_SECS
+            : FORWARDING_TIMEOUT_VOICEMAIL_SECS
+          const bLegState = toB64({
+            businessId,
+            callerPhone,
+            isForwardingLeg: true,
+            aLegCallControlId: callControlId,
+          })
           const fwdState = toB64({
             businessId,
             callerPhone,
             connectionId: state.connectionId,
             forwardingPending: true,
+            dialAlreadyStarted: !!connectionId,
           })
-          await telnyx.calls.actions.speak(callControlId, {
-            payload: 'Please hold while we connect your call.',
-            voice: VOICE,
-            client_state: fwdState,
-          } as any)
+
+          if (connectionId) {
+            // Start B-leg dial and hold message in parallel so silence plays while phone is ringing
+            const speakPromise = telnyx.calls.actions.speak(callControlId, {
+              payload: HOLD_MESSAGE_PAYLOAD,
+              voice: VOICE,
+              client_state: fwdState,
+            } as any)
+            const dialPromise = telnyx.calls.dial({
+              connection_id: connectionId,
+              to: business.forwardingNumber,
+              from: callerPhone,
+              timeout_secs: ringTimeoutSecs,
+              client_state: bLegState,
+              ringback_tone: true,
+            } as any)
+            const [speakResult, dialResult] = await Promise.allSettled([speakPromise, dialPromise])
+            if (dialResult.status === 'rejected') {
+              console.error('❌ Failed to create forwarding call (parallel dial):', dialResult.reason)
+              if (business.missedCallAiEnabled) {
+                await sendMissedCallSMS(telnyx, business, callControlId, callerPhone, timing)
+              } else {
+                console.log('MissedCall AI disabled, skipping SMS')
+              }
+              const fallbackMsg = business.missedCallAiEnabled
+                ? (business.missedCallVoiceMessage || DEFAULT_VOICE_MESSAGE)
+                : (business.missedCallVoiceMessage || NO_SMS_VOICE_MESSAGE)
+              await telnyx.calls.actions.speak(callControlId, {
+                payload: fallbackMsg,
+                voice: VOICE,
+                client_state: toB64({ businessId, callerPhone }),
+              })
+            } else {
+              const dialValue = (dialResult.value as { data?: { call_control_id?: string } })?.data
+              console.log('📞 Forwarding call created (parallel):', dialValue?.call_control_id)
+            }
+          } else {
+            await telnyx.calls.actions.speak(callControlId, {
+              payload: HOLD_MESSAGE_PAYLOAD,
+              voice: VOICE,
+              client_state: fwdState,
+            } as any)
+          }
         } else {
           // ---- STANDARD SCREENING FLOW (no forwarding) ----
           if (business.missedCallAiEnabled) {
