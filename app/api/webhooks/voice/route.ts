@@ -269,7 +269,7 @@ export async function POST(request: NextRequest) {
             timeout_secs: ringTimeoutSecs,
             client_state: bLegState,
             ringback_tone: true,
-          })
+          } as any)
           const dialValue = dialResult as { data?: { call_control_id?: string } }
           console.log('📞 Forwarding call created:', dialValue?.data?.call_control_id)
         } catch (dialErr) {
