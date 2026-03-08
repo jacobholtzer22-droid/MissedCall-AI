@@ -19,8 +19,8 @@
 // Event flow — IVR screener WITH forwarding number:
 //   call.initiated  → answer → gatherUsingSpeak "press 1"
 //   call.gather.ended (digit=1) → speak "please hold" (forwardingPending: true)
-//   call.speak.ended (forwardingPending) → start hold speak AND create B-leg in parallel (Promise.allSettled)
-//   B-leg call.answered         → bridge A+B legs immediately (no AMD); hold speak auto-stops
+//   call.speak.ended (forwardingPending) → dial B-leg only (ringback_tone on A-leg; caller hears ringing)
+//   B-leg call.answered         → bridge A+B legs immediately (no AMD)
 //   B-leg call.hangup (timeout/no-answer/not connected) → speak msg on A, SMS
 //   call.bridging.failed                                → speak msg on A, SMS
 //
@@ -55,7 +55,6 @@ interface ClientState {
   callerPhone?: string
   connectionId?: string
   forwardingPending?: boolean
-  holdMessagePlaying?: boolean
   isForwardingLeg?: boolean
   aLegCallControlId?: string
   voicemailPending?: boolean
@@ -185,11 +184,6 @@ export async function POST(request: NextRequest) {
     // SPEAK ENDED
     // =============================================
     if (eventType === 'call.speak.ended') {
-      // Hold message ("Thank you for your patience") ended — B-leg is dialing/bridging; do nothing
-      if (state.holdMessagePlaying) {
-        return NextResponse.json({}, { status: 200 })
-      }
-
       // Voicemail flow (spam-screening-only): greeting finished → start recording
       if (state.voicemailPending) {
         console.log('📞 Voicemail greeting ended — starting recording')
@@ -211,7 +205,7 @@ export async function POST(request: NextRequest) {
       }
 
       if (state.forwardingPending) {
-        console.log('📞 "Please hold" finished — starting hold speak and creating B-leg in parallel')
+        console.log('📞 "Please hold" finished — dialing B-leg (caller hears ringback until answer)')
 
         const business = await db.business.findUnique({ where: { id: state.businessId! } })
         if (!business?.forwardingNumber) {
@@ -267,28 +261,19 @@ export async function POST(request: NextRequest) {
 
         console.log('📞 B-leg ring timeout:', ringTimeoutSecs, 's (missedCallAiEnabled:', business.missedCallAiEnabled, ')')
 
-        const holdSpeakPromise = telnyx.calls.actions.speak(callControlId, {
-          payload: 'Thank you for your patience. We are connecting you now. . . . . . . . . . . . . . . . . . . . . Thank you for holding. Someone will be with you shortly. . . . . . . . . . . . . . . . . . . . .',
-          voice: VOICE,
-          client_state: toB64({ businessId: state.businessId, callerPhone: state.callerPhone, holdMessagePlaying: true }),
-        })
-
-        const dialPromise = telnyx.calls.dial({
-          connection_id: connectionId,
-          to: business.forwardingNumber,
-          from: state.callerPhone!,
-          timeout_secs: ringTimeoutSecs,
-          client_state: bLegState,
-        })
-
-        const [speakResult, dialResult] = await Promise.allSettled([holdSpeakPromise, dialPromise])
-
-        if (speakResult.status === 'rejected') {
-          console.warn('⚠️ Hold speak failed (forwarding continues):', speakResult.reason)
-        }
-
-        if (dialResult.status === 'rejected') {
-          console.error('❌ Failed to create forwarding call:', dialResult.reason)
+        try {
+          const dialResult = await telnyx.calls.dial({
+            connection_id: connectionId,
+            to: business.forwardingNumber,
+            from: state.callerPhone!,
+            timeout_secs: ringTimeoutSecs,
+            client_state: bLegState,
+            ringback_tone: true,
+          })
+          const dialValue = dialResult as { data?: { call_control_id?: string } }
+          console.log('📞 Forwarding call created:', dialValue?.data?.call_control_id)
+        } catch (dialErr) {
+          console.error('❌ Failed to create forwarding call:', dialErr)
           if (business.missedCallAiEnabled) {
             await sendMissedCallSMS(telnyx, business, callControlId, state.callerPhone!, timing)
           } else {
@@ -302,9 +287,6 @@ export async function POST(request: NextRequest) {
             voice: VOICE,
             client_state: toB64({ businessId: state.businessId, callerPhone: state.callerPhone }),
           })
-        } else {
-          const dialValue = dialResult.status === 'fulfilled' ? (dialResult.value as { data?: { call_control_id?: string } }) : null
-          console.log('📞 Forwarding call created:', dialValue?.data?.call_control_id)
         }
       } else {
         await telnyx.calls.actions.hangup(callControlId, {})
