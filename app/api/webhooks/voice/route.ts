@@ -20,7 +20,8 @@
 //   call.initiated  → answer → gatherUsingSpeak "press 1"
 //   call.gather.ended (digit=1) → speak "please hold" (forwardingPending: true)
 //   call.speak.ended (forwardingPending) → dial B-leg only (ringback_tone on A-leg; caller hears ringing)
-//   B-leg call.answered         → bridge A+B legs immediately (no AMD)
+//   B-leg call.answered         → speak on B-leg "Incoming call from [digits]" (announceCallerPending in client_state)
+//   B-leg call.speak.ended (announceCallerPending) → bridge A+B legs
 //   B-leg call.hangup (timeout/no-answer/not connected) → speak msg on A, SMS
 //   call.bridging.failed                                → speak msg on A, SMS
 //
@@ -62,6 +63,7 @@ interface ClientState {
   isForwardingLeg?: boolean
   aLegCallControlId?: string
   voicemailPending?: boolean
+  announceCallerPending?: boolean
 }
 
 export async function POST(request: NextRequest) {
@@ -157,28 +159,48 @@ export async function POST(request: NextRequest) {
     }
 
     // =============================================
-    // B-LEG ANSWERED → BRIDGE IMMEDIATELY
+    // B-LEG ANSWERED → ANNOUNCE CALLER THEN BRIDGE (on speak.ended)
     // =============================================
     if (eventType === 'call.answered' && state.isForwardingLeg) {
-      console.log('📞 Forwarding B-leg answered, bridging immediately:', {
+      const callerPhone = state.callerPhone || ''
+      const digitsOnly = callerPhone.replace(/\D/g, '')
+      const digitsToRead = digitsOnly.startsWith('1') && digitsOnly.length === 11
+        ? digitsOnly.slice(1)
+        : digitsOnly
+      const announcement =
+        'Incoming call from ' + (digitsToRead ? digitsToRead.split('').join(' ') : 'unknown number')
+
+      console.log('📞 Forwarding B-leg answered, announcing caller then will bridge on speak.ended:', {
         bLegCallControlId: callControlId,
         aLegCallControlId: state.aLegCallControlId,
+        callerPhone,
       })
 
       try {
-        await (telnyx.calls.actions as any).bridge(callControlId, {
-          call_control_id: state.aLegCallControlId,
+        await telnyx.calls.actions.speak(callControlId, {
+          payload: announcement,
+          voice: VOICE,
+          client_state: toB64({
+            ...state,
+            announceCallerPending: true,
+          }),
         })
-
-        if (state.aLegCallControlId) {
-          await db.conversation.updateMany({
-            where: { callSid: state.aLegCallControlId, status: 'forwarding' },
-            data: { callConnected: true, status: 'completed', answeredBy: 'human' },
-          })
-        }
       } catch (err) {
-        console.error('❌ Failed to bridge calls:', err)
-        await handleForwardingFallback(telnyx, state, 'failed', undefined, timing)
+        console.error('❌ Failed to speak caller announcement on B-leg, bridging immediately:', err)
+        try {
+          await (telnyx.calls.actions as any).bridge(callControlId, {
+            call_control_id: state.aLegCallControlId,
+          })
+          if (state.aLegCallControlId) {
+            await db.conversation.updateMany({
+              where: { callSid: state.aLegCallControlId, status: 'forwarding' },
+              data: { callConnected: true, status: 'completed', answeredBy: 'human' },
+            })
+          }
+        } catch (bridgeErr) {
+          console.error('❌ Failed to bridge calls:', bridgeErr)
+          await handleForwardingFallback(telnyx, state, 'failed', undefined, timing)
+        }
       }
 
       return NextResponse.json({}, { status: 200 })
@@ -188,6 +210,27 @@ export async function POST(request: NextRequest) {
     // SPEAK ENDED
     // =============================================
     if (eventType === 'call.speak.ended') {
+      // B-leg: caller announcement finished → bridge A and B legs
+      if (state.announceCallerPending && state.isForwardingLeg && state.aLegCallControlId) {
+        console.log('📞 Caller announcement ended — bridging A and B legs:', {
+          bLegCallControlId: callControlId,
+          aLegCallControlId: state.aLegCallControlId,
+        })
+        try {
+          await (telnyx.calls.actions as any).bridge(callControlId, {
+            call_control_id: state.aLegCallControlId,
+          })
+          await db.conversation.updateMany({
+            where: { callSid: state.aLegCallControlId, status: 'forwarding' },
+            data: { callConnected: true, status: 'completed', answeredBy: 'human' },
+          })
+        } catch (err) {
+          console.error('❌ Failed to bridge after announcement:', err)
+          await handleForwardingFallback(telnyx, state, 'failed', undefined, timing)
+        }
+        return NextResponse.json({}, { status: 200 })
+      }
+
       // Voicemail flow (spam-screening-only): greeting finished → start recording
       if (state.voicemailPending) {
         console.log('📞 Voicemail greeting ended — starting recording')
@@ -265,6 +308,7 @@ export async function POST(request: NextRequest) {
           callerPhone: state.callerPhone,
           isForwardingLeg: true,
           aLegCallControlId: callControlId,
+          announceCallerPending: true,
         })
 
         console.log('📞 B-leg ring timeout:', ringTimeoutSecs, 's (missedCallAiEnabled:', business.missedCallAiEnabled, ')')
@@ -273,7 +317,7 @@ export async function POST(request: NextRequest) {
           const dialResult = await telnyx.calls.dial({
             connection_id: connectionId,
             to: business.forwardingNumber,
-            from: state.callerPhone!,
+            from: business.telnyxPhoneNumber!,
             timeout_secs: ringTimeoutSecs,
             client_state: bLegState,
             ringback_tone: true,
@@ -353,6 +397,7 @@ export async function POST(request: NextRequest) {
             callerPhone,
             isForwardingLeg: true,
             aLegCallControlId: callControlId,
+            announceCallerPending: true,
           })
           const fwdState = toB64({
             businessId,
@@ -372,7 +417,7 @@ export async function POST(request: NextRequest) {
             const dialPromise = telnyx.calls.dial({
               connection_id: connectionId,
               to: business.forwardingNumber,
-              from: callerPhone,
+              from: business.telnyxPhoneNumber!,
               timeout_secs: ringTimeoutSecs,
               client_state: bLegState,
               ringback_tone: true,
