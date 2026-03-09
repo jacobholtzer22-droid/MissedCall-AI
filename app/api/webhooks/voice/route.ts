@@ -42,6 +42,7 @@ import Telnyx from 'telnyx'
 import { format } from 'date-fns'
 import { checkCooldown, recordMessageSent, logCooldownSkip, isCooldownBypassNumber } from '@/lib/sms-cooldown'
 import { isExistingContact, logContactSkip } from '@/lib/contacts-check'
+import { normalizePhoneNumber } from '@/lib/phone-utils'
 
 const VOICE = 'AWS.Polly.Joanna'
 const DEFAULT_VOICE_MESSAGE =
@@ -167,8 +168,27 @@ export async function POST(request: NextRequest) {
       const digitsToRead = digitsOnly.startsWith('1') && digitsOnly.length === 11
         ? digitsOnly.slice(1)
         : digitsOnly
-      const announcement =
-        'Incoming call from ' + (digitsToRead ? digitsToRead.split('').join(' ') : 'unknown number')
+
+      let announcement: string
+      if (state.businessId) {
+        const callerNormalized = normalizePhoneNumber(callerPhone)
+        const contact =
+          callerNormalized.length >= 10
+            ? await db.contact.findFirst({
+                where: { businessId: state.businessId, phoneNumber: callerNormalized },
+                select: { name: true },
+              })
+            : null
+        if (contact?.name) {
+          announcement = 'Incoming call from ' + contact.name
+        } else {
+          announcement =
+            'Incoming call from ' + (digitsToRead ? digitsToRead.split('').join(' ') : 'unknown number')
+        }
+      } else {
+        announcement =
+          'Incoming call from ' + (digitsToRead ? digitsToRead.split('').join(' ') : 'unknown number')
+      }
 
       console.log('📞 Forwarding B-leg answered, announcing caller then will bridge on speak.ended:', {
         bLegCallControlId: callControlId,
