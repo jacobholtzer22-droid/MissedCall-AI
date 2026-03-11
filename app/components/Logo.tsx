@@ -19,7 +19,7 @@ export function Logo({
       <source srcSet="/images/portfolio/logo.webp" type="image/webp" />
       <img
         src="/images/portfolio/logo.png"
-        alt="Align & Acquire"
+        alt="Align and Acquire"
         width={dim}
         height={dim}
         className={`object-contain ${sizeClass} ${variantClass} ${className}`.trim()}

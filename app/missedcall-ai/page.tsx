@@ -270,7 +270,7 @@ export default function LandingPage() {
               <Logo size="xs" />
               <div>
                 <span className="font-bold">MissedCall AI</span>
-                <span className="text-xs text-gray-500 block">A product by Align & Acquire</span>
+                <span className="text-xs text-gray-500 block">A product by Align and Acquire</span>
               </div>
             </div>
             <div className="flex flex-wrap justify-center gap-x-8 gap-y-2 mb-4 md:mb-0">
@@ -281,7 +281,7 @@ export default function LandingPage() {
               <Link href="/privacy" className="text-gray-500 hover:text-white transition">Privacy Policy</Link>
               <Link href="/terms" className="text-gray-500 hover:text-white transition">Terms & Conditions</Link>
             </div>
-            <p className="text-gray-500">© {new Date().getFullYear()} Align & Acquire. All rights reserved.</p>
+            <p className="text-gray-500">© {new Date().getFullYear()} Align and Acquire. All rights reserved.</p>
           </div>
         </div>
       </footer>

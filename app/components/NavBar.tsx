@@ -9,7 +9,7 @@ export function NavBar() {
         <div className="flex items-center justify-between">
           <Link href="/" className="flex items-center gap-3">
             <Logo size="lg" className="shrink-0" />
-            <span className="text-xl font-bold text-white">Align & Acquire</span>
+            <span className="text-xl font-bold text-white">Align and Acquire</span>
           </Link>
           <div className="flex items-center gap-6">
             <Link href="/" className="text-gray-400 hover:text-white transition hidden sm:inline">Home</Link>

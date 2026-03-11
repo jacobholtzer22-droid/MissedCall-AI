@@ -122,10 +122,10 @@ export default function HomePage() {
                   <span className="text-gray-500">Not an Agency</span>
                 </h2>
                 <p className="text-gray-400 text-lg mb-6">
-                  I'm Jacob. I started Align & Acquire because small businesses deserve better tools. Not overpriced agencies. Not cookie cutter templates.
+                  I'm Jacob. I started Align and Acquire because small businesses deserve better tools. Not overpriced agencies. Not cookie cutter templates.
                 </p>
                 <p className="text-gray-400 text-lg mb-8">
-                  Every website and AI system is built by me, personally. When you work with Align & Acquire, you get direct access to the person who built these tools from scratch.
+                  Every website and AI system is built by me, personally. When you work with Align and Acquire, you get direct access to the person who built these tools from scratch.
                 </p>
                 <div className="flex items-center space-x-4">
                   <div className="w-12 h-12 bg-gradient-to-r from-blue-500 to-purple-500 rounded-full flex items-center justify-center text-xl font-bold">
@@ -133,7 +133,7 @@ export default function HomePage() {
                   </div>
                   <div>
                     <p className="font-semibold">Jacob Holtzer</p>
-                    <p className="text-gray-500 text-sm">Founder, Align & Acquire</p>
+                    <p className="text-gray-500 text-sm">Founder, Align and Acquire</p>
                   </div>
                 </div>
               </div>
@@ -198,7 +198,7 @@ export default function HomePage() {
           <div className="flex flex-col md:flex-row justify-between items-center">
             <div className="flex items-center gap-3 mb-4 md:mb-0">
               <Logo size="xs" />
-              <span className="font-bold">Align & Acquire</span>
+              <span className="font-bold">Align and Acquire</span>
             </div>
             <div className="flex flex-wrap justify-center gap-x-8 gap-y-2 mb-4 md:mb-0">
               <Link href="/missedcall-ai" className="text-gray-500 hover:text-white transition">MissedCall AI</Link>
@@ -207,7 +207,7 @@ export default function HomePage() {
               <Link href="/privacy" className="text-gray-500 hover:text-white transition">Privacy Policy</Link>
               <Link href="/terms" className="text-gray-500 hover:text-white transition">Terms & Conditions</Link>
             </div>
-            <p className="text-gray-500">© {new Date().getFullYear()} Align & Acquire</p>
+            <p className="text-gray-500">© {new Date().getFullYear()} Align and Acquire</p>
           </div>
         </div>
       </footer>

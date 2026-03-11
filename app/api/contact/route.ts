@@ -22,7 +22,7 @@ export async function POST(request: NextRequest) {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          from: 'Align & Acquire <onboarding@resend.dev>',
+          from: 'Align and Acquire <onboarding@resend.dev>',
           to: process.env.YOUR_EMAIL,
           subject: `New Contact Form: ${name}`,
           html: `
