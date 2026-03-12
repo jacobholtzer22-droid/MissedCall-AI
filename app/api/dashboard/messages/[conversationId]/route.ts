@@ -2,20 +2,19 @@
 // CLIENT DASHBOARD: MESSAGES — conversation detail
 // ===========================================
 
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { requireDashboardBusiness } from '@/lib/dashboard-auth'
 
-type RouteParams = {
-  params: Promise<{ conversationId: string }>
-}
-
-export async function GET({ params }: RouteParams) {
+export async function GET(
+  _req: NextRequest,
+  { params }: { params: { conversationId: string } },
+) {
   const authResult = await requireDashboardBusiness()
   if (authResult instanceof NextResponse) return authResult
   const { business } = authResult
 
-  const { conversationId } = await params
+  const { conversationId } = params
 
   const conversation = await db.conversation.findFirst({
     where: { id: conversationId, businessId: business.id },
