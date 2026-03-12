@@ -22,9 +22,11 @@ export function formatPhoneNumber(phone: string): string {
 }
 
 // Format a date relative to now: "2 hours ago", "Yesterday", etc.
-export function formatRelativeTime(date: Date): string {
+// Accepts either a Date object or an ISO date string.
+export function formatRelativeTime(date: Date | string): string {
+  const d = typeof date === 'string' ? new Date(date) : date
   const now = new Date()
-  const diffInSeconds = Math.floor((now.getTime() - date.getTime()) / 1000)
+  const diffInSeconds = Math.floor((now.getTime() - d.getTime()) / 1000)
   
   if (diffInSeconds < 60) return 'Just now'
   if (diffInSeconds < 3600) return `${Math.floor(diffInSeconds / 60)} min ago`
@@ -32,7 +34,7 @@ export function formatRelativeTime(date: Date): string {
   if (diffInSeconds < 172800) return 'Yesterday'
   if (diffInSeconds < 604800) return `${Math.floor(diffInSeconds / 86400)} days ago`
   
-  return date.toLocaleDateString()
+  return d.toLocaleDateString()
 }
 
 // Generate a URL-friendly slug from a string

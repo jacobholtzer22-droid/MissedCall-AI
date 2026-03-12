@@ -8,6 +8,7 @@ import { db } from '@/lib/db'
 import { requireDashboardBusiness } from '@/lib/dashboard-auth'
 import { normalizeToE164 } from '@/lib/phone-utils'
 import { findOrCreateContact } from '@/lib/crm-utils'
+import type { Prisma } from '@prisma/client'
 
 type RecipientFilter =
   | { type: 'all' }
@@ -62,9 +63,9 @@ export async function POST(request: Request) {
   }
 
   // Resolve contacts by filter
-  let contactsWhere: Parameters<typeof db.contact.findMany>[0]['where'] = {
+  let contactsWhere: Prisma.ContactWhereInput = {
     businessId: business.id,
-    phoneNumber: { not: null },
+    phoneNumber: { not: '' },
   }
 
   if (filter.type === 'tags' && Array.isArray(filter.tagIds) && filter.tagIds.length > 0) {

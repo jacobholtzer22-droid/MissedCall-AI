@@ -5,6 +5,7 @@
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { requireDashboardBusiness } from '@/lib/dashboard-auth'
+import type { Prisma } from '@prisma/client'
 
 type RecipientFilter =
   | { type: 'all' }
@@ -47,9 +48,9 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'recipientFilter.type is required' }, { status: 400 })
   }
 
-  let where: Parameters<typeof db.contact.findMany>[0]['where'] = {
+  let where: Prisma.ContactWhereInput = {
     businessId: business.id,
-    phoneNumber: { not: null },
+    phoneNumber: { not: '' },
   }
 
   if (filter.type === 'tags' && Array.isArray(filter.tagIds) && filter.tagIds.length > 0) {

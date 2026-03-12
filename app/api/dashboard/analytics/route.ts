@@ -211,13 +211,15 @@ export async function GET(request: Request) {
       'manual_list',
     ])
 
+    type LeadSourceKey = keyof typeof leadSources
+
     for (const row of leadSourcesRaw) {
       const source = row.source || 'manual'
       const count = row._count._all
 
       if (source === 'missed_call' || source === 'website_form' || source === 'referral' || source === 'google_ad' || source === 'manual') {
-        // @ts-expect-error indexing is safe for known keys
-        leadSources[source] += count
+        const key = source as LeadSourceKey
+        leadSources[key] += count
       } else if (importSources.has(source)) {
         leadSources.imports += count
       }
