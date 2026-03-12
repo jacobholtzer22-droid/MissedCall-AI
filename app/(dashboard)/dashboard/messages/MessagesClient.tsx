@@ -1,4 +1,4 @@
-`use client`
+'use client'
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Search, Plus, MessageCircle, Send, Users, Tag, Filter } from 'lucide-react'
