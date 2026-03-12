@@ -18,13 +18,15 @@ export type FindOrCreateContactParams = {
   state?: string | null
   zip?: string | null
   notes?: string | null
+  /** When true, if contact exists by phone/email we skip (do not update) and return with isDuplicate: true */
+  skipUpdateIfExists?: boolean
 }
 
 /**
  * Find an existing contact by phone first, then by email.
- * Returns null if neither phone nor email match (and we have nothing to create with).
+ * Returns null if neither phone nor email match.
  */
-async function findExistingContact(
+export async function findExistingContact(
   businessId: string,
   phoneNumber: string | undefined | null,
   email: string | undefined | null
@@ -96,10 +98,11 @@ function activityDescription(type: string, source: string): string {
  * - If not found: creates Contact with provided fields, status 'new', and source.
  * - Always creates an Activity for the business/contact with the given type and a description.
  * Returns the contact record. Does not throw; logs errors and returns null on DB failure.
+ * When skipUpdateIfExists is true, returns existing contact with isDuplicate: true without updating.
  */
 export async function findOrCreateContact(
   params: FindOrCreateContactParams
-): Promise<{ id: string; phoneNumber: string; name: string | null; email: string | null; source: string | null } | null> {
+): Promise<{ id: string; phoneNumber: string; name: string | null; email: string | null; source: string | null; isDuplicate?: boolean } | null> {
   const {
     businessId,
     phoneNumber: rawPhone,
@@ -111,6 +114,7 @@ export async function findOrCreateContact(
     state,
     zip,
     notes,
+    skipUpdateIfExists,
   } = params
 
   const hasPhone = rawPhone?.trim() && normalizePhoneNumber(rawPhone.trim()).length >= 10
@@ -123,6 +127,16 @@ export async function findOrCreateContact(
     const existing = await findExistingContact(businessId, rawPhone ?? null, email ?? null)
 
     if (existing) {
+      if (skipUpdateIfExists) {
+        return {
+          id: existing.id,
+          phoneNumber: existing.phoneNumber,
+          name: existing.name,
+          email: existing.email,
+          source: null,
+          isDuplicate: true,
+        }
+      }
       const updates: {
         name?: string
         email?: string

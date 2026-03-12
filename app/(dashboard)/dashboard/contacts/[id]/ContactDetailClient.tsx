@@ -29,6 +29,41 @@ const STATUS_COLORS: Record<string, string> = {
   lost: 'bg-red-100 text-red-700',
 }
 
+const SOURCE_COLORS: Record<string, string> = {
+  missed_call: 'bg-orange-100 text-orange-800 border border-orange-200',
+  website_form: 'bg-blue-100 text-blue-800 border border-blue-200',
+  referral: 'bg-green-100 text-green-800 border border-green-200',
+  google_ad: 'bg-purple-100 text-purple-800 border border-purple-200',
+  jobber_import: 'bg-yellow-100 text-yellow-800 border border-yellow-200',
+  manual: 'bg-gray-100 text-gray-800 border border-gray-200',
+  sms_conversation: 'bg-indigo-100 text-indigo-700',
+  servicetitan_import: 'bg-teal-100 text-teal-800 border border-teal-200',
+  housecallpro_import: 'bg-indigo-100 text-indigo-800 border border-indigo-200',
+  quickbooks_import: 'bg-green-100 text-green-800 border border-green-200',
+  square_import: 'bg-slate-100 text-slate-800 border border-slate-200',
+  google_contacts_import: 'bg-red-100 text-red-800 border border-red-200',
+  excel_import: 'bg-emerald-100 text-emerald-800 border border-emerald-200',
+  other_crm_import: 'bg-cyan-100 text-cyan-800 border border-cyan-200',
+  manual_list: 'bg-gray-100 text-gray-800 border border-gray-200',
+}
+
+const SOURCE_LABELS: Record<string, string> = {
+  missed_call: 'Missed Call',
+  website_form: 'Website Form',
+  referral: 'Referral',
+  google_ad: 'Google Ad',
+  jobber_import: 'Jobber Import',
+  manual: 'Manual Entry',
+  servicetitan_import: 'ServiceTitan',
+  housecallpro_import: 'Housecall Pro',
+  quickbooks_import: 'QuickBooks',
+  square_import: 'Square',
+  google_contacts_import: 'Google Contacts',
+  excel_import: 'Excel Import',
+  other_crm_import: 'Other CRM',
+  manual_list: 'Manual List',
+}
+
 const ACTIVITY_ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
   missed_call: PhoneMissed,
   sms_conversation: MessageSquare,
@@ -166,9 +201,20 @@ export function ContactDetailClient({ contact: initialContact }: { contact: Cont
           <h1 className="text-2xl font-bold text-gray-900 truncate">
             {contact.name || displayPhone(contact.phoneNumber) || 'Contact'}
           </h1>
-          <p className="text-gray-500 text-sm mt-0.5">
-            {contact.source ? `${(contact.source as string).replace(/_/g, ' ')} • ` : ''}
-            Last contacted {contact.lastContactedAt ? formatRelativeTime(new Date(contact.lastContactedAt)) : 'never'}
+          <p className="text-gray-500 text-sm mt-0.5 flex items-center gap-2 flex-wrap">
+            {contact.source && (
+              <span
+                className={cn(
+                  'inline-flex px-2.5 py-0.5 rounded-md text-xs font-semibold uppercase tracking-wide',
+                  SOURCE_COLORS[contact.source] ?? 'bg-gray-100 text-gray-700'
+                )}
+              >
+                {SOURCE_LABELS[contact.source] ?? contact.source.replace(/_/g, ' ')}
+              </span>
+            )}
+            <span>
+              Last contacted {contact.lastContactedAt ? formatRelativeTime(new Date(contact.lastContactedAt)) : 'never'}
+            </span>
           </p>
         </div>
         <button

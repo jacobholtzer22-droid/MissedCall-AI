@@ -18,8 +18,14 @@ export async function GET(request: Request) {
   const search = searchParams.get('search')?.trim() || ''
   const status = searchParams.get('status')?.trim() || ''
 
-  const where: { businessId: string; status?: string; OR?: Array<{ name?: { contains: string; mode: 'insensitive' }; phoneNumber?: { contains: string }; email?: { contains: string; mode: 'insensitive' } }> } = {
+  const where: {
+    businessId: string
+    source: { not: null }
+    status?: string
+    OR?: Array<{ name?: { contains: string; mode: 'insensitive' }; phoneNumber?: { contains: string }; email?: { contains: string; mode: 'insensitive' } }>
+  } = {
     businessId: business.id,
+    source: { not: null },
   }
 
   if (status && status !== 'all') {
@@ -82,9 +88,13 @@ export async function POST(request: Request) {
 
   const phoneRaw = body.phone?.trim()
   const email = body.email?.trim() || null
+  const source = body.source?.trim()
   const hasPhone = phoneRaw && phoneRaw.replace(/\D/g, '').length >= 10
   if (!hasPhone && !email) {
     return NextResponse.json({ error: 'Phone or email is required' }, { status: 400 })
+  }
+  if (!source) {
+    return NextResponse.json({ error: 'Source is required' }, { status: 400 })
   }
 
   const phoneNumber = hasPhone
@@ -101,7 +111,7 @@ export async function POST(request: Request) {
       city: body.city?.trim() || null,
       state: body.state?.trim() || null,
       zip: body.zip?.trim() || null,
-      source: body.source?.trim() || 'manual',
+      source,
       notes: body.notes?.trim() || null,
       status: 'new',
     },

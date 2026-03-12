@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import Link from 'next/link'
-import { Users, Plus, Search } from 'lucide-react'
+import { Users, Plus, Search, Upload } from 'lucide-react'
 import { formatPhoneNumber, formatRelativeTime } from '@/lib/utils'
 import { cn } from '@/lib/utils'
 
@@ -17,13 +17,48 @@ const STATUS_OPTIONS = [
 ] as const
 
 const SOURCE_COLORS: Record<string, string> = {
-  missed_call: 'bg-blue-100 text-blue-700',
-  website_form: 'bg-purple-100 text-purple-700',
-  manual: 'bg-gray-100 text-gray-700',
-  referral: 'bg-green-100 text-green-700',
-  google_ad: 'bg-amber-100 text-amber-700',
+  missed_call: 'bg-orange-100 text-orange-800 border border-orange-200',
+  website_form: 'bg-blue-100 text-blue-800 border border-blue-200',
+  referral: 'bg-green-100 text-green-800 border border-green-200',
+  google_ad: 'bg-purple-100 text-purple-800 border border-purple-200',
+  jobber_import: 'bg-yellow-100 text-yellow-800 border border-yellow-200',
+  manual: 'bg-gray-100 text-gray-800 border border-gray-200',
   sms_conversation: 'bg-indigo-100 text-indigo-700',
+  servicetitan_import: 'bg-teal-100 text-teal-800 border border-teal-200',
+  housecallpro_import: 'bg-indigo-100 text-indigo-800 border border-indigo-200',
+  quickbooks_import: 'bg-green-100 text-green-800 border border-green-200',
+  square_import: 'bg-slate-100 text-slate-800 border border-slate-200',
+  google_contacts_import: 'bg-red-100 text-red-800 border border-red-200',
+  excel_import: 'bg-emerald-100 text-emerald-800 border border-emerald-200',
+  other_crm_import: 'bg-cyan-100 text-cyan-800 border border-cyan-200',
+  manual_list: 'bg-gray-100 text-gray-800 border border-gray-200',
 }
+
+const SOURCE_LABELS: Record<string, string> = {
+  missed_call: 'Missed Call',
+  website_form: 'Website Form',
+  referral: 'Referral',
+  google_ad: 'Google Ad',
+  jobber_import: 'Jobber Import',
+  manual: 'Manual Entry',
+  servicetitan_import: 'ServiceTitan',
+  housecallpro_import: 'Housecall Pro',
+  quickbooks_import: 'QuickBooks',
+  square_import: 'Square',
+  google_contacts_import: 'Google Contacts',
+  excel_import: 'Excel Import',
+  other_crm_import: 'Other CRM',
+  manual_list: 'Manual List',
+}
+
+const ADD_CONTACT_SOURCE_OPTIONS = [
+  { value: 'website_form', label: 'Website Form' },
+  { value: 'missed_call', label: 'Missed Call' },
+  { value: 'referral', label: 'Referral' },
+  { value: 'google_ad', label: 'Google Ad' },
+  { value: 'jobber_import', label: 'Jobber Import' },
+  { value: 'manual', label: 'Manual Entry' },
+] as const
 
 const STATUS_COLORS: Record<string, string> = {
   new: 'bg-gray-100 text-gray-700',
@@ -101,7 +136,7 @@ export function ContactsClient() {
     const res = await fetch('/api/dashboard/contacts', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
+        body: JSON.stringify({
         name: formData.name || undefined,
         phone: formData.phone || undefined,
         email: formData.email || undefined,
@@ -109,7 +144,7 @@ export function ContactsClient() {
         city: formData.city || undefined,
         state: formData.state || undefined,
         zip: formData.zip || undefined,
-        source: formData.source || 'manual',
+        source: formData.source || undefined,
         notes: formData.notes || undefined,
       }),
     })
@@ -128,14 +163,23 @@ export function ContactsClient() {
           <h1 className="text-2xl font-bold text-gray-900">Contacts</h1>
           <p className="text-gray-500 mt-1">Manage your contacts and leads</p>
         </div>
-        <button
-          type="button"
-          onClick={() => setAddModalOpen(true)}
-          className="inline-flex items-center gap-2 px-4 py-2 bg-gray-900 text-white rounded-lg hover:bg-gray-800 transition font-medium"
-        >
-          <Plus className="h-4 w-4" />
-          Add Contact
-        </button>
+        <div className="flex items-center gap-2">
+          <Link
+            href="/dashboard/contacts/import"
+            className="inline-flex items-center gap-2 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition font-medium"
+          >
+            <Upload className="h-4 w-4" />
+            Import Contacts
+          </Link>
+          <button
+            type="button"
+            onClick={() => setAddModalOpen(true)}
+            className="inline-flex items-center gap-2 px-4 py-2 bg-gray-900 text-white rounded-lg hover:bg-gray-800 transition font-medium"
+          >
+            <Plus className="h-4 w-4" />
+            Add Contact
+          </button>
+        </div>
       </div>
 
       <div className="flex flex-col sm:flex-row gap-4">
@@ -214,11 +258,11 @@ export function ContactsClient() {
                     <td className="py-3 px-4">
                       <span
                         className={cn(
-                          'inline-flex px-2 py-0.5 rounded-full text-xs font-medium',
+                          'inline-flex px-2.5 py-1 rounded-md text-xs font-semibold uppercase tracking-wide',
                           SOURCE_COLORS[c.source ?? 'manual'] ?? 'bg-gray-100 text-gray-700'
                         )}
                       >
-                        {(c.source ?? 'manual').replace(/_/g, ' ')}
+                        {SOURCE_LABELS[c.source ?? 'manual'] ?? (c.source ?? 'manual').replace(/_/g, ' ')}
                       </span>
                     </td>
                     <td className="py-3 px-4">
@@ -292,13 +336,17 @@ function AddContactModal({
     city: '',
     state: '',
     zip: '',
-    source: 'manual',
+    source: '',
     notes: '',
   })
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setError(null)
+    if (!form.source?.trim()) {
+      setError('Please select a source for this contact.')
+      return
+    }
     setSaving(true)
     try {
       await onSuccess(form)
@@ -390,17 +438,21 @@ function AddContactModal({
             </div>
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Source</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Source <span className="text-red-500">*</span>
+            </label>
             <select
               value={form.source}
               onChange={(e) => setForm((f) => ({ ...f, source: e.target.value }))}
+              required
               className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-gray-900"
             >
-              <option value="manual">Manual</option>
-              <option value="missed_call">Missed Call</option>
-              <option value="website_form">Website Form</option>
-              <option value="referral">Referral</option>
-              <option value="google_ad">Google Ad</option>
+              <option value="">Select source...</option>
+              {ADD_CONTACT_SOURCE_OPTIONS.map(({ value, label }) => (
+                <option key={value} value={value}>
+                  {label}
+                </option>
+              ))}
             </select>
           </div>
           <div>
