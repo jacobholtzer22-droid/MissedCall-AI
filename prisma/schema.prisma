@@ -231,6 +231,7 @@ model Conversation {
 
   // Conversation state
   status                String    @default("active")    // active, booking_in_progress, appointment_booked, closed, human_needed, completed, no_response, screening
+  manualMode            Boolean   @default(false)       // When true, inbound messages do NOT trigger AI; owner handles manually via dashboard
 
   // AI-generated summary of the conversation
   summary               String?   @db.Text
