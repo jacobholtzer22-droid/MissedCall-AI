@@ -157,7 +157,7 @@ export async function findOrCreateContact(
           contactId: updated.id,
           type: source,
           description: activityDescription(source, source),
-          metadata: null,
+          metadata: undefined,
         },
       })
 
@@ -197,7 +197,7 @@ export async function findOrCreateContact(
         contactId: contact.id,
         type: source,
         description: activityDescription(source, source),
-        metadata: null,
+        metadata: undefined,
       },
     })
 

@@ -4,8 +4,15 @@ import { redirect } from 'next/navigation'
 import { auth } from '@clerk/nextjs/server'
 import { db } from '@/lib/db'
 import { getBusinessForDashboard } from '@/lib/get-business-for-dashboard'
-import { LayoutDashboard, MessageSquare, Calendar, Settings, PhoneOff, Mail } from 'lucide-react'
+import { LayoutDashboard, MessageSquare, Calendar, Settings, PhoneOff, Mail, Users, Briefcase, Mailbox } from 'lucide-react'
 import { Logo } from '@/app/components/Logo'
+
+// CRM nav items — shown for all businesses (AI-enabled and spam-screening-only)
+const CRM_NAV = [
+  { name: 'Contacts', href: '/dashboard/contacts', icon: Users },
+  { name: 'Jobs', href: '/dashboard/jobs', icon: Briefcase },
+  { name: 'Emails', href: '/dashboard/emails', icon: Mailbox },
+]
 
 function getNavigation(missedCallAiEnabled: boolean) {
   const spamOnly = missedCallAiEnabled === false
@@ -14,12 +21,14 @@ function getNavigation(missedCallAiEnabled: boolean) {
         { name: 'Overview', href: '/dashboard', icon: LayoutDashboard },
         { name: 'Blocked Calls', href: '/dashboard/blocked-calls', icon: PhoneOff },
         { name: 'Voicemails', href: '/dashboard/voicemails', icon: Mail },
+        ...CRM_NAV,
         { name: 'Settings', href: '/dashboard/settings', icon: Settings },
       ]
     : [
         { name: 'Overview', href: '/dashboard', icon: LayoutDashboard },
         { name: 'Conversations', href: '/dashboard/conversations', icon: MessageSquare },
         { name: 'Scheduled Quotes', href: '/dashboard/appointments', icon: Calendar },
+        ...CRM_NAV,
         { name: 'Settings', href: '/dashboard/settings', icon: Settings },
       ]
   return items as { name: string; href: string; icon: typeof LayoutDashboard }[]
