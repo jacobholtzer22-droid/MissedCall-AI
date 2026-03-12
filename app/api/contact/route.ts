@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { db } from '@/lib/db'
+import { findOrCreateContact } from '@/lib/crm-utils'
 
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { name, phone, message, smsConsent } = body
+    const { name, phone, message, smsConsent, businessId, businessSlug, email } = body
 
     if (!name || !smsConsent) {
       return NextResponse.json(
@@ -34,6 +36,27 @@ export async function POST(request: NextRequest) {
           `,
         }),
       })
+    }
+
+    // CRM: link contact for client websites when businessId or businessSlug is provided (background, no effect on response)
+    const bid = typeof businessId === 'string' ? businessId.trim() || null : null
+    const slug = typeof businessSlug === 'string' ? businessSlug.trim() || null : null
+    if (bid || slug) {
+      void (async () => {
+        const business = bid
+          ? await db.business.findUnique({ where: { id: bid } })
+          : await db.business.findUnique({ where: { slug: slug! } })
+        if (business) {
+          await findOrCreateContact({
+            businessId: business.id,
+            phoneNumber: typeof phone === 'string' ? phone.trim() || undefined : undefined,
+            email: typeof email === 'string' ? email.trim() || undefined : undefined,
+            name: typeof name === 'string' ? name.trim() : undefined,
+            source: 'website_form',
+            notes: typeof message === 'string' ? message.trim() || undefined : undefined,
+          })
+        }
+      })().catch(() => {})
     }
 
     return NextResponse.json({ success: true })

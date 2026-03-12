@@ -17,6 +17,7 @@ import { createBooking, cleanServiceForOwner } from '@/lib/create-booking'
 import { notifyOwnerOnHumanNeeded, notifyOwnerOnLeadCaptured, notifyOwnerOnAIFailed } from '@/lib/notify-owner'
 import { recordMessageSent } from '@/lib/sms-cooldown'
 import { formatPhoneNumber } from '@/lib/utils'
+import { findOrCreateContact } from '@/lib/crm-utils'
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY ?? '' })
 
@@ -273,6 +274,12 @@ export async function POST(request: NextRequest) {
           data: { businessId: business.id, callerPhone: from, status: 'active' },
           include: { messages: true, appointment: true },
         })
+        // CRM: link contact in background (e.g. from missed-call SMS); does not affect response
+        void findOrCreateContact({
+          businessId: business.id,
+          phoneNumber: from,
+          source: 'missed_call',
+        }).catch(() => {})
       }
 
       // Ensure we have full conversation data for downstream logic
@@ -424,6 +431,15 @@ export async function POST(request: NextRequest) {
               bookingFlowState: Prisma.DbNull,
             },
           })
+          // CRM: update contact with name/email/address when AI captures them
+          void findOrCreateContact({
+            businessId: business.id,
+            phoneNumber: from,
+            email: extracted.customerEmail?.trim() || undefined,
+            name: extracted.customerName?.trim() || undefined,
+            address: extracted.customerAddress?.trim() || undefined,
+            source: 'missed_call',
+          }).catch(() => {})
           await sendSMSAndLog(business, conversation.id, from, thanksMsg, timing)
           const totalMs = Date.now() - new Date(timing.webhookReceivedAt).getTime()
           return NextResponse.json({ ok: true, timing: { ...timing, totalMs } }, { status: 200 })

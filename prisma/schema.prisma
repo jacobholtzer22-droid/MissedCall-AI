@@ -91,6 +91,10 @@ model Business {
   contactCooldowns      ContactCooldown[]
   cooldownSkipLogs      CooldownSkipLog[]
   telnyxUsageRecords    TelnyxUsageRecord[]
+  tags                  Tag[]
+  jobs                  Job[]
+  emailCampaigns        EmailCampaign[]
+  activities            Activity[]
 
   @@index([stripeCustomerId])
 }
@@ -129,6 +133,25 @@ model Contact {
   phoneNumber String   // Stored in normalized form for matching
   name        String?
   createdAt   DateTime @default(now())
+
+  // Optional CRM fields
+  email           String?
+  address         String?
+  city            String?
+  state           String?
+  zip             String?
+  source          String?   // missed_call, website_form, manual, referral, google_ad
+  status          String?   @default("new")  // new, contacted, quoted, booked, completed, lost
+  notes           String?   @db.Text
+  lastContactedAt DateTime?
+  updatedAt       DateTime @default(now()) @updatedAt
+  totalRevenue    Float?    @default(0)
+
+  // Reverse relations for new models
+  contactTags     ContactTag[]
+  jobs            Job[]
+  emailRecipients EmailRecipient[]
+  activities      Activity[]
 
   @@unique([businessId, phoneNumber])
   @@index([businessId])
@@ -384,5 +407,113 @@ model ScreenedCall {
 
   @@index([businessId])
   @@index([businessId, result])
+  @@index([createdAt])
+}
+
+// ===========================================
+// TAG - Labels for contacts (many-to-many via ContactTag)
+// ===========================================
+model Tag {
+  id         String   @id @default(cuid())
+  businessId String
+  name       String
+  color      String?  @default("#6B7280")
+  business   Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  contacts   ContactTag[]
+
+  @@unique([businessId, name])
+  @@index([businessId])
+}
+
+// ===========================================
+// CONTACT TAG - Join table for Contact <-> Tag many-to-many
+// ===========================================
+model ContactTag {
+  contactId String
+  tagId     String
+  contact   Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  tag       Tag     @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([contactId, tagId])
+  @@index([contactId])
+  @@index([tagId])
+}
+
+// ===========================================
+// JOB - Services performed / to be performed for a contact
+// ===========================================
+model Job {
+  id             String    @id @default(cuid())
+  businessId     String
+  contactId      String
+  serviceName    String
+  description    String?   @db.Text
+  scheduledDate  DateTime?
+  completedDate  DateTime?
+  amount         Float?
+  status         String    @default("scheduled")  // scheduled, in_progress, completed, cancelled, invoiced
+  notes          String?   @db.Text
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  business       Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  contact        Contact   @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  @@index([businessId])
+  @@index([contactId])
+  @@index([status])
+}
+
+// ===========================================
+// EMAIL CAMPAIGN - Bulk email sends to contacts
+// ===========================================
+model EmailCampaign {
+  id              String    @id @default(cuid())
+  businessId      String
+  subject         String
+  body            String    @db.Text
+  status          String    @default("draft")  // draft, sending, sent, failed
+  recipientCount  Int       @default(0)
+  sentAt          DateTime?
+  createdAt       DateTime  @default(now())
+  business        Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  recipients      EmailRecipient[]
+
+  @@index([businessId])
+  @@index([status])
+}
+
+// ===========================================
+// EMAIL RECIPIENT - Per-contact delivery status for a campaign
+// ===========================================
+model EmailRecipient {
+  id         String    @id @default(cuid())
+  campaignId String
+  contactId  String
+  email      String
+  status     String    @default("pending")  // pending, sent, delivered, bounced, failed
+  sentAt     DateTime?
+  campaign   EmailCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  contact    Contact       @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  @@index([campaignId])
+  @@index([contactId])
+}
+
+// ===========================================
+// ACTIVITY - Timeline of interactions with a contact
+// ===========================================
+model Activity {
+  id          String   @id @default(cuid())
+  businessId  String
+  contactId   String
+  type        String   // missed_call, sms_conversation, voicemail, website_form, email_sent, job_created, job_completed, note_added, status_changed
+  description String
+  metadata    Json?
+  createdAt   DateTime @default(now())
+  business    Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  contact     Contact  @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  @@index([businessId])
+  @@index([contactId])
   @@index([createdAt])
 }
