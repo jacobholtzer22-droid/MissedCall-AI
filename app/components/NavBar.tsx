@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import { Logo } from './Logo'
 import { NavMenu } from './NavMenu'
+import { ServicesDropdown } from './ServicesDropdown'
 
 export function NavBar() {
   return (
@@ -14,8 +15,9 @@ export function NavBar() {
           <div className="flex items-center gap-6">
             <Link href="/" className="text-gray-400 hover:text-white transition hidden sm:inline">Home</Link>
             <Link href="/missedcall-ai" className="text-gray-400 hover:text-white transition hidden sm:inline">MissedCall AI</Link>
-            <Link href="/websites" className="text-gray-400 hover:text-white transition hidden sm:inline">Websites</Link>
-            <Link href="/pricing" className="text-gray-400 hover:text-white transition hidden sm:inline">Pricing & Services</Link>
+            <ServicesDropdown />
+            <Link href="/pricing" className="text-gray-400 hover:text-white transition hidden sm:inline">Pricing</Link>
+            <Link href="/book" className="text-gray-400 hover:text-white transition hidden sm:inline">Book a Call</Link>
           </div>
           <div className="relative flex items-center gap-2 sm:gap-4 flex-shrink-0">
             <NavMenu />
@@ -25,7 +27,7 @@ export function NavBar() {
             <Link href="/sign-up" className="text-gray-400 hover:text-white transition text-sm sm:text-base">
               Sign Up
             </Link>
-            <Link href="/#contact" className="bg-white text-gray-900 px-4 py-2 rounded-lg hover:bg-gray-200 transition font-medium">
+            <Link href="/book" className="bg-white text-gray-900 px-4 py-2 rounded-lg hover:bg-gray-200 transition font-medium">
               Get Started
             </Link>
           </div>

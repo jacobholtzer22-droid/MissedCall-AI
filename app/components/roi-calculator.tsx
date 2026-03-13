@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 
-export default function ROICalculator() {
+export default function ROICalculator({ hideHeading = false }: { hideHeading?: boolean }) {
   const [missedCallsPerMonth, setMissedCallsPerMonth] = useState(20);
   const [appointmentValue, setAppointmentValue] = useState(200);
 
@@ -26,14 +26,16 @@ export default function ROICalculator() {
   return (
     <div className="bg-gray-900 border border-white/10 rounded-2xl p-5 md:p-6">
       <div className="max-w-3xl mx-auto">
-        <div className="text-center mb-6">
-          <h2 className="text-2xl md:text-3xl font-bold mb-2">
-            Calculate Your Revenue Loss
-          </h2>
-          <p className="text-base text-gray-400">
-            See exactly how much revenue you're leaving on the table
-          </p>
-        </div>
+        {!hideHeading && (
+          <div className="text-center mb-6">
+            <h2 className="text-2xl md:text-3xl font-bold mb-2">
+              Calculate Your Revenue Loss
+            </h2>
+            <p className="text-base text-gray-400">
+              See exactly how much revenue you&apos;re leaving on the table
+            </p>
+          </div>
+        )}
 
         <div className="bg-gray-800/50 border border-white/10 rounded-xl p-5 mb-6">
           <div className="space-y-6">
@@ -146,7 +148,7 @@ export default function ROICalculator() {
             Every $1 spent returns ${(Number(roi) / 100 + 1).toFixed(2)}
           </div>
           <a
-            href="#book-demo"
+            href="/book"
             className="inline-block bg-white text-gray-900 font-bold px-6 py-3 rounded-lg hover:bg-gray-200 transition-colors shadow-lg text-sm"
           >
             Book Your Free Demo →
