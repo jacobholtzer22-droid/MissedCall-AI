@@ -103,7 +103,7 @@ export function JobsClient() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+      <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Jobs</h1>
           <p className="text-gray-500 mt-1">Services and jobs for your contacts</p>
@@ -111,7 +111,7 @@ export function JobsClient() {
         <button
           type="button"
           onClick={() => setNewJobOpen(true)}
-          className="inline-flex items-center gap-2 px-4 py-2 bg-gray-900 text-white rounded-lg hover:bg-gray-800 transition font-medium"
+          className="inline-flex items-center justify-center gap-2 px-4 py-3 min-h-[44px] w-full md:w-auto bg-gray-900 text-white rounded-lg hover:bg-gray-800 transition font-medium"
         >
           <Plus className="h-4 w-4" />
           New Job
@@ -140,7 +140,7 @@ export function JobsClient() {
             type="button"
             onClick={() => setStatusFilter(value)}
             className={cn(
-              'px-3 py-2 rounded-lg text-sm font-medium transition',
+              'px-3 py-2.5 min-h-[44px] md:min-h-0 rounded-lg text-sm font-medium transition',
               statusFilter === value ? 'bg-gray-900 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
             )}
           >
@@ -159,62 +159,100 @@ export function JobsClient() {
             <button
               type="button"
               onClick={() => setNewJobOpen(true)}
-              className="mt-4 text-gray-900 font-medium hover:underline"
+              className="mt-4 py-3 min-h-[44px] px-4 text-gray-900 font-medium rounded-lg hover:bg-gray-100"
             >
               Create your first job
             </button>
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead>
-                <tr className="border-b border-gray-200 bg-gray-50">
-                  <th className="text-left py-3 px-4 text-sm font-medium text-gray-600">Contact</th>
-                  <th className="text-left py-3 px-4 text-sm font-medium text-gray-600">Service</th>
-                  <th className="text-left py-3 px-4 text-sm font-medium text-gray-600">Scheduled Date</th>
-                  <th className="text-left py-3 px-4 text-sm font-medium text-gray-600">Status</th>
-                  <th className="text-left py-3 px-4 text-sm font-medium text-gray-600">Amount</th>
-                </tr>
-              </thead>
-              <tbody>
-                {jobs.map((j) => (
-                  <tr key={j.id} className="border-b border-gray-100 hover:bg-gray-50">
-                    <td className="py-3 px-4">
-                      <Link
-                        href={`/dashboard/contacts/${j.contactId}`}
-                        className="font-medium text-gray-900 hover:underline"
-                      >
-                        {j.contactName}
-                      </Link>
-                    </td>
-                    <td className="py-3 px-4 text-sm text-gray-600">{j.serviceName}</td>
-                    <td className="py-3 px-4 text-sm text-gray-600">
+          <>
+            {/* Mobile: card list */}
+            <div className="md:hidden divide-y divide-gray-100">
+              {jobs.map((j) => (
+                <Link
+                  key={j.id}
+                  href={`/dashboard/contacts/${j.contactId}`}
+                  className="block p-4 hover:bg-gray-50"
+                >
+                  <p className="font-medium text-gray-900">{j.contactName}</p>
+                  <p className="text-sm text-gray-600 mt-0.5">{j.serviceName}</p>
+                  <div className="flex flex-wrap items-center gap-2 mt-2">
+                    <span className="text-xs text-gray-500">
                       {j.scheduledDate
                         ? new Date(j.scheduledDate).toLocaleDateString()
                         : '—'}
-                    </td>
-                    <td className="py-3 px-4">
-                      <span
-                        className={cn(
-                          'inline-flex px-2 py-0.5 rounded-full text-xs font-medium',
-                          j.status === 'completed' && 'bg-green-100 text-green-700',
-                          j.status === 'invoiced' && 'bg-purple-100 text-purple-700',
-                          j.status === 'scheduled' && 'bg-blue-100 text-blue-700',
-                          j.status === 'in_progress' && 'bg-amber-100 text-amber-700',
-                          j.status === 'cancelled' && 'bg-gray-100 text-gray-600'
-                        )}
-                      >
-                        {j.status.replace(/_/g, ' ')}
-                      </span>
-                    </td>
-                    <td className="py-3 px-4 text-sm text-gray-600">
-                      {j.amount != null ? formatCurrency(j.amount) : '—'}
-                    </td>
+                    </span>
+                    <span
+                      className={cn(
+                        'inline-flex px-2 py-0.5 rounded-full text-xs font-medium',
+                        j.status === 'completed' && 'bg-green-100 text-green-700',
+                        j.status === 'invoiced' && 'bg-purple-100 text-purple-700',
+                        j.status === 'scheduled' && 'bg-blue-100 text-blue-700',
+                        j.status === 'in_progress' && 'bg-amber-100 text-amber-700',
+                        j.status === 'cancelled' && 'bg-gray-100 text-gray-600'
+                      )}
+                    >
+                      {j.status.replace(/_/g, ' ')}
+                    </span>
+                    {j.amount != null && (
+                      <span className="text-sm font-medium text-gray-900">{formatCurrency(j.amount)}</span>
+                    )}
+                  </div>
+                </Link>
+              ))}
+            </div>
+            {/* Desktop: table */}
+            <div className="hidden md:block overflow-x-auto">
+              <table className="w-full">
+                <thead>
+                  <tr className="border-b border-gray-200 bg-gray-50">
+                    <th className="text-left py-3 px-4 text-sm font-medium text-gray-600">Contact</th>
+                    <th className="text-left py-3 px-4 text-sm font-medium text-gray-600">Service</th>
+                    <th className="text-left py-3 px-4 text-sm font-medium text-gray-600">Scheduled Date</th>
+                    <th className="text-left py-3 px-4 text-sm font-medium text-gray-600">Status</th>
+                    <th className="text-left py-3 px-4 text-sm font-medium text-gray-600">Amount</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody>
+                  {jobs.map((j) => (
+                    <tr key={j.id} className="border-b border-gray-100 hover:bg-gray-50">
+                      <td className="py-3 px-4">
+                        <Link
+                          href={`/dashboard/contacts/${j.contactId}`}
+                          className="font-medium text-gray-900 hover:underline"
+                        >
+                          {j.contactName}
+                        </Link>
+                      </td>
+                      <td className="py-3 px-4 text-sm text-gray-600">{j.serviceName}</td>
+                      <td className="py-3 px-4 text-sm text-gray-600">
+                        {j.scheduledDate
+                          ? new Date(j.scheduledDate).toLocaleDateString()
+                          : '—'}
+                      </td>
+                      <td className="py-3 px-4">
+                        <span
+                          className={cn(
+                            'inline-flex px-2 py-0.5 rounded-full text-xs font-medium',
+                            j.status === 'completed' && 'bg-green-100 text-green-700',
+                            j.status === 'invoiced' && 'bg-purple-100 text-purple-700',
+                            j.status === 'scheduled' && 'bg-blue-100 text-blue-700',
+                            j.status === 'in_progress' && 'bg-amber-100 text-amber-700',
+                            j.status === 'cancelled' && 'bg-gray-100 text-gray-600'
+                          )}
+                        >
+                          {j.status.replace(/_/g, ' ')}
+                        </span>
+                      </td>
+                      <td className="py-3 px-4 text-sm text-gray-600">
+                        {j.amount != null ? formatCurrency(j.amount) : '—'}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
         )}
       </div>
 
@@ -278,22 +316,27 @@ function NewJobModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-0 md:p-4 bg-black/50" onClick={onClose}>
       <div
-        className="bg-white rounded-xl shadow-xl max-w-md w-full max-h-[90vh] overflow-y-auto"
+        className="bg-white rounded-none md:rounded-xl shadow-xl max-w-md w-full h-full md:h-auto md:max-h-[90vh] overflow-y-auto flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="p-6 border-b border-gray-200">
-          <h2 className="text-xl font-bold text-gray-900">New Job</h2>
-          <p className="text-sm text-gray-500 mt-1">Create a job for a contact</p>
+        <div className="p-4 md:p-6 border-b border-gray-200 flex items-center justify-between gap-3 shrink-0">
+          <div>
+            <h2 className="text-xl font-bold text-gray-900">New Job</h2>
+            <p className="text-sm text-gray-500 mt-1">Create a job for a contact</p>
+          </div>
+          <button type="button" onClick={onClose} className="md:hidden min-h-[44px] min-w-[44px] flex items-center justify-center rounded-lg hover:bg-gray-100 text-gray-600" aria-label="Close">
+            <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+          </button>
         </div>
-        <form onSubmit={handleSubmit} className="p-6 space-y-4">
+        <form onSubmit={handleSubmit} className="p-4 md:p-6 space-y-4 flex-1 overflow-y-auto">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Contact *</label>
             <select
               value={contactId}
               onChange={(e) => setContactId(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-200 rounded-lg"
+              className="w-full px-3 py-3 min-h-[44px] border border-gray-200 rounded-lg text-gray-900"
               required
             >
               <option value="">Select contact</option>
@@ -311,7 +354,7 @@ function NewJobModal({
               value={serviceName}
               onChange={(e) => setServiceName(e.target.value)}
               placeholder="e.g. Lawn mowing"
-              className="w-full px-3 py-2 border border-gray-200 rounded-lg"
+              className="w-full px-3 py-3 min-h-[44px] border border-gray-200 rounded-lg text-gray-900 placeholder-gray-400"
               required
             />
           </div>
@@ -321,7 +364,7 @@ function NewJobModal({
               type="date"
               value={scheduledDate}
               onChange={(e) => setScheduledDate(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-200 rounded-lg"
+              className="w-full px-3 py-3 min-h-[44px] border border-gray-200 rounded-lg text-gray-900"
             />
           </div>
           <div>
@@ -331,7 +374,7 @@ function NewJobModal({
               step="0.01"
               value={amount}
               onChange={(e) => setAmount(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-200 rounded-lg"
+              className="w-full px-3 py-3 min-h-[44px] border border-gray-200 rounded-lg text-gray-900"
             />
           </div>
           <div>
@@ -340,17 +383,17 @@ function NewJobModal({
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
               rows={2}
-              className="w-full px-3 py-2 border border-gray-200 rounded-lg"
+              className="w-full px-3 py-3 min-h-[44px] border border-gray-200 rounded-lg text-gray-900"
             />
           </div>
-          <div className="flex justify-end gap-3 pt-4">
-            <button type="button" onClick={onClose} className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg">
+          <div className="flex flex-col-reverse sm:flex-row justify-end gap-3 pt-4">
+            <button type="button" onClick={onClose} className="px-4 py-3 min-h-[44px] text-gray-700 hover:bg-gray-100 rounded-lg">
               Cancel
             </button>
             <button
               type="submit"
               disabled={saving}
-              className="px-4 py-2 bg-gray-900 text-white rounded-lg hover:bg-gray-800 disabled:opacity-50"
+              className="px-4 py-3 min-h-[44px] bg-gray-900 text-white rounded-lg hover:bg-gray-800 disabled:opacity-50"
             >
               {saving ? 'Creating...' : 'Create Job'}
             </button>

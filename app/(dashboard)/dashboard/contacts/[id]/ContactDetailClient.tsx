@@ -220,16 +220,16 @@ export function ContactDetailClient({ contact: initialContact }: { contact: Cont
         <button
           type="button"
           onClick={() => setEditOpen(true)}
-          className="inline-flex items-center gap-2 px-3 py-2 border border-gray-200 rounded-lg hover:bg-gray-50 text-sm font-medium"
+          className="inline-flex items-center justify-center gap-2 px-3 py-3 min-h-[44px] md:min-h-0 md:py-2 border border-gray-200 rounded-lg hover:bg-gray-50 text-sm font-medium"
         >
           <Pencil className="h-4 w-4" />
           Edit
         </button>
       </div>
 
-      {/* Contact info card */}
-      <div className="bg-white rounded-xl border border-gray-200 p-6">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+      {/* Contact info card - stacked on mobile */}
+      <div className="bg-white rounded-xl border border-gray-200 p-4 md:p-6">
+        <div className="flex flex-col gap-4 md:grid md:grid-cols-2 md:gap-6">
           <div>
             <p className="text-sm text-gray-500 flex items-center gap-2">
               <Phone className="h-4 w-4" />
@@ -257,8 +257,9 @@ export function ContactDetailClient({ contact: initialContact }: { contact: Cont
               onChange={(e) => handleStatusChange(e.target.value)}
               disabled={updatingStatus}
               className={cn(
-                'text-sm rounded-lg border border-gray-200 px-3 py-1.5 font-medium',
-                STATUS_COLORS[contact.status] ?? 'bg-gray-100 text-gray-700'
+                'text-sm rounded-lg border border-gray-200 px-3 py-3 min-h-[44px] md:min-h-0 md:py-1.5 font-medium',
+                STATUS_COLORS[contact.status] ?? 'bg-gray-100 text-gray-700',
+                'text-gray-900'
               )}
             >
               {STATUS_OPTIONS.map((s) => (
@@ -300,7 +301,7 @@ export function ContactDetailClient({ contact: initialContact }: { contact: Cont
           <button
             type="button"
             onClick={() => setNoteOpen(true)}
-            className="inline-flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200"
+            className="inline-flex items-center justify-center gap-2 px-3 py-3 min-h-[44px] md:min-h-0 md:py-1.5 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200"
           >
             <StickyNote className="h-4 w-4" />
             Add Note
@@ -366,7 +367,7 @@ export function ContactDetailClient({ contact: initialContact }: { contact: Cont
           <button
             type="button"
             onClick={() => setJobModalOpen(true)}
-            className="inline-flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200"
+            className="inline-flex items-center justify-center gap-2 px-3 py-3 min-h-[44px] md:min-h-0 md:py-1.5 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200"
           >
             <Plus className="h-4 w-4" />
             Add Job
@@ -376,7 +377,40 @@ export function ContactDetailClient({ contact: initialContact }: { contact: Cont
           {contact.jobs.length === 0 ? (
             <div className="py-8 text-center text-gray-500 text-sm">No jobs yet.</div>
           ) : (
-            <table className="w-full">
+            <>
+              {/* Mobile: card list for jobs */}
+              <div className="md:hidden divide-y divide-gray-100">
+                {contact.jobs.map((j) => (
+                  <div key={j.id} className="p-4">
+                    <p className="font-medium text-gray-900">{j.serviceName}</p>
+                    <div className="flex flex-wrap items-center gap-2 mt-1">
+                      <span
+                        className={cn(
+                          'text-xs px-2 py-0.5 rounded-full font-medium',
+                          j.status === 'completed' && 'bg-green-100 text-green-700',
+                          j.status === 'scheduled' && 'bg-blue-100 text-blue-700',
+                          j.status === 'in_progress' && 'bg-amber-100 text-amber-700',
+                          j.status === 'cancelled' && 'bg-gray-100 text-gray-600',
+                          j.status === 'invoiced' && 'bg-purple-100 text-purple-700'
+                        )}
+                      >
+                        {j.status.replace(/_/g, ' ')}
+                      </span>
+                      <span className="text-sm text-gray-600">
+                        {j.scheduledDate
+                          ? new Date(j.scheduledDate).toLocaleDateString()
+                          : j.completedDate
+                          ? new Date(j.completedDate).toLocaleDateString()
+                          : '—'}
+                      </span>
+                      {j.amount != null && (
+                        <span className="text-sm text-gray-600">{formatCurrency(j.amount)}</span>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <table className="w-full hidden md:table">
               <thead>
                 <tr className="border-b border-gray-200 bg-gray-50">
                   <th className="text-left py-3 px-4 text-sm font-medium text-gray-600">Service</th>
@@ -417,6 +451,7 @@ export function ContactDetailClient({ contact: initialContact }: { contact: Cont
                 ))}
               </tbody>
             </table>
+            </>
           )}
         </div>
       </div>
@@ -489,22 +524,25 @@ function EditContactModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-0 md:p-4 bg-black/50" onClick={onClose}>
       <div
-        className="bg-white rounded-xl shadow-xl max-w-lg w-full max-h-[90vh] overflow-y-auto"
+        className="bg-white rounded-none md:rounded-xl shadow-xl max-w-lg w-full h-full md:h-auto md:max-h-[90vh] overflow-y-auto flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="p-6 border-b border-gray-200">
+        <div className="p-4 md:p-6 border-b border-gray-200 flex items-center justify-between gap-3 shrink-0">
           <h2 className="text-xl font-bold text-gray-900">Edit Contact</h2>
+          <button type="button" onClick={onClose} className="md:hidden min-h-[44px] min-w-[44px] flex items-center justify-center rounded-lg hover:bg-gray-100 text-gray-600" aria-label="Close">
+            <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+          </button>
         </div>
-        <form onSubmit={handleSubmit} className="p-6 space-y-4">
+        <form onSubmit={handleSubmit} className="p-4 md:p-6 space-y-4 flex-1 overflow-y-auto">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Name</label>
             <input
               type="text"
               value={form.name}
               onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-              className="w-full px-3 py-2 border border-gray-200 rounded-lg"
+              className="w-full px-3 py-3 min-h-[44px] border border-gray-200 rounded-lg text-gray-900"
             />
           </div>
           <div>
@@ -513,7 +551,7 @@ function EditContactModal({
               type="tel"
               value={form.phoneNumber}
               onChange={(e) => setForm((f) => ({ ...f, phoneNumber: e.target.value }))}
-              className="w-full px-3 py-2 border border-gray-200 rounded-lg"
+              className="w-full px-3 py-3 min-h-[44px] border border-gray-200 rounded-lg text-gray-900"
             />
           </div>
           <div>
@@ -522,7 +560,7 @@ function EditContactModal({
               type="email"
               value={form.email}
               onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
-              className="w-full px-3 py-2 border border-gray-200 rounded-lg"
+              className="w-full px-3 py-3 min-h-[44px] border border-gray-200 rounded-lg text-gray-900"
             />
           </div>
           <div>
@@ -531,17 +569,17 @@ function EditContactModal({
               type="text"
               value={form.address}
               onChange={(e) => setForm((f) => ({ ...f, address: e.target.value }))}
-              className="w-full px-3 py-2 border border-gray-200 rounded-lg"
+              className="w-full px-3 py-3 min-h-[44px] border border-gray-200 rounded-lg text-gray-900"
             />
           </div>
-          <div className="grid grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">City</label>
               <input
                 type="text"
                 value={form.city}
                 onChange={(e) => setForm((f) => ({ ...f, city: e.target.value }))}
-                className="w-full px-3 py-2 border border-gray-200 rounded-lg"
+                className="w-full px-3 py-3 min-h-[44px] border border-gray-200 rounded-lg text-gray-900"
               />
             </div>
             <div>
@@ -550,7 +588,7 @@ function EditContactModal({
                 type="text"
                 value={form.state}
                 onChange={(e) => setForm((f) => ({ ...f, state: e.target.value }))}
-                className="w-full px-3 py-2 border border-gray-200 rounded-lg"
+                className="w-full px-3 py-3 min-h-[44px] border border-gray-200 rounded-lg text-gray-900"
               />
             </div>
             <div>
@@ -559,7 +597,7 @@ function EditContactModal({
                 type="text"
                 value={form.zip}
                 onChange={(e) => setForm((f) => ({ ...f, zip: e.target.value }))}
-                className="w-full px-3 py-2 border border-gray-200 rounded-lg"
+                className="w-full px-3 py-3 min-h-[44px] border border-gray-200 rounded-lg text-gray-900"
               />
             </div>
           </div>
@@ -568,7 +606,7 @@ function EditContactModal({
             <select
               value={form.source}
               onChange={(e) => setForm((f) => ({ ...f, source: e.target.value }))}
-              className="w-full px-3 py-2 border border-gray-200 rounded-lg"
+              className="w-full px-3 py-3 min-h-[44px] border border-gray-200 rounded-lg text-gray-900"
             >
               <option value="manual">Manual</option>
               <option value="missed_call">Missed Call</option>
@@ -582,7 +620,7 @@ function EditContactModal({
             <select
               value={form.status}
               onChange={(e) => setForm((f) => ({ ...f, status: e.target.value }))}
-              className="w-full px-3 py-2 border border-gray-200 rounded-lg"
+              className="w-full px-3 py-3 min-h-[44px] border border-gray-200 rounded-lg text-gray-900"
             >
               {STATUS_OPTIONS.map((s) => (
                 <option key={s} value={s}>{s.charAt(0).toUpperCase() + s.slice(1)}</option>
@@ -595,17 +633,17 @@ function EditContactModal({
               value={form.notes}
               onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))}
               rows={3}
-              className="w-full px-3 py-2 border border-gray-200 rounded-lg"
+              className="w-full px-3 py-3 min-h-[44px] border border-gray-200 rounded-lg text-gray-900"
             />
           </div>
-          <div className="flex justify-end gap-3 pt-4">
-            <button type="button" onClick={onClose} className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg">
+          <div className="flex flex-col-reverse sm:flex-row justify-end gap-3 pt-4">
+            <button type="button" onClick={onClose} className="px-4 py-3 min-h-[44px] text-gray-700 hover:bg-gray-100 rounded-lg">
               Cancel
             </button>
             <button
               type="submit"
               disabled={saving}
-              className="px-4 py-2 bg-gray-900 text-white rounded-lg hover:bg-gray-800 disabled:opacity-50"
+              className="px-4 py-3 min-h-[44px] bg-gray-900 text-white rounded-lg hover:bg-gray-800 disabled:opacity-50"
             >
               {saving ? 'Saving...' : 'Save'}
             </button>
@@ -631,28 +669,33 @@ function AddNoteModal({ onClose, onSave }: { onClose: () => void; onSave: (conte
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-0 md:p-4 bg-black/50" onClick={onClose}>
       <div
-        className="bg-white rounded-xl shadow-xl max-w-md w-full p-6"
+        className="bg-white rounded-none md:rounded-xl shadow-xl max-w-md w-full h-full md:h-auto md:max-h-[90vh] flex flex-col p-4 md:p-6"
         onClick={(e) => e.stopPropagation()}
       >
-        <h2 className="text-lg font-bold text-gray-900 mb-4">Add Note</h2>
-        <form onSubmit={handleSubmit}>
+        <div className="flex items-center justify-between gap-3 shrink-0 mb-4">
+          <h2 className="text-lg font-bold text-gray-900">Add Note</h2>
+          <button type="button" onClick={onClose} className="md:hidden min-h-[44px] min-w-[44px] flex items-center justify-center rounded-lg hover:bg-gray-100 text-gray-600" aria-label="Close">
+            <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+          </button>
+        </div>
+        <form onSubmit={handleSubmit} className="flex flex-col flex-1 overflow-y-auto">
           <textarea
             value={content}
             onChange={(e) => setContent(e.target.value)}
             placeholder="Enter note..."
             rows={4}
-            className="w-full px-3 py-2 border border-gray-200 rounded-lg mb-4"
+            className="w-full px-3 py-3 min-h-[44px] border border-gray-200 rounded-lg mb-4 text-gray-900 placeholder-gray-400"
           />
-          <div className="flex justify-end gap-3">
-            <button type="button" onClick={onClose} className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg">
+          <div className="flex flex-col-reverse sm:flex-row justify-end gap-3 mt-auto">
+            <button type="button" onClick={onClose} className="px-4 py-3 min-h-[44px] text-gray-700 hover:bg-gray-100 rounded-lg">
               Cancel
             </button>
             <button
               type="submit"
               disabled={saving}
-              className="px-4 py-2 bg-gray-900 text-white rounded-lg hover:bg-gray-800 disabled:opacity-50"
+              className="px-4 py-3 min-h-[44px] bg-gray-900 text-white rounded-lg hover:bg-gray-800 disabled:opacity-50"
             >
               {saving ? 'Adding...' : 'Add Note'}
             </button>
@@ -693,13 +736,18 @@ function AddJobModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-0 md:p-4 bg-black/50" onClick={onClose}>
       <div
-        className="bg-white rounded-xl shadow-xl max-w-md w-full p-6"
+        className="bg-white rounded-none md:rounded-xl shadow-xl max-w-md w-full h-full md:h-auto md:max-h-[90vh] flex flex-col overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
-        <h2 className="text-lg font-bold text-gray-900 mb-4">Add Job</h2>
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <div className="p-4 md:p-6 border-b border-gray-200 flex items-center justify-between gap-3 shrink-0">
+          <h2 className="text-lg font-bold text-gray-900">Add Job</h2>
+          <button type="button" onClick={onClose} className="md:hidden min-h-[44px] min-w-[44px] flex items-center justify-center rounded-lg hover:bg-gray-100 text-gray-600" aria-label="Close">
+            <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+          </button>
+        </div>
+        <form onSubmit={handleSubmit} className="p-4 md:p-6 space-y-4 flex-1 overflow-y-auto">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Service *</label>
             <input
@@ -707,7 +755,7 @@ function AddJobModal({
               value={serviceName}
               onChange={(e) => setServiceName(e.target.value)}
               placeholder="e.g. Lawn mowing"
-              className="w-full px-3 py-2 border border-gray-200 rounded-lg"
+              className="w-full px-3 py-3 min-h-[44px] border border-gray-200 rounded-lg text-gray-900 placeholder-gray-400"
               required
             />
           </div>
@@ -717,7 +765,7 @@ function AddJobModal({
               type="date"
               value={scheduledDate}
               onChange={(e) => setScheduledDate(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-200 rounded-lg"
+              className="w-full px-3 py-3 min-h-[44px] border border-gray-200 rounded-lg text-gray-900"
             />
           </div>
           <div>
@@ -727,7 +775,7 @@ function AddJobModal({
               step="0.01"
               value={amount}
               onChange={(e) => setAmount(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-200 rounded-lg"
+              className="w-full px-3 py-3 min-h-[44px] border border-gray-200 rounded-lg text-gray-900"
             />
           </div>
           <div>
@@ -736,17 +784,17 @@ function AddJobModal({
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
               rows={2}
-              className="w-full px-3 py-2 border border-gray-200 rounded-lg"
+              className="w-full px-3 py-3 min-h-[44px] border border-gray-200 rounded-lg text-gray-900"
             />
           </div>
-          <div className="flex justify-end gap-3 pt-4">
-            <button type="button" onClick={onClose} className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg">
+          <div className="flex flex-col-reverse sm:flex-row justify-end gap-3 pt-4">
+            <button type="button" onClick={onClose} className="px-4 py-3 min-h-[44px] text-gray-700 hover:bg-gray-100 rounded-lg">
               Cancel
             </button>
             <button
               type="submit"
               disabled={saving}
-              className="px-4 py-2 bg-gray-900 text-white rounded-lg hover:bg-gray-800 disabled:opacity-50"
+              className="px-4 py-3 min-h-[44px] bg-gray-900 text-white rounded-lg hover:bg-gray-800 disabled:opacity-50"
             >
               {saving ? 'Adding...' : 'Add Job'}
             </button>

@@ -434,7 +434,7 @@ export function ImportContactsClient() {
               <select
                 value={source}
                 onChange={(e) => setSource(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-gray-900 focus:border-transparent"
+                className="w-full px-3 py-3 min-h-[44px] border border-gray-200 rounded-lg text-gray-900 focus:ring-2 focus:ring-gray-900 focus:border-transparent"
               >
                 {SOURCE_OPTIONS.map((opt) => (
                   <option key={opt.value} value={opt.value}>
@@ -453,7 +453,7 @@ export function ImportContactsClient() {
                 e.stopPropagation()
               }}
               onDrop={onDrop}
-              className="border-2 border-dashed border-gray-300 rounded-xl p-6 flex flex-col items-center justify-center text-center cursor-pointer hover:border-gray-400 transition bg-gray-50"
+              className="border-2 border-dashed border-gray-300 rounded-xl p-6 min-h-[120px] md:min-h-[160px] flex flex-col items-center justify-center text-center cursor-pointer hover:border-gray-400 transition bg-gray-50 touch-manipulation"
               onClick={() => {
                 const input = document.createElement('input')
                 input.type = 'file'
@@ -490,7 +490,7 @@ export function ImportContactsClient() {
                 </div>
                 <div className="max-h-72 overflow-y-auto border border-gray-200 rounded-lg divide-y divide-gray-100">
                   {headers.map((h) => (
-                    <div key={h} className="flex items-center gap-3 px-3 py-2 bg-white">
+                    <div key={h} className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 px-3 py-2 bg-white">
                       <div className="flex-1 min-w-0">
                         <div className="text-sm font-medium text-gray-900 truncate">{h}</div>
                       </div>
@@ -502,7 +502,7 @@ export function ImportContactsClient() {
                             [h]: e.target.value as MappingValue,
                           }))
                         }
-                        className="text-sm px-2 py-1 border border-gray-200 rounded-lg bg-gray-50"
+                        className="w-full sm:w-auto text-sm px-3 py-3 min-h-[44px] sm:min-h-0 sm:py-1 sm:px-2 border border-gray-200 rounded-lg bg-gray-50 text-gray-900"
                       >
                         <option value="ignore">Ignore this column</option>
                         {Object.entries(CRM_FIELD_LABELS).map(([value, label]) => (
@@ -653,7 +653,7 @@ export function ImportContactsClient() {
                       type="button"
                       onClick={runPreview}
                       disabled={!canContinueToPreview || loadingPreview}
-                      className="inline-flex items-center justify-center px-4 py-2 rounded-lg border border-gray-200 bg-gray-900 text-white text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                      className="inline-flex items-center justify-center px-4 py-3 min-h-[44px] rounded-lg border border-gray-200 bg-gray-900 text-white text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       {loadingPreview ? 'Analyzing…' : 'Next: Review import'}
                     </button>
@@ -663,14 +663,14 @@ export function ImportContactsClient() {
                       <button
                         type="button"
                         onClick={() => setStep('mapping')}
-                        className="px-3 py-2 rounded-lg border border-gray-200 text-sm text-gray-700 bg-white hover:bg-gray-50"
+                        className="px-4 py-3 min-h-[44px] rounded-lg border border-gray-200 text-sm text-gray-700 bg-white hover:bg-gray-50"
                       >
                         Back to mapping
                       </button>
                       <button
                         type="button"
                         onClick={runImport}
-                        className="px-4 py-2 rounded-lg bg-gray-900 text-white text-sm font-medium hover:bg-gray-800"
+                        className="px-4 py-3 min-h-[44px] rounded-lg bg-gray-900 text-white text-sm font-medium hover:bg-gray-800"
                       >
                         Import contacts
                       </button>

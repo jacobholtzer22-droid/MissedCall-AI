@@ -28,22 +28,22 @@ export function EmailsClient() {
   }, [])
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+    <div className="space-y-6 w-full">
+      <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Email Campaigns</h1>
           <p className="text-gray-500 mt-1">Send bulk emails to your contacts</p>
         </div>
         <Link
           href="/dashboard/emails/new"
-          className="inline-flex items-center gap-2 px-4 py-2 bg-gray-900 text-white rounded-lg hover:bg-gray-800 transition font-medium"
+          className="inline-flex items-center justify-center gap-2 px-4 py-3 min-h-[44px] w-full md:w-auto bg-gray-900 text-white rounded-lg hover:bg-gray-800 transition font-medium"
         >
           <Plus className="h-4 w-4" />
           New Campaign
         </Link>
       </div>
 
-      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden w-full">
         {loading ? (
           <div className="py-16 text-center text-gray-500">Loading...</div>
         ) : campaigns.length === 0 ? (
@@ -52,14 +52,14 @@ export function EmailsClient() {
             <p className="text-gray-500">No campaigns yet.</p>
             <Link
               href="/dashboard/emails/new"
-              className="mt-4 inline-block text-gray-900 font-medium hover:underline"
+              className="mt-4 inline-flex items-center justify-center min-h-[44px] px-4 py-3 text-gray-900 font-medium rounded-lg hover:bg-gray-100"
             >
               Create your first campaign
             </Link>
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full">
+            <table className="w-full min-w-[320px]">
               <thead>
                 <tr className="border-b border-gray-200 bg-gray-50">
                   <th className="text-left py-3 px-4 text-sm font-medium text-gray-600">Subject</th>

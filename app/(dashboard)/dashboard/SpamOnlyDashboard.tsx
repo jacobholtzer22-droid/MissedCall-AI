@@ -115,8 +115,8 @@ export function SpamOnlyDashboard() {
         <p className="text-gray-500 mt-1">Today&apos;s call activity and recent activity.</p>
       </div>
 
-      {/* Today stats - 3 cards */}
-      <div className="grid gap-6 md:grid-cols-3">
+      {/* Today stats - 3 cards: 1 col small, 3 cols md+ */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 md:gap-6">
         <div className="rounded-xl border border-red-200 bg-red-50 p-6">
           <div className="flex items-center justify-between">
             <div>
@@ -153,24 +153,24 @@ export function SpamOnlyDashboard() {
       </div>
 
       {/* Recent Activity - calls + voicemails combined */}
-      <div className="bg-white rounded-xl border border-gray-200">
-        <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+      <div className="bg-white rounded-xl border border-gray-200 w-full">
+        <div className="px-4 md:px-6 py-4 border-b border-gray-200 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
           <div className="flex items-center">
-            <PhoneCall className="h-5 w-5 text-blue-600 mr-2" />
+            <PhoneCall className="h-5 w-5 text-blue-600 mr-2 shrink-0" />
             <h2 className="text-lg font-semibold text-gray-900">Recent Activity</h2>
           </div>
-          <div className="flex gap-2">
-            <Link href="/dashboard/blocked-calls" className="text-sm text-blue-600 hover:text-blue-700">
+          <div className="flex flex-wrap gap-2">
+            <Link href="/dashboard/blocked-calls" className="text-sm text-blue-600 hover:text-blue-700 min-h-[44px] flex items-center py-2">
               View all calls
             </Link>
-            <span className="text-gray-300">|</span>
-            <Link href="/dashboard/voicemails" className="text-sm text-blue-600 hover:text-blue-700">
+            <span className="text-gray-300 hidden sm:inline">|</span>
+            <Link href="/dashboard/voicemails" className="text-sm text-blue-600 hover:text-blue-700 min-h-[44px] flex items-center py-2">
               View voicemails
             </Link>
           </div>
         </div>
         {recentActivity.length === 0 ? (
-          <div className="p-6 text-center py-12">
+          <div className="p-4 md:p-6 text-center py-12">
             <PhoneCall className="h-12 w-12 text-gray-300 mx-auto mb-4" />
             <p className="text-gray-500">No recent calls or voicemails</p>
           </div>
@@ -178,24 +178,24 @@ export function SpamOnlyDashboard() {
           <ul className="divide-y divide-gray-100">
             {recentActivity.map((item) =>
               item.type === 'call' ? (
-                <li key={`call-${item.id}`} className="px-6 py-3 flex items-center justify-between hover:bg-gray-50/50">
+                <li key={`call-${item.id}`} className="px-4 md:px-6 py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 hover:bg-gray-50/50 min-h-[44px] sm:min-h-0">
                   <div className="flex items-center gap-3">
-                    <PhoneCall className="h-4 w-4 text-gray-400" />
+                    <PhoneCall className="h-4 w-4 text-gray-400 shrink-0" />
                     <span className="font-mono text-gray-900">{formatPhoneNumber(item.callerPhone)}</span>
                     <span className={item.result === 'passed' ? 'text-green-600 text-sm font-medium' : 'text-red-600 text-sm font-medium'}>
                       {item.result === 'passed' ? 'Passed' : 'Blocked'}
                     </span>
                   </div>
-                  <span className="text-sm text-gray-500">{new Date(item.createdAt).toLocaleString()}</span>
+                  <span className="text-sm text-gray-500 sm:ml-auto">{new Date(item.createdAt).toLocaleString()}</span>
                 </li>
               ) : (
-                <li key={`vm-${item.conversationId}`} className="px-6 py-3 flex items-center justify-between hover:bg-gray-50/50">
+                <li key={`vm-${item.conversationId}`} className="px-4 md:px-6 py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 hover:bg-gray-50/50 min-h-[44px] sm:min-h-0">
                   <div className="flex items-center gap-3">
-                    <Mail className="h-4 w-4 text-blue-500" />
+                    <Mail className="h-4 w-4 text-blue-500 shrink-0" />
                     <span className="font-mono text-gray-900">{formatPhoneNumber(item.callerPhone)}</span>
                     <span className="text-sm text-blue-600 font-medium">Voicemail</span>
                   </div>
-                  <span className="text-sm text-gray-500">{new Date(item.createdAt).toLocaleString()}</span>
+                  <span className="text-sm text-gray-500 sm:ml-auto">{new Date(item.createdAt).toLocaleString()}</span>
                 </li>
               )
             )}

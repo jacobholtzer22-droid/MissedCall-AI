@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Search, Plus, MessageCircle, Send, Users, Tag, Filter } from 'lucide-react'
+import { Search, Plus, MessageCircle, Send, Users, Tag, Filter, ArrowLeft } from 'lucide-react'
 import { formatRelativeTime, formatPhoneNumber } from '@/lib/utils'
 
 type ConversationListItem = {
@@ -67,6 +67,7 @@ export function MessagesClient() {
   const [campaignSending, setCampaignSending] = useState(false)
   const [campaignProgress, setCampaignProgress] = useState<string | null>(null)
   const [campaignResult, setCampaignResult] = useState<{ sent: number; failed: number; skipped: number } | null>(null)
+  const [mobileChatOpen, setMobileChatOpen] = useState(false)
 
   const filteredConversations = useMemo(() => {
     if (!search.trim()) return conversations
@@ -136,6 +137,11 @@ export function MessagesClient() {
   async function handleSelectConversation(conv: ConversationListItem) {
     setSelectedConversationId(conv.conversationId)
     setSelectedContactLabel(conv.contactName || formatPhoneNumber(conv.contactPhone))
+    setMobileChatOpen(true)
+  }
+
+  function handleBackToList() {
+    setMobileChatOpen(false)
   }
 
   async function handleSendMessage() {
@@ -305,16 +311,16 @@ export function MessagesClient() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Messages</h1>
           <p className="text-gray-500 mt-1">Central hub for two-way SMS with your customers</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
           <button
             type="button"
             onClick={openCampaign}
-            className="inline-flex items-center gap-2 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition font-medium"
+            className="inline-flex items-center justify-center gap-2 px-4 py-3 min-h-[44px] border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition font-medium"
           >
             <MessageCircle className="h-4 w-4" />
             Send Campaign
@@ -322,7 +328,7 @@ export function MessagesClient() {
           <button
             type="button"
             onClick={openNewMessage}
-            className="inline-flex items-center gap-2 px-4 py-2 bg-gray-900 text-white rounded-lg hover:bg-gray-800 transition font-medium"
+            className="inline-flex items-center justify-center gap-2 px-4 py-3 min-h-[44px] bg-gray-900 text-white rounded-lg hover:bg-gray-800 transition font-medium"
           >
             <Plus className="h-4 w-4" />
             New Message
@@ -330,10 +336,14 @@ export function MessagesClient() {
         </div>
       </div>
 
-      {/* Two-panel layout */}
-      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden flex flex-col lg:flex-row h-[600px]">
-        {/* Left: conversation list */}
-        <div className="w-full lg:w-80 border-b lg:border-b-0 lg:border-r border-gray-200 flex flex-col">
+      {/* Two-panel layout: on mobile show list or chat (full-screen); on md+ show side-by-side */}
+      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden flex flex-col h-[calc(100vh-12rem)] md:h-[600px]">
+        {/* Mobile: conversation list (hidden when chat is open) */}
+        <div
+          className={`w-full md:w-80 border-b md:border-b-0 md:border-r border-gray-200 flex flex-col ${
+            mobileChatOpen && selectedConversationId ? 'hidden md:flex' : 'flex'
+          }`}
+        >
           <div className="p-3 border-b border-gray-100 flex items-center gap-2">
             <div className="relative flex-1">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
@@ -342,7 +352,7 @@ export function MessagesClient() {
                 placeholder="Search by name or number..."
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                className="w-full pl-10 pr-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-gray-900 focus:border-transparent"
+                className="w-full pl-10 pr-3 py-3 min-h-[44px] border border-gray-200 rounded-lg text-sm text-gray-900 placeholder-gray-400 focus:ring-2 focus:ring-gray-900 focus:border-transparent"
               />
             </div>
           </div>
@@ -360,7 +370,7 @@ export function MessagesClient() {
                     <button
                       type="button"
                       onClick={() => handleSelectConversation(c)}
-                      className={`w-full text-left px-4 py-3 hover:bg-gray-50 flex items-start gap-3 ${
+                      className={`w-full text-left px-4 py-3 min-h-[44px] hover:bg-gray-50 flex items-start gap-3 ${
                         selectedConversationId === c.conversationId ? 'bg-gray-50' : ''
                       }`}
                     >
@@ -397,13 +407,25 @@ export function MessagesClient() {
           </div>
         </div>
 
-        {/* Right: conversation thread */}
-        <div className="flex-1 flex flex-col bg-gray-50">
+        {/* Right: conversation thread (on mobile full-screen when selected, with back) */}
+        <div
+          className={`flex-1 flex flex-col bg-gray-50 ${
+            mobileChatOpen && selectedConversationId ? 'flex' : 'hidden md:flex'
+          }`}
+        >
           {selectedConversationId ? (
             <>
-              <div className="px-4 py-3 border-b border-gray-200 bg-white flex items-center justify-between">
-                <div>
-                  <p className="font-medium text-gray-900">{selectedContactLabel}</p>
+              <div className="px-4 py-3 border-b border-gray-200 bg-white flex items-center gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={handleBackToList}
+                  className="md:hidden p-2 -ml-2 rounded-lg hover:bg-gray-100 min-h-[44px] min-w-[44px] flex items-center justify-center"
+                  aria-label="Back to conversations"
+                >
+                  <ArrowLeft className="h-5 w-5 text-gray-600" />
+                </button>
+                <div className="flex-1 min-w-0">
+                  <p className="font-medium text-gray-900 truncate">{selectedContactLabel}</p>
                   <p className="text-xs text-gray-500">Two-way SMS conversation</p>
                 </div>
               </div>
@@ -415,7 +437,7 @@ export function MessagesClient() {
                 ) : (
                   messages.map((m) => (
                     <div key={m.id} className={`flex ${m.direction === 'outbound' ? 'justify-end' : 'justify-start'}`}>
-                      <div className={`max-w-xs sm:max-w-md rounded-2xl px-4 py-2 text-sm shadow-sm ${
+                      <div className={`max-w-[85%] sm:max-w-md rounded-2xl px-4 py-2 text-sm shadow-sm ${
                         m.direction === 'outbound'
                           ? 'bg-blue-600 text-white rounded-br-sm'
                           : 'bg-gray-200 text-gray-900 rounded-bl-sm'
@@ -434,23 +456,23 @@ export function MessagesClient() {
                   ))
                 )}
               </div>
-              <div className="border-t border-gray-200 bg-white px-4 py-3">
+              <div className="border-t border-gray-200 bg-white px-4 py-3 shrink-0 sticky bottom-0 safe-area-pb">
                 <div className="flex items-end gap-2">
                   <textarea
                     value={messageInput}
                     onChange={(e) => setMessageInput(e.target.value)}
                     rows={2}
                     placeholder="Type a message..."
-                    className="flex-1 resize-none border border-gray-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-gray-900 focus:border-transparent"
+                    className="flex-1 resize-none border border-gray-200 rounded-lg px-3 py-3 min-h-[44px] text-sm text-gray-900 placeholder-gray-400 focus:ring-2 focus:ring-gray-900 focus:border-transparent"
                   />
                   <button
                     type="button"
                     onClick={selectedConversationId ? handleSendMessage : handleStartNewConversation}
                     disabled={sending || !messageInput.trim()}
-                    className="inline-flex items-center justify-center h-10 px-4 rounded-lg bg-gray-900 text-white text-sm font-medium hover:bg-gray-800 disabled:opacity-60 disabled:cursor-not-allowed transition"
+                    className="inline-flex items-center justify-center min-h-[44px] min-w-[44px] px-4 rounded-lg bg-gray-900 text-white text-sm font-medium hover:bg-gray-800 disabled:opacity-60 disabled:cursor-not-allowed transition"
                   >
-                    <Send className="h-4 w-4 mr-1" />
-                    Send
+                    <Send className="h-4 w-4 md:mr-1" />
+                    <span className="hidden md:inline">Send</span>
                   </button>
                 </div>
               </div>
@@ -465,7 +487,7 @@ export function MessagesClient() {
               <button
                 type="button"
                 onClick={openNewMessage}
-                className="inline-flex items-center gap-2 px-4 py-2 bg-gray-900 text-white rounded-lg hover:bg-gray-800 transition text-sm font-medium"
+                className="inline-flex items-center justify-center gap-2 px-4 py-3 min-h-[44px] bg-gray-900 text-white rounded-lg hover:bg-gray-800 transition text-sm font-medium"
               >
                 <Plus className="h-4 w-4" />
                 New Message
@@ -475,24 +497,26 @@ export function MessagesClient() {
         </div>
       </div>
 
-      {/* New message modal */}
+      {/* New message modal - full-screen on mobile */}
       {newMessageOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-          <div className="bg-white rounded-xl shadow-xl max-w-lg w-full mx-4">
-            <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
-              <div>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-0 md:p-4">
+          <div className="bg-white rounded-none md:rounded-xl shadow-xl max-w-lg w-full h-full md:h-auto md:max-h-[90vh] flex flex-col">
+            <div className="px-4 md:px-6 py-4 border-b border-gray-200 flex items-center justify-between gap-3 shrink-0">
+              <div className="min-w-0 flex-1">
                 <h2 className="text-lg font-semibold text-gray-900">New Message</h2>
-                <p className="text-sm text-gray-500">Select an existing contact or enter a phone number</p>
+                <p className="text-sm text-gray-500 truncate">Select an existing contact or enter a phone number</p>
               </div>
               <button
                 type="button"
                 onClick={() => setNewMessageOpen(false)}
-                className="text-gray-400 hover:text-gray-600 text-sm"
+                className="shrink-0 min-h-[44px] min-w-[44px] flex items-center justify-center text-gray-600 hover:text-gray-900 rounded-lg hover:bg-gray-100 md:min-h-0 md:min-w-0 md:text-gray-400 md:hover:text-gray-600"
+                aria-label="Close"
               >
-                Esc
+                <ArrowLeft className="h-5 w-5 md:hidden" />
+                <span className="hidden md:inline text-sm">Esc</span>
               </button>
             </div>
-            <div className="px-6 py-4 space-y-4">
+            <div className="px-4 md:px-6 py-4 space-y-4 overflow-y-auto flex-1">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Existing contact</label>
                 <div className="relative">
@@ -502,7 +526,7 @@ export function MessagesClient() {
                     placeholder="Search contacts by name or phone..."
                     value={newMessageContactSearch}
                     onChange={(e) => setNewMessageContactSearch(e.target.value)}
-                    className="w-full pl-9 pr-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-gray-900 focus:border-transparent"
+                    className="w-full pl-9 pr-3 py-3 min-h-[44px] border border-gray-200 rounded-lg text-sm text-gray-900 placeholder-gray-400 focus:ring-2 focus:ring-gray-900 focus:border-transparent"
                   />
                 </div>
                 <div className="mt-2 max-h-40 overflow-y-auto border border-gray-100 rounded-lg">
@@ -520,7 +544,7 @@ export function MessagesClient() {
                               setSelectedContactIdForNew(c.id)
                               setNewMessagePhone('')
                             }}
-                            className={`w-full text-left px-3 py-2 hover:bg-gray-50 flex items-center justify-between ${
+                            className={`w-full text-left px-3 py-3 min-h-[44px] hover:bg-gray-50 flex items-center justify-between ${
                               selectedContactIdForNew === c.id ? 'bg-gray-50' : ''
                             }`}
                           >
@@ -561,7 +585,7 @@ export function MessagesClient() {
                     setNewMessagePhone(e.target.value)
                     setSelectedContactIdForNew(null)
                   }}
-                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-gray-900 focus:border-transparent"
+                  className="w-full px-3 py-3 min-h-[44px] border border-gray-200 rounded-lg text-sm text-gray-900 placeholder-gray-400 focus:ring-2 focus:ring-gray-900 focus:border-transparent"
                 />
               </div>
 
@@ -571,12 +595,12 @@ export function MessagesClient() {
                   value={messageInput}
                   onChange={(e) => setMessageInput(e.target.value)}
                   rows={3}
-                  className="w-full resize-none border border-gray-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-gray-900 focus:border-transparent"
+                  className="w-full resize-none border border-gray-200 rounded-lg px-3 py-3 min-h-[44px] text-sm text-gray-900 placeholder-gray-400 focus:ring-2 focus:ring-gray-900 focus:border-transparent"
                   placeholder="Type your message..."
                 />
               </div>
             </div>
-            <div className="px-6 py-4 border-t border-gray-200 flex items-center justify-between">
+            <div className="px-4 md:px-6 py-4 border-t border-gray-200 flex flex-col-reverse sm:flex-row sm:items-center sm:justify-between gap-3 shrink-0">
               <p className="text-xs text-gray-500">
                 Messages send from your business&apos;s Telnyx number.
               </p>
@@ -584,7 +608,7 @@ export function MessagesClient() {
                 <button
                   type="button"
                   onClick={() => setNewMessageOpen(false)}
-                  className="px-3 py-1.5 text-sm text-gray-700 rounded-lg hover:bg-gray-50"
+                  className="flex-1 sm:flex-none px-4 py-3 min-h-[44px] text-sm text-gray-700 rounded-lg hover:bg-gray-50"
                 >
                   Cancel
                 </button>
@@ -592,7 +616,7 @@ export function MessagesClient() {
                   type="button"
                   disabled={sending || !messageInput.trim() || (!selectedContactIdForNew && !newMessagePhone.trim())}
                   onClick={handleStartNewConversation}
-                  className="inline-flex items-center gap-1.5 px-4 py-1.5 bg-gray-900 text-white rounded-lg text-sm font-medium hover:bg-gray-800 disabled:opacity-60 disabled:cursor-not-allowed"
+                  className="flex-1 sm:flex-none inline-flex items-center justify-center gap-1.5 px-4 py-3 min-h-[44px] bg-gray-900 text-white rounded-lg text-sm font-medium hover:bg-gray-800 disabled:opacity-60 disabled:cursor-not-allowed"
                 >
                   <Send className="h-4 w-4" />
                   Send
@@ -603,33 +627,35 @@ export function MessagesClient() {
         </div>
       )}
 
-      {/* Campaign modal */}
+      {/* Campaign modal - full-screen on mobile */}
       {campaignOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-          <div className="bg-white rounded-xl shadow-xl max-w-2xl w-full mx-4">
-            <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
-              <div>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-0 md:p-4">
+          <div className="bg-white rounded-none md:rounded-xl shadow-xl max-w-2xl w-full h-full md:h-auto md:max-h-[90vh] flex flex-col overflow-hidden">
+            <div className="px-4 md:px-6 py-4 border-b border-gray-200 flex items-center justify-between gap-3 shrink-0">
+              <div className="min-w-0 flex-1">
                 <h2 className="text-lg font-semibold text-gray-900">Send SMS Campaign</h2>
-                <p className="text-sm text-gray-500">
+                <p className="text-sm text-gray-500 line-clamp-2">
                   Broadcast a message to multiple contacts. We&apos;ll send in small batches to avoid rate limits.
                 </p>
               </div>
               <button
                 type="button"
                 onClick={() => setCampaignOpen(false)}
-                className="text-gray-400 hover:text-gray-600 text-sm"
+                className="shrink-0 min-h-[44px] min-w-[44px] flex items-center justify-center text-gray-600 hover:text-gray-900 rounded-lg hover:bg-gray-100 md:min-h-0 md:min-w-0 md:text-gray-400 md:hover:text-gray-600"
+                aria-label="Close"
               >
-                Esc
+                <ArrowLeft className="h-5 w-5 md:hidden" />
+                <span className="hidden md:inline text-sm">Esc</span>
               </button>
             </div>
-            <div className="px-6 py-4 space-y-4">
+            <div className="px-4 md:px-6 py-4 space-y-4 overflow-y-auto flex-1">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Message</label>
                 <textarea
                   value={campaignBody}
                   onChange={(e) => setCampaignBody(e.target.value)}
                   rows={4}
-                  className="w-full resize-none border border-gray-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-gray-900 focus:border-transparent"
+                  className="w-full resize-none border border-gray-200 rounded-lg px-3 py-3 min-h-[44px] text-sm text-gray-900 placeholder-gray-400 focus:ring-2 focus:ring-gray-900 focus:border-transparent"
                   placeholder="Write your SMS campaign. Use {{name}} and {{business_name}} as merge fields."
                 />
                 <div className="mt-1 flex items-center justify-between text-xs">
@@ -641,7 +667,7 @@ export function MessagesClient() {
                       type="checkbox"
                       checked={campaignMergeFields}
                       onChange={(e) => setCampaignMergeFields(e.target.checked)}
-                      className="h-3 w-3 rounded border-gray-300"
+                      className="h-3 w-3 rounded border-gray-300 text-gray-900"
                     />
                     Enable merge fields
                   </label>
@@ -659,7 +685,7 @@ export function MessagesClient() {
                   <button
                     type="button"
                     onClick={() => setCampaignFilter({ type: 'all' })}
-                    className={`px-3 py-1 rounded-full border ${
+                    className={`px-3 py-2 min-h-[44px] md:min-h-0 rounded-full border ${
                       campaignFilter.type === 'all'
                         ? 'bg-gray-900 text-white border-gray-900'
                         : 'bg-gray-50 text-gray-700 border-gray-200'
@@ -670,7 +696,7 @@ export function MessagesClient() {
                   <button
                     type="button"
                     onClick={() => setCampaignFilter({ type: 'tags', tagIds: [] })}
-                    className={`px-3 py-1 rounded-full border ${
+                    className={`px-3 py-2 min-h-[44px] md:min-h-0 rounded-full border ${
                       campaignFilter.type === 'tags'
                         ? 'bg-gray-900 text-white border-gray-900'
                         : 'bg-gray-50 text-gray-700 border-gray-200'
@@ -681,7 +707,7 @@ export function MessagesClient() {
                   <button
                     type="button"
                     onClick={() => setCampaignFilter({ type: 'status', statuses: [] })}
-                    className={`px-3 py-1 rounded-full border ${
+                    className={`px-3 py-2 min-h-[44px] md:min-h-0 rounded-full border ${
                       campaignFilter.type === 'status'
                         ? 'bg-gray-900 text-white border-gray-900'
                         : 'bg-gray-50 text-gray-700 border-gray-200'
@@ -692,7 +718,7 @@ export function MessagesClient() {
                   <button
                     type="button"
                     onClick={() => setCampaignFilter({ type: 'manual', contactIds: [] })}
-                    className={`px-3 py-1 rounded-full border ${
+                    className={`px-3 py-2 min-h-[44px] md:min-h-0 rounded-full border ${
                       campaignFilter.type === 'manual'
                         ? 'bg-gray-900 text-white border-gray-900'
                         : 'bg-gray-50 text-gray-700 border-gray-200'
@@ -739,22 +765,22 @@ export function MessagesClient() {
                 </div>
               )}
             </div>
-            <div className="px-6 py-4 border-t border-gray-200 flex items-center justify-between">
+            <div className="px-4 md:px-6 py-4 border-t border-gray-200 flex flex-col-reverse sm:flex-row sm:items-center sm:justify-between gap-3 shrink-0">
               <p className="text-xs text-gray-500">
                 Campaigns send via Telnyx in small batches of 10 every 2 seconds.
               </p>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <button
                   type="button"
                   onClick={() => setCampaignOpen(false)}
-                  className="px-3 py-1.5 text-sm text-gray-700 rounded-lg hover:bg-gray-50"
+                  className="px-4 py-3 min-h-[44px] text-sm text-gray-700 rounded-lg hover:bg-gray-50"
                 >
                   Cancel
                 </button>
                 <button
                   type="button"
                   onClick={handlePreviewCampaign}
-                  className="px-3 py-1.5 text-sm rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50"
+                  className="px-4 py-3 min-h-[44px] text-sm rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50"
                   disabled={!campaignBody.trim()}
                 >
                   Preview
@@ -763,7 +789,7 @@ export function MessagesClient() {
                   type="button"
                   disabled={campaignSending || !campaignBody.trim()}
                   onClick={handleSendCampaign}
-                  className="inline-flex items-center gap-1.5 px-4 py-1.5 bg-gray-900 text-white rounded-lg text-sm font-medium hover:bg-gray-800 disabled:opacity-60 disabled:cursor-not-allowed"
+                  className="inline-flex items-center justify-center gap-1.5 px-4 py-3 min-h-[44px] bg-gray-900 text-white rounded-lg text-sm font-medium hover:bg-gray-800 disabled:opacity-60 disabled:cursor-not-allowed"
                 >
                   <Send className="h-4 w-4" />
                   Send Campaign

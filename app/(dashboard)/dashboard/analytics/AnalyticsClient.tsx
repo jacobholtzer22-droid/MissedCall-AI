@@ -195,14 +195,14 @@ export function AnalyticsClient() {
             See how MissedCall AI is capturing leads and blocking spam for your business.
           </p>
         </div>
-        <div className="inline-flex items-center gap-1 bg-white rounded-full border border-gray-200 p-1">
+        <div className="flex flex-wrap items-center gap-1 md:inline-flex bg-white rounded-full border border-gray-200 p-1">
           {PERIOD_OPTIONS.map((opt) => (
             <button
               key={opt.value}
               type="button"
               onClick={() => setPeriod(opt.value)}
               className={cn(
-                'px-3 py-1.5 text-sm rounded-full font-medium transition',
+                'px-2 py-2 min-h-[44px] md:min-h-0 md:py-1.5 md:px-3 text-sm rounded-full font-medium transition',
                 period === opt.value
                   ? 'bg-gray-900 text-white shadow-sm'
                   : 'text-gray-700 hover:bg-gray-100'
@@ -220,8 +220,8 @@ export function AnalyticsClient() {
         </div>
       )}
 
-      {/* Metric cards */}
-      <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
+      {/* Metric cards: 1 col very small, 2 cols small, 3 cols desktop */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4 md:gap-6">
         <MetricCard
           title="Total Calls"
           value={data?.totalCalls ?? 0}
@@ -279,10 +279,10 @@ export function AnalyticsClient() {
         />
       </div>
 
-      {/* Lower sections */}
-      <div className="grid gap-6 lg:grid-cols-2">
+      {/* Lower sections: full width on mobile, 2 cols on lg */}
+      <div className="grid grid-cols-1 gap-4 md:gap-6 lg:grid-cols-2">
         {/* Lead sources */}
-        <div className="bg-white rounded-xl border border-gray-200 p-6 flex flex-col">
+        <div className="bg-white rounded-xl border border-gray-200 p-4 md:p-6 flex flex-col w-full">
           <div className="flex items-center justify-between mb-4">
             <div>
               <h2 className="text-lg font-semibold text-gray-900">Lead Sources</h2>
@@ -367,7 +367,7 @@ export function AnalyticsClient() {
         </div>
 
         {/* Recent activity */}
-        <div className="bg-white rounded-xl border border-gray-200 p-6">
+        <div className="bg-white rounded-xl border border-gray-200 p-4 md:p-6 w-full">
           <div className="flex items-center justify-between mb-4">
             <div>
               <h2 className="text-lg font-semibold text-gray-900">Recent Activity</h2>

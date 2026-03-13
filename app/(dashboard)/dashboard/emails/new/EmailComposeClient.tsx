@@ -87,15 +87,15 @@ export function EmailComposeClient() {
   }
 
   return (
-    <div className="space-y-6 max-w-3xl">
+    <div className="space-y-6 w-full max-w-3xl">
       <div className="flex items-center gap-4">
         <Link
           href="/dashboard/emails"
-          className="p-2 hover:bg-gray-100 rounded-lg transition"
+          className="p-2 min-h-[44px] min-w-[44px] flex items-center justify-center hover:bg-gray-100 rounded-lg transition"
         >
           <ArrowLeft className="h-5 w-5 text-gray-500" />
         </Link>
-        <div>
+        <div className="min-w-0 flex-1">
           <h1 className="text-2xl font-bold text-gray-900">New Campaign</h1>
           <p className="text-gray-500 text-sm mt-0.5">Compose and send an email to your contacts</p>
         </div>
@@ -107,7 +107,7 @@ export function EmailComposeClient() {
         </div>
       )}
 
-      <div className="bg-white rounded-xl border border-gray-200 p-6 space-y-4">
+      <div className="bg-white rounded-xl border border-gray-200 p-4 md:p-6 space-y-4">
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">Subject *</label>
           <input
@@ -115,7 +115,7 @@ export function EmailComposeClient() {
             value={subject}
             onChange={(e) => setSubject(e.target.value)}
             placeholder="Email subject"
-            className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-gray-900"
+            className="w-full px-3 py-3 min-h-[44px] border border-gray-200 rounded-lg text-gray-900 placeholder-gray-400 focus:ring-2 focus:ring-gray-900"
           />
         </div>
         <div>
@@ -125,23 +125,23 @@ export function EmailComposeClient() {
             onChange={(e) => setBody(e.target.value)}
             placeholder="Write your email content here. You can use simple HTML like <p>, <strong>, <a>."
             rows={12}
-            className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-gray-900 font-mono text-sm"
+            className="w-full px-3 py-3 min-h-[44px] border border-gray-200 rounded-lg text-gray-900 placeholder-gray-400 focus:ring-2 focus:ring-gray-900 font-mono text-sm"
           />
           <p className="text-xs text-gray-500 mt-1">Simple HTML is supported (e.g. &lt;p&gt;, &lt;strong&gt;, &lt;a href="..."&gt;)</p>
         </div>
       </div>
 
-      <div className="bg-white rounded-xl border border-gray-200 p-6 space-y-4">
+      <div className="bg-white rounded-xl border border-gray-200 p-4 md:p-6 space-y-4">
         <h2 className="font-semibold text-gray-900">Recipients</h2>
-        <div className="space-y-3">
+        <div className="space-y-3 w-full">
           {RECIPIENT_OPTIONS.map(({ value, label }) => (
-            <label key={value} className="flex items-center gap-2">
+            <label key={value} className="flex items-center gap-3 min-h-[44px] cursor-pointer">
               <input
                 type="radio"
                 name="recipientType"
                 checked={recipientType === value}
                 onChange={() => setRecipientType(value as typeof recipientType)}
-                className="rounded border-gray-300"
+                className="rounded border-gray-300 text-gray-900 w-5 h-5"
               />
               <span className="text-sm text-gray-700">{label}</span>
             </label>
@@ -155,7 +155,7 @@ export function EmailComposeClient() {
                   type="checkbox"
                   checked={tagIds.includes(t.id)}
                   onChange={() => toggleTag(t.id)}
-                  className="rounded border-gray-300"
+                  className="rounded border-gray-300 text-gray-900"
                 />
                 <span className="text-sm">{t.name}</span>
               </label>
@@ -171,7 +171,7 @@ export function EmailComposeClient() {
                   type="checkbox"
                   checked={statuses.includes(s)}
                   onChange={() => toggleStatus(s)}
-                  className="rounded border-gray-300"
+                  className="rounded border-gray-300 text-gray-900"
                 />
                 <span className="text-sm capitalize">{s}</span>
               </label>
@@ -186,7 +186,7 @@ export function EmailComposeClient() {
                   type="checkbox"
                   checked={manualContactIds.includes(c.id)}
                   onChange={() => toggleContact(c.id)}
-                  className="rounded border-gray-300"
+                  className="rounded border-gray-300 text-gray-900"
                 />
                 <span className="text-sm truncate">{c.name || c.email || c.id}</span>
                 <span className="text-xs text-gray-500 truncate">{c.email}</span>
@@ -197,11 +197,11 @@ export function EmailComposeClient() {
         )}
       </div>
 
-      <div className="flex flex-wrap items-center gap-4">
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
         <button
           type="button"
           onClick={() => setShowPreview((p) => !p)}
-          className="px-4 py-2 border border-gray-200 rounded-lg hover:bg-gray-50 font-medium"
+          className="px-4 py-3 min-h-[44px] border border-gray-200 rounded-lg hover:bg-gray-50 font-medium"
         >
           {showPreview ? 'Hide preview' : 'Preview'}
         </button>
@@ -209,7 +209,7 @@ export function EmailComposeClient() {
           type="button"
           onClick={handleSend}
           disabled={sending}
-          className="px-4 py-2 bg-gray-900 text-white rounded-lg hover:bg-gray-800 disabled:opacity-50 font-medium"
+          className="px-4 py-3 min-h-[44px] bg-gray-900 text-white rounded-lg hover:bg-gray-800 disabled:opacity-50 font-medium"
         >
           {sending ? 'Sending...' : 'Send campaign'}
         </button>
