@@ -108,43 +108,39 @@ const standaloneServices = [
     description: 'Press 1 to connect IVR. Blocks robocalls. Only real customers get through.',
     color: 'green',
   },
-]
-
-const addOns = [
-  {
-    name: 'Calendar + CRM Integration',
-    price: '$75/mo',
-    description: 'Sync bookings, manage client data, mass email & SMS, full relationship history',
-    icon: Calendar,
-    link: '/book',
-  },
   {
     name: 'Mass Email & SMS Campaigns',
-    price: '$100 setup · $75/mo',
-    description: 'Send bulk email and text campaigns to your entire client list. Track opens, clicks, and replies from your dashboard. Requires CRM Dashboard.',
+    price: 75,
+    setupFee: 100,
     icon: Megaphone,
-    link: '/campaigns',
+    description: 'Send bulk email and text campaigns to your entire client list. Requires CRM Dashboard.',
+    color: 'orange',
   },
   {
-    name: 'Spam Call Screening',
-    price: '$100/mo',
-    description: 'Block robocalls, only real customers get through',
-    icon: ShieldCheck,
-    link: '/book',
+    name: 'Calendar + CRM Integration',
+    price: 75,
+    setupFee: null,
+    icon: Calendar,
+    description: 'Sync bookings, manage client data, full relationship history.',
+    color: 'blue',
   },
   {
     name: 'Google Business Profile Setup',
-    price: 'One-time fee — ask us',
-    description: 'Setup and optimization of your Google Business listing',
+    price: null,
+    setupFee: null,
+    priceLabel: 'One-time fee (ask us)',
     icon: Globe,
-    link: '/book',
+    description: 'Setup and optimization of your Google Business listing.',
+    color: 'purple',
   },
   {
     name: 'SEO Optimization',
-    price: 'Custom pricing — ask us',
-    description: 'On-page SEO, keyword targeting, Google Business optimization',
+    price: null,
+    setupFee: null,
+    priceLabel: 'Custom pricing (ask us)',
     icon: Search,
-    link: '/book',
+    description: 'On-page SEO, keyword targeting, Google Business optimization.',
+    color: 'green',
   },
 ]
 
@@ -318,10 +314,11 @@ export default function PricingPage() {
             </div>
           </ScrollReveal>
           <ScrollReveal stagger>
-            <div className="max-w-5xl mx-auto grid sm:grid-cols-2 lg:grid-cols-3 gap-5">
+            <div className="max-w-6xl mx-auto grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
               {standaloneServices.map((service) => {
                 const Icon = service.icon
                 const colors = iconColorMap[service.color]
+                const hasCustomPrice = 'priceLabel' in service && service.priceLabel
                 return (
                   <div
                     key={service.name}
@@ -336,11 +333,19 @@ export default function PricingPage() {
                       <h3 className="font-bold text-lg leading-tight">{service.name}</h3>
                     </div>
                     <div className="mb-3">
-                      <div className="flex items-baseline gap-1">
-                        <span className="text-2xl font-bold">${service.price}</span>
-                        <span className="text-gray-400 text-sm">/mo</span>
-                      </div>
-                      <span className="text-xs text-gray-500">${service.setupFee} setup fee</span>
+                      {hasCustomPrice ? (
+                        <span className="text-xl font-bold text-blue-400">{service.priceLabel}</span>
+                      ) : (
+                        <>
+                          <div className="flex items-baseline gap-1">
+                            <span className="text-2xl font-bold">${service.price}</span>
+                            <span className="text-gray-400 text-sm">/mo</span>
+                          </div>
+                          {service.setupFee != null ? (
+                            <span className="text-xs text-gray-500">${service.setupFee} setup fee</span>
+                          ) : null}
+                        </>
+                      )}
                     </div>
                     <p className="text-gray-400 text-sm flex-1 mb-4">{service.description}</p>
                     <Link
@@ -354,47 +359,6 @@ export default function PricingPage() {
               })}
             </div>
           </ScrollReveal>
-        </div>
-      </section>
-
-      {/* Add-ons */}
-      <section id="add-ons" className="relative z-10 py-16 border-t border-white/10">
-        <div className="container mx-auto px-6">
-          <ScrollReveal>
-            <div className="text-center mb-10">
-              <h2 className="text-3xl md:text-4xl font-bold mb-3">Stack these on top of any package.</h2>
-              <p className="text-gray-400 text-lg">Customize your setup with powerful add-ons.</p>
-            </div>
-          </ScrollReveal>
-          <div className="max-w-4xl mx-auto space-y-3">
-            {addOns.map((addon, i) => {
-              const Icon = addon.icon
-              return (
-                <ScrollReveal key={addon.name} delay={i * 80}>
-                  <div className="bg-gray-900 border border-white/10 rounded-xl p-5 flex flex-col sm:flex-row sm:items-center gap-4 card-hover">
-                    <div className="flex items-center gap-3 flex-1 min-w-0">
-                      <div className="w-10 h-10 rounded-lg bg-blue-500/15 flex items-center justify-center shrink-0 card-icon">
-                        <Icon className="h-5 w-5 text-blue-400" />
-                      </div>
-                      <div className="min-w-0">
-                        <h3 className="font-semibold">{addon.name}</h3>
-                        <p className="text-gray-400 text-sm truncate sm:whitespace-normal">{addon.description}</p>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-4 sm:shrink-0">
-                      <span className="font-bold text-blue-400 whitespace-nowrap">{addon.price}</span>
-                      <Link
-                        href={addon.link ?? '/book'}
-                        className="cta-hover bg-white/10 text-white hover:bg-white/20 border border-white/10 px-4 py-2 rounded-lg font-medium transition-all text-sm whitespace-nowrap min-h-[44px] flex items-center"
-                      >
-                        Add it
-                      </Link>
-                    </div>
-                  </div>
-                </ScrollReveal>
-              )
-            })}
-          </div>
         </div>
       </section>
 

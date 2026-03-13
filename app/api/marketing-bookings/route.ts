@@ -6,9 +6,10 @@ import Telnyx from 'telnyx'
 
 const TIMEZONE = 'America/New_York'
 const START_HOUR = 8 // 8:00 AM
-const END_HOUR = 16 // 4:00 PM
+const END_HOUR = 16 // 4:00 PM (last slot ends at 4:00)
 const SLOT_MINUTES = 30
 const BUFFER_MINUTES = 15
+const SLOT_STEP_MINUTES = SLOT_MINUTES + BUFFER_MINUTES // 45 — slot start every 45 min: 8:00, 8:45, 9:30, ...
 const MIN_NOTICE_HOURS = 2
 const MAX_DAYS_AHEAD = 14
 
@@ -50,9 +51,14 @@ function isWithinHours(slotStart: Date, slotEnd: Date) {
   return startHour >= START_HOUR && endHour <= END_HOUR
 }
 
-function isOnHalfHour(d: Date) {
-  const mins = toTZDate(d).getMinutes()
-  return mins === 0 || mins === 30
+// Slot starts are every 45 min in ET: 8:00, 8:45, 9:30, 10:15, 11:00, 11:45, 12:30, 1:15, 2:00, 2:45, 3:30
+function isValidSlotStart(d: Date) {
+  const tz = toTZDate(d)
+  const mins = tz.getMinutes()
+  const hour = tz.getHours()
+  if (hour === 15) return mins === 30 // 3:30 PM only
+  if (hour < START_HOUR || hour >= 15) return false
+  return mins === 0 || mins === 45
 }
 
 function formatDisplay(slotStart: Date) {
@@ -75,14 +81,28 @@ function sameDay(a: Date, b: Date) {
   )
 }
 
+/** Resolve the business used for /book (marketing) bookings. Uses MARKETING_BUSINESS_ID or MARKETING_BUSINESS_SLUG. */
+async function getMarketingBusiness() {
+  const id = process.env.MARKETING_BUSINESS_ID
+  if (id) {
+    const b = await db.business.findUnique({ where: { id } })
+    if (b) return b
+  }
+  const slug = process.env.MARKETING_BUSINESS_SLUG
+  if (slug) {
+    const b = await db.business.findUnique({ where: { slug } })
+    if (b) return b
+  }
+  return null
+}
+
 async function getExistingAppointmentsForRange(start: Date, end: Date) {
-  // NOTE: This assumes there's a single marketing business configured via env.
-  const businessId = process.env.MARKETING_BUSINESS_ID
-  if (!businessId) return []
+  const business = await getMarketingBusiness()
+  if (!business) return []
 
   return db.appointment.findMany({
     where: {
-      businessId,
+      businessId: business.id,
       status: 'confirmed',
       scheduledAt: {
         gte: start,
@@ -172,6 +192,7 @@ export async function GET(request: NextRequest) {
 
       const slots: { iso: string; display: string }[] = []
 
+      // Slots every 45 min (30 min slot + 15 min buffer): 8:00, 8:45, 9:30, 10:15, 11:00, 11:45, 12:30, 1:15, 2:00, 2:45, 3:30
       const firstSlot = new TZDate(
         day.getFullYear(),
         day.getMonth(),
@@ -182,12 +203,12 @@ export async function GET(request: NextRequest) {
         0,
         TIMEZONE
       )
-      const lastSlotEnd = new TZDate(
+      const lastSlotStart = new TZDate(
         day.getFullYear(),
         day.getMonth(),
         day.getDate(),
-        END_HOUR,
-        0,
+        15, // 3 PM
+        30, // 3:30 PM — last slot starts here, ends at 4:00
         0,
         0,
         TIMEZONE
@@ -195,27 +216,27 @@ export async function GET(request: NextRequest) {
 
       let cursor = new Date(firstSlot.getTime())
 
-      while (cursor < lastSlotEnd) {
+      while (cursor.getTime() <= lastSlotStart.getTime()) {
         const slotStart = new Date(cursor.getTime())
         const slotEnd = addMinutes(slotStart, SLOT_MINUTES)
 
         if (!isWithinBookingWindow(slotStart)) {
-          cursor = addMinutes(cursor, SLOT_MINUTES)
+          cursor = addMinutes(cursor, SLOT_STEP_MINUTES)
           continue
         }
 
         if (!isWithinHours(slotStart, slotEnd)) {
-          cursor = addMinutes(cursor, SLOT_MINUTES)
+          cursor = addMinutes(cursor, SLOT_STEP_MINUTES)
           continue
         }
 
-        if (!isOnHalfHour(slotStart)) {
-          cursor = addMinutes(cursor, SLOT_MINUTES)
+        if (!isValidSlotStart(slotStart)) {
+          cursor = addMinutes(cursor, SLOT_STEP_MINUTES)
           continue
         }
 
         if (overlapsWithExisting(slotStart, slotEnd, existing)) {
-          cursor = addMinutes(cursor, SLOT_MINUTES)
+          cursor = addMinutes(cursor, SLOT_STEP_MINUTES)
           continue
         }
 
@@ -224,7 +245,7 @@ export async function GET(request: NextRequest) {
           display: formatDisplay(slotStart),
         })
 
-        cursor = addMinutes(cursor, SLOT_MINUTES)
+        cursor = addMinutes(cursor, SLOT_STEP_MINUTES)
       }
 
       days.push({
@@ -265,7 +286,7 @@ export async function POST(request: NextRequest) {
     }
     const slotEndDate = addMinutes(slotStartDate, SLOT_MINUTES)
 
-    if (!isWithinBookingWindow(slotStartDate) || !isWithinHours(slotStartDate, slotEndDate) || !isOnHalfHour(slotStartDate)) {
+    if (!isWithinBookingWindow(slotStartDate) || !isWithinHours(slotStartDate, slotEndDate) || !isValidSlotStart(slotStartDate)) {
       return NextResponse.json({ error: 'This time slot is no longer available' }, { status: 409 })
     }
 
@@ -295,15 +316,21 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'This time slot is no longer available' }, { status: 409 })
     }
 
-    const businessId = process.env.MARKETING_BUSINESS_ID
-    if (!businessId) {
-      console.error('MARKETING_BUSINESS_ID env var is not set')
-      return NextResponse.json({ error: 'Booking unavailable' }, { status: 500 })
+    const business = await getMarketingBusiness()
+    if (!business) {
+      console.error('Marketing booking: no business configured. Set MARKETING_BUSINESS_ID or MARKETING_BUSINESS_SLUG.')
+      return NextResponse.json(
+        {
+          error:
+            'Booking is temporarily unavailable. Please email jacob@alignandacquire.com to schedule, or try again later.',
+        },
+        { status: 503 }
+      )
     }
 
     const appointment = await db.appointment.create({
       data: {
-        businessId,
+        businessId: business.id,
         customerName: name.trim(),
         customerPhone: phone.trim(),
         customerEmail: email.trim(),
@@ -323,8 +350,8 @@ export async function POST(request: NextRequest) {
     })
 
     // Notify business owner via email (Resend) and SMS (Telnyx)
-    const ownerEmail = process.env.YOUR_EMAIL
-    const ownerPhone = process.env.OWNER_PHONE
+    const ownerEmail = process.env.YOUR_EMAIL || business.ownerEmail || 'jacob@alignandacquire.com'
+    const ownerPhone = process.env.OWNER_PHONE || business.ownerPhone
     const telnyxFrom = process.env.MARKETING_TELNYX_NUMBER
 
     const dateLabel = slotStartDate.toLocaleDateString('en-US', {
@@ -423,7 +450,14 @@ export async function POST(request: NextRequest) {
     })
   } catch (error) {
     console.error('Marketing booking create error:', error)
-    return NextResponse.json({ error: 'Failed to book call' }, { status: 500 })
+    const raw = error instanceof Error ? error.message : 'Something went wrong while saving your booking.'
+    // Avoid exposing internal/Prisma messages to the user
+    const isInternal =
+      /unique constraint|foreign key|prisma|connection|ECONNREFUSED|timeout/i.test(raw) || raw.length > 120
+    const message = isInternal
+      ? 'Something went wrong while saving your booking. Please try again or email jacob@alignandacquire.com.'
+      : raw
+    return NextResponse.json({ error: message }, { status: 500 })
   }
 }
 
