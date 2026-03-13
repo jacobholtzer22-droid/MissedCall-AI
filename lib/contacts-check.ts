@@ -15,7 +15,10 @@ export async function isExistingContact(
   callerPhone: string
 ): Promise<boolean> {
   const contacts = await db.contact.findMany({
-    where: { businessId },
+    where: {
+      businessId,
+      source: null, // Only whitelist contacts (manually added). CRM leads have a source and should still receive missed-call SMS.
+    },
     select: { phoneNumber: true },
   })
   const normalizedCaller = normalizePhoneNumber(callerPhone)
