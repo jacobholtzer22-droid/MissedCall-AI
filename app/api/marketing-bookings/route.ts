@@ -3,6 +3,7 @@ import { TZDate } from '@date-fns/tz'
 import { addMinutes } from 'date-fns'
 import { db } from '@/lib/db'
 import Telnyx from 'telnyx'
+import { createMarketingCalendarEvent } from '@/lib/google-calendar'
 
 const TIMEZONE = 'America/New_York'
 const START_HOUR = 8 // 8:00 AM
@@ -328,6 +329,34 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    // Create Google Calendar event if the business has calendar connected (same as client booking flow)
+    let googleEventId: string | null = null
+    let calendarSyncFailed = false
+    if (business.googleCalendarConnected) {
+      try {
+        googleEventId = await createMarketingCalendarEvent(
+          business.id,
+          slotStartDate,
+          slotEndDate,
+          name.trim(),
+          {
+            customerPhone: phone.trim(),
+            customerEmail: email.trim(),
+            businessName: businessName.trim(),
+            servicesInterested: interests && interests.length ? interests : [],
+            message: notes?.trim() || null,
+          }
+        )
+        if (googleEventId) {
+          console.log('[marketing-bookings] Google Calendar event created:', googleEventId)
+        }
+      } catch (calErr) {
+        calendarSyncFailed = true
+        console.error('[marketing-bookings] Calendar sync failed:', calErr instanceof Error ? calErr.message : String(calErr))
+        // Continue — save appointment and send notifications even if calendar fails
+      }
+    }
+
     const appointment = await db.appointment.create({
       data: {
         businessId: business.id,
@@ -346,6 +375,8 @@ export async function POST(request: NextRequest) {
           .join('\n'),
         status: 'confirmed',
         source: 'website',
+        googleCalendarEventId: googleEventId,
+        calendarSyncFailed,
       },
     })
 

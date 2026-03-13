@@ -492,6 +492,72 @@ export async function createCalendarEvent(
   return event.data.id ?? null
 }
 
+/** Options for marketing (/book) discovery call calendar events. */
+export type CreateMarketingCalendarEventOptions = {
+  customerPhone: string
+  customerEmail?: string | null
+  businessName: string
+  servicesInterested: string[] // interests from form
+  message?: string | null
+}
+
+/**
+ * Creates a Google Calendar event for a marketing discovery call booking.
+ * Title: "Discovery Call — [customer name]", 15-minute reminder, description with contact/details.
+ */
+export async function createMarketingCalendarEvent(
+  businessId: string,
+  start: Date,
+  end: Date,
+  customerName: string,
+  options: CreateMarketingCalendarEventOptions
+): Promise<string | null> {
+  const { customerPhone, customerEmail, businessName, servicesInterested, message } = options
+
+  const calendar = await getCalendarClient(businessId)
+  if (!calendar) return null
+
+  const business = await db.business.findUnique({
+    where: { id: businessId },
+    select: { timezone: true },
+  })
+  const tz = business?.timezone ?? 'America/New_York'
+
+  const summary = `Discovery Call — ${customerName}`
+  const descriptionLines = [
+    `Name: ${customerName}`,
+    `Phone: ${customerPhone}`,
+    customerEmail ? `Email: ${customerEmail}` : null,
+    `Business: ${businessName}`,
+    servicesInterested.length > 0 ? `Services interested in: ${servicesInterested.join(', ')}` : null,
+    message?.trim() ? `Message: ${message.trim()}` : null,
+    '',
+    'Booked via /book (Align and Acquire)',
+  ].filter(Boolean)
+  const description = descriptionLines.join('\n')
+
+  const eventBody = {
+    summary,
+    description,
+    start: { dateTime: start.toISOString(), timeZone: tz },
+    end: { dateTime: end.toISOString(), timeZone: tz },
+    reminders: {
+      useDefault: false,
+      overrides: [
+        { method: 'popup' as const, minutes: 15 },
+        { method: 'email' as const, minutes: 15 },
+      ],
+    },
+  }
+
+  const event = await calendar.events.insert({
+    calendarId: 'primary',
+    requestBody: eventBody,
+  })
+
+  return event.data.id ?? null
+}
+
 export async function deleteCalendarEvent(businessId: string, eventId: string): Promise<boolean> {
   const calendar = await getCalendarClient(businessId)
   if (!calendar) return false
