@@ -42,7 +42,7 @@ import Telnyx from 'telnyx'
 import { format } from 'date-fns'
 import { checkCooldown, recordMessageSent, logCooldownSkip, isCooldownBypassNumber } from '@/lib/sms-cooldown'
 import { isExistingContact, logContactSkip } from '@/lib/contacts-check'
-import { normalizePhoneNumber } from '@/lib/phone-utils'
+import { normalizePhoneNumber, phonesMatch } from '@/lib/phone-utils'
 
 const VOICE = 'AWS.Polly.Joanna'
 const DEFAULT_VOICE_MESSAGE =
@@ -160,7 +160,7 @@ export async function POST(request: NextRequest) {
     }
 
     // =============================================
-    // B-LEG ANSWERED → ANNOUNCE CALLER THEN BRIDGE (on speak.ended)
+    // B-LEG ANSWERED → WHISPER "CONNECTING TO..." THEN BRIDGE (on speak.ended)
     // =============================================
     if (eventType === 'call.answered' && state.isForwardingLeg) {
       const callerPhone = state.callerPhone || ''
@@ -168,26 +168,38 @@ export async function POST(request: NextRequest) {
       const digitsToRead = digitsOnly.startsWith('1') && digitsOnly.length === 11
         ? digitsOnly.slice(1)
         : digitsOnly
+      const tenDigit = digitsToRead.length === 10 ? digitsToRead : digitsToRead.slice(-10)
 
       let announcement: string
+      let contactName: string | null = null
+
       if (state.businessId) {
-        const callerNormalized = normalizePhoneNumber(callerPhone)
-        const contact =
-          callerNormalized.length >= 10
-            ? await db.contact.findFirst({
-                where: { businessId: state.businessId, phoneNumber: callerNormalized },
-                select: { name: true },
-              })
-            : null
-        if (contact?.name) {
-          announcement = 'Incoming call from ' + contact.name
-        } else {
-          announcement =
-            'Incoming call from ' + (digitsToRead ? digitsToRead.split('').join(' ') : 'unknown number')
+        // Look up contact by phone, handling formats with/without +1 and other punctuation
+        const contacts = await db.contact.findMany({
+          where: { businessId: state.businessId },
+          select: { name: true, phoneNumber: true },
+        })
+        const match = contacts.find((c) => phonesMatch(callerPhone, c.phoneNumber))
+        if (match?.name) {
+          contactName = match.name
         }
+      }
+
+      if (contactName) {
+        // Known contact whisper
+        announcement = 'Connecting to ' + contactName
       } else {
-        announcement =
-          'Incoming call from ' + (digitsToRead ? digitsToRead.split('').join(' ') : 'unknown number')
+        // Unknown number whisper — read out the caller's number in a natural format
+        if (tenDigit.length === 10) {
+          const area = tenDigit.slice(0, 3)
+          const prefix = tenDigit.slice(3, 6)
+          const line = tenDigit.slice(6)
+          announcement = `Connecting to ${area} ${prefix} ${line}`
+        } else if (digitsToRead) {
+          announcement = 'Connecting to ' + digitsToRead.split('').join(' ')
+        } else {
+          announcement = 'Connecting to unknown caller'
+        }
       }
 
       console.log('📞 Forwarding B-leg answered, announcing caller then will bridge on speak.ended:', {
