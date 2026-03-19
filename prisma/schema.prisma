@@ -95,6 +95,7 @@ model Business {
   jobs                  Job[]
   emailCampaigns        EmailCampaign[]
   activities            Activity[]
+  websiteLeads          WebsiteLead[]
 
   @@index([stripeCustomerId])
 }
@@ -516,5 +517,28 @@ model Activity {
 
   @@index([businessId])
   @@index([contactId])
+  @@index([createdAt])
+}
+
+// ===========================================
+// WEBSITE LEAD - Contact form submissions from business websites
+// ===========================================
+model WebsiteLead {
+  id          String   @id @default(cuid())
+  businessId  String
+  business    Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  name        String
+  phone       String?
+  email       String?
+  message     String?  @db.Text
+
+  status      String   @default("new")  // new, contacted, converted, closed
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([businessId])
+  @@index([status])
   @@index([createdAt])
 }

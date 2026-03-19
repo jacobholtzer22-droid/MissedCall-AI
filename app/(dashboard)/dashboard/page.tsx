@@ -2,7 +2,7 @@ import { auth } from '@clerk/nextjs/server'
 import { redirect } from 'next/navigation'
 import { db } from '@/lib/db'
 import { getBusinessForDashboard } from '@/lib/get-business-for-dashboard'
-import { Phone, MessageSquare, Calendar, TrendingUp, ArrowRight, ShieldCheck, HelpCircle, Wrench, UserPlus } from 'lucide-react'
+import { Phone, MessageSquare, Calendar, TrendingUp, ArrowRight, ShieldCheck, HelpCircle, Wrench, UserPlus, Globe } from 'lucide-react'
 import Link from 'next/link'
 import { formatRelativeTime, formatPhoneNumber } from '@/lib/utils'
 import { SpamOnlyDashboard } from './SpamOnlyDashboard'
@@ -37,7 +37,8 @@ async function getDashboardStats(businessId: string, calendarEnabled: boolean, s
     conversationsWithReplies,
     allConversationsWithService,
     recentInboundMessages,
-    capturedLeads
+    capturedLeads,
+    newWebsiteLeads
   ] = await Promise.all([
     db.conversation.count({ where: { businessId } }),
     db.conversation.count({ where: { businessId, createdAt: { gte: todayStart } } }),
@@ -82,7 +83,8 @@ async function getDashboardStats(businessId: string, calendarEnabled: boolean, s
       orderBy: { lastMessageAt: 'desc' },
       take: 10,
       include: { messages: { take: 1, orderBy: { createdAt: 'desc' } } }
-    })
+    }),
+    db.websiteLead.count({ where: { businessId, status: 'new' } })
   ])
 
   const responseRate = totalConversations > 0 
@@ -152,7 +154,8 @@ async function getDashboardStats(businessId: string, calendarEnabled: boolean, s
     callsSaved: conversationsWithReplies,
     topServices,
     commonQuestions,
-    capturedLeads: Array.isArray(capturedLeads) ? capturedLeads : []
+    capturedLeads: Array.isArray(capturedLeads) ? capturedLeads : [],
+    newWebsiteLeads
   }
 }
 
@@ -187,11 +190,12 @@ export default async function DashboardPage() {
       </div>
 
       {/* Main Stats */}
-      <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-5">
         <StatCard title="Conversations Today" value={stats.todayConversations.toString()} description={`${stats.totalConversations} total`} icon={Phone} />
         <StatCard title="Calls Saved" value={stats.callsSaved.toString()} description="Customers who engaged" icon={ShieldCheck} highlight={stats.callsSaved > 0} />
         <StatCard title="Quote Visits Booked" value={stats.weeklyAppointments.toString()} description="This week" icon={Calendar} />
         <StatCard title="Response Rate" value={`${stats.responseRate}%`} description="Callers who replied" icon={TrendingUp} />
+        <StatCard title="Website Leads" value={stats.newWebsiteLeads.toString()} description="Unread submissions" icon={Globe} highlight={stats.newWebsiteLeads > 0} />
       </div>
 
       {/* Lead Notifications (non-calendar businesses only) */}

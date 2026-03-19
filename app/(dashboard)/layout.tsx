@@ -24,6 +24,7 @@ function getNavigation(missedCallAiEnabled: boolean) {
     : [
         { name: 'Overview', href: '/dashboard', icon: 'LayoutDashboard' },
         { name: 'Messages', href: '/dashboard/messages', icon: 'MessageCircle' },
+        { name: 'Website Leads', href: '/dashboard/website-leads', icon: 'Globe' },
         { name: 'Analytics', href: '/dashboard/analytics', icon: 'BarChart3' },
         { name: 'Scheduled Quotes', href: '/dashboard/appointments', icon: 'Calendar' },
         ...CRM_NAV,

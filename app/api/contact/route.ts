@@ -59,6 +59,31 @@ export async function POST(request: NextRequest) {
       })().catch(() => {})
     }
 
+    // Save as a website lead for dashboard visibility
+    if (bid || slug) {
+      void (async () => {
+        try {
+          const business = bid
+            ? await db.business.findUnique({ where: { id: bid } })
+            : await db.business.findUnique({ where: { slug: slug! } })
+          if (business) {
+            await db.websiteLead.create({
+              data: {
+                businessId: business.id,
+                name: typeof name === 'string' ? name.trim() : 'Unknown',
+                phone: typeof phone === 'string' ? phone.trim() || null : null,
+                email: typeof email === 'string' ? email.trim() || null : null,
+                message: typeof message === 'string' ? message.trim() || null : null,
+                status: 'new',
+              },
+            })
+          }
+        } catch (err) {
+          console.error('Failed to save website lead:', err)
+        }
+      })()
+    }
+
     return NextResponse.json({ success: true })
   } catch (error) {
     console.error('Contact form error:', error)
