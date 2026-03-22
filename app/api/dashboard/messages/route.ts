@@ -12,7 +12,12 @@ export async function GET() {
   const { business } = authResult
 
   const conversations = await db.conversation.findMany({
-    where: { businessId: business.id },
+    where: {
+      businessId: business.id,
+      ...(business.telnyxPhoneNumber
+        ? { callerPhone: { not: business.telnyxPhoneNumber } }
+        : {}),
+    },
     orderBy: { lastMessageAt: 'desc' },
     include: {
       messages: {

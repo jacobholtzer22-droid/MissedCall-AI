@@ -107,6 +107,15 @@ export async function POST(request: NextRequest) {
 
       console.log('✅ Matched business:', business.name)
 
+      if (business.telnyxPhoneNumber && phonesMatch(from, business.telnyxPhoneNumber)) {
+        console.log('Skipping conversation creation — caller is the business Telnyx number (forwarding loop)')
+        const clientState = toB64({ businessId: business.id, callerPhone: from, connectionId: payload?.connection_id as string | undefined })
+        await telnyx.calls.actions.answer(callControlId, { client_state: clientState } as any)
+        const msg = business.missedCallVoiceMessage || NO_SMS_VOICE_MESSAGE
+        await telnyx.calls.actions.speak(callControlId, { payload: msg, voice: VOICE })
+        return NextResponse.json({}, { status: 200 })
+      }
+
       if (business.spamFilterEnabled && isSpamCall(from)) {
         console.log('🚫 Spam call blocked:', from)
         await db.screenedCall.create({
@@ -777,7 +786,7 @@ async function handleForwardingFallback(
     return
   }
 
-  if (conversation.callConnected || conversation.status !== 'forwarding') {
+  if ((conversation.callConnected && conversation.durationSeconds && conversation.durationSeconds > 5) || conversation.status !== 'forwarding') {
     console.log('📞 Forwarding fallback skipped (already handled or call connected)')
     return
   }
@@ -895,8 +904,8 @@ async function sendMissedCallSMS(
   })
 
   if (conversation) {
-    if (conversation.callConnected) {
-      console.log('📱 Call was connected, skipping SMS')
+    if (conversation.callConnected && conversation.durationSeconds && conversation.durationSeconds > 5) {
+      console.log('📱 Call was connected for >5s, skipping SMS')
       return
     }
 

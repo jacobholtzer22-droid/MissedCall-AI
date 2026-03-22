@@ -18,13 +18,16 @@ export async function GET(
   try {
     const business = await db.business.findUnique({
       where: { id },
-      select: { name: true },
+      select: { name: true, telnyxPhoneNumber: true },
     })
 
     const conversations = await db.conversation.findMany({
       where: {
         businessId: id,
         messages: { some: {} },
+        ...(business?.telnyxPhoneNumber
+          ? { callerPhone: { not: business.telnyxPhoneNumber } }
+          : {}),
       },
       orderBy: { lastMessageAt: 'desc' },
       include: {
