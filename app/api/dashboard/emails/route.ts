@@ -55,6 +55,7 @@ export async function POST(request: Request) {
     senderName?: string
     subject: string
     body: string
+    bodyIsHtml?: boolean
     images?: { url: string; filename: string; order: number }[]
     recipientSelection: RecipientSelection
   }
@@ -145,16 +146,22 @@ export async function POST(request: Request) {
     })
   }
 
-  // Build final HTML with images
-  const imagesHtml = sortedImages.length > 0
-    ? sortedImages
-        .map(
-          (img: { url: string; filename: string }) =>
-            `<div style="text-align:center;margin-bottom:16px;"><img src="${img.url}" alt="${img.filename}" style="max-width:600px;width:100%;height:auto;display:block;margin:0 auto;border-radius:4px;" /></div>`
-        )
-        .join('')
-    : ''
-  const fullHtml = imagesHtml ? `${imagesHtml}${htmlBody}` : htmlBody
+  // Build final HTML — if the user sent a full HTML template, use it as-is.
+  // Only prepend images for plain-text bodies wrapped in basic markup.
+  let fullHtml: string
+  if (body.bodyIsHtml) {
+    fullHtml = htmlBody
+  } else {
+    const imagesHtml = sortedImages.length > 0
+      ? sortedImages
+          .map(
+            (img: { url: string; filename: string }) =>
+              `<div style="text-align:center;margin-bottom:16px;"><img src="${img.url}" alt="${img.filename}" style="max-width:600px;width:100%;height:auto;display:block;margin:0 auto;border-radius:4px;" /></div>`
+          )
+          .join('')
+      : ''
+    fullHtml = imagesHtml ? `${imagesHtml}${htmlBody}` : htmlBody
+  }
 
   // Send in batches via Resend
   const resend = new Resend(process.env.RESEND_API_KEY)

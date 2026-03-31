@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useRef, useCallback } from 'react'
 import Link from 'next/link'
-import { ArrowLeft, Upload, X, ChevronUp, ChevronDown, ImageIcon } from 'lucide-react'
+import { ArrowLeft, Upload, X, ChevronUp, ChevronDown, Copy, Check, Code, Eye } from 'lucide-react'
 
 type Tag = { id: string; name: string; color: string | null }
 type Contact = { id: string; name: string | null; email: string | null; status: string }
@@ -32,6 +32,10 @@ export function EmailComposeClient() {
   const [showPreview, setShowPreview] = useState(false)
   const [sending, setSending] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [editorMode, setEditorMode] = useState<'html' | 'visual'>('html')
+  const [copiedUrl, setCopiedUrl] = useState<string | null>(null)
+  const iframeRef = useRef<HTMLIFrameElement>(null)
+  const previewIframeRef = useRef<HTMLIFrameElement>(null)
 
   const displaySenderName = senderName.trim() || 'Align and Acquire'
   const displaySubject = subject.trim() || '(No subject)'
@@ -128,13 +132,20 @@ export function EmailComposeClient() {
     }
     setSending(true)
     try {
+      const trimmedBody = body.trim()
+      const isHtml = bodyContainsHtml(trimmedBody)
+      const finalBody = isHtml
+        ? trimmedBody
+        : trimmedBody || '<p>No content.</p>'
+
       const res = await fetch('/api/dashboard/emails', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           senderName: senderName.trim() || undefined,
           subject: subject.trim(),
-          body: body.trim() || '<p>No content.</p>',
+          body: finalBody,
+          bodyIsHtml: isHtml,
           images: images.length > 0 ? images : undefined,
           recipientSelection: buildSelection(),
         }),
@@ -158,6 +169,37 @@ export function EmailComposeClient() {
   function toggleContact(id: string) {
     setManualContactIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]))
   }
+
+  function bodyContainsHtml(text: string): boolean {
+    return /<[a-z][\s\S]*?>/i.test(text)
+  }
+
+  function copyImageUrl(url: string) {
+    navigator.clipboard.writeText(url)
+    setCopiedUrl(url)
+    setTimeout(() => setCopiedUrl(null), 2000)
+  }
+
+  function writeToIframe(iframe: HTMLIFrameElement | null, html: string) {
+    if (!iframe) return
+    const doc = iframe.contentDocument
+    if (!doc) return
+    doc.open()
+    doc.write(html || '<p style="color:#999;font-family:sans-serif;">No content to preview</p>')
+    doc.close()
+  }
+
+  useEffect(() => {
+    if (editorMode === 'visual') {
+      writeToIframe(iframeRef.current, body)
+    }
+  }, [editorMode, body])
+
+  useEffect(() => {
+    if (showPreview) {
+      writeToIframe(previewIframeRef.current, body)
+    }
+  }, [showPreview, body])
 
   return (
     <div className="space-y-6 w-full max-w-3xl">
@@ -250,6 +292,14 @@ export function EmailComposeClient() {
                   <div className="flex items-center gap-1 shrink-0">
                     <button
                       type="button"
+                      onClick={() => copyImageUrl(img.url)}
+                      className="p-1.5 min-h-[36px] min-w-[36px] flex items-center justify-center rounded hover:bg-blue-100 text-blue-600 transition"
+                      title="Copy image URL"
+                    >
+                      {copiedUrl === img.url ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+                    </button>
+                    <button
+                      type="button"
                       onClick={() => moveImage(idx, 'up')}
                       disabled={idx === 0}
                       className="p-1.5 min-h-[36px] min-w-[36px] flex items-center justify-center rounded hover:bg-gray-200 disabled:opacity-30 transition"
@@ -277,20 +327,70 @@ export function EmailComposeClient() {
                   </div>
                 </div>
               ))}
+              <p className="text-xs text-gray-500">Use &quot;Copy Image URL&quot; to paste image URLs into your HTML template where you want them to appear.</p>
             </div>
           )}
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Body</label>
-          <textarea
-            value={body}
-            onChange={(e) => setBody(e.target.value)}
-            placeholder="Write your email content here. You can use simple HTML like <p>, <strong>, <a>."
-            rows={12}
-            className="w-full px-3 py-3 min-h-[44px] border border-gray-200 rounded-lg text-gray-900 placeholder-gray-400 focus:ring-2 focus:ring-gray-900 font-mono text-sm"
-          />
-          <p className="text-xs text-gray-500 mt-1">Simple HTML is supported (e.g. &lt;p&gt;, &lt;strong&gt;, &lt;a href="..."&gt;)</p>
+          <div className="flex items-center justify-between mb-1">
+            <label className="block text-sm font-medium text-gray-700">Body</label>
+            <div className="flex items-center rounded-lg border border-gray-200 bg-gray-50 p-0.5">
+              <button
+                type="button"
+                onClick={() => setEditorMode('html')}
+                className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md transition ${
+                  editorMode === 'html'
+                    ? 'bg-white text-gray-900 shadow-sm'
+                    : 'text-gray-500 hover:text-gray-700'
+                }`}
+              >
+                <Code className="h-3.5 w-3.5" />
+                HTML
+              </button>
+              <button
+                type="button"
+                onClick={() => setEditorMode('visual')}
+                className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md transition ${
+                  editorMode === 'visual'
+                    ? 'bg-white text-gray-900 shadow-sm'
+                    : 'text-gray-500 hover:text-gray-700'
+                }`}
+              >
+                <Eye className="h-3.5 w-3.5" />
+                Visual
+              </button>
+            </div>
+          </div>
+          {editorMode === 'html' ? (
+            <>
+              <textarea
+                value={body}
+                onChange={(e) => setBody(e.target.value)}
+                placeholder={'Paste your HTML email template here.\n\nYou can paste a full template from Mailchimp, Canva, or any email builder.\nOr write simple HTML like <p>Hello!</p>'}
+                rows={16}
+                className="w-full px-3 py-3 min-h-[44px] border border-gray-200 rounded-lg text-gray-900 placeholder-gray-400 focus:ring-2 focus:ring-gray-900 font-mono text-sm"
+              />
+              <p className="text-xs text-gray-500 mt-1">
+                Paste a full HTML email template or write simple HTML. Switch to &quot;Visual&quot; to preview.
+              </p>
+            </>
+          ) : (
+            <>
+              <div className="border border-gray-200 rounded-lg overflow-hidden bg-white">
+                <iframe
+                  ref={iframeRef}
+                  title="Visual editor preview"
+                  className="w-full border-0"
+                  style={{ height: 400 }}
+                  sandbox="allow-same-origin"
+                />
+              </div>
+              <p className="text-xs text-gray-500 mt-1">
+                Visual preview of your HTML. Switch to &quot;HTML&quot; mode to edit the source.
+              </p>
+            </>
+          )}
         </div>
       </div>
 
@@ -381,28 +481,24 @@ export function EmailComposeClient() {
       {showPreview && (
         <div className="bg-white rounded-xl border border-gray-200 p-6">
           <h3 className="font-semibold text-gray-900 mb-2">Preview</h3>
-          <div className="border border-gray-200 rounded-lg p-4 bg-gray-50">
-            <p className="text-sm text-gray-500 mb-2">Subject: {subject || '(empty)'}</p>
-            {images.length > 0 && (
-              <div className="mb-4 space-y-3">
-                {images.map((img) => (
-                  <div key={img.url} className="text-center">
-                    <img
-                      src={img.url}
-                      alt={img.filename}
-                      className="max-w-full mx-auto rounded"
-                      style={{ maxWidth: 600 }}
-                    />
-                  </div>
-                ))}
-              </div>
-            )}
-            <div
-              className="prose prose-sm max-w-none text-gray-700"
-              dangerouslySetInnerHTML={{
-                __html: body.trim() || '<p class="text-gray-500">(No body)</p>',
-              }}
-            />
+          <p className="text-sm text-gray-500 mb-3">Subject: {subject || '(empty)'}</p>
+          <div className="border border-gray-200 rounded-lg bg-gray-100 p-4 overflow-x-auto">
+            <div className="mx-auto" style={{ width: 600, maxWidth: '100%' }}>
+              <iframe
+                ref={previewIframeRef}
+                title="Email preview"
+                className="w-full border-0 bg-white rounded"
+                style={{ width: 600, minHeight: 400 }}
+                sandbox="allow-same-origin"
+                onLoad={() => {
+                  const iframe = previewIframeRef.current
+                  if (iframe?.contentDocument?.body) {
+                    const h = iframe.contentDocument.body.scrollHeight
+                    iframe.style.height = `${Math.max(h + 32, 400)}px`
+                  }
+                }}
+              />
+            </div>
           </div>
         </div>
       )}
