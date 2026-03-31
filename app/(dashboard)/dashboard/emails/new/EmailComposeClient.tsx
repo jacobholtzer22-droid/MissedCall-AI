@@ -17,7 +17,6 @@ const RECIPIENT_OPTIONS = [
 
 export function EmailComposeClient() {
   const [senderName, setSenderName] = useState('')
-  const [senderEmail, setSenderEmail] = useState('')
   const [subject, setSubject] = useState('')
   const [body, setBody] = useState('')
   const [images, setImages] = useState<CampaignImage[]>([])
@@ -34,7 +33,7 @@ export function EmailComposeClient() {
   const [sending, setSending] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const displaySenderName = senderName.trim() || 'Align & Acquire'
+  const displaySenderName = senderName.trim() || 'Align and Acquire'
   const displaySubject = subject.trim() || '(No subject)'
 
   useEffect(() => {
@@ -134,7 +133,6 @@ export function EmailComposeClient() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           senderName: senderName.trim() || undefined,
-          senderEmail: senderEmail.trim() || undefined,
           subject: subject.trim(),
           body: body.trim() || '<p>No content.</p>',
           images: images.length > 0 ? images : undefined,
@@ -192,18 +190,7 @@ export function EmailComposeClient() {
             placeholder="e.g. Goosehead Insurance - Richard Smith"
             className="w-full px-3 py-3 min-h-[44px] border border-gray-200 rounded-lg text-gray-900 placeholder-gray-400 focus:ring-2 focus:ring-gray-900"
           />
-          <p className="text-xs text-gray-500 mt-1">Defaults to &quot;Align &amp; Acquire&quot; if left blank</p>
-        </div>
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Sender Email Address</label>
-          <input
-            type="email"
-            value={senderEmail}
-            onChange={(e) => setSenderEmail(e.target.value)}
-            placeholder="notifications@alignandacquire.com"
-            className="w-full px-3 py-3 min-h-[44px] border border-gray-200 rounded-lg text-gray-900 placeholder-gray-400 focus:ring-2 focus:ring-gray-900"
-          />
-          <p className="text-xs text-gray-500 mt-1">Defaults to notifications@alignandacquire.com — custom addresses require a verified domain in Resend</p>
+          <p className="text-xs text-gray-500 mt-1">Defaults to &quot;Align and Acquire&quot; if left blank</p>
         </div>
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">Subject Line *</label>

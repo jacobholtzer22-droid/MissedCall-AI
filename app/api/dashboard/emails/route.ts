@@ -53,7 +53,6 @@ export async function POST(request: Request) {
 
   let body: {
     senderName?: string
-    senderEmail?: string
     subject: string
     body: string
     images?: { url: string; filename: string; order: number }[]
@@ -65,8 +64,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
   }
 
-  const senderName = body.senderName?.trim() || 'Align & Acquire'
-  const senderEmail = body.senderEmail?.trim() || 'notifications@alignandacquire.com'
+  const senderName = body.senderName?.trim() || 'Align and Acquire'
   const subject = body.subject?.trim()
   if (!subject) return NextResponse.json({ error: 'Subject is required' }, { status: 400 })
   const htmlBody = body.body?.trim() || '<p>No content.</p>'
@@ -128,7 +126,6 @@ export async function POST(request: Request) {
     data: {
       businessId: business.id,
       senderName,
-      senderEmail,
       subject,
       body: htmlBody,
       images: sortedImages.length > 0 ? sortedImages : undefined,
@@ -161,7 +158,7 @@ export async function POST(request: Request) {
 
   // Send in batches via Resend
   const resend = new Resend(process.env.RESEND_API_KEY)
-  const from = `${campaign.senderName} <${campaign.senderEmail}>`
+  const from = `${campaign.senderName} <notifications@alignandacquire.com>`
   const recipients = contactsWithEmail.map((r) => r.email!)
   let sent = 0
   for (let i = 0; i < recipients.length; i += BATCH_SIZE) {
