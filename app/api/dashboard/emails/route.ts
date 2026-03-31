@@ -52,8 +52,11 @@ export async function POST(request: Request) {
   const { business } = authResult
 
   let body: {
+    senderName?: string
+    senderEmail?: string
     subject: string
     body: string
+    images?: { url: string; filename: string; order: number }[]
     recipientSelection: RecipientSelection
   }
   try {
@@ -62,6 +65,8 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
   }
 
+  const senderName = body.senderName?.trim() || 'Align & Acquire'
+  const senderEmail = body.senderEmail?.trim() || 'notifications@alignandacquire.com'
   const subject = body.subject?.trim()
   if (!subject) return NextResponse.json({ error: 'Subject is required' }, { status: 400 })
   const htmlBody = body.body?.trim() || '<p>No content.</p>'
@@ -115,11 +120,18 @@ export async function POST(request: Request) {
   })
   const recipientCount = contactsWithEmail.length
 
+  const sortedImages = Array.isArray(body.images)
+    ? [...body.images].sort((a, b) => a.order - b.order)
+    : []
+
   const campaign = await db.emailCampaign.create({
     data: {
       businessId: business.id,
+      senderName,
+      senderEmail,
       subject,
       body: htmlBody,
+      images: sortedImages.length > 0 ? sortedImages : undefined,
       status: 'sending',
       recipientCount,
     },
@@ -136,9 +148,20 @@ export async function POST(request: Request) {
     })
   }
 
+  // Build final HTML with images
+  const imagesHtml = sortedImages.length > 0
+    ? sortedImages
+        .map(
+          (img: { url: string; filename: string }) =>
+            `<div style="text-align:center;margin-bottom:16px;"><img src="${img.url}" alt="${img.filename}" style="max-width:600px;width:100%;height:auto;display:block;margin:0 auto;border-radius:4px;" /></div>`
+        )
+        .join('')
+    : ''
+  const fullHtml = imagesHtml ? `${imagesHtml}${htmlBody}` : htmlBody
+
   // Send in batches via Resend
   const resend = new Resend(process.env.RESEND_API_KEY)
-  const from = 'MissedCall AI <notifications@alignandacquire.com>'
+  const from = `${campaign.senderName} <${campaign.senderEmail}>`
   const recipients = contactsWithEmail.map((r) => r.email!)
   let sent = 0
   for (let i = 0; i < recipients.length; i += BATCH_SIZE) {
@@ -149,7 +172,7 @@ export async function POST(request: Request) {
           from,
           to,
           subject,
-          html: htmlBody,
+          html: fullHtml,
         })
         sent++
       }

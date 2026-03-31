@@ -471,8 +471,11 @@ model Job {
 model EmailCampaign {
   id              String    @id @default(cuid())
   businessId      String
+  senderName      String    @default("Align & Acquire")
+  senderEmail     String    @default("notifications@alignandacquire.com")
   subject         String
   body            String    @db.Text
+  images          Json?     // [{ url: "https://...", filename: "logo.png", order: 0 }]
   status          String    @default("draft")  // draft, sending, sent, failed
   recipientCount  Int       @default(0)
   sentAt          DateTime?

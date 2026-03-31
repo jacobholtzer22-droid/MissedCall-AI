@@ -1,11 +1,12 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef, useCallback } from 'react'
 import Link from 'next/link'
-import { ArrowLeft } from 'lucide-react'
+import { ArrowLeft, Upload, X, ChevronUp, ChevronDown, ImageIcon } from 'lucide-react'
 
 type Tag = { id: string; name: string; color: string | null }
 type Contact = { id: string; name: string | null; email: string | null; status: string }
+type CampaignImage = { url: string; filename: string; order: number }
 
 const RECIPIENT_OPTIONS = [
   { value: 'all', label: 'All contacts with email' },
@@ -15,8 +16,14 @@ const RECIPIENT_OPTIONS = [
 ] as const
 
 export function EmailComposeClient() {
+  const [senderName, setSenderName] = useState('')
+  const [senderEmail, setSenderEmail] = useState('')
   const [subject, setSubject] = useState('')
   const [body, setBody] = useState('')
+  const [images, setImages] = useState<CampaignImage[]>([])
+  const [uploading, setUploading] = useState(false)
+  const [dragOver, setDragOver] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
   const [recipientType, setRecipientType] = useState<'all' | 'tags' | 'status' | 'manual'>('all')
   const [tagIds, setTagIds] = useState<string[]>([])
   const [statuses, setStatuses] = useState<string[]>([])
@@ -26,6 +33,9 @@ export function EmailComposeClient() {
   const [showPreview, setShowPreview] = useState(false)
   const [sending, setSending] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  const displaySenderName = senderName.trim() || 'Align & Acquire'
+  const displaySubject = subject.trim() || '(No subject)'
 
   useEffect(() => {
     fetch('/api/dashboard/tags')
@@ -49,6 +59,68 @@ export function EmailComposeClient() {
     return { type: 'manual' as const, contactIds: manualContactIds }
   }
 
+  const uploadFiles = useCallback(async (files: FileList | File[]) => {
+    const fileArray = Array.from(files)
+    const imageFiles = fileArray.filter((f) =>
+      ['image/png', 'image/jpeg', 'image/jpg', 'image/gif', 'image/webp'].includes(f.type)
+    )
+    if (imageFiles.length === 0) {
+      setError('Only image files are allowed (png, jpg, jpeg, gif, webp)')
+      return
+    }
+    setUploading(true)
+    setError(null)
+    try {
+      const newImages: CampaignImage[] = []
+      for (const file of imageFiles) {
+        if (file.size > 5 * 1024 * 1024) {
+          setError(`${file.name} exceeds 5MB limit`)
+          continue
+        }
+        const formData = new FormData()
+        formData.append('file', file)
+        const res = await fetch('/api/campaigns/upload-image', { method: 'POST', body: formData })
+        const data = await res.json()
+        if (!res.ok) {
+          setError(data.error || `Failed to upload ${file.name}`)
+          continue
+        }
+        newImages.push({
+          url: data.url,
+          filename: data.filename,
+          order: images.length + newImages.length,
+        })
+      }
+      if (newImages.length > 0) {
+        setImages((prev) => [...prev, ...newImages])
+      }
+    } catch {
+      setError('Image upload failed')
+    } finally {
+      setUploading(false)
+    }
+  }, [images.length])
+
+  function removeImage(index: number) {
+    setImages((prev) => prev.filter((_, i) => i !== index).map((img, i) => ({ ...img, order: i })))
+  }
+
+  function moveImage(index: number, direction: 'up' | 'down') {
+    setImages((prev) => {
+      const next = [...prev]
+      const swapIdx = direction === 'up' ? index - 1 : index + 1
+      if (swapIdx < 0 || swapIdx >= next.length) return prev
+      ;[next[index], next[swapIdx]] = [next[swapIdx], next[index]]
+      return next.map((img, i) => ({ ...img, order: i }))
+    })
+  }
+
+  function handleDrop(e: React.DragEvent) {
+    e.preventDefault()
+    setDragOver(false)
+    if (e.dataTransfer.files.length > 0) uploadFiles(e.dataTransfer.files)
+  }
+
   async function handleSend() {
     setError(null)
     if (!subject.trim()) {
@@ -61,8 +133,11 @@ export function EmailComposeClient() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          senderName: senderName.trim() || undefined,
+          senderEmail: senderEmail.trim() || undefined,
           subject: subject.trim(),
           body: body.trim() || '<p>No content.</p>',
+          images: images.length > 0 ? images : undefined,
           recipientSelection: buildSelection(),
         }),
       })
@@ -109,7 +184,29 @@ export function EmailComposeClient() {
 
       <div className="bg-white rounded-xl border border-gray-200 p-4 md:p-6 space-y-4">
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Subject *</label>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Sender Display Name</label>
+          <input
+            type="text"
+            value={senderName}
+            onChange={(e) => setSenderName(e.target.value)}
+            placeholder="e.g. Goosehead Insurance - Richard Smith"
+            className="w-full px-3 py-3 min-h-[44px] border border-gray-200 rounded-lg text-gray-900 placeholder-gray-400 focus:ring-2 focus:ring-gray-900"
+          />
+          <p className="text-xs text-gray-500 mt-1">Defaults to &quot;Align &amp; Acquire&quot; if left blank</p>
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Sender Email Address</label>
+          <input
+            type="email"
+            value={senderEmail}
+            onChange={(e) => setSenderEmail(e.target.value)}
+            placeholder="notifications@alignandacquire.com"
+            className="w-full px-3 py-3 min-h-[44px] border border-gray-200 rounded-lg text-gray-900 placeholder-gray-400 focus:ring-2 focus:ring-gray-900"
+          />
+          <p className="text-xs text-gray-500 mt-1">Defaults to notifications@alignandacquire.com — custom addresses require a verified domain in Resend</p>
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Subject Line *</label>
           <input
             type="text"
             value={subject}
@@ -118,6 +215,85 @@ export function EmailComposeClient() {
             className="w-full px-3 py-3 min-h-[44px] border border-gray-200 rounded-lg text-gray-900 placeholder-gray-400 focus:ring-2 focus:ring-gray-900"
           />
         </div>
+
+        <div className="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3">
+          <p className="text-xs font-medium text-gray-500 mb-2 uppercase tracking-wide">Inbox Preview</p>
+          <div className="flex items-baseline gap-2 text-sm">
+            <span className="font-semibold text-gray-900 shrink-0">{displaySenderName}</span>
+            <span className="text-gray-400">—</span>
+            <span className="text-gray-600 truncate">{displaySubject}</span>
+          </div>
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Upload Images</label>
+          <div
+            onDragOver={(e) => { e.preventDefault(); setDragOver(true) }}
+            onDragLeave={() => setDragOver(false)}
+            onDrop={handleDrop}
+            onClick={() => fileInputRef.current?.click()}
+            className={`border-2 border-dashed rounded-lg p-6 text-center cursor-pointer transition ${
+              dragOver ? 'border-gray-900 bg-gray-50' : 'border-gray-300 hover:border-gray-400'
+            }`}
+          >
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/png,image/jpeg,image/jpg,image/gif,image/webp"
+              multiple
+              className="hidden"
+              onChange={(e) => { if (e.target.files) uploadFiles(e.target.files); e.target.value = '' }}
+            />
+            <Upload className="h-8 w-8 text-gray-400 mx-auto mb-2" />
+            <p className="text-sm text-gray-600">
+              {uploading ? 'Uploading...' : 'Drag & drop images or click to browse'}
+            </p>
+            <p className="text-xs text-gray-400 mt-1">PNG, JPG, GIF, WebP — max 5MB each</p>
+          </div>
+
+          {images.length > 0 && (
+            <div className="mt-3 space-y-2">
+              {images.map((img, idx) => (
+                <div key={img.url} className="flex items-center gap-3 rounded-lg border border-gray-200 p-2 bg-gray-50">
+                  <img src={img.url} alt={img.filename} className="h-14 w-14 object-cover rounded" />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm text-gray-700 truncate">{img.filename}</p>
+                    <p className="text-xs text-gray-400">Image {idx + 1} of {images.length}</p>
+                  </div>
+                  <div className="flex items-center gap-1 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => moveImage(idx, 'up')}
+                      disabled={idx === 0}
+                      className="p-1.5 min-h-[36px] min-w-[36px] flex items-center justify-center rounded hover:bg-gray-200 disabled:opacity-30 transition"
+                      title="Move up"
+                    >
+                      <ChevronUp className="h-4 w-4" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => moveImage(idx, 'down')}
+                      disabled={idx === images.length - 1}
+                      className="p-1.5 min-h-[36px] min-w-[36px] flex items-center justify-center rounded hover:bg-gray-200 disabled:opacity-30 transition"
+                      title="Move down"
+                    >
+                      <ChevronDown className="h-4 w-4" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => removeImage(idx)}
+                      className="p-1.5 min-h-[36px] min-w-[36px] flex items-center justify-center rounded hover:bg-red-100 text-red-500 transition"
+                      title="Remove"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">Body</label>
           <textarea
@@ -220,6 +396,20 @@ export function EmailComposeClient() {
           <h3 className="font-semibold text-gray-900 mb-2">Preview</h3>
           <div className="border border-gray-200 rounded-lg p-4 bg-gray-50">
             <p className="text-sm text-gray-500 mb-2">Subject: {subject || '(empty)'}</p>
+            {images.length > 0 && (
+              <div className="mb-4 space-y-3">
+                {images.map((img) => (
+                  <div key={img.url} className="text-center">
+                    <img
+                      src={img.url}
+                      alt={img.filename}
+                      className="max-w-full mx-auto rounded"
+                      style={{ maxWidth: 600 }}
+                    />
+                  </div>
+                ))}
+              </div>
+            )}
             <div
               className="prose prose-sm max-w-none text-gray-700"
               dangerouslySetInnerHTML={{
