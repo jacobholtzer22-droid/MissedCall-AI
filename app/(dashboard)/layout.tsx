@@ -9,7 +9,7 @@ const CRM_NAV = [
   { name: 'Emails', href: '/dashboard/emails', icon: 'Mailbox' },
 ]
 
-function getNavigation(missedCallAiEnabled: boolean) {
+function getNavigation(missedCallAiEnabled: boolean, googleAds?: { enabled: boolean; label?: string | null }) {
   const spamOnly = missedCallAiEnabled === false
   const items = spamOnly
     ? [
@@ -30,6 +30,18 @@ function getNavigation(missedCallAiEnabled: boolean) {
         ...CRM_NAV,
         { name: 'Settings', href: '/dashboard/settings', icon: 'Settings' },
       ]
+
+  // Insert Google Ads tab before Settings when enabled
+  if (googleAds?.enabled) {
+    const settingsIdx = items.findIndex((i) => i.href === '/dashboard/settings')
+    const adsItem = { name: googleAds.label || 'Google Ads', href: '/dashboard/ads', icon: 'Megaphone' }
+    if (settingsIdx >= 0) {
+      items.splice(settingsIdx, 0, adsItem)
+    } else {
+      items.push(adsItem)
+    }
+  }
+
   return items as { name: string; href: string; icon: string }[]
 }
 
@@ -53,7 +65,10 @@ export default async function DashboardLayout({ children }: { children: React.Re
     redirect('/onboarding')
   }
 
-  const navigation = getNavigation(business.missedCallAiEnabled ?? true)
+  const navigation = getNavigation(business.missedCallAiEnabled ?? true, {
+    enabled: business.googleAdsEnabled ?? false,
+    label: (business as any).googleAdsTabLabel ?? null,
+  })
   const userLabel = user?.firstName || user?.email || 'Admin'
 
   return (

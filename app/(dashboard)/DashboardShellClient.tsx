@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import { UserButton } from '@clerk/nextjs'
-import { Menu, X, LayoutDashboard, MessageSquare, MessageCircle, Calendar, Settings, PhoneOff, Mail, Users, Briefcase, Mailbox, BarChart3 } from 'lucide-react'
+import { Menu, X, LayoutDashboard, MessageSquare, MessageCircle, Calendar, Settings, PhoneOff, Mail, Users, Briefcase, Mailbox, BarChart3, Megaphone } from 'lucide-react'
 import { Logo } from '@/app/components/Logo'
 
 const ICON_MAP: Record<string, React.ComponentType<{ className?: string }>> = {
@@ -18,6 +18,7 @@ const ICON_MAP: Record<string, React.ComponentType<{ className?: string }>> = {
   Briefcase,
   Mailbox,
   BarChart3,
+  Megaphone,
 }
 
 type NavItem = { name: string; href: string; icon: string }

@@ -52,6 +52,11 @@ model Business {
   stripeSubscriptionId  String?
   subscriptionStatus    String    @default("trialing")  // trialing, active, past_due, canceled
 
+  // Google Ads integration
+  googleAdsCustomerId   String?                         // Google Ads customer ID (no dashes, e.g. "1234567890")
+  googleAdsEnabled      Boolean   @default(false)       // Show Google Ads tab in dashboard
+  googleAdsTabLabel     String?   @default("Google Ads") // Custom label for the ads nav item
+
   // Admin tracking
   adminNotes            String?   @db.Text              // Private notes only Jacob sees
   setupFee              Float?                           // What they paid upfront
@@ -96,6 +101,7 @@ model Business {
   emailCampaigns        EmailCampaign[]
   activities            Activity[]
   websiteLeads          WebsiteLead[]
+  googleAdsSnapshots    GoogleAdsSnapshot[]
 
   @@index([stripeCustomerId])
 }
@@ -543,4 +549,28 @@ model WebsiteLead {
   @@index([businessId])
   @@index([status])
   @@index([createdAt])
+}
+
+// ===========================================
+// GOOGLE ADS SNAPSHOT - Daily campaign metrics from Google Ads
+// ===========================================
+model GoogleAdsSnapshot {
+  id                String   @id @default(cuid())
+  businessId        String
+  business          Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  date              DateTime                // The reporting date (start of day)
+  campaignId        String                  // Google Ads campaign ID
+  campaignName      String                  // Campaign name at time of sync
+  impressions       Int      @default(0)
+  clicks            Int      @default(0)
+  cost              Float    @default(0)    // USD (converted from cost_micros / 1_000_000)
+  conversions       Float    @default(0)
+  ctr               Float    @default(0)    // Click-through rate (0.0–1.0)
+  costPerConversion Float?                  // cost / conversions (null if 0 conversions)
+
+  createdAt         DateTime @default(now())
+
+  @@unique([businessId, campaignId, date])
+  @@index([businessId, date])
 }
