@@ -41,6 +41,9 @@ interface Business {
   maxMessagesPerConversation?: number | null
   ownerEmail?: string | null
   ownerPhone?: string | null
+  googleAdsEnabled?: boolean
+  googleAdsCustomerId?: string | null
+  googleAdsTabLabel?: string | null
   createdAt: string
   updatedAt: string
   _count: {
@@ -397,6 +400,9 @@ export default function AdminDashboard() {
       maxMessagesPerConversation: business.maxMessagesPerConversation ?? 23,
       ownerEmail: business.ownerEmail ?? '',
       ownerPhone: business.ownerPhone ?? '',
+      googleAdsEnabled: business.googleAdsEnabled ?? false,
+      googleAdsCustomerId: business.googleAdsCustomerId ?? '',
+      googleAdsTabLabel: business.googleAdsTabLabel ?? 'Google Ads',
     })
     setMessage('')
     setNewBlockedPhone('')
@@ -651,6 +657,9 @@ export default function AdminDashboard() {
           maxMessagesPerConversation: editData.maxMessagesPerConversation != null && editData.maxMessagesPerConversation !== '' ? Number(editData.maxMessagesPerConversation) : undefined,
           ownerEmail: editData.ownerEmail?.trim() || null,
           ownerPhone: editData.ownerPhone?.trim() || null,
+          googleAdsEnabled: editData.googleAdsEnabled,
+          googleAdsCustomerId: editData.googleAdsCustomerId?.trim() || null,
+          googleAdsTabLabel: editData.googleAdsTabLabel?.trim() || null,
         }),
       })
 
@@ -1563,6 +1572,53 @@ export default function AdminDashboard() {
                   <p className="text-xs text-gray-500">Default: Mon–Fri 9am–5pm, Sat–Sun closed</p>
                 </div>
               </Field>
+
+              {/* ── Google Ads ─────────────────────────────── */}
+              <div className="border-t border-gray-800 pt-5 mt-5">
+                <h3 className="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-4">Google Ads</h3>
+
+                <label className="flex items-center gap-3 cursor-pointer mb-4">
+                  <input
+                    type="checkbox"
+                    checked={editData.googleAdsEnabled}
+                    onChange={e => setEditData({ ...editData, googleAdsEnabled: e.target.checked })}
+                    className="w-5 h-5 rounded"
+                  />
+                  <span className="text-sm text-gray-300">Enable Google Ads Dashboard</span>
+                </label>
+
+                {editData.googleAdsEnabled && (
+                  <div className="space-y-4">
+                    <Field
+                      label="Google Ads Customer ID"
+                      hint="The client's Google Ads account ID — no dashes. Find in Google Ads under Account → Settings."
+                    >
+                      <input
+                        type="text"
+                        value={editData.googleAdsCustomerId}
+                        onChange={e => setEditData({ ...editData, googleAdsCustomerId: e.target.value })}
+                        placeholder="1234567890 (no dashes)"
+                        className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-white placeholder-gray-600"
+                      />
+                    </Field>
+
+                    <Field
+                      label="Dashboard Tab Label"
+                      hint="Custom label for the sidebar nav item. Default: Google Ads"
+                    >
+                      <input
+                        type="text"
+                        value={editData.googleAdsTabLabel}
+                        onChange={e => setEditData({ ...editData, googleAdsTabLabel: e.target.value })}
+                        placeholder="Google Ads"
+                        className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-white placeholder-gray-600"
+                      />
+                    </Field>
+
+                    <GoogleAdsSyncButton businessId={selectedBusiness.id} />
+                  </div>
+                )}
+              </div>
             </div>
 
             {message && (
@@ -2106,6 +2162,54 @@ function Field({ label, hint, children }: { label: string; hint?: string; childr
       <label className="block text-sm font-medium text-gray-300 mb-1.5">{label}</label>
       {hint && <p className="text-xs text-gray-500 mb-1.5">{hint}</p>}
       {children}
+    </div>
+  )
+}
+
+function GoogleAdsSyncButton({ businessId }: { businessId: string }) {
+  const [syncing, setSyncing] = useState(false)
+  const [result, setResult] = useState<string | null>(null)
+
+  async function handleSync() {
+    setSyncing(true)
+    setResult(null)
+    try {
+      const res = await fetch('/api/admin/google-ads/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ businessId }),
+      })
+      const data = await res.json()
+      if (res.ok) {
+        const errCount = data.errors?.length ?? 0
+        setResult(
+          errCount > 0
+            ? `⚠️ Synced ${data.synced} rows with ${errCount} error(s): ${data.errors[0]}`
+            : `✅ Synced ${data.synced} rows`
+        )
+      } else {
+        setResult(`❌ ${data.error || 'Sync failed'}`)
+      }
+    } catch {
+      setResult('❌ Network error')
+    } finally {
+      setSyncing(false)
+    }
+  }
+
+  return (
+    <div>
+      <button
+        type="button"
+        onClick={handleSync}
+        disabled={syncing}
+        className="px-4 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-700 disabled:text-gray-400 rounded-lg text-sm font-medium transition"
+      >
+        {syncing ? 'Syncing…' : 'Sync Ads Data'}
+      </button>
+      {result && (
+        <p className="text-sm mt-2">{result}</p>
+      )}
     </div>
   )
 }

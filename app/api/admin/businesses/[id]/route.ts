@@ -50,6 +50,9 @@ export async function PATCH(
       'maxMessagesPerConversation',
       'ownerEmail',
       'ownerPhone',
+      'googleAdsEnabled',
+      'googleAdsCustomerId',
+      'googleAdsTabLabel',
     ]
 
     const data: Record<string, unknown> = {}
