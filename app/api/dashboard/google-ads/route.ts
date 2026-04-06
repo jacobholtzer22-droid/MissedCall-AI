@@ -93,6 +93,11 @@ export async function GET(request: NextRequest) {
     }))
     .sort((a, b) => b.cost - a.cost) // highest spend first
 
+  // Most recent createdAt across all snapshots = last sync time
+  const lastSyncedAt = snapshots.length > 0
+    ? snapshots.reduce((latest, s) => s.createdAt > latest ? s.createdAt : latest, snapshots[0]!.createdAt).toISOString()
+    : null
+
   return NextResponse.json({
     totals: {
       ...totals,
@@ -101,5 +106,6 @@ export async function GET(request: NextRequest) {
     },
     daily,
     campaigns,
+    lastSyncedAt,
   })
 }

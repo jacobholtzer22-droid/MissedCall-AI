@@ -1043,7 +1043,8 @@ async function sendSMS(business, to, text)
 
 | Route | Method | Purpose |
 |---|---|---|
-| `/api/dashboard/google-ads` | GET | Google Ads data for business. Query: `startDate`, `endDate`, `groupBy` (day\|campaign). Returns `{ totals, daily, campaigns }`. Default last 30 days. |
+| `/api/dashboard/google-ads` | GET | Google Ads data for business. Query: `startDate`, `endDate`, `groupBy` (day\|campaign). Returns `{ totals, daily, campaigns, lastSyncedAt }`. Default last 30 days. |
+| `/api/dashboard/google-ads/sync` | POST | Trigger Google Ads sync for the user's business. Requires `googleAdsEnabled` + `googleAdsCustomerId`. Returns `{ success, rowsSynced, errors, lastSyncedAt }`. |
 
 ### Contact / Book Demo
 
@@ -1717,7 +1718,8 @@ syncAllBusinessAds(): Promise<{ synced, errors }>
 | Route | Method | Auth | Purpose |
 |---|---|---|---|
 | `/api/admin/google-ads/sync` | POST | Admin only | Sync Google Ads data. Body: `{ businessId?: string }`. If businessId provided, syncs one; otherwise syncs all enabled businesses. Returns `{ synced, errors }`. |
-| `/api/dashboard/google-ads` | GET | `requireDashboardBusiness()` | Returns aggregated ad data. Query: `startDate`, `endDate`, `groupBy` (day\|campaign). Returns `{ totals, daily, campaigns }`. Default: last 30 days. |
+| `/api/dashboard/google-ads` | GET | `requireDashboardBusiness()` | Returns aggregated ad data. Query: `startDate`, `endDate`, `groupBy` (day\|campaign). Returns `{ totals, daily, campaigns, lastSyncedAt }`. Default: last 30 days. `lastSyncedAt` is the most recent `createdAt` across all snapshots in range. |
+| `/api/dashboard/google-ads/sync` | POST | `requireDashboardBusiness()` | Triggers Google Ads sync for the user's business. Requires `googleAdsEnabled=true` and `googleAdsCustomerId` set (400 otherwise). Returns `{ success, rowsSynced, errors, lastSyncedAt }`. |
 
 ### Dashboard Page: `/dashboard/ads`
 
@@ -1727,6 +1729,8 @@ syncAllBusinessAds(): Promise<{ synced, errors }>
 
 **Features:**
 - Date range picker: Last 7 Days, Last 30 Days, Last 90 Days, Custom
+- "Refresh Data" button (RefreshCw icon, spins while syncing): POSTs to `/api/dashboard/google-ads/sync`, then refetches dashboard data
+- "Last updated: [relative time]" label next to refresh button — uses most recent snapshot `createdAt` from GET response, updates to current time after manual refresh
 - 6 summary cards: Total Spend, Total Clicks, Impressions, Avg CTR, Conversions, Cost/Conversion
 - Daily trend line chart (recharts): dual-axis with Spend (left, $) and Clicks (right)
 - Campaign breakdown table: campaign name, impressions, clicks, CTR, spend, conversions, cost/conversion

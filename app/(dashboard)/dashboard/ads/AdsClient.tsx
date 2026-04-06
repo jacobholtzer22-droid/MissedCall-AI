@@ -1,7 +1,7 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
-import { Megaphone, DollarSign, MousePointerClick, Eye, Target, TrendingUp } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { Megaphone, DollarSign, MousePointerClick, Eye, Target, TrendingUp, RefreshCw } from 'lucide-react'
 import {
   LineChart,
   Line,
@@ -47,6 +47,7 @@ type AdsResponse = {
   totals: Totals
   daily: DailyRow[]
   campaigns: CampaignRow[]
+  lastSyncedAt: string | null
 }
 
 const RANGE_OPTIONS: { label: string; value: RangePreset }[] = [
@@ -85,6 +86,23 @@ function formatShortDate(dateStr: string): string {
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
 }
 
+function formatRelativeTimestamp(iso: string): string {
+  const d = new Date(iso)
+  const now = Date.now()
+  const diffMs = now - d.getTime()
+  const diffSec = Math.floor(diffMs / 1000)
+  const diffMin = Math.floor(diffSec / 60)
+  const diffHr = Math.floor(diffMin / 60)
+
+  if (diffMs < 0) return 'just now'
+  if (diffSec < 60) return 'just now'
+  if (diffMin === 1) return '1 minute ago'
+  if (diffMin < 60) return `${diffMin} minutes ago`
+  if (diffHr === 1) return '1 hour ago'
+  if (diffHr < 24) return `${diffHr} hours ago`
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
+}
+
 export function AdsClient() {
   const [range, setRange] = useState<RangePreset>('30d')
   const [customStart, setCustomStart] = useState('')
@@ -92,27 +110,46 @@ export function AdsClient() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [data, setData] = useState<AdsResponse | null>(null)
+  const [syncing, setSyncing] = useState(false)
+  const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null)
+
+  const fetchData = useCallback(async () => {
+    setLoading(true)
+    setError(null)
+    try {
+      const params = rangeToParams(range, customStart, customEnd)
+      const res = await fetch(`/api/dashboard/google-ads?${params}`)
+      if (!res.ok) throw new Error('Failed to load ad data')
+      const json = (await res.json()) as AdsResponse
+      setData(json)
+      if (json.lastSyncedAt) setLastSyncedAt(json.lastSyncedAt)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Something went wrong')
+    } finally {
+      setLoading(false)
+    }
+  }, [range, customStart, customEnd])
 
   useEffect(() => {
     let cancelled = false
-    async function load() {
-      setLoading(true)
-      setError(null)
-      try {
-        const params = rangeToParams(range, customStart, customEnd)
-        const res = await fetch(`/api/dashboard/google-ads?${params}`)
-        if (!res.ok) throw new Error('Failed to load ad data')
-        const json = await res.json()
-        if (!cancelled) setData(json as AdsResponse)
-      } catch (err) {
-        if (!cancelled) setError(err instanceof Error ? err.message : 'Something went wrong')
-      } finally {
-        if (!cancelled) setLoading(false)
-      }
-    }
-    void load()
+    void fetchData().then(() => { if (cancelled) { /* noop */ } })
     return () => { cancelled = true }
-  }, [range, customStart, customEnd])
+  }, [fetchData])
+
+  async function handleRefresh() {
+    setSyncing(true)
+    try {
+      const res = await fetch('/api/dashboard/google-ads/sync', { method: 'POST' })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error || 'Sync failed')
+      setLastSyncedAt(json.lastSyncedAt || new Date().toISOString())
+      await fetchData()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Sync failed')
+    } finally {
+      setSyncing(false)
+    }
+  }
 
   const chartData = useMemo(() => {
     if (!data) return []
@@ -135,30 +172,48 @@ export function AdsClient() {
             Campaign performance and spend tracking.
           </p>
         </div>
-        <div className="flex flex-wrap items-center gap-1 md:inline-flex bg-white rounded-full border border-gray-200 p-1">
-          {RANGE_OPTIONS.map((opt) => (
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="flex flex-wrap items-center gap-1 md:inline-flex bg-white rounded-full border border-gray-200 p-1">
+            {RANGE_OPTIONS.map((opt) => (
+              <button
+                key={opt.value}
+                onClick={() => setRange(opt.value)}
+                className={`px-4 py-1.5 rounded-full text-sm font-medium transition ${
+                  range === opt.value
+                    ? 'bg-blue-600 text-white shadow-sm'
+                    : 'text-gray-600 hover:bg-gray-100'
+                }`}
+              >
+                {opt.label}
+              </button>
+            ))}
             <button
-              key={opt.value}
-              onClick={() => setRange(opt.value)}
+              onClick={() => setRange('custom')}
               className={`px-4 py-1.5 rounded-full text-sm font-medium transition ${
-                range === opt.value
+                range === 'custom'
                   ? 'bg-blue-600 text-white shadow-sm'
                   : 'text-gray-600 hover:bg-gray-100'
               }`}
             >
-              {opt.label}
+              Custom
             </button>
-          ))}
-          <button
-            onClick={() => setRange('custom')}
-            className={`px-4 py-1.5 rounded-full text-sm font-medium transition ${
-              range === 'custom'
-                ? 'bg-blue-600 text-white shadow-sm'
-                : 'text-gray-600 hover:bg-gray-100'
-            }`}
-          >
-            Custom
-          </button>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleRefresh}
+              disabled={syncing}
+              title="Refresh data from Google Ads"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-200 bg-white text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 transition"
+            >
+              <RefreshCw className={`h-4 w-4 ${syncing ? 'animate-spin' : ''}`} />
+              {syncing ? 'Syncing…' : 'Refresh Data'}
+            </button>
+            {lastSyncedAt && (
+              <span className="text-xs text-gray-400">
+                Last updated: {formatRelativeTimestamp(lastSyncedAt)}
+              </span>
+            )}
+          </div>
         </div>
       </div>
 
