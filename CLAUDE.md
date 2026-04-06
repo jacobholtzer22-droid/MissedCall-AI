@@ -1006,6 +1006,7 @@ async function sendSMS(business, to, text)
 | `/api/dashboard/contacts/[id]/activities` | GET | Activity timeline |
 | `/api/dashboard/contacts/import` | POST | Bulk import. Form data: `file` (Excel/CSV). Calls `parseContactFile()` → `findOrCreateContact()` |
 | `/api/dashboard/voicemails` | GET | Conversations with `recordingUrl != null` |
+| `/api/dashboard/voicemails/[id]` | DELETE | Clear `recordingUrl` + `voicemailTranscription` on conversation (soft-delete voicemail). Returns `{ success: true }`. 404 if not found or no recording. |
 | `/api/dashboard/screened-calls` | GET | ScreenedCall records |
 | `/api/dashboard/website-leads` | GET | WebsiteLead records |
 | `/api/dashboard/analytics` | GET | TelnyxUsageRecord aggregated by day |
@@ -1412,6 +1413,7 @@ syncAllBusinessAds(): Promise<{ synced, errors }>
 - List conversations with `recordingUrl`
 - Inline audio player for each voicemail
 - Shows transcription if available
+- Delete button (Trash2 icon) per voicemail — confirmation dialog, DELETEs to `/api/dashboard/voicemails/[id]`, removes from list client-side, shows toast
 
 **`app/(dashboard)/dashboard/blocked-calls/page.tsx`**
 - ScreenedCall records (spam-filtered calls)
