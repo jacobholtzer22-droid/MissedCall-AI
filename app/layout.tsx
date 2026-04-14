@@ -16,10 +16,10 @@ const inter = Inter({ subsets: ['latin'] })
 // SEO metadata
 export const metadata: Metadata = {
   title: {
-    default: 'Align & Acquire — Helping Small Business Growth',
+    default: 'Align & Acquire — Catalyzing Business Growth',
     template: '%s | Align & Acquire',
   },
-  description: 'Helping small service businesses capture more leads and grow with AI-powered communication tools.',
+  description: 'Helping service businesses capture more leads and grow with AI-powered communication tools.',
 }
 
 export default function RootLayout({
