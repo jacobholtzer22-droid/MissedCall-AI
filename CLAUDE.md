@@ -1330,6 +1330,19 @@ syncAllBusinessAds(): Promise<{ synced, errors }>
 // Find all businesses with googleAdsEnabled + googleAdsCustomerId → syncGoogleAdsData each.
 ```
 
+### `lib/email-format.ts`
+```typescript
+bodyContainsHtml(text: string): boolean
+// Regex check for any tag-like token. Used by compose client to flag bodyIsHtml.
+
+plainTextToEmailHtml(text: string): string
+// HTML-escapes the body and wraps it in a <div style="white-space: pre-wrap; ...">
+// so newlines and runs of spaces survive rendering in email clients.
+// Shared by the compose preview (EmailComposeClient.tsx) and the send route
+// (/api/dashboard/emails) so the preview matches what Resend actually delivers.
+// Only applied when bodyIsHtml === false — HTML templates are sent as-is.
+```
+
 ---
 
 ## 9. Frontend Pages & Components

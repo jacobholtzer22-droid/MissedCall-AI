@@ -6,6 +6,7 @@ import { NextResponse } from 'next/server'
 import { Resend } from 'resend'
 import { db } from '@/lib/db'
 import { requireDashboardBusiness } from '@/lib/dashboard-auth'
+import { plainTextToEmailHtml } from '@/lib/email-format'
 
 const BATCH_SIZE = 50
 
@@ -147,11 +148,13 @@ export async function POST(request: Request) {
   }
 
   // Build final HTML — if the user sent a full HTML template, use it as-is.
-  // Only prepend images for plain-text bodies wrapped in basic markup.
+  // Otherwise wrap plain text so newlines/spaces survive in email clients.
   let fullHtml: string
   if (body.bodyIsHtml) {
     fullHtml = htmlBody
   } else {
+    const plainSource = body.body?.trim() ?? ''
+    const renderedBody = plainSource ? plainTextToEmailHtml(plainSource) : '<p>No content.</p>'
     const imagesHtml = sortedImages.length > 0
       ? sortedImages
           .map(
@@ -160,7 +163,7 @@ export async function POST(request: Request) {
           )
           .join('')
       : ''
-    fullHtml = imagesHtml ? `${imagesHtml}${htmlBody}` : htmlBody
+    fullHtml = imagesHtml ? `${imagesHtml}${renderedBody}` : renderedBody
   }
 
   // Send in batches via Resend

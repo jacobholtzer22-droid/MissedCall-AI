@@ -3,6 +3,7 @@
 import { useEffect, useState, useRef, useCallback } from 'react'
 import Link from 'next/link'
 import { ArrowLeft, Upload, X, ChevronUp, ChevronDown, Copy, Check, Code, Eye } from 'lucide-react'
+import { bodyContainsHtml, plainTextToEmailHtml } from '@/lib/email-format'
 
 type Tag = { id: string; name: string; color: string | null }
 type Contact = { id: string; name: string | null; email: string | null; status: string }
@@ -170,10 +171,6 @@ export function EmailComposeClient() {
     setManualContactIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]))
   }
 
-  function bodyContainsHtml(text: string): boolean {
-    return /<[a-z][\s\S]*?>/i.test(text)
-  }
-
   function copyImageUrl(url: string) {
     navigator.clipboard.writeText(url)
     setCopiedUrl(url)
@@ -189,15 +186,21 @@ export function EmailComposeClient() {
     doc.close()
   }
 
+  function renderBodyForPreview(raw: string): string {
+    const trimmed = raw.trim()
+    if (!trimmed) return ''
+    return bodyContainsHtml(trimmed) ? trimmed : plainTextToEmailHtml(trimmed)
+  }
+
   useEffect(() => {
     if (editorMode === 'visual') {
-      writeToIframe(iframeRef.current, body)
+      writeToIframe(iframeRef.current, renderBodyForPreview(body))
     }
   }, [editorMode, body])
 
   useEffect(() => {
     if (showPreview) {
-      writeToIframe(previewIframeRef.current, body)
+      writeToIframe(previewIframeRef.current, renderBodyForPreview(body))
     }
   }, [showPreview, body])
 
