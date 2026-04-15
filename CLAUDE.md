@@ -1014,6 +1014,7 @@ async function sendSMS(business, to, text)
 | `/api/dashboard/jobs` | GET/POST | List / create jobs |
 | `/api/dashboard/jobs/[id]` | PATCH/DELETE | Update / delete job |
 | `/api/dashboard/emails` | GET | EmailCampaign list |
+| `/api/dashboard/emails/[id]` | GET | Single EmailCampaign (scoped to business). Returns `{ campaign: { id, senderName, subject, body, status, recipientCount, sentAt, createdAt } }`. 404 if not found. Used by compose page "Reuse as Template" flow. |
 | `/api/appointments` | GET | List appointments |
 | `/api/bookings/[id]` | GET | Appointment detail |
 | `/api/bookings/[id]/cancel` | POST | Cancel: update status='cancelled', delete Google Calendar event |
@@ -1442,7 +1443,11 @@ plainTextToEmailHtml(text: string): string
 - Date range picker, per-business breakdown
 
 **`app/(dashboard)/dashboard/emails/page.tsx`** — `EmailsClient`
-- EmailCampaign list with status, recipient count, sent date
+- "Sent Campaigns" section — lists campaigns where `status === 'sent'`, sorted by `sentAt` desc
+- Columns: Subject, Sent (timestamp), Recipients, Actions
+- "Reuse as Template" button per row links to `/dashboard/emails/new?templateId=[campaignId]`
+- Draft/sending campaigns are intentionally hidden for now
+- "New Campaign" button in the header links to `/dashboard/emails/new`
 
 **`app/(dashboard)/dashboard/emails/new/page.tsx`** — `EmailComposeClient`
 - Subject line input
@@ -1451,6 +1456,7 @@ plainTextToEmailHtml(text: string): string
 - Recipient selection from contact list
 - Preview → POST `/api/dashboard/messages/campaign/preview`
 - Send → POST `/api/dashboard/messages/campaign`
+- **Reuse as Template**: when URL has `?templateId=<id>`, the client calls GET `/api/dashboard/emails/[id]` on mount and pre-fills `subject` + `body` from that campaign. Recipients, sender name, and images are intentionally NOT pre-filled — the user picks fresh recipients each time. Header copy switches to "Starting from a previous campaign. Recipients reset — pick them below." while in this mode.
 
 **`app/(dashboard)/dashboard/settings/page.tsx`** — `SettingsFormWithIndustry`
 - Business name, slug, timezone, businessType

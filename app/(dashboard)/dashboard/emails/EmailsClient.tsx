@@ -1,8 +1,8 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
-import { Mailbox, Plus } from 'lucide-react'
+import { Mailbox, Plus, Copy } from 'lucide-react'
 
 type Campaign = {
   id: string
@@ -27,6 +27,16 @@ export function EmailsClient() {
       .finally(() => setLoading(false))
   }, [])
 
+  const sentCampaigns = useMemo(() => {
+    return campaigns
+      .filter((c) => c.status === 'sent')
+      .sort((a, b) => {
+        const aTime = a.sentAt ? new Date(a.sentAt).getTime() : new Date(a.createdAt).getTime()
+        const bTime = b.sentAt ? new Date(b.sentAt).getTime() : new Date(b.createdAt).getTime()
+        return bTime - aTime
+      })
+  }, [campaigns])
+
   return (
     <div className="space-y-6 w-full">
       <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
@@ -43,13 +53,20 @@ export function EmailsClient() {
         </Link>
       </div>
 
+      <div className="space-y-2">
+        <h2 className="text-lg font-semibold text-gray-900">Sent Campaigns</h2>
+        <p className="text-sm text-gray-500">
+          Reuse any previously sent campaign as a starting point for a new one.
+        </p>
+      </div>
+
       <div className="bg-white rounded-xl border border-gray-200 overflow-hidden w-full">
         {loading ? (
           <div className="py-16 text-center text-gray-500">Loading...</div>
-        ) : campaigns.length === 0 ? (
+        ) : sentCampaigns.length === 0 ? (
           <div className="py-16 text-center">
             <Mailbox className="h-12 w-12 text-gray-300 mx-auto mb-4" />
-            <p className="text-gray-500">No campaigns yet.</p>
+            <p className="text-gray-500">No sent campaigns yet.</p>
             <Link
               href="/dashboard/emails/new"
               className="mt-4 inline-flex items-center justify-center min-h-[44px] px-4 py-3 text-gray-900 font-medium rounded-lg hover:bg-gray-100"
@@ -63,27 +80,27 @@ export function EmailsClient() {
               <thead>
                 <tr className="border-b border-gray-200 bg-gray-50">
                   <th className="text-left py-3 px-4 text-sm font-medium text-gray-600">Subject</th>
-                  <th className="text-left py-3 px-4 text-sm font-medium text-gray-600">Status</th>
-                  <th className="text-left py-3 px-4 text-sm font-medium text-gray-600">Recipients</th>
                   <th className="text-left py-3 px-4 text-sm font-medium text-gray-600">Sent</th>
+                  <th className="text-left py-3 px-4 text-sm font-medium text-gray-600">Recipients</th>
+                  <th className="text-right py-3 px-4 text-sm font-medium text-gray-600">Actions</th>
                 </tr>
               </thead>
               <tbody>
-                {campaigns.map((c) => (
+                {sentCampaigns.map((c) => (
                   <tr key={c.id} className="border-b border-gray-100 hover:bg-gray-50">
                     <td className="py-3 px-4 font-medium text-gray-900">{c.subject}</td>
-                    <td className="py-3 px-4">
-                      <span
-                        className={`inline-flex px-2 py-0.5 rounded-full text-xs font-medium ${
-                          c.status === 'sent' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'
-                        }`}
-                      >
-                        {c.status}
-                      </span>
-                    </td>
-                    <td className="py-3 px-4 text-sm text-gray-600">{c.recipientCount}</td>
                     <td className="py-3 px-4 text-sm text-gray-600">
                       {c.sentAt ? new Date(c.sentAt).toLocaleString() : '—'}
+                    </td>
+                    <td className="py-3 px-4 text-sm text-gray-600">{c.recipientCount}</td>
+                    <td className="py-3 px-4 text-right">
+                      <Link
+                        href={`/dashboard/emails/new?templateId=${c.id}`}
+                        className="inline-flex items-center gap-1.5 px-3 py-2 min-h-[36px] text-sm font-medium text-gray-700 border border-gray-200 rounded-lg hover:bg-gray-100 transition"
+                      >
+                        <Copy className="h-3.5 w-3.5" />
+                        Reuse as Template
+                      </Link>
                     </td>
                   </tr>
                 ))}

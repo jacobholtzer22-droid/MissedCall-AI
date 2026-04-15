@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useRef, useCallback } from 'react'
 import Link from 'next/link'
+import { useSearchParams } from 'next/navigation'
 import { ArrowLeft, Upload, X, ChevronUp, ChevronDown, Copy, Check, Code, Eye } from 'lucide-react'
 import { bodyContainsHtml, plainTextToEmailHtml } from '@/lib/email-format'
 
@@ -17,9 +18,12 @@ const RECIPIENT_OPTIONS = [
 ] as const
 
 export function EmailComposeClient() {
+  const searchParams = useSearchParams()
+  const templateId = searchParams?.get('templateId') ?? null
   const [senderName, setSenderName] = useState('')
   const [subject, setSubject] = useState('')
   const [body, setBody] = useState('')
+  const [templateLoading, setTemplateLoading] = useState<boolean>(Boolean(templateId))
   const [images, setImages] = useState<CampaignImage[]>([])
   const [uploading, setUploading] = useState(false)
   const [dragOver, setDragOver] = useState(false)
@@ -53,6 +57,33 @@ export function EmailComposeClient() {
       .then((data) => setContacts(data.contacts ?? []))
       .catch(() => {})
   }, [])
+
+  useEffect(() => {
+    if (!templateId) return
+    let cancelled = false
+    setTemplateLoading(true)
+    fetch(`/api/dashboard/emails/${templateId}`)
+      .then(async (r) => {
+        if (!r.ok) throw new Error('Failed to load template')
+        return r.json()
+      })
+      .then((data) => {
+        if (cancelled) return
+        const campaign = data?.campaign
+        if (!campaign) return
+        setSubject(campaign.subject ?? '')
+        setBody(campaign.body ?? '')
+      })
+      .catch(() => {
+        if (!cancelled) setError('Could not load template. Starting with a blank campaign.')
+      })
+      .finally(() => {
+        if (!cancelled) setTemplateLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [templateId])
 
   const contactsWithEmail = contacts.filter((c) => c.email)
 
@@ -215,7 +246,13 @@ export function EmailComposeClient() {
         </Link>
         <div className="min-w-0 flex-1">
           <h1 className="text-2xl font-bold text-gray-900">New Campaign</h1>
-          <p className="text-gray-500 text-sm mt-0.5">Compose and send an email to your contacts</p>
+          <p className="text-gray-500 text-sm mt-0.5">
+            {templateLoading
+              ? 'Loading template...'
+              : templateId
+                ? 'Starting from a previous campaign. Recipients reset — pick them below.'
+                : 'Compose and send an email to your contacts'}
+          </p>
         </div>
       </div>
 
