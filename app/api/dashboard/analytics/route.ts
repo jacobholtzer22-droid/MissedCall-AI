@@ -96,7 +96,8 @@ export async function GET(request: Request) {
       previousTotalCallsQuery = previousDateFilter
         ? db.screenedCall.count({ where: { businessId, createdAt: previousDateFilter } })
         : Promise.resolve(0)
-    } else if (features.totalCallsMode === 'forwarded') {
+    } else {
+      // 'calls' mode: count all inbound call-originated conversations
       totalCallsQuery = db.conversation.count({
         where: {
           businessId,
@@ -109,9 +110,6 @@ export async function GET(request: Request) {
             where: { businessId, callSid: { not: null }, createdAt: previousDateFilter },
           })
         : Promise.resolve(0)
-    } else {
-      totalCallsQuery = Promise.resolve(0)
-      previousTotalCallsQuery = Promise.resolve(0)
     }
 
     const [

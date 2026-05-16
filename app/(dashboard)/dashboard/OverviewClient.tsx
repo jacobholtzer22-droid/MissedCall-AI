@@ -34,7 +34,7 @@ type Features = {
   hasCalendar: boolean
   showScreeningCards: boolean
   showAiCards: boolean
-  totalCallsMode: 'screened' | 'forwarded' | 'none'
+  totalCallsMode: 'screened' | 'calls'
   googleAds: boolean
 }
 
@@ -395,7 +395,7 @@ export function OverviewClient({
           <MetricCard
             title="Total Calls"
             value={analytics?.totalCalls ?? 0}
-            description={`Screened calls ${periodLabel.toLowerCase()}`}
+            description={`${features.totalCallsMode === 'screened' ? 'Screened calls' : 'Inbound calls'} ${periodLabel.toLowerCase()}`}
             icon={Phone}
             color="blue"
             delta={formatDelta(analytics?.totalCalls ?? 0, analytics?.previousTotalCalls ?? null)}

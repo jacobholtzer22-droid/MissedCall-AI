@@ -7,7 +7,7 @@ export type BusinessFeatures = {
   hasCalendar: boolean
   showScreeningCards: boolean
   showAiCards: boolean
-  totalCallsMode: 'screened' | 'forwarded' | 'none'
+  totalCallsMode: 'screened' | 'calls'
 }
 
 type BusinessLike = {
@@ -31,14 +31,7 @@ export function getBusinessFeatures(business: BusinessLike): BusinessFeatures {
   const showScreeningCards = hasAnyScreening
   const showAiCards = hasMissedCallAi
 
-  let totalCallsMode: 'screened' | 'forwarded' | 'none'
-  if (hasAnyScreening) {
-    totalCallsMode = 'screened'
-  } else if (hasForwarding) {
-    totalCallsMode = 'forwarded'
-  } else {
-    totalCallsMode = 'none'
-  }
+  const totalCallsMode: 'screened' | 'calls' = hasAnyScreening ? 'screened' : 'calls'
 
   return {
     hasSpamFilter,

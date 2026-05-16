@@ -39,7 +39,7 @@ type AnalyticsFeatures = {
   hasCalendar: boolean
   showScreeningCards: boolean
   showAiCards: boolean
-  totalCallsMode: 'screened' | 'forwarded' | 'none'
+  totalCallsMode: 'screened' | 'calls'
 }
 
 type AnalyticsResponse = {
@@ -55,7 +55,7 @@ type AnalyticsResponse = {
   leadSources: LeadSources
   recentActivity: RecentActivityItem[]
   features?: AnalyticsFeatures
-  totalCallsMode?: 'screened' | 'forwarded' | 'none'
+  totalCallsMode?: 'screened' | 'calls'
 }
 
 const PERIOD_OPTIONS: { label: string; value: AnalyticsPeriod }[] = [
@@ -236,21 +236,19 @@ export function AnalyticsClient() {
 
       {/* Metric cards: 1 col very small, 2 cols small, 3 cols desktop */}
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4 md:gap-6">
-        {(loading || (data?.totalCallsMode ?? 'screened') !== 'none') && (
-          <MetricCard
+        <MetricCard
             title="Total Calls"
             value={data?.totalCalls ?? 0}
             description={
-              data?.totalCallsMode === 'forwarded'
-                ? `Inbound calls ${periodLabel.toLowerCase()}`
-                : `Screened calls ${periodLabel.toLowerCase()}`
+              data?.totalCallsMode === 'screened'
+                ? `Screened calls ${periodLabel.toLowerCase()}`
+                : `Inbound calls ${periodLabel.toLowerCase()}`
             }
             icon={Phone}
             color="blue"
             delta={formatDelta(data?.totalCalls ?? 0, data?.previousTotalCalls ?? null)}
             loading={loading}
           />
-        )}
         {(loading || data?.features?.hasAnyScreening) && (
           <MetricCard
             title="Calls Blocked (Spam)"
