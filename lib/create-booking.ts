@@ -158,6 +158,32 @@ export async function createBooking(params: CreateBookingParams): Promise<Create
     return { ok: false, error: 'You already have a quote visit scheduled for this service at this time', status: 409 }
   }
 
+  // DB-level time-overlap check: runs regardless of skipSlotVerification so SMS and website
+  // flows can't race each other into the same slot.
+  const slotEnd = new Date(startDate.getTime() + slotDuration * 60 * 1000)
+  const overlapWindowMs = 4 * 60 * 60 * 1000 // 4h upper bound on appointment duration
+  const candidateAppts = await db.appointment.findMany({
+    where: {
+      businessId: business.id,
+      status: { not: 'cancelled' },
+      scheduledAt: {
+        gte: new Date(startDate.getTime() - overlapWindowMs),
+        lt: slotEnd,
+      },
+    },
+    select: { scheduledAt: true, duration: true, customerPhone: true, serviceType: true },
+  })
+  const conflictingAppt = candidateAppts.find((appt) => {
+    const apptEnd = new Date(appt.scheduledAt.getTime() + appt.duration * 60 * 1000)
+    const overlaps = appt.scheduledAt.getTime() < slotEnd.getTime() && apptEnd.getTime() > startDate.getTime()
+    if (!overlaps) return false
+    // Skip: same customer+service is already caught by the duplicate-booking check above
+    return !(appt.customerPhone === phone && appt.serviceType === ownerFacingService)
+  })
+  if (conflictingAppt) {
+    return { ok: false, error: 'This time slot was just booked. Please pick a different time.', status: 409 }
+  }
+
   if (!skipSlotVerification && business.googleCalendarConnected) {
     const dateStr = startDate.toLocaleDateString('en-CA', { timeZone: tz })
     const availableSlots = await getAvailableSlots(business.id, dateStr, dateStr)

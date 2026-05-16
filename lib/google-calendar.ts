@@ -66,7 +66,24 @@ export async function getValidAccessToken(businessId: string): Promise<string | 
     refresh_token: business.googleRefreshToken,
   })
 
-  const { credentials } = await oauth2.refreshAccessToken()
+  // googleapis types declare refreshAccessToken() as void but it returns credentials at runtime
+  type RefreshResult = { credentials: { access_token?: string | null; refresh_token?: string | null } }
+  let tokenResult: RefreshResult
+  try {
+    tokenResult = await oauth2.refreshAccessToken() as unknown as RefreshResult
+  } catch (error) {
+    console.error('[CALENDAR] OAuth token refresh failed for business', businessId, error)
+    try {
+      await db.business.update({
+        where: { id: businessId },
+        data: { googleCalendarConnected: false },
+      })
+    } catch (e) {
+      console.error('[CALENDAR] Failed to flag business as disconnected:', e)
+    }
+    throw error
+  }
+  const { credentials } = tokenResult
 
   if (credentials.access_token) {
     await db.business.update({
@@ -278,6 +295,30 @@ async function getAvailableSlotsInternal(
   } catch (err) {
     googleCalendarError = err instanceof Error ? err.message : String(err)
     debug.googleCalendarError = googleCalendarError
+  }
+
+  // DB safety net: merge confirmed DB appointments into busy times so already-booked slots
+  // are blocked even when Google Calendar is unreachable or the OAuth token is revoked.
+  try {
+    const dbAppointments = await db.appointment.findMany({
+      where: {
+        businessId,
+        status: { not: 'cancelled' },
+        scheduledAt: {
+          gte: new Date(timeMin),
+          lte: new Date(timeMax),
+        },
+      },
+      select: { scheduledAt: true, duration: true },
+    })
+    for (const appt of dbAppointments) {
+      busy.push({
+        start: appt.scheduledAt.toISOString(),
+        end: addMinutes(appt.scheduledAt, appt.duration).toISOString(),
+      })
+    }
+  } catch (dbErr) {
+    console.error('[google-calendar] Failed to load DB appointments for busy merge:', dbErr)
   }
 
   // Expand busy periods by buffer: can't start a slot until buffer minutes after an event ends
