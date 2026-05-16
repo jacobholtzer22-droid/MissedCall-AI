@@ -46,3 +46,4 @@ next-env.d.ts
 coverage/
 .nyc_output/
 .env*.local
+.claude/
