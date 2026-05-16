@@ -26,10 +26,15 @@ import { formatRelativeTime, formatPhoneNumber } from '@/lib/utils'
 import { cn } from '@/lib/utils'
 
 type Features = {
-  missedCallAi: boolean
-  spamScreening: boolean
-  spamFilter: boolean
-  calendar: boolean
+  hasSpamFilter: boolean
+  hasIvrScreener: boolean
+  hasAnyScreening: boolean
+  hasMissedCallAi: boolean
+  hasForwarding: boolean
+  hasCalendar: boolean
+  showScreeningCards: boolean
+  showAiCards: boolean
+  totalCallsMode: 'screened' | 'forwarded' | 'none'
   googleAds: boolean
 }
 
@@ -71,6 +76,7 @@ type ScreenedCallRow = {
 type VoicemailRow = {
   conversationId: string
   callerPhone: string
+  contactName: string | null
   recordingUrl: string | null
   voicemailTranscription: string | null
   createdAt: string
@@ -168,7 +174,13 @@ function formatNumber(n: number): string {
   return new Intl.NumberFormat('en-US').format(n)
 }
 
-export function OverviewClient({ features }: { features: Features }) {
+export function OverviewClient({
+  features,
+  initialVoicemails = [],
+}: {
+  features: Features
+  initialVoicemails?: VoicemailRow[]
+}) {
   const [period, setPeriod] = useState<AnalyticsPeriod>('month')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -184,8 +196,6 @@ export function OverviewClient({ features }: { features: Features }) {
 
   // Google Ads (only fetched if ads enabled)
   const [adsTotals, setAdsTotals] = useState<AdsTotals | null>(null)
-
-  const hasSpam = features.spamScreening || features.spamFilter
 
   useEffect(() => {
     let cancelled = false
@@ -204,7 +214,7 @@ export function OverviewClient({ features }: { features: Features }) {
     )
 
     // Spam screening data
-    if (hasSpam) {
+    if (features.hasAnyScreening) {
       fetches.push(
         fetch('/api/dashboard/screened-calls?days=1')
           .then((r) => (r.ok ? r.json() : Promise.reject(new Error('Failed to load screened calls'))))
@@ -215,8 +225,8 @@ export function OverviewClient({ features }: { features: Features }) {
             }
           })
       )
-      // Voicemails for non-AI businesses
-      if (!features.missedCallAi) {
+      // Voicemails for non-AI businesses (today count)
+      if (!features.hasMissedCallAi) {
         fetches.push(
           fetch('/api/dashboard/voicemails')
             .then((r) => (r.ok ? r.json() : Promise.reject(new Error('Failed to load voicemails'))))
@@ -228,7 +238,7 @@ export function OverviewClient({ features }: { features: Features }) {
     }
 
     // Upcoming appointments
-    if (features.calendar) {
+    if (features.hasCalendar) {
       fetches.push(
         fetch('/api/appointments')
           .then((r) => (r.ok ? r.json() : Promise.reject(new Error('Failed to load appointments'))))
@@ -269,7 +279,7 @@ export function OverviewClient({ features }: { features: Features }) {
       })
 
     return () => { cancelled = true }
-  }, [period, hasSpam, features.missedCallAi, features.calendar, features.googleAds])
+  }, [period, features.hasAnyScreening, features.hasMissedCallAi, features.hasCalendar, features.googleAds])
 
   const effectiveLeadsCaptured = useMemo(() => {
     if (!analytics) return 0
@@ -333,7 +343,7 @@ export function OverviewClient({ features }: { features: Features }) {
       )}
 
       {/* ── Spam Screening Stats ── */}
-      {hasSpam && (
+      {features.hasAnyScreening && (
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 md:gap-6">
           <div className="rounded-xl border border-red-200 bg-red-50 p-6">
             <div className="flex items-center justify-between">
@@ -361,7 +371,7 @@ export function OverviewClient({ features }: { features: Features }) {
               </div>
             </div>
           </div>
-          {!features.missedCallAi && (
+          {!features.hasMissedCallAi && (
             <div className="rounded-xl border border-blue-200 bg-blue-50 p-6">
               <div className="flex items-center justify-between">
                 <div>
@@ -380,7 +390,7 @@ export function OverviewClient({ features }: { features: Features }) {
       )}
 
       {/* ── Missed Call AI / Lead Capture Stats ── */}
-      {features.missedCallAi && (
+      {features.hasMissedCallAi && (
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4 md:gap-6">
           <MetricCard
             title="Total Calls"
@@ -417,7 +427,7 @@ export function OverviewClient({ features }: { features: Features }) {
             loading={loading}
             emptyCta={(analytics?.websiteLeads ?? 0) === 0 ? 'Get a website to capture more leads' : undefined}
           />
-          {hasSpam && (
+          {features.hasAnyScreening && (
             <>
               <MetricCard
                 title="Calls Blocked (Spam)"
@@ -498,7 +508,7 @@ export function OverviewClient({ features }: { features: Features }) {
       )}
 
       {/* ── Upcoming Appointments ── */}
-      {features.calendar && upcomingAppointments.length > 0 && !loading && (
+      {features.hasCalendar && upcomingAppointments.length > 0 && !loading && (
         <div className="bg-white rounded-xl border border-gray-200">
           <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
             <h2 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
@@ -531,7 +541,7 @@ export function OverviewClient({ features }: { features: Features }) {
       )}
 
       {/* ── Spam Screening Recent Activity (non-AI businesses) ── */}
-      {hasSpam && !features.missedCallAi && !loading && (
+      {features.hasAnyScreening && !features.hasMissedCallAi && !loading && (
         <div className="bg-white rounded-xl border border-gray-200 w-full">
           <div className="px-4 md:px-6 py-4 border-b border-gray-200 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
             <div className="flex items-center">
@@ -572,8 +582,47 @@ export function OverviewClient({ features }: { features: Features }) {
         </div>
       )}
 
+      {/* ── Recent Voicemails (non-AI businesses) ── */}
+      {!features.hasMissedCallAi && initialVoicemails.length > 0 && (
+        <div className="bg-white rounded-xl border border-gray-200 w-full">
+          <div className="px-4 md:px-6 py-4 border-b border-gray-200 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+            <div className="flex items-center">
+              <Mail className="h-5 w-5 text-blue-600 mr-2 shrink-0" />
+              <h2 className="text-lg font-semibold text-gray-900">Recent Voicemails</h2>
+            </div>
+            <Link href="/dashboard/voicemails" className="text-sm text-blue-600 hover:text-blue-700 min-h-[44px] flex items-center py-2">
+              View all voicemails
+            </Link>
+          </div>
+          <ul className="divide-y divide-gray-100">
+            {initialVoicemails.map((vm) => (
+              <li key={vm.conversationId} className="px-4 md:px-6 py-4 flex flex-col gap-1">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="font-medium text-gray-900">
+                      {vm.contactName ?? formatPhoneNumber(vm.callerPhone)}
+                    </p>
+                    {vm.contactName && (
+                      <p className="text-sm text-gray-500 font-mono">{formatPhoneNumber(vm.callerPhone)}</p>
+                    )}
+                  </div>
+                  <span className="text-sm text-gray-500 whitespace-nowrap">
+                    {formatRelativeTime(new Date(vm.createdAt))}
+                  </span>
+                </div>
+                {vm.voicemailTranscription && (
+                  <p className="text-sm text-gray-600 bg-gray-50 rounded-lg px-3 py-2 line-clamp-2">
+                    {vm.voicemailTranscription}
+                  </p>
+                )}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       {/* ── Lead Sources + Recent Activity (two-column) ── */}
-      {features.missedCallAi && (
+      {features.hasMissedCallAi && (
         <div className="grid grid-cols-1 gap-4 md:gap-6 lg:grid-cols-2">
           {/* Lead sources */}
           <div className="bg-white rounded-xl border border-gray-200 p-4 md:p-6 flex flex-col w-full">

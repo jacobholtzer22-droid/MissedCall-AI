@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { requireDashboardBusiness } from '@/lib/dashboard-auth'
+import { getBusinessFeatures } from '@/lib/business-features'
 
 type Period = 'today' | 'week' | 'month' | 'all'
 
@@ -79,6 +80,39 @@ export async function GET(request: Request) {
         : undefined
 
     const businessId = business.id
+    const features = getBusinessFeatures(business)
+
+    // Build totalCalls queries based on how this business handles inbound calls
+    let totalCallsQuery: Promise<number>
+    let previousTotalCallsQuery: Promise<number>
+
+    if (features.totalCallsMode === 'screened') {
+      totalCallsQuery = db.screenedCall.count({
+        where: {
+          businessId,
+          ...(currentDateFilter ? { createdAt: currentDateFilter } : {}),
+        },
+      })
+      previousTotalCallsQuery = previousDateFilter
+        ? db.screenedCall.count({ where: { businessId, createdAt: previousDateFilter } })
+        : Promise.resolve(0)
+    } else if (features.totalCallsMode === 'forwarded') {
+      totalCallsQuery = db.conversation.count({
+        where: {
+          businessId,
+          callSid: { not: null },
+          ...(currentDateFilter ? { createdAt: currentDateFilter } : {}),
+        },
+      })
+      previousTotalCallsQuery = previousDateFilter
+        ? db.conversation.count({
+            where: { businessId, callSid: { not: null }, createdAt: previousDateFilter },
+          })
+        : Promise.resolve(0)
+    } else {
+      totalCallsQuery = Promise.resolve(0)
+      previousTotalCallsQuery = Promise.resolve(0)
+    }
 
     const [
       totalCalls,
@@ -92,12 +126,7 @@ export async function GET(request: Request) {
       leadSourcesRaw,
       recentActivityRaw,
     ] = await Promise.all([
-      db.screenedCall.count({
-        where: {
-          businessId,
-          ...(currentDateFilter ? { createdAt: currentDateFilter } : {}),
-        },
-      }),
+      totalCallsQuery,
       db.screenedCall.count({
         where: {
           businessId,
@@ -136,14 +165,7 @@ export async function GET(request: Request) {
           ...(currentDateFilter ? { createdAt: currentDateFilter } : {}),
         },
       }),
-      previousDateFilter
-        ? db.screenedCall.count({
-            where: {
-              businessId,
-              createdAt: previousDateFilter,
-            },
-          })
-        : Promise.resolve(0),
+      previousTotalCallsQuery,
       previousDateFilter
         ? db.contact.count({
             where: {
@@ -246,6 +268,8 @@ export async function GET(request: Request) {
       previousLeadsCaptured: period === 'all' ? null : previousLeadsCaptured,
       leadSources,
       recentActivity,
+      features,
+      totalCallsMode: features.totalCallsMode,
     })
   } catch (error) {
     console.error('[dashboard-analytics]', error)
