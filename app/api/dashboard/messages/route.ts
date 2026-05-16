@@ -17,6 +17,7 @@ export async function GET() {
       ...(business.telnyxPhoneNumber
         ? { callerPhone: { not: business.telnyxPhoneNumber } }
         : {}),
+      messages: { some: {} },
     },
     orderBy: { lastMessageAt: 'desc' },
     include: {

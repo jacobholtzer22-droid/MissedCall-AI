@@ -7,6 +7,7 @@ import { formatPhoneNumber } from '@/lib/utils'
 type VoicemailRow = {
   conversationId: string
   callerPhone: string
+  contactName: string | null
   recordingUrl: string | null
   voicemailTranscription: string | null
   createdAt: string
@@ -117,7 +118,12 @@ export function VoicemailsClient() {
           voicemails.map((vm) => (
             <div key={vm.conversationId} className="px-6 py-4">
               <div className="flex flex-wrap items-start justify-between gap-2 mb-2">
-                <p className="font-mono font-medium text-gray-900">{formatPhoneNumber(vm.callerPhone)}</p>
+                <div>
+                  <p className="font-medium text-gray-900">{vm.contactName ?? formatPhoneNumber(vm.callerPhone)}</p>
+                  {vm.contactName && (
+                    <p className="text-sm text-gray-500 font-mono">{formatPhoneNumber(vm.callerPhone)}</p>
+                  )}
+                </div>
                 <div className="flex items-center gap-3">
                   <p className="text-sm text-gray-500">{new Date(vm.createdAt).toLocaleString()}</p>
                   <button

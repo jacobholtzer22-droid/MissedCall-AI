@@ -8,6 +8,7 @@ import { auth } from '@clerk/nextjs/server'
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { getBusinessForDashboard } from '@/lib/get-business-for-dashboard'
+import { normalizePhoneNumber } from '@/lib/phone-utils'
 
 export async function GET() {
   const { userId } = await auth()
@@ -22,24 +23,38 @@ export async function GET() {
   if (!business) return NextResponse.json({ error: 'No business found' }, { status: 404 })
 
   try {
-    const conversations = await db.conversation.findMany({
-      where: {
-        businessId: business.id,
-        recordingUrl: { not: null },
-      },
-      orderBy: { createdAt: 'desc' },
-      select: {
-        id: true,
-        callerPhone: true,
-        recordingUrl: true,
-        voicemailTranscription: true,
-        createdAt: true,
-      },
-    })
+    const [conversations, contacts] = await Promise.all([
+      db.conversation.findMany({
+        where: {
+          businessId: business.id,
+          recordingUrl: { not: null },
+        },
+        orderBy: { createdAt: 'desc' },
+        select: {
+          id: true,
+          callerPhone: true,
+          recordingUrl: true,
+          voicemailTranscription: true,
+          createdAt: true,
+        },
+      }),
+      db.contact.findMany({
+        where: { businessId: business.id },
+        select: { phoneNumber: true, name: true },
+      }),
+    ])
+
+    const contactNameByPhone = new Map<string, string>()
+    for (const c of contacts) {
+      if (c.name) {
+        contactNameByPhone.set(normalizePhoneNumber(c.phoneNumber), c.name)
+      }
+    }
 
     const voicemails = conversations.map((c) => ({
       conversationId: c.id,
       callerPhone: c.callerPhone,
+      contactName: contactNameByPhone.get(normalizePhoneNumber(c.callerPhone)) ?? null,
       recordingUrl: c.recordingUrl,
       voicemailTranscription: c.voicemailTranscription ?? null,
       createdAt: c.createdAt,

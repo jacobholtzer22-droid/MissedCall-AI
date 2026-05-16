@@ -121,10 +121,9 @@ export async function GET(request: Request) {
           ...(currentDateFilter ? { createdAt: currentDateFilter } : {}),
         },
       }),
-      db.contact.count({
+      db.websiteLead.count({
         where: {
           businessId,
-          source: 'website_form',
           ...(currentDateFilter ? { createdAt: currentDateFilter } : {}),
         },
       }),
@@ -160,6 +159,7 @@ export async function GET(request: Request) {
         by: ['source'],
         where: {
           businessId,
+          source: { not: null },
           ...(currentDateFilter ? { createdAt: currentDateFilter } : {}),
         },
         _count: {
