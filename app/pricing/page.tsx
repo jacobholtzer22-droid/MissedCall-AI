@@ -34,6 +34,7 @@ const packages = [
       { name: 'MissedCall AI (24/7 lead recovery)', included: false },
       { name: 'CRM dashboard + analytics', included: false },
       { name: 'Calendar integration', included: false },
+      { name: 'Spam call screening (+$75/mo add-on)', included: false },
     ],
   },
   {
@@ -53,6 +54,7 @@ const packages = [
       { name: 'CRM dashboard + analytics', included: true },
       { name: 'Mass email & SMS campaigns', included: true },
       { name: 'Calendar integration', included: true },
+      { name: 'Spam call screening (+$75/mo add-on)', included: false },
     ],
   },
   {
@@ -71,6 +73,7 @@ const packages = [
       { name: 'Mass email & SMS campaigns', included: true },
       { name: 'Google Ads management', included: false },
       { name: 'Calendar integration', included: false },
+      { name: 'Spam call screening (+$75/mo add-on)', included: false },
     ],
   },
 ]
@@ -102,7 +105,7 @@ const standaloneServices = [
   },
   {
     name: 'Spam Call Screening',
-    price: 100,
+    price: 75,
     setupFee: 150,
     icon: ShieldCheck,
     description: 'Press 1 to connect IVR. Blocks robocalls. Only real customers get through.',
