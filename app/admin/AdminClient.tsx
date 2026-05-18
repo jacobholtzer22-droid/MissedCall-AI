@@ -85,35 +85,35 @@ export function AdminClient({ initialBusinesses }: Props) {
   return (
     <div className="min-h-screen bg-gray-950 text-white">
       {/* Header */}
-      <div className="border-b border-gray-800 bg-gray-900/50 px-6 py-4">
-        <div className="max-w-screen-2xl mx-auto flex items-center justify-between gap-4">
+      <div className="border-b border-gray-800 bg-gray-900/50 px-4 sm:px-6 py-4">
+        <div className="max-w-screen-2xl mx-auto flex items-center justify-between gap-3 flex-wrap">
           <div>
-            <h1 className="text-2xl font-bold">Admin Dashboard</h1>
+            <h1 className="text-xl sm:text-2xl font-bold">Admin Dashboard</h1>
             <p className="text-sm text-gray-400 mt-0.5">
               {businesses.length} client{businesses.length !== 1 ? 's' : ''}
               {refreshing && <span className="ml-2 text-gray-500">Refreshing...</span>}
             </p>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 sm:gap-3">
             <AdminTools onToast={addToast} onRefresh={refreshBusinesses} />
-            <a href="/dashboard" className="text-sm text-gray-400 hover:text-white transition">
+            <a href="/dashboard" className="text-sm text-gray-400 hover:text-white transition whitespace-nowrap">
               ← Dashboard
             </a>
           </div>
         </div>
       </div>
 
-      <div className="max-w-screen-2xl mx-auto px-6 py-6 space-y-6">
+      <div className="max-w-screen-2xl mx-auto px-3 sm:px-6 py-4 sm:py-6 space-y-4 sm:space-y-6">
         <HeaderKPIs businesses={businesses} />
 
         {/* Controls bar */}
-        <div className="flex items-center gap-3 flex-wrap">
+        <div className="flex items-center gap-2 flex-wrap">
           <input
             type="text"
             placeholder="Search clients..."
             value={search}
             onChange={e => setSearch(e.target.value)}
-            className="bg-gray-900 border border-gray-800 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 w-56 focus:outline-none focus:border-gray-600"
+            className="bg-gray-900 border border-gray-800 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 flex-1 min-w-[140px] sm:w-56 sm:flex-none focus:outline-none focus:border-gray-600"
           />
           <select
             value={statusFilter}
@@ -136,7 +136,7 @@ export function AdminClient({ initialBusinesses }: Props) {
             <option value="mrr">MRR</option>
             <option value="convos">Conversations</option>
           </select>
-          <span className="text-xs text-gray-600">
+          <span className="text-xs text-gray-600 hidden sm:inline">
             {filtered.length !== businesses.length
               ? `${filtered.length} of ${businesses.length}`
               : `${businesses.length} total`}

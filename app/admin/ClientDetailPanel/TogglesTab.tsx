@@ -114,7 +114,7 @@ export function TogglesTab({ business, onUpdateBusiness, onToast }: Props) {
   const isForwardingOn = Boolean(business.forwardingNumber)
 
   return (
-    <div className="px-6 py-4">
+    <div className="px-4 sm:px-6 py-4">
       {/* Forwarding (string field, toggle-like) */}
       <div className="py-4 border-b border-gray-800/50">
         <div className="flex items-center gap-3">

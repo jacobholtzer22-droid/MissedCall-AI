@@ -57,6 +57,52 @@ function TableHead() {
   )
 }
 
+function FeatureIcons({ biz }: { biz: AdminBusiness }) {
+  return (
+    <div className="flex items-center gap-1.5">
+      <FeatureIcon
+        active={biz.callScreenerEnabled || biz.spamFilterEnabled}
+        title={
+          biz.callScreenerEnabled && biz.spamFilterEnabled
+            ? 'Call Screener + Spam Filter'
+            : biz.callScreenerEnabled
+            ? 'Call Screener'
+            : biz.spamFilterEnabled
+            ? 'Spam Filter'
+            : 'No screening'
+        }
+        icon={Shield}
+      />
+      <FeatureIcon
+        active={biz.missedCallAiEnabled}
+        title={biz.missedCallAiEnabled ? 'MissedCall AI on' : 'MissedCall AI off'}
+        icon={MessageCircle}
+      />
+      <FeatureIcon
+        active={biz.calendarEnabled && biz.googleCalendarConnected}
+        title={
+          biz.calendarEnabled && biz.googleCalendarConnected
+            ? 'Calendar connected'
+            : biz.calendarEnabled
+            ? 'Calendar enabled, not connected'
+            : 'Calendar off'
+        }
+        icon={Calendar}
+      />
+      <FeatureIcon
+        active={biz.googleAdsEnabled}
+        title={biz.googleAdsEnabled ? 'Google Ads on' : 'Google Ads off'}
+        icon={Megaphone}
+      />
+      <FeatureIcon
+        active={biz.calendarEnabled}
+        title={biz.calendarEnabled ? 'Online booking on' : 'Online booking off'}
+        icon={Globe}
+      />
+    </div>
+  )
+}
+
 interface Props {
   businesses: AdminBusiness[]
   selectedId?: string
@@ -86,7 +132,78 @@ export function ClientTable({ businesses, selectedId, onSelect, loading }: Props
 
   return (
     <div className="rounded-xl border border-gray-800 overflow-hidden">
-      <table className="w-full">
+      {/* Mobile card list — shown below md breakpoint */}
+      <div className="md:hidden divide-y divide-gray-800/50">
+        {businesses.map(biz => (
+          <div
+            key={biz.id}
+            onClick={() => onSelect(biz)}
+            className={`px-4 py-3.5 cursor-pointer transition-colors ${
+              selectedId === biz.id
+                ? 'bg-blue-600/5 border-l-2 border-l-blue-500'
+                : 'hover:bg-gray-900/50'
+            }`}
+          >
+            {/* Row 1: Name + status + MRR */}
+            <div className="flex items-start justify-between gap-2 mb-2">
+              <div className="min-w-0">
+                <p className="font-semibold text-white text-sm leading-tight">{biz.name}</p>
+                {biz.telnyxPhoneNumber ? (
+                  <p className="text-xs text-gray-500 font-mono mt-0.5">{biz.telnyxPhoneNumber}</p>
+                ) : (
+                  <p className="text-xs text-red-400/70 mt-0.5">No number</p>
+                )}
+              </div>
+              <div className="flex flex-col items-end gap-1 shrink-0">
+                <span
+                  className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs border whitespace-nowrap ${
+                    STATUS_COLORS[biz.subscriptionStatus] ?? STATUS_COLORS.canceled
+                  }`}
+                >
+                  {STATUS_LABELS[biz.subscriptionStatus] ?? biz.subscriptionStatus}
+                </span>
+                {biz.subscriptionStatus !== 'canceled' && biz.monthlyFee != null ? (
+                  <span className="text-xs text-gray-400">${biz.monthlyFee}/mo</span>
+                ) : null}
+              </div>
+            </div>
+
+            {/* Row 2: Features + stats + actions */}
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-3">
+                <FeatureIcons biz={biz} />
+                <span className="text-gray-700 text-xs">·</span>
+                <div className="flex items-center gap-1 text-xs text-gray-500">
+                  <span className="text-gray-300 font-medium">{biz.conversationsThisMonth}</span>
+                  <span>convos</span>
+                  <span className="text-gray-700">·</span>
+                  <span className="text-gray-300 font-medium">{biz.leadsThisMonth}</span>
+                  <span>leads</span>
+                </div>
+              </div>
+              <div className="flex items-center gap-1.5" onClick={e => e.stopPropagation()}>
+                <a
+                  href={`/api/admin/view-as?businessId=${biz.id}`}
+                  title="View as client"
+                  className="p-1.5 rounded-lg bg-amber-500/10 text-amber-400 hover:bg-amber-500/20 transition"
+                >
+                  <Eye className="h-3.5 w-3.5" />
+                </a>
+                <button
+                  onClick={() => onSelect(biz)}
+                  title="Edit / Detail"
+                  className="p-1.5 rounded-lg bg-blue-500/10 text-blue-400 hover:bg-blue-500/20 transition"
+                >
+                  <Settings className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Desktop table — hidden below md */}
+      <table className="w-full hidden md:table">
         <thead><TableHead /></thead>
         <tbody className="divide-y divide-gray-800/50">
           {businesses.map(biz => (
@@ -132,47 +249,7 @@ export function ClientTable({ businesses, selectedId, onSelect, loading }: Props
 
               {/* Feature icons */}
               <td className="px-4 py-3">
-                <div className="flex items-center gap-1.5">
-                  <FeatureIcon
-                    active={biz.callScreenerEnabled || biz.spamFilterEnabled}
-                    title={
-                      biz.callScreenerEnabled && biz.spamFilterEnabled
-                        ? 'Call Screener + Spam Filter'
-                        : biz.callScreenerEnabled
-                        ? 'Call Screener'
-                        : biz.spamFilterEnabled
-                        ? 'Spam Filter'
-                        : 'No screening'
-                    }
-                    icon={Shield}
-                  />
-                  <FeatureIcon
-                    active={biz.missedCallAiEnabled}
-                    title={biz.missedCallAiEnabled ? 'MissedCall AI on' : 'MissedCall AI off'}
-                    icon={MessageCircle}
-                  />
-                  <FeatureIcon
-                    active={biz.calendarEnabled && biz.googleCalendarConnected}
-                    title={
-                      biz.calendarEnabled && biz.googleCalendarConnected
-                        ? 'Calendar connected'
-                        : biz.calendarEnabled
-                        ? 'Calendar enabled, not connected'
-                        : 'Calendar off'
-                    }
-                    icon={Calendar}
-                  />
-                  <FeatureIcon
-                    active={biz.googleAdsEnabled}
-                    title={biz.googleAdsEnabled ? 'Google Ads on' : 'Google Ads off'}
-                    icon={Megaphone}
-                  />
-                  <FeatureIcon
-                    active={biz.calendarEnabled}
-                    title={biz.calendarEnabled ? 'Online booking on' : 'Online booking off'}
-                    icon={Globe}
-                  />
-                </div>
+                <FeatureIcons biz={biz} />
               </td>
 
               {/* Convos */}

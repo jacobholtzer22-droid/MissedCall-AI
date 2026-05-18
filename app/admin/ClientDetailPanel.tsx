@@ -58,11 +58,11 @@ export function ClientDetailPanel({ business, onClose, onUpdateBusiness, onToast
       />
 
       {/* Slide-in panel */}
-      <div className="fixed top-0 right-0 h-full w-[600px] bg-gray-900 border-l border-gray-800 z-50 flex flex-col shadow-2xl">
+      <div className="fixed top-0 right-0 h-full w-full sm:w-[520px] lg:w-[600px] bg-gray-900 border-l border-gray-800 z-50 flex flex-col shadow-2xl">
         {/* Panel header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-800 shrink-0">
-          <div className="flex items-center gap-3 min-w-0">
-            <span className="font-bold text-white truncate">{business.name}</span>
+        <div className="flex items-center justify-between px-4 sm:px-6 py-4 border-b border-gray-800 shrink-0 gap-2">
+          <div className="flex items-center gap-2 min-w-0">
+            <span className="font-bold text-white truncate text-sm sm:text-base">{business.name}</span>
             <span
               className={`shrink-0 text-xs px-2 py-0.5 rounded-full border ${
                 STATUS_COLORS[business.subscriptionStatus] ?? STATUS_COLORS.canceled
@@ -74,7 +74,7 @@ export function ClientDetailPanel({ business, onClose, onUpdateBusiness, onToast
           <div className="flex items-center gap-2 shrink-0">
             <a
               href={`/api/admin/view-as?businessId=${business.id}`}
-              className="text-xs px-3 py-1.5 bg-amber-600 hover:bg-amber-700 rounded-lg font-medium transition"
+              className="text-xs px-2.5 py-1.5 bg-amber-600 hover:bg-amber-700 rounded-lg font-medium transition whitespace-nowrap"
             >
               View as Client
             </a>

@@ -170,7 +170,7 @@ export function SettingsTab({ business, onUpdateBusiness, onToast }: Props) {
   }
 
   return (
-    <div className="px-6 py-4 space-y-5">
+    <div className="px-4 sm:px-6 py-4 space-y-5">
       {/* Business Info */}
       <div>
         <SectionHeader title="Business Info" />
@@ -184,7 +184,7 @@ export function SettingsTab({ business, onUpdateBusiness, onToast }: Props) {
           <Field label="Forwarding Number" hint="Owner's real phone — rings before AI">
             <input className={INPUT} value={form.forwardingNumber} onChange={e => set('forwardingNumber', e.target.value)} placeholder="+13095551234" />
           </Field>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <Field label="Timezone">
               <select className={SELECT} value={form.timezone} onChange={e => set('timezone', e.target.value)}>
                 <option value="America/New_York">Eastern</option>
@@ -219,7 +219,7 @@ export function SettingsTab({ business, onUpdateBusiness, onToast }: Props) {
               <option value="canceled">Canceled</option>
             </select>
           </Field>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <Field label="Setup Fee ($)">
               <input type="number" className={INPUT} value={form.setupFee} onChange={e => set('setupFee', e.target.value)} placeholder="400" />
             </Field>
@@ -233,7 +233,7 @@ export function SettingsTab({ business, onUpdateBusiness, onToast }: Props) {
       {/* Notifications */}
       <div>
         <SectionHeader title="Notifications" />
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <Field label="Owner Email">
             <input type="email" className={INPUT} value={form.ownerEmail} onChange={e => set('ownerEmail', e.target.value)} placeholder="owner@business.com" />
           </Field>
@@ -266,7 +266,7 @@ export function SettingsTab({ business, onUpdateBusiness, onToast }: Props) {
       <div>
         <SectionHeader title="Booking" />
         <div className="space-y-3">
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <Field label="Slot Duration (min)">
               <select className={SELECT} value={form.slotDurationMinutes} onChange={e => set('slotDurationMinutes', e.target.value)}>
                 {[15, 30, 45, 60, 90, 120].map(v => <option key={v} value={v}>{v} min</option>)}
@@ -318,7 +318,7 @@ export function SettingsTab({ business, onUpdateBusiness, onToast }: Props) {
       {/* Google Ads */}
       <div>
         <SectionHeader title="Google Ads" />
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <Field label="Customer ID" hint="No dashes">
             <input className={INPUT} value={form.googleAdsCustomerId} onChange={e => set('googleAdsCustomerId', e.target.value)} placeholder="1234567890" />
           </Field>
@@ -335,7 +335,7 @@ export function SettingsTab({ business, onUpdateBusiness, onToast }: Props) {
           <Field label="Admin Notes" hint="Private, not visible to client">
             <textarea className={TEXTAREA} rows={3} value={form.adminNotes} onChange={e => set('adminNotes', e.target.value)} placeholder="Private notes..." />
           </Field>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <Field label="SMS Cooldown (days)" hint="Blank = use env default">
               <input type="number" className={INPUT} value={form.smsCooldownDays} onChange={e => set('smsCooldownDays', e.target.value)} placeholder="7" />
             </Field>

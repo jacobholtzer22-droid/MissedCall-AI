@@ -22,7 +22,7 @@ export function HeaderKPIs({ businesses }: Props) {
       : null
 
   return (
-    <div className="grid grid-cols-3 gap-4">
+    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
       {/* MRR */}
       <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
         <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">

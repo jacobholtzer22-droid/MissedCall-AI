@@ -132,7 +132,7 @@ function BulkImportSection({ businessId, onToast }: { businessId: string; onToas
 
 export function ToolsTab({ business, onToast }: Props) {
   return (
-    <div className="px-6 py-4">
+    <div className="px-4 sm:px-6 py-4">
       {/* Conversations */}
       <ToolSection
         icon={MessageSquare}
