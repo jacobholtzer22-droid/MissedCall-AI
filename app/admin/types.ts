@@ -21,6 +21,7 @@ export interface AdminBusiness {
   bookingRequiresAddress: boolean
   notifyBySms: boolean
   notifyByEmail: boolean
+  massMessagingEnabled: boolean
 
   // AI settings
   aiGreeting: string | null

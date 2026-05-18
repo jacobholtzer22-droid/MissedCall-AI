@@ -15,6 +15,10 @@ export async function GET() {
   if (authResult instanceof NextResponse) return authResult
   const { business } = authResult
 
+  if (!business.massMessagingEnabled) {
+    return NextResponse.json({ error: 'Feature not available' }, { status: 403 })
+  }
+
   const campaigns = await db.emailCampaign.findMany({
     where: { businessId: business.id },
     orderBy: { createdAt: 'desc' },

@@ -41,6 +41,10 @@ export async function POST(request: Request) {
   if (authResult instanceof NextResponse) return authResult
   const { business } = authResult
 
+  if (!business.massMessagingEnabled) {
+    return NextResponse.json({ error: 'Feature not available' }, { status: 403 })
+  }
+
   let body: CampaignBody
   try {
     body = await request.json()

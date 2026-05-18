@@ -11,6 +11,10 @@ export async function GET() {
   if (authResult instanceof NextResponse) return authResult
   const { business } = authResult
 
+  if (!business.missedCallAiEnabled) {
+    return NextResponse.json({ error: 'Feature not available' }, { status: 403 })
+  }
+
   const leads = await db.websiteLead.findMany({
     where: { businessId: business.id },
     orderBy: { createdAt: 'desc' },
