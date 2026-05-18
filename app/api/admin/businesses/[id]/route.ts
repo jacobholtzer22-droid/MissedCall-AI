@@ -53,6 +53,7 @@ export async function PATCH(
       'googleAdsEnabled',
       'googleAdsCustomerId',
       'googleAdsTabLabel',
+      'smsCooldownDays',
     ]
 
     const data: Record<string, unknown> = {}
