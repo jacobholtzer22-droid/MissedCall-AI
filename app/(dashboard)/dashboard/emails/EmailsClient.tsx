@@ -13,7 +13,7 @@ type Campaign = {
   createdAt: string
 }
 
-export function EmailsClient() {
+export function EmailsClient({ hideHeader = false }: { hideHeader?: boolean }) {
   const [campaigns, setCampaigns] = useState<Campaign[]>([])
   const [loading, setLoading] = useState(true)
 
@@ -39,6 +39,7 @@ export function EmailsClient() {
 
   return (
     <div className="space-y-6 w-full">
+      {!hideHeader && (
       <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Email Campaigns</h1>
@@ -52,6 +53,7 @@ export function EmailsClient() {
           New Campaign
         </Link>
       </div>
+      )}
 
       <div className="space-y-2">
         <h2 className="text-lg font-semibold text-gray-900">Sent Campaigns</h2>

@@ -41,7 +41,7 @@ type CampaignPreview = {
   sampleMessage: string
 }
 
-export function MessagesClient() {
+export function MessagesClient({ hideHeader = false }: { hideHeader?: boolean }) {
   const [conversations, setConversations] = useState<ConversationListItem[]>([])
   const [conversationsLoading, setConversationsLoading] = useState(true)
   const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null)
@@ -311,6 +311,7 @@ export function MessagesClient() {
   return (
     <div className="space-y-6">
       {/* Header */}
+      {!hideHeader && (
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Messages</h1>
@@ -335,6 +336,7 @@ export function MessagesClient() {
           </button>
         </div>
       </div>
+      )}
 
       {/* Two-panel layout: on mobile show list or chat (full-screen); on md+ show side-by-side */}
       <div className="bg-white rounded-xl border border-gray-200 overflow-hidden flex flex-col h-[calc(100vh-12rem)] md:h-[600px]">

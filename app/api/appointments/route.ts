@@ -19,6 +19,10 @@ export async function GET() {
   const { business } = await getBusinessForDashboard(userId, user?.business ?? null)
   if (!business) return NextResponse.json({ error: 'No business found' }, { status: 404 })
 
+  if (!business.calendarEnabled) {
+    return NextResponse.json({ error: 'Feature not available' }, { status: 403 })
+  }
+
   let appointments = await db.appointment.findMany({
     where: { businessId: business.id },
     orderBy: { scheduledAt: 'desc' },

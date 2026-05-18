@@ -3,9 +3,9 @@ import { redirect } from 'next/navigation'
 import { db } from '@/lib/db'
 import { getBusinessForDashboard } from '@/lib/get-business-for-dashboard'
 import { FeatureGate } from '@/app/components/FeatureGate'
-import { WebsiteLeadsClient } from './WebsiteLeadsClient'
+import { OutreachClient } from './OutreachClient'
 
-export default async function WebsiteLeadsPage() {
+export default async function OutreachPage() {
   const { userId } = await auth()
   if (!userId) redirect('/sign-in')
 
@@ -20,17 +20,18 @@ export default async function WebsiteLeadsPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-gray-900">Website Leads</h1>
-        <p className="text-gray-500 mt-1">Form submissions from your website</p>
+        <h1 className="text-2xl font-bold text-gray-900">Outreach</h1>
+        <p className="text-gray-500 mt-1">Send email or SMS campaigns to your contacts</p>
       </div>
+
       <FeatureGate
         mode="locked"
-        enabled={business.missedCallAiEnabled !== false}
-        feature="Website Leads"
-        valueProp="Capture leads from your website form directly in your dashboard"
+        enabled={business.massMessagingEnabled}
+        feature="Mass Outreach"
+        valueProp="Send targeted email and SMS campaigns to your contact list"
         businessName={business.name}
       >
-        <WebsiteLeadsClient />
+        <OutreachClient />
       </FeatureGate>
     </div>
   )

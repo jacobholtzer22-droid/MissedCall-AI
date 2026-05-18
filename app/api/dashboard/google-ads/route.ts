@@ -14,6 +14,10 @@ export async function GET(request: NextRequest) {
   if (authResult instanceof NextResponse) return authResult
   const { business } = authResult
 
+  if (!business.googleAdsEnabled) {
+    return NextResponse.json({ error: 'Feature not available' }, { status: 403 })
+  }
+
   const { searchParams } = request.nextUrl
   const groupBy = searchParams.get('groupBy') || 'day' // day | campaign
 

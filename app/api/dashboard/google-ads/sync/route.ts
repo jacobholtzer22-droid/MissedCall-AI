@@ -14,7 +14,7 @@ export async function POST() {
   const { business } = authResult
 
   if (!business.googleAdsEnabled) {
-    return NextResponse.json({ error: 'Google Ads is not enabled for this business' }, { status: 400 })
+    return NextResponse.json({ error: 'Feature not available' }, { status: 403 })
   }
 
   if (!(business as any).googleAdsCustomerId) {

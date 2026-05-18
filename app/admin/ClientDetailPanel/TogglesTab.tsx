@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { MessageCircle, Shield, ShieldCheck, Phone, Calendar, Megaphone, Globe, Mail, MessageSquare, CheckCircle, XCircle } from 'lucide-react'
+import { MessageCircle, Shield, ShieldCheck, Phone, Calendar, Megaphone, Globe, Mail, MessageSquare, CheckCircle, XCircle, Mailbox } from 'lucide-react'
 import type { AdminBusiness } from '../types'
 
 interface Props {
@@ -315,6 +315,15 @@ export function TogglesTab({ business, onUpdateBusiness, onToast }: Props) {
         checked={business.notifyByEmail}
         onToggle={() => patch('notifyByEmail', !business.notifyByEmail, 'email notifications')}
         disabled={saving === 'notifyByEmail'}
+      />
+
+      <ToggleRow
+        icon={Mailbox}
+        label="Mass Outreach"
+        description="Email + SMS campaigns to contact list"
+        checked={business.massMessagingEnabled}
+        onToggle={() => patch('massMessagingEnabled', !business.massMessagingEnabled, 'mass outreach')}
+        disabled={saving === 'massMessagingEnabled'}
       />
     </div>
   )

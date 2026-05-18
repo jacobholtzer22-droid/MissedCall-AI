@@ -81,6 +81,7 @@ model Business {
   ownerPhone            String?                         // Owner's phone for SMS (falls back to forwardingNumber)
   notifyBySms           Boolean   @default(true)        // Send SMS to owner on booking events
   notifyByEmail         Boolean   @default(true)        // Send email to owner on booking events
+  massMessagingEnabled  Boolean   @default(false)       // Unlock email + SMS campaign outreach features
 
   // Timestamps
   createdAt             DateTime  @default(now())

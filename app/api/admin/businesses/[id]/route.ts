@@ -54,6 +54,7 @@ export async function PATCH(
       'googleAdsCustomerId',
       'googleAdsTabLabel',
       'smsCooldownDays',
+      'massMessagingEnabled',
     ]
 
     const data: Record<string, unknown> = {}

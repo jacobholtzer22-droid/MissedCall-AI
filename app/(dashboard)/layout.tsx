@@ -4,12 +4,6 @@ import { db } from '@/lib/db'
 import { getBusinessForDashboard } from '@/lib/get-business-for-dashboard'
 import { getBusinessFeatures } from '@/lib/business-features'
 
-const CRM_NAV = [
-  { name: 'Contacts', href: '/dashboard/contacts', icon: 'Users' },
-  { name: 'Jobs', href: '/dashboard/jobs', icon: 'Briefcase' },
-  { name: 'Emails', href: '/dashboard/emails', icon: 'Mailbox' },
-]
-
 function getNavigation(business: {
   missedCallAiEnabled?: boolean | null
   callScreenerEnabled?: boolean | null
@@ -18,13 +12,15 @@ function getNavigation(business: {
   calendarEnabled?: boolean | null
   googleCalendarConnected?: boolean | null
   googleAdsEnabled?: boolean | null
+  massMessagingEnabled?: boolean | null
 }) {
   const features = getBusinessFeatures(business)
   const googleAdsLabel = (business as { googleAdsTabLabel?: string | null }).googleAdsTabLabel
 
   const items: { name: string; href: string; icon: string }[] = [
     { name: 'Overview', href: '/dashboard', icon: 'LayoutDashboard' },
-    { name: 'Messages', href: '/dashboard/messages', icon: 'MessageCircle' },
+    { name: 'Conversations', href: '/dashboard/conversations', icon: 'MessagesSquare' },
+    { name: 'Outreach', href: '/dashboard/outreach', icon: 'Send' },
   ]
 
   if (features.hasMissedCallAi) {
@@ -37,15 +33,18 @@ function getNavigation(business: {
     items.push({ name: 'Scheduled Quotes', href: '/dashboard/appointments', icon: 'Calendar' })
   }
 
-  if (features.hasAnyScreening) {
-    items.push({ name: 'Blocked Calls', href: '/dashboard/blocked-calls', icon: 'PhoneOff' })
-  }
-
+  // Screening-only clients: show Voicemails + Blocked Calls instead
   if (!features.hasMissedCallAi) {
     items.push({ name: 'Voicemails', href: '/dashboard/voicemails', icon: 'Mail' })
+    if (features.hasAnyScreening) {
+      items.push({ name: 'Blocked Calls', href: '/dashboard/blocked-calls', icon: 'PhoneOff' })
+    }
   }
 
-  items.push(...CRM_NAV)
+  items.push(
+    { name: 'Contacts', href: '/dashboard/contacts', icon: 'Users' },
+    { name: 'Jobs', href: '/dashboard/jobs', icon: 'Briefcase' },
+  )
 
   if (business.googleAdsEnabled) {
     items.push({ name: googleAdsLabel || 'Google Ads', href: '/dashboard/ads', icon: 'Megaphone' })
