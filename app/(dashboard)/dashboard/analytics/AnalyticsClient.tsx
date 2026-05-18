@@ -30,6 +30,18 @@ type RecentActivityItem = {
   contactPhone: string | null
 }
 
+type AnalyticsFeatures = {
+  hasSpamFilter: boolean
+  hasIvrScreener: boolean
+  hasAnyScreening: boolean
+  hasMissedCallAi: boolean
+  hasForwarding: boolean
+  hasCalendar: boolean
+  showScreeningCards: boolean
+  showAiCards: boolean
+  totalCallsMode: 'screened' | 'calls'
+}
+
 type AnalyticsResponse = {
   totalCalls: number
   callsBlocked: number
@@ -42,6 +54,8 @@ type AnalyticsResponse = {
   previousLeadsCaptured: number | null
   leadSources: LeadSources
   recentActivity: RecentActivityItem[]
+  features?: AnalyticsFeatures
+  totalCallsMode?: 'screened' | 'calls'
 }
 
 const PERIOD_OPTIONS: { label: string; value: AnalyticsPeriod }[] = [
@@ -223,60 +237,74 @@ export function AnalyticsClient() {
       {/* Metric cards: 1 col very small, 2 cols small, 3 cols desktop */}
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4 md:gap-6">
         <MetricCard
-          title="Total Calls"
-          value={data?.totalCalls ?? 0}
-          description={`Screened calls ${periodLabel.toLowerCase()}`}
-          icon={Phone}
-          color="blue"
-          delta={formatDelta(data?.totalCalls ?? 0, data?.previousTotalCalls ?? null)}
-          loading={loading}
-        />
-        <MetricCard
-          title="Calls Blocked (Spam)"
-          value={data?.callsBlocked ?? 0}
-          description="Blocked by spam filter"
-          icon={Shield}
-          color="red"
-          loading={loading}
-        />
-        <MetricCard
-          title="Calls Passed (Real)"
-          value={data?.callsPassed ?? 0}
-          description="Real customers that rang through"
-          icon={CheckCircle2}
-          color="green"
-          loading={loading}
-        />
-        <MetricCard
-          title="Leads Captured"
-          value={effectiveLeadsCaptured}
-          description="Missed calls & website form leads"
-          icon={UserPlus}
-          color="blue"
-          delta={formatDelta(effectiveLeadsCaptured, data?.previousLeadsCaptured ?? null)}
-          loading={loading}
-        />
-        <MetricCard
-          title="Website Leads"
-          value={data?.websiteLeads ?? 0}
-          description="Leads from your website form"
-          icon={Globe2}
-          color="purple"
-          loading={loading}
-          emptyCta={
-            (data?.websiteLeads ?? 0) === 0
-              ? 'Get a website to capture more leads'
-              : undefined
-          }
-        />
-        <MetricCard
-          title="Messages Sent"
-          value={data?.messagesSent ?? 0}
-          description="Outbound texts sent by MissedCall AI and your team"
-          icon={MessageSquare}
-          color="gray"
-          loading={loading}
-        />
+            title="Total Calls"
+            value={data?.totalCalls ?? 0}
+            description={
+              data?.totalCallsMode === 'screened'
+                ? `Screened calls ${periodLabel.toLowerCase()}`
+                : `Inbound calls ${periodLabel.toLowerCase()}`
+            }
+            icon={Phone}
+            color="blue"
+            delta={formatDelta(data?.totalCalls ?? 0, data?.previousTotalCalls ?? null)}
+            loading={loading}
+          />
+        {(loading || data?.features?.hasAnyScreening) && (
+          <MetricCard
+            title="Calls Blocked (Spam)"
+            value={data?.callsBlocked ?? 0}
+            description="Blocked by spam filter"
+            icon={Shield}
+            color="red"
+            loading={loading}
+          />
+        )}
+        {(loading || data?.features?.hasAnyScreening) && (
+          <MetricCard
+            title="Calls Passed (Real)"
+            value={data?.callsPassed ?? 0}
+            description="Real customers that rang through"
+            icon={CheckCircle2}
+            color="green"
+            loading={loading}
+          />
+        )}
+        {(loading || data?.features?.hasMissedCallAi) && (
+          <MetricCard
+            title="Leads Captured"
+            value={effectiveLeadsCaptured}
+            description="Missed calls & website form leads"
+            icon={UserPlus}
+            color="blue"
+            delta={formatDelta(effectiveLeadsCaptured, data?.previousLeadsCaptured ?? null)}
+            loading={loading}
+          />
+        )}
+        {(loading || data?.features?.hasMissedCallAi) && (
+          <MetricCard
+            title="Website Leads"
+            value={data?.websiteLeads ?? 0}
+            description="Leads from your website form"
+            icon={Globe2}
+            color="purple"
+            loading={loading}
+            emptyCta={
+              (data?.websiteLeads ?? 0) === 0
+                ? 'Get a website to capture more leads'
+                : undefined
+            }
+          />
+        )}
+        {(loading || data?.features?.hasMissedCallAi) && (
+          <MetricCard
+            title="Messages Sent"
+            value={data?.messagesSent ?? 0}
+            description="Outbound texts sent by MissedCall AI and your team"
+            icon={MessageSquare}
+            color="gray"
+            loading={loading}
+          />
+        )}
       </div>
 
       {/* Lower sections: full width on mobile, 2 cols on lg */}
