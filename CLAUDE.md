@@ -172,6 +172,7 @@ This document is the single source of truth for understanding, debugging, and mo
 │   ├── auth.ts                   # getCurrentBusiness, getCurrentUser
 │   ├── dashboard-auth.ts         # requireDashboardBusiness() for API routes
 │   ├── get-business-for-dashboard.ts # Admin "view as" logic
+│   ├── business-features.ts      # getBusinessFeatures() — centralised feature flag helper
 │   ├── phone-utils.ts            # normalizePhoneNumber, normalizeToE164, phonesMatch
 │   ├── utils.ts                  # cn(), formatPhoneNumber, formatRelativeTime, slugify
 │   ├── business-hours.ts         # DEFAULT_BUSINESS_HOURS constant
@@ -183,7 +184,12 @@ This document is the single source of truth for understanding, debugging, and mo
 │   ├── crm-utils.ts              # findExistingContact, findOrCreateContact
 │   ├── import-contacts.ts        # parseContactFile (Excel/CSV → contacts array)
 │   ├── telnyx-usage-sync.ts      # syncTelnyxUsage (MDR + CDR → TelnyxUsageRecord)
-│   └── usage-export.ts           # getUsageForExport (aggregate for Excel export)
+│   ├── usage-export.ts           # getUsageForExport (aggregate for Excel export)
+│   └── email-format.ts           # plainTextToEmailHtml, bodyContainsHtml
+│
+├── docs/
+│   ├── TESTING-VOICE.md
+│   └── system-layout.md          # Comprehensive codebase reference for AI context
 │
 ├── prisma/
 │   └── schema.prisma             # Full database schema (see Section 4)
@@ -1009,7 +1015,7 @@ async function sendSMS(business, to, text)
 | `/api/dashboard/voicemails/[id]` | DELETE | Clear `recordingUrl` + `voicemailTranscription` on conversation (soft-delete voicemail). Returns `{ success: true }`. 404 if not found or no recording. |
 | `/api/dashboard/screened-calls` | GET | ScreenedCall records |
 | `/api/dashboard/website-leads` | GET | WebsiteLead records |
-| `/api/dashboard/analytics` | GET | TelnyxUsageRecord aggregated by day |
+| `/api/dashboard/analytics` | GET | Feature-aware analytics. Period: today/week/month/all. Response includes `features` (BusinessFeatures) and `totalCallsMode` ('screened' or 'calls') so the client can show/hide cards. `totalCalls` source depends on `totalCallsMode`: 'screened' → ScreenedCall count; 'calls' → Conversation WHERE callSid IS NOT NULL. |
 | `/api/dashboard/tags` | GET/POST | List / create tags |
 | `/api/dashboard/jobs` | GET/POST | List / create jobs |
 | `/api/dashboard/jobs/[id]` | PATCH/DELETE | Update / delete job |
@@ -1088,6 +1094,30 @@ getBusinessForDashboard(userId: string, userBusiness: Business | null): Promise<
 // If userId == ADMIN_USER_ID and adminViewAs cookie is set → return that business
 // Otherwise → return userBusiness
 ```
+
+### `lib/business-features.ts`
+```typescript
+export type BusinessFeatures = {
+  hasSpamFilter: boolean        // spamFilterEnabled
+  hasIvrScreener: boolean       // callScreenerEnabled
+  hasAnyScreening: boolean      // either of the above
+  hasMissedCallAi: boolean      // missedCallAiEnabled !== false
+  hasForwarding: boolean        // Boolean(forwardingNumber)
+  hasCalendar: boolean          // calendarEnabled && googleCalendarConnected
+  showScreeningCards: boolean   // === hasAnyScreening
+  showAiCards: boolean          // === hasMissedCallAi
+  totalCallsMode: 'screened' | 'calls'
+}
+
+export function getBusinessFeatures(business: BusinessLike): BusinessFeatures
+```
+Single source of truth for all feature-flag derivations. Used by the dashboard layout (nav items), `dashboard/page.tsx` (voicemail section), `OverviewClient`, `AnalyticsClient`, and the analytics API route.
+
+`totalCallsMode`:
+- `'screened'` → business has spam filter or IVR screener; count `ScreenedCall` records
+- `'calls'` → all other businesses (forwarding or AI-only); count `Conversation WHERE callSid IS NOT NULL`
+
+**Always import from here — never re-derive feature flags inline.**
 
 ### `lib/phone-utils.ts`
 ```typescript
@@ -1354,6 +1384,9 @@ plainTextToEmailHtml(text: string): string
 - Hero, features, ROI calculator, demo form, testimonials
 
 **`app/pricing/page.tsx`** — Pricing page
+- Packages: Growth $200/mo, Pro $290/mo, All In $385/mo (setup fees: $400/$400/$500)
+- All three packages show "Spam call screening (+$75/mo add-on)" as an explicit ✗ — it is NOT included in any package
+- Standalone services section: Spam Call Screening $75/mo ($150 setup)
 
 **`app/spam-screening/page.tsx`** — Spam screening feature page
 
@@ -1389,9 +1422,27 @@ plainTextToEmailHtml(text: string): string
 
 **`app/(dashboard)/layout.tsx`** — Dashboard shell
 - `DashboardShellClient`: sidebar navigation, user menu, "View as Client" admin toggle
+- Nav items built via `getBusinessFeatures(business)` — items shown/hidden per feature flags:
+  - Always: Overview, Messages, Analytics, Contacts, Jobs, Emails, Settings
+  - `hasMissedCallAi`: Website Leads, Scheduled Quotes
+  - `hasAnyScreening`: Blocked Calls
+  - `!hasMissedCallAi`: Voicemails
+  - `googleAdsEnabled`: Google Ads (label from `googleAdsTabLabel` or "Google Ads")
 
-**`app/(dashboard)/dashboard/page.tsx`** — Overview
-- Summary stats: recent conversations, upcoming appointments
+**`app/(dashboard)/dashboard/page.tsx`** — Overview (server component)
+- Calls `getBusinessFeatures(business)` to build full `features` object (including `googleAds`)
+- When `!features.hasMissedCallAi`: fetches up to 5 recent voicemails server-side, resolves contact names via `normalizePhoneNumber` map lookup, passes as `initialVoicemails` prop to `OverviewClient`
+- Passes `features` + `initialVoicemails` to `<OverviewClient />`
+
+**`app/(dashboard)/dashboard/OverviewClient.tsx`** — Feature-aware overview client component
+- `Features` type mirrors `BusinessFeatures` plus `googleAds: boolean`
+- Metric cards section only renders when `features.hasMissedCallAi`
+- Total Calls description: "Screened calls" when `totalCallsMode === 'screened'`, "Inbound calls" otherwise
+- Spam screening stats section only renders when `features.hasAnyScreening`
+- Upcoming appointments section only renders when `features.hasCalendar`
+- Google Ads summary section only renders when `features.googleAds`
+- Recent Screened Calls section: `features.hasAnyScreening && !features.hasMissedCallAi`
+- Recent Voicemails section: `!features.hasMissedCallAi && initialVoicemails.length > 0` — uses server-fetched data, no client fetch needed
 
 **`app/(dashboard)/dashboard/messages/page.tsx`** — `MessagesClient`
 - Conversation list with search, status filter
@@ -1438,9 +1489,13 @@ plainTextToEmailHtml(text: string): string
 - Name, phone, email, message, status
 
 **`app/(dashboard)/dashboard/analytics/page.tsx`** — `AnalyticsClient`
-- Usage stats from TelnyxUsageRecord
-- SMS count + cost, call count + cost
-- Date range picker, per-business breakdown
+- Period picker: Today / This Week / This Month / All Time
+- Fetches `/api/dashboard/analytics?period=...`; response includes `features` and `totalCallsMode`
+- Metric cards are feature-gated:
+  - Total Calls: always shown; description = "Screened calls" or "Inbound calls" per `totalCallsMode`
+  - Calls Blocked / Calls Passed: only when `features.hasAnyScreening`
+  - Leads Captured / Website Leads / Messages Sent: only when `features.hasMissedCallAi`
+- Lead sources bar chart + Recent Activity timeline always shown
 
 **`app/(dashboard)/dashboard/emails/page.tsx`** — `EmailsClient`
 - "Sent Campaigns" section — lists campaigns where `status === 'sent'`, sorted by `sentAt` desc
@@ -1484,6 +1539,7 @@ Every database table has `businessId` as a foreign key (except `User`, `PhoneNum
 - **Webhook isolation:** Voice and SMS webhooks find business by `telnyxPhoneNumber`. Each business has a unique Telnyx number → no cross-contamination.
 - **Phone number pool:** `PhoneNumber` table tracks available/assigned numbers. Assigning to a business sets `assignedToBusinessId` and `status='assigned'`.
 - **Data deletion:** All models use `onDelete: Cascade` from Business, so deleting a business cleans up all related data.
+- **Feature flags:** `getBusinessFeatures(business)` in `lib/business-features.ts` is the single place that derives all feature booleans and `totalCallsMode` from the Business row. Dashboard layout, overview, analytics page, and analytics API route all call this. Do not re-derive flags inline.
 
 ---
 
