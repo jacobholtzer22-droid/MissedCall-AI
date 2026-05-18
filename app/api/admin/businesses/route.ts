@@ -17,7 +17,7 @@ export async function GET() {
     const lastMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1)
     const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
 
-    const [businesses, recentConvos, blockedCounts] = await Promise.all([
+    const [businesses, recentConvos, allTimeLeads, blockedCounts] = await Promise.all([
       db.business.findMany({
         orderBy: { createdAt: 'desc' },
         include: {
@@ -47,6 +47,19 @@ export async function GET() {
           appointment: { select: { id: true } },
         },
       }),
+      db.conversation.groupBy({
+        by: ['businessId'],
+        where: {
+          messages: { some: {} },
+          OR: [
+            { customerEmail: { not: null } },
+            { customerAddress: { not: null } },
+            { customerTimeframe: { not: null } },
+            { appointment: { isNot: null } },
+          ],
+        },
+        _count: true,
+      }),
       db.screenedCall.groupBy({
         by: ['businessId'],
         where: { result: 'blocked', createdAt: { gte: thirtyDaysAgo } },
@@ -73,6 +86,7 @@ export async function GET() {
       statsMap.set(conv.businessId, s)
     }
 
+    const allTimeLeadsMap = new Map(allTimeLeads.map(r => [r.businessId, r._count]))
     const blockedMap = new Map(blockedCounts.map(b => [b.businessId, b._count]))
 
     const businessesWithStats = businesses.map(biz => ({
@@ -84,6 +98,8 @@ export async function GET() {
       conversationsThisMonth: statsMap.get(biz.id)?.thisMonth ?? 0,
       conversationsLastMonth: statsMap.get(biz.id)?.lastMonth ?? 0,
       leadsThisMonth: statsMap.get(biz.id)?.leads ?? 0,
+      conversationsAllTime: biz._count.conversations,
+      leadsAllTime: allTimeLeadsMap.get(biz.id) ?? 0,
     }))
 
     return NextResponse.json({ businesses: businessesWithStats })

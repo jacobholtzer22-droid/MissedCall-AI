@@ -64,8 +64,10 @@ export interface AdminBusiness {
     blockedCalls30d: number
   }
 
-  // Monthly stats (computed server-side)
+  // Monthly + all-time stats (computed server-side)
   conversationsThisMonth: number
   conversationsLastMonth: number
   leadsThisMonth: number
+  conversationsAllTime: number
+  leadsAllTime: number
 }

@@ -175,21 +175,31 @@ export function ClientTable({ businesses, selectedId, onSelect, loading }: Props
                 </div>
               </td>
 
-              {/* Convos this month */}
+              {/* Convos */}
               <td className="px-4 py-3">
                 <a
                   href={`/admin/${biz.id}/conversations`}
                   onClick={e => e.stopPropagation()}
-                  className="text-sm text-gray-300 hover:text-white transition underline-offset-2 hover:underline"
-                  title={`${biz.conversationsThisMonth} this month · ${biz.conversationsLastMonth} last month`}
+                  className="block hover:text-white transition group/link"
+                  title="Open conversations"
                 >
-                  {biz.conversationsThisMonth}
+                  <span className="block text-sm font-medium text-gray-300 group-hover/link:text-white leading-tight">
+                    {biz.conversationsThisMonth}
+                  </span>
+                  <span className="block text-xs text-gray-600 leading-tight">
+                    {biz.conversationsAllTime}
+                  </span>
                 </a>
               </td>
 
-              {/* Leads this month */}
+              {/* Leads */}
               <td className="px-4 py-3">
-                <span className="text-sm text-gray-300">{biz.leadsThisMonth}</span>
+                <span className="block text-sm font-medium text-gray-300 leading-tight">
+                  {biz.leadsThisMonth}
+                </span>
+                <span className="block text-xs text-gray-600 leading-tight">
+                  {biz.leadsAllTime}
+                </span>
               </td>
 
               {/* Actions */}
