@@ -33,19 +33,35 @@ export async function GET(
       include: {
         messages: {
           orderBy: { createdAt: 'asc' },
-          select: {
-            id: true,
-            direction: true,
-            content: true,
-            createdAt: true,
-          },
+          select: { id: true, direction: true, content: true, createdAt: true },
         },
+        appointment: { select: { id: true } },
       },
+      // Include bucket classification fields
     })
+
+    // Select only the fields needed for bucket classification + UI
+    const result = conversations.map(c => ({
+      id: c.id,
+      callerPhone: c.callerPhone,
+      callerName: c.callerName,
+      status: c.status,
+      summary: c.summary,
+      intent: c.intent,
+      serviceRequested: c.serviceRequested,
+      createdAt: c.createdAt,
+      lastMessageAt: c.lastMessageAt,
+      // Bucket classification fields
+      customerEmail: c.customerEmail,
+      customerAddress: c.customerAddress,
+      customerTimeframe: c.customerTimeframe,
+      appointment: c.appointment,
+      messages: c.messages,
+    }))
 
     return NextResponse.json({
       businessName: business?.name || 'Unknown',
-      conversations,
+      conversations: result,
     })
   } catch (error) {
     console.error('Admin: Failed to fetch conversations:', error)
