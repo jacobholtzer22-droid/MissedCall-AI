@@ -20,6 +20,7 @@ This document is the single source of truth for understanding, debugging, and mo
 12. [Integrations](#12-integrations)
 13. [Known Gotchas](#13-known-gotchas)
 14. [Google Ads Integration](#14-google-ads-integration)
+15. [Admin Dashboard](#15-admin-dashboard)
 
 ---
 
@@ -68,10 +69,17 @@ This document is the single source of truth for understanding, debugging, and mo
 │   │   ├── layout.tsx            # Sidebar + DashboardShellClient
 │   │   └── dashboard/
 │   │       ├── page.tsx          # Dashboard home / overview
-│   │       ├── messages/         # Conversations + SMS threads
-│   │       │   └── page.tsx      # MessagesClient.tsx
+│   │       ├── conversations/    # AI SMS conversation viewer (NEW)
+│   │       │   ├── page.tsx      # FeatureGate(missedCallAiEnabled) → ConversationsClient
+│   │       │   └── ConversationsClient.tsx  # Dark theme, 5 bucket tabs; mobile=mobileChatOpen list/thread toggle; desktop=split-pane
+│   │       ├── outreach/         # Email + SMS campaign hub (NEW)
+│   │       │   ├── page.tsx      # FeatureGate(massMessagingEnabled) → OutreachClient
+│   │       │   └── OutreachClient.tsx       # Email/SMS channel switcher
+│   │       ├── messages/         # Legacy SMS threads (redirects → /dashboard/outreach)
+│   │       │   ├── page.tsx      # redirect('/dashboard/outreach')
+│   │       │   └── MessagesClient.tsx  # hideHeader prop for embedding in OutreachClient
 │   │       ├── appointments/     # Booked quote visits
-│   │       │   └── page.tsx      # AppointmentsClient.tsx
+│   │       │   └── page.tsx      # Dual FeatureGate: locked(!calendarEnabled) / needs-setup(!connected)
 │   │       ├── contacts/         # CRM contact list
 │   │       │   ├── page.tsx      # ContactsClient.tsx
 │   │       │   ├── [id]/page.tsx # ContactDetailClient.tsx
@@ -81,13 +89,14 @@ This document is the single source of truth for understanding, debugging, and mo
 │   │       ├── blocked-calls/    # Spam-screened call list
 │   │       │   └── page.tsx
 │   │       ├── website-leads/    # Contact form submissions
-│   │       │   └── page.tsx      # WebsiteLeadsClient.tsx
+│   │       │   └── page.tsx      # FeatureGate(missedCallAiEnabled) → WebsiteLeadsClient
 │   │       ├── ads/              # Google Ads dashboard
-│   │       │   └── page.tsx      # AdsClient.tsx (recharts line chart + campaign table)
+│   │       │   └── page.tsx      # FeatureGate(googleAdsEnabled) → AdsClient.tsx
 │   │       ├── analytics/        # Usage + cost analytics
 │   │       │   └── page.tsx      # AnalyticsClient.tsx
-│   │       ├── emails/           # Email campaigns
-│   │       │   ├── page.tsx      # EmailsClient.tsx
+│   │       ├── emails/           # Legacy email campaigns (redirects → /dashboard/outreach)
+│   │       │   ├── page.tsx      # redirect('/dashboard/outreach')
+│   │       │   ├── EmailsClient.tsx  # hideHeader prop for embedding in OutreachClient
 │   │       │   └── new/page.tsx  # EmailComposeClient.tsx
 │   │       └── settings/         # Business configuration
 │   │           └── page.tsx      # SettingsFormWithIndustry.tsx
@@ -115,24 +124,26 @@ This document is the single source of truth for understanding, debugging, and mo
 │   │   │   ├── google/           # GET: start Google OAuth flow
 │   │   │   └── google/callback/  # GET: exchange code, save tokens
 │   │   ├── dashboard/
+│   │   │   ├── conversations/route.ts     # GET: AI conversations (403 if !missedCallAiEnabled)
 │   │   │   ├── messages/route.ts          # GET: list conversations
 │   │   │   ├── messages/[conversationId]/ # GET: single conversation + messages
 │   │   │   ├── messages/send/             # POST: manual SMS send
 │   │   │   ├── messages/contacts/         # GET: contacts for message compose
-│   │   │   ├── messages/campaign/         # POST: create email campaign
-│   │   │   ├── messages/campaign/preview/ # POST: preview campaign
+│   │   │   ├── messages/campaign/         # POST: SMS campaign (403 if !massMessagingEnabled)
+│   │   │   ├── messages/campaign/preview/ # POST: preview SMS campaign (403 if !massMessagingEnabled)
 │   │   │   ├── contacts/route.ts          # GET/POST: list/create contacts
 │   │   │   ├── contacts/[id]/route.ts     # GET/PATCH: contact detail/update
 │   │   │   ├── contacts/[id]/activities/  # GET: contact activity timeline
 │   │   │   ├── contacts/import/           # POST: bulk import from Excel/CSV
 │   │   │   ├── voicemails/                # GET: list voicemails
 │   │   │   ├── screened-calls/            # GET: list blocked spam calls
-│   │   │   ├── website-leads/             # GET: list website lead submissions
+│   │   │   ├── website-leads/             # GET: list website leads (403 if !missedCallAiEnabled)
 │   │   │   ├── analytics/                 # GET: usage analytics data
 │   │   │   ├── tags/                      # GET/POST: contact tags
 │   │   │   ├── jobs/route.ts              # GET/POST: jobs for contacts
 │   │   │   ├── jobs/[id]/route.ts         # PATCH/DELETE: update/delete job
-│   │   │   └── emails/route.ts            # GET: email campaign list
+│   │   │   ├── emails/route.ts            # GET/POST: email campaigns (403 if !massMessagingEnabled)
+│   │   │   └── emails/[id]/route.ts       # GET: single campaign (403 if !massMessagingEnabled)
 │   │   └── admin/
 │   │       ├── businesses/route.ts        # GET: list all businesses
 │   │       ├── businesses/[id]/route.ts   # PATCH: update business settings
@@ -149,9 +160,23 @@ This document is the single source of truth for understanding, debugging, and mo
 │   │       ├── telnyx-test/               # GET: debug Telnyx MDR/CDR fetch
 │   │       └── view-as/                   # POST: set adminViewAs cookie
 │   │
+│   ├── admin/                    # Super-admin panel (Jacob only)
+│   │   ├── page.tsx              # Lean shell — renders AdminClient
+│   │   ├── AdminClient.tsx       # Main admin UI: ClientTable + ClientDetailPanel slide-out
+│   │   ├── ClientTable.tsx       # Dense client table with monthly/all-time stats columns
+│   │   ├── ClientDetailPanel.tsx # Slide-out panel with 3 tabs (Toggles / Settings / Tools)
+│   │   ├── HeaderKPIs.tsx        # Top KPI strip (total clients, MRR, calls this month)
+│   │   ├── AdminTools.tsx        # Admin-level tools (usage sync, export)
+│   │   ├── types.ts              # AdminBusiness interface (enriched with monthly stats + _count)
+│   │   └── ClientDetailPanel/
+│   │       ├── TogglesTab.tsx    # Feature flag toggles including massMessagingEnabled
+│   │       ├── SettingsTab.tsx   # Business settings (fees, phone, AI config)
+│   │       └── ToolsTab.tsx      # Admin tools per business (bulk import, etc.)
+│   │
 │   └── components/               # Shared UI components
 │       ├── NavBar.tsx
 │       ├── ConditionalNavBar.tsx  # Hides NavBar on /dashboard routes
+│       ├── FeatureGate.tsx       # Server component: locked/needs-setup overlay for paywalled features
 │       ├── Logo.tsx
 │       ├── DemoForm.tsx
 │       ├── ContactForm.tsx
@@ -183,6 +208,7 @@ This document is the single source of truth for understanding, debugging, and mo
 │   ├── contacts-check.ts         # isExistingContact, logContactSkip
 │   ├── crm-utils.ts              # findExistingContact, findOrCreateContact
 │   ├── import-contacts.ts        # parseContactFile (Excel/CSV → contacts array)
+│   ├── conversation-buckets.ts   # getConversationBucket() — cold/active/stalled/closed classification
 │   ├── telnyx-usage-sync.ts      # syncTelnyxUsage (MDR + CDR → TelnyxUsageRecord)
 │   ├── usage-export.ts           # getUsageForExport (aggregate for Excel export)
 │   └── email-format.ts           # plainTextToEmailHtml, bodyContainsHtml
@@ -325,6 +351,8 @@ missedCallAiEnabled     Boolean   @default(true)        // When false: no SMS is
 smsCooldownDays         Int?                            // null = use SMS_COOLDOWN_DAYS env or 7 days
 cooldownBypassNumbers   Json?     @default("[]")        // Phone numbers that skip cooldown (for testing)
 
+massMessagingEnabled    Boolean   @default(false)       // Unlock email + SMS campaign outreach (Outreach tab)
+
 bookingPageTitle        String?                         // "Schedule a Free In-Person Quote"
 bookingPageServiceLabel String?                         // "What do you need a quote for?"
 bookingPageConfirmation String?   @db.Text              // "You're all set! ..."
@@ -361,6 +389,7 @@ websiteLeads            WebsiteLead[]
 - `calendarEnabled + googleCalendarConnected` must both be `true` for the SMS booking state machine to activate
 - `callScreenerEnabled` without `forwardingNumber` = IVR gate → speak → hangup (no actual forwarding)
 - `callScreenerEnabled` with `forwardingNumber` = IVR gate → "please hold" → dial B-leg → bridge
+- `massMessagingEnabled = false` → Outreach tab (email + SMS campaigns) shows a locked FeatureGate overlay; all campaign API routes return 403
 
 ---
 
@@ -999,12 +1028,13 @@ async function sendSMS(business, to, text)
 
 | Route | Method | Purpose |
 |---|---|---|
+| `/api/dashboard/conversations` | GET | AI SMS conversation list with inline messages. 403 if `!missedCallAiEnabled`. Excludes screening/forwarding-only conversations. |
 | `/api/dashboard/messages` | GET | List conversations. Query: `page`, `search`, `status`, `limit` |
 | `/api/dashboard/messages/[conversationId]` | GET | Single conversation + all messages |
 | `/api/dashboard/messages/send` | POST | Manual SMS. Body: `{ conversationId, text }`. Sends via Telnyx, creates Message record. |
 | `/api/dashboard/messages/contacts` | GET | Contacts for compose UI |
-| `/api/dashboard/messages/campaign` | POST | Create EmailCampaign + EmailRecipients |
-| `/api/dashboard/messages/campaign/preview` | POST | Preview rendered email template |
+| `/api/dashboard/messages/campaign` | POST | SMS campaign send. 403 if `!massMessagingEnabled`. |
+| `/api/dashboard/messages/campaign/preview` | POST | SMS campaign preview. 403 if `!massMessagingEnabled`. |
 | `/api/dashboard/contacts` | GET | List contacts. Query: `search?`, `status?` |
 | `/api/dashboard/contacts` | POST | Create contact. Body: `{ phoneNumber?, name?, email?, source?, ... }` |
 | `/api/dashboard/contacts/[id]` | GET | Contact detail with tags, activities, jobs |
@@ -1014,14 +1044,14 @@ async function sendSMS(business, to, text)
 | `/api/dashboard/voicemails` | GET | Conversations with `recordingUrl != null` |
 | `/api/dashboard/voicemails/[id]` | DELETE | Clear `recordingUrl` + `voicemailTranscription` on conversation (soft-delete voicemail). Returns `{ success: true }`. 404 if not found or no recording. |
 | `/api/dashboard/screened-calls` | GET | ScreenedCall records |
-| `/api/dashboard/website-leads` | GET | WebsiteLead records |
+| `/api/dashboard/website-leads` | GET | WebsiteLead records. 403 if `!missedCallAiEnabled`. |
 | `/api/dashboard/analytics` | GET | Feature-aware analytics. Period: today/week/month/all. Response includes `features` (BusinessFeatures) and `totalCallsMode` ('screened' or 'calls') so the client can show/hide cards. `totalCalls` source depends on `totalCallsMode`: 'screened' → ScreenedCall count; 'calls' → Conversation WHERE callSid IS NOT NULL. |
 | `/api/dashboard/tags` | GET/POST | List / create tags |
 | `/api/dashboard/jobs` | GET/POST | List / create jobs |
 | `/api/dashboard/jobs/[id]` | PATCH/DELETE | Update / delete job |
-| `/api/dashboard/emails` | GET | EmailCampaign list |
-| `/api/dashboard/emails/[id]` | GET | Single EmailCampaign (scoped to business). Returns `{ campaign: { id, senderName, subject, body, status, recipientCount, sentAt, createdAt } }`. 404 if not found. Used by compose page "Reuse as Template" flow. |
-| `/api/appointments` | GET | List appointments |
+| `/api/dashboard/emails` | GET/POST | EmailCampaign list / create. 403 if `!massMessagingEnabled`. |
+| `/api/dashboard/emails/[id]` | GET | Single EmailCampaign. 403 if `!massMessagingEnabled`. Used by "Reuse as Template" flow. |
+| `/api/appointments` | GET | List appointments. 403 if `!calendarEnabled`. |
 | `/api/bookings/[id]` | GET | Appointment detail |
 | `/api/bookings/[id]/cancel` | POST | Cancel: update status='cancelled', delete Google Calendar event |
 | `/api/bookings/delete-past` | DELETE | Remove appointments older than 90 days |
@@ -1051,8 +1081,8 @@ async function sendSMS(business, to, text)
 
 | Route | Method | Purpose |
 |---|---|---|
-| `/api/dashboard/google-ads` | GET | Google Ads data for business. Query: `startDate`, `endDate`, `groupBy` (day\|campaign). Returns `{ totals, daily, campaigns, lastSyncedAt }`. Default last 30 days. |
-| `/api/dashboard/google-ads/sync` | POST | Trigger Google Ads sync for the user's business. Requires `googleAdsEnabled` + `googleAdsCustomerId`. Returns `{ success, rowsSynced, errors, lastSyncedAt }`. |
+| `/api/dashboard/google-ads` | GET | Google Ads data for business. 403 if `!googleAdsEnabled`. Query: `startDate`, `endDate`, `groupBy` (day\|campaign). Returns `{ totals, daily, campaigns, lastSyncedAt }`. Default last 30 days. |
+| `/api/dashboard/google-ads/sync` | POST | Trigger Google Ads sync for the user's business. 403 if `!googleAdsEnabled` or no `googleAdsCustomerId`. Returns `{ success, rowsSynced, errors, lastSyncedAt }`. |
 
 ### Contact / Book Demo
 
@@ -1361,6 +1391,26 @@ syncAllBusinessAds(): Promise<{ synced, errors }>
 // Find all businesses with googleAdsEnabled + googleAdsCustomerId → syncGoogleAdsData each.
 ```
 
+### `lib/conversation-buckets.ts`
+```typescript
+export type ConversationBucket = 'cold' | 'active' | 'stalled' | 'closed'
+
+getConversationBucket(conv: ConversationForBucket): ConversationBucket
+// Classifies a conversation into one of four buckets:
+//   'closed'  — has lead data (email/address/timeframe) or a linked appointment
+//   'cold'    — no inbound messages yet (only outbound AI greeting)
+//   'active'  — has inbound message AND lastMessageAt within past 48 hours
+//   'stalled' — has inbound message AND lastMessageAt > 48 hours ago
+
+export const BUCKET_LABELS: Record<ConversationBucket, string>
+// Dashboard display labels: cold→'No Reply', active→'In Progress', stalled→'Went Quiet', closed→'Closed'
+// (Client-facing labels differ from bucket names — always use BUCKET_LABELS in UI)
+
+export const BUCKET_COLORS: Record<ConversationBucket, string>
+// Tailwind classes per bucket: cold=gray, active=green, stalled=yellow, closed=blue
+```
+Used by `ConversationsClient.tsx` for tab filtering and badge coloring. The 48-hour `active`/`stalled` cutoff is hard-coded in this file — change it here if the business logic changes.
+
 ### `lib/email-format.ts`
 ```typescript
 bodyContainsHtml(text: string): boolean
@@ -1422,12 +1472,20 @@ plainTextToEmailHtml(text: string): string
 
 **`app/(dashboard)/layout.tsx`** — Dashboard shell
 - `DashboardShellClient`: sidebar navigation, user menu, "View as Client" admin toggle
-- Nav items built via `getBusinessFeatures(business)` — items shown/hidden per feature flags:
-  - Always: Overview, Messages, Analytics, Contacts, Jobs, Emails, Settings
+- Nav items built via `getBusinessFeatures(business)` — current structure:
+  - Always: Overview, Conversations, Outreach, Analytics, Contacts, Jobs, Settings
   - `hasMissedCallAi`: Website Leads, Scheduled Quotes
-  - `hasAnyScreening`: Blocked Calls
+  - `!hasMissedCallAi && hasAnyScreening`: Blocked Calls (screening-only clients only — NOT for AI clients who also happen to have a screener)
   - `!hasMissedCallAi`: Voicemails
   - `googleAdsEnabled`: Google Ads (label from `googleAdsTabLabel` or "Google Ads")
+- Messages and Emails nav items were removed; both old URLs redirect to `/dashboard/outreach`
+- Conversations uses icon `MessagesSquare`; Outreach uses icon `Send`
+
+**`app/components/FeatureGate.tsx`** — Server component (no `'use client'`), two modes:
+- `locked` mode: blurs children + overlay card with mailto CTA. Subject line: `Unlock {feature} for {businessName}` (passed through `encodeURIComponent`). Use when a feature requires a paid upgrade.
+- `needs-setup` mode: blurs children + overlay card with a green setup link. Use when a feature is available but needs configuration (e.g. Google Calendar not connected).
+- Props: `mode: 'locked' | 'needs-setup'`, `feature: string`, `businessName?: string`, `setupHref?: string`, `setupLabel?: string`
+- No state/hooks needed — pure server-rendered overlay.
 
 **`app/(dashboard)/dashboard/page.tsx`** — Overview (server component)
 - Calls `getBusinessFeatures(business)` to build full `features` object (including `googleAds`)
@@ -1444,7 +1502,37 @@ plainTextToEmailHtml(text: string): string
 - Recent Screened Calls section: `features.hasAnyScreening && !features.hasMissedCallAi`
 - Recent Voicemails section: `!features.hasMissedCallAi && initialVoicemails.length > 0` — uses server-fetched data, no client fetch needed
 
-**`app/(dashboard)/dashboard/messages/page.tsx`** — `MessagesClient`
+**`app/(dashboard)/dashboard/conversations/page.tsx`** — `ConversationsClient`
+- FeatureGate `locked` on `business.missedCallAiEnabled !== false` — shows upgrade overlay for non-AI clients
+- Dark theme (`bg-gray-950`), `-m-6 md:-m-8` negative margin so it bleeds edge-to-edge within the padded shell
+- 5 tabs: All / No Reply (cold) / In Progress (active) / Went Quiet (stalled) / Closed
+  - Tab labels are client-facing; internal bucket names differ — see `lib/conversation-buckets.ts`
+  - Tab bar: `overflow-x-auto` with scrollbar hidden; tabs are `whitespace-nowrap flex-shrink-0` — scrolls horizontally on mobile, no wrapping
+- **Mobile layout** (`< md`): `mobileChatOpen` boolean — list and thread never shown simultaneously
+  - List visible when `!mobileChatOpen`; thread visible when `mobileChatOpen && selectedConvo`
+  - Thread header: back arrow (ArrowLeft, min 44×44px touch target) + contact name + bucket badge
+  - Thread content: no height cap, page scrolls naturally (no fixed-height container)
+  - Switching tabs resets `mobileChatOpen(false)` back to list
+- **Desktop layout** (`md+`): unchanged split-pane — `col-span-2` list, `col-span-3` thread with `sticky top-6` and `max-h-[560px] overflow-y-auto`
+- Module-scope components (NOT defined inside `ConversationsClient` — avoids recreation on every render):
+  - `ConvoCard` — props: `convo: BucketedConversation`, `isSelected`, `onSelect`, `activeTab`
+  - `ThreadBody` — props: `convo: Conversation`, `scrollable?: boolean`
+  - `EmptyState` — props: `activeTab: TabKey`
+  - `BucketedConversation` type alias: `Conversation & { bucket: ConversationBucket }`
+- Fetches from `/api/dashboard/conversations` (403 if AI not enabled)
+
+**`app/(dashboard)/dashboard/outreach/page.tsx`** — `OutreachClient`
+- FeatureGate `locked` on `business.massMessagingEnabled` — shows upgrade overlay for clients without outreach
+- Email/SMS channel switcher tabs at the top
+- Embeds `<EmailsClient hideHeader />` for email campaigns
+- Embeds `<MessagesClient hideHeader />` for SMS threads (manual outbound SMS threads)
+- `hideHeader` prop suppresses the h1 title inside each embedded client since OutreachClient provides its own header
+
+**`app/(dashboard)/dashboard/messages/page.tsx`** — Legacy redirect
+- `redirect('/dashboard/outreach')` — old Messages URL preserved for bookmarks/links
+
+**`app/(dashboard)/dashboard/messages/MessagesClient.tsx`** — `MessagesClient` (embeddable)
+- `hideHeader?: boolean` prop — suppresses h1 when embedded inside OutreachClient
 - Conversation list with search, status filter
 - Click conversation → full SMS thread view
 - Manual reply compose box → POST `/api/dashboard/messages/send`
@@ -1452,6 +1540,9 @@ plainTextToEmailHtml(text: string): string
 - Conversation status badges
 
 **`app/(dashboard)/dashboard/appointments/page.tsx`** — `AppointmentsClient`
+- Dual FeatureGate:
+  - `!calendarEnabled` → `locked` mode (upgrade required)
+  - `calendarEnabled && !googleCalendarConnected` → `needs-setup` mode, link to `/api/auth/google?businessId=${business.id}`
 - Upcoming + past appointments list
 - Each row: customer name, phone, service, date/time, address, source badge
 - `CancelBookingButton`: POST `/api/bookings/[id]/cancel`
@@ -1485,8 +1576,13 @@ plainTextToEmailHtml(text: string): string
 - Shows caller phone, date, result
 
 **`app/(dashboard)/dashboard/website-leads/page.tsx`** — `WebsiteLeadsClient`
+- FeatureGate `locked` on `business.missedCallAiEnabled !== false`
 - WebsiteLead records from contact forms
 - Name, phone, email, message, status
+
+**`app/(dashboard)/dashboard/ads/page.tsx`** — Google Ads (server wrapper)
+- FeatureGate `locked` on `!business.googleAdsEnabled` — shows upgrade overlay
+- Server component fetches business, renders `<AdsClient />` inside the gate
 
 **`app/(dashboard)/dashboard/analytics/page.tsx`** — `AnalyticsClient`
 - Period picker: Today / This Week / This Month / All Time
@@ -1497,12 +1593,15 @@ plainTextToEmailHtml(text: string): string
   - Leads Captured / Website Leads / Messages Sent: only when `features.hasMissedCallAi`
 - Lead sources bar chart + Recent Activity timeline always shown
 
-**`app/(dashboard)/dashboard/emails/page.tsx`** — `EmailsClient`
+**`app/(dashboard)/dashboard/emails/page.tsx`** — Legacy redirect
+- `redirect('/dashboard/outreach')` — old Emails URL preserved for bookmarks/links
+
+**`app/(dashboard)/dashboard/emails/EmailsClient.tsx`** — `EmailsClient` (embeddable)
+- `hideHeader?: boolean` prop — suppresses h1 when embedded inside OutreachClient
 - "Sent Campaigns" section — lists campaigns where `status === 'sent'`, sorted by `sentAt` desc
 - Columns: Subject, Sent (timestamp), Recipients, Actions
 - "Reuse as Template" button per row links to `/dashboard/emails/new?templateId=[campaignId]`
 - Draft/sending campaigns are intentionally hidden for now
-- "New Campaign" button in the header links to `/dashboard/emails/new`
 
 **`app/(dashboard)/dashboard/emails/new/page.tsx`** — `EmailComposeClient`
 - Subject line input
@@ -1703,6 +1802,12 @@ const isPublicApiRoute = createRouteMatcher([
 
 20. **`callConnected` prevents duplicate SMS** — When a forwarding call connects (`callConnected=true`), `sendMissedCallSMS()` skips SMS. The check is: `if (conversation.callConnected && durationSeconds > 5)`. The >5s guard prevents triggering on connections that immediately dropped.
 
+### React / Component Architecture
+
+28. **Define sub-components at module scope, not inside parent components** — Defining a component function inside another component (e.g. `function ConvoCard() {}` inside `ConversationsClient`) causes React to treat it as a new component type on every render, destroying and remounting its subtree instead of reconciling. Always define helper components at module scope and pass state down as props. Established examples: `ConvoCard`, `ThreadBody`, `EmptyState` in `ConversationsClient.tsx`; `FeatureIcons` in `ClientTable.tsx`.
+
+29. **Mobile-first responsive pattern for list/detail views** — When a page has a list + detail pane, use the `mobileChatOpen` boolean pattern (established in `MessagesClient.tsx` and followed in `ConversationsClient.tsx`): single `boolean` state; show list OR detail, never both stacked. Desktop uses a CSS grid split-pane (`md:grid-cols-5`) and the boolean is irrelevant. Tab bars that could overflow on mobile should use `overflow-x-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]` with `whitespace-nowrap flex-shrink-0` on each tab.
+
 ### 10DLC / SMS Compliance
 
 21. **10DLC registration required** — For US business SMS at scale, all Telnyx numbers must be registered under a 10DLC campaign. Without registration, carriers may block or rate-limit messages. Required fields for registration: business name, EIN, business type, use case (marketing/transactional), sample message content. This is done in the Telnyx portal, not in code.
@@ -1827,4 +1932,99 @@ syncAllBusinessAds(): Promise<{ synced, errors }>
 
 ---
 
-*This document reflects the codebase as of April 2026. Update after any significant architectural changes.*
+## 15. Admin Dashboard
+
+### Overview
+
+Super-admin panel at `/admin` — only accessible when `userId == ADMIN_USER_ID`. Provides a bird's-eye view of all client businesses plus a slide-out detail panel for managing each client.
+
+**Access:** Clerk auth required. Route handler checks `userId !== ADMIN_USER_ID → 403`. Not in middleware — check is per-route.
+
+**Mobile:** The admin dashboard is designed to be used on a phone. All components are responsive — see mobile notes below.
+
+### Files
+
+| File | Purpose |
+|---|---|
+| `app/admin/page.tsx` | Lean server shell: auth check, fetch all businesses, render `<AdminClient />` |
+| `app/admin/AdminClient.tsx` | Main client component: `<HeaderKPIs>` + `<ClientTable>` + `<ClientDetailPanel>` slide-out. Header is `flex-wrap`; search input grows on mobile. |
+| `app/admin/ClientTable.tsx` | **Mobile:** card list (`md:hidden divide-y`) per business. **Desktop:** dense table (`hidden md:table`). `FeatureIcons` defined at module scope. Columns: Name, Status, MRR, Features, Convos (this month / all-time stacked), Leads (this month / all-time stacked), Actions |
+| `app/admin/ClientDetailPanel.tsx` | Slide-out panel triggered by row click. `w-full sm:w-[520px] lg:w-[600px]` — full-width on phones. Three tabs: Toggles, Settings, Tools |
+| `app/admin/HeaderKPIs.tsx` | Top KPI strip: `grid-cols-1 sm:grid-cols-3` — stacks on mobile |
+| `app/admin/AdminTools.tsx` | Admin-level tools (Telnyx usage sync, Excel export) |
+| `app/admin/types.ts` | `AdminBusiness` interface — includes all Business fields plus `_count` (conversations, appointments, users, screenedCalls, blockedCalls30d) and computed `conversationsThisMonth`, `conversationsLastMonth`, `leadsThisMonth`, `conversationsAllTime`, `leadsAllTime` |
+| `app/admin/ClientDetailPanel/TogglesTab.tsx` | Toggle rows for all feature flags: MissedCall AI, Call Screener, Spam Filter, Online Booking, Google Calendar (read-only status), Google Ads, Notify by SMS/Email, Mass Outreach (massMessagingEnabled). `px-4 sm:px-6` padding. |
+| `app/admin/ClientDetailPanel/SettingsTab.tsx` | Editable fields: fees, Telnyx number, forwarding number, AI config, timezone. All `grid-cols-2` form rows are `grid-cols-1 sm:grid-cols-2`. `px-4 sm:px-6` padding. |
+| `app/admin/ClientDetailPanel/ToolsTab.tsx` | Per-business tools: bulk import contacts, view conversations, etc. `px-4 sm:px-6` padding. |
+
+### `app/api/admin/businesses/route.ts` — enriched list
+
+Returns each business with:
+- All Business model fields
+- `_count` with `conversations`, `appointments`, `users`, `screenedCalls`, `blockedCalls30d`
+- Computed server-side: `conversationsThisMonth`, `conversationsLastMonth`, `leadsThisMonth`, `conversationsAllTime`, `leadsAllTime`
+
+Stats are computed via Prisma `_count` with date filters (current calendar month, all-time).
+
+### `app/api/admin/businesses/[id]/route.ts` — PATCH
+
+`allowedFields` array includes all business configuration fields including:
+- `massMessagingEnabled` — unlock outreach features
+- `smsCooldownDays` — per-business SMS cooldown override
+- `googleAdsEnabled`, `googleAdsCustomerId`, `googleAdsTabLabel`
+- All toggles, fees, phone numbers, AI config
+
+Special processing:
+- `telnyxPhoneNumber` → normalized to E.164 via `normalizeToE164()`
+- `cooldownBypassNumbers` → parsed from comma-separated string or array → normalized E.164 array
+
+### `AdminBusiness` type (`app/admin/types.ts`)
+
+Extends all standard Business fields with:
+```typescript
+_count: {
+  conversations: number
+  appointments: number
+  users: number
+  screenedCalls: number
+  blockedCalls30d: number
+}
+conversationsThisMonth: number
+conversationsLastMonth: number
+leadsThisMonth: number
+conversationsAllTime: number
+leadsAllTime: number
+```
+
+### Toggle architecture in `TogglesTab.tsx`
+
+Each toggle calls `patch(field, !currentValue, label)` which:
+1. Optimistically updates local state
+2. PATCH `/api/admin/businesses/{id}` with `{ [field]: value }`
+3. On success: merges DB response back (preserves `_count` and computed stats from original)
+4. On failure: reverts to original state + shows error toast
+
+The `callScreenerMessage` and `forwardingNumber` have inline edit flows (text input + Save/Cancel) rather than simple toggles.
+
+---
+
+*This document reflects the codebase as of May 2026. Update after any significant architectural changes.*
+
+---
+
+### Mobile Responsiveness Summary (as of May 2026)
+
+The following dashboards are fully mobile-optimized (tested at < 640px):
+
+| Area | Pattern |
+|---|---|
+| `/admin` main table | Mobile card list (`md:hidden`) + desktop table (`hidden md:table`) |
+| `/admin` slide-out panel | `w-full sm:w-[520px] lg:w-[600px]` |
+| `/admin` KPI strip | `grid-cols-1 sm:grid-cols-3` |
+| `/admin` settings forms | `grid-cols-1 sm:grid-cols-2` on all two-column grids |
+| `/dashboard` shell | Hamburger menu → slide-in sidebar (already done before May 2026) |
+| `/dashboard/conversations` | `mobileChatOpen` toggle, scrollable tab bar |
+| `/dashboard/contacts` | Mobile card list + desktop table (already done) |
+| `/dashboard/jobs` | Mobile card list + desktop table (already done) |
+
+Remaining pages not yet audited for mobile: `appointments`, `analytics`, `voicemails`, `website-leads`, `ads`.
