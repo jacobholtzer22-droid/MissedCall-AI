@@ -2079,6 +2079,8 @@ async function generateAIResponse(
 
 TODAY: ${weekday}, ${todayFormatted} (${tz})
 
+CRITICAL: The customer's callback number is ${conversation.callerPhone}. When verifying a phone number, ALWAYS use this exact number. NEVER use any phone number from BUSINESS INFO, About, or Special Instructions as the customer's callback number.
+
 YOUR GOAL: Understand what the customer needs, collect their name and property address, get a general timeframe, then hand off to the business owner. Do NOT offer specific time slots or try to schedule — that is the owner's job.
 
 PERSONALITY:
@@ -2103,7 +2105,7 @@ IDEAL CONVERSATION (3-5 messages from you):
 LEAD CAPTURE RULES:
 - Collect: name, address (ask but optional), general timeframe.
 - Do NOT ask for email. Ever.
-- Do NOT ask for phone number — you already have it from SMS. But DO ask "Is this the best number to reach you at?" to verify.
+- Do NOT ask the customer for their phone number — we already have it from the SMS thread. The caller's phone number is ${conversation.callerPhone}. To verify it's the right callback number, ask: "Is ${conversation.callerPhone} the best number to reach you at?" Use that EXACT number, formatted as shown. Do NOT substitute any other phone number from BUSINESS INFO or anywhere else.
 - If customer says "book" or "schedule", say "I'd love to help! Let me get your info and someone will call you to set that up."
 - Parse info from ANY message. "I'm John and I need lawn care next week at 123 Main St" = name + service + address + timeframe in one message. Never re-ask for info already given.
 - When you have collected enough info (at minimum: name), tell them someone will follow up, then output [READY_TO_CAPTURE] at the very end of your message.
@@ -2126,7 +2128,7 @@ BUSINESS INFO:
 ${business.aiContext ? `- About: ${business.aiContext}` : ''}
 ${business.aiInstructions ? `- Special instructions: ${business.aiInstructions}` : ''}
 - Business hours: ${hoursSummary}
-${business.forwardingNumber ? `- Phone: ${business.forwardingNumber}` : ''}
+${business.forwardingNumber ? `- Owner's business line (mention only when redirecting customers to call, never as their callback number): ${business.forwardingNumber}` : ''}
 ${(business as any).website ? `- Website: ${(business as any).website}` : ''}
 
 UNKNOWN QUESTIONS:
@@ -2208,6 +2210,8 @@ STEP GUIDANCE — NEVER combine questions; ask ONE thing per message:
 TODAY: ${weekday}, ${todayFormatted} (${tz})
 ${availableDatesForPrompt}
 
+CRITICAL: The customer's callback number is ${conversation.callerPhone}. When verifying a phone number, ALWAYS use this exact number. NEVER use any phone number from BUSINESS INFO, About, or Special Instructions as the customer's callback number.
+
 YOUR GOAL: Help the customer book a free in-person quote appointment. The booking flow state machine handles slot verification, calendar checks, and appointment creation. You guide the conversation naturally.
 
 PERSONALITY:
@@ -2243,7 +2247,7 @@ BOOKING RULES:
 - Ask for name first, then address — never "What's your name and address?" in one message.
 - After booking, tell them "The owner will give you a call beforehand to confirm."
 - The confirmation must include the ACTUAL booked date/time, not the customer's original words.
-- Verify phone: "Is this the best number to reach you at?"
+- Verify callback number: The caller's phone number is ${conversation.callerPhone}. Ask: "Is ${conversation.callerPhone} the best number to reach you at?" Use that EXACT number. Do NOT substitute any other phone number from BUSINESS INFO or anywhere else.
 - Do NOT ask for email. Ever.
 
 DATE/TIME RULES:
@@ -2274,7 +2278,7 @@ BUSINESS INFO:
 ${business.aiContext ? `- About: ${business.aiContext}` : ''}
 ${business.aiInstructions ? `- Special instructions: ${business.aiInstructions}` : ''}
 - Business hours: ${hoursSummary}
-${business.forwardingNumber ? `- Phone: ${business.forwardingNumber}` : ''}
+${business.forwardingNumber ? `- Owner's business line (mention only when redirecting customers to call, never as their callback number): ${business.forwardingNumber}` : ''}
 ${(business as any).website ? `- Website: ${(business as any).website}` : ''}
 
 UNKNOWN QUESTIONS:

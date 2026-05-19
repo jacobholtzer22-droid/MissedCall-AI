@@ -957,6 +957,7 @@ Only runs when `business.calendarEnabled == true`. Uses `Conversation.bookingFlo
 - Custom `aiInstructions` (personality/rules)
 - Current date/time in business timezone
 - Calendar availability note (if calendar enabled)
+- `conversation.callerPhone` injected twice: once in a `CRITICAL` block at the top of the prompt, and again inline in the phone-verification rule. This is intentional — it prevents the AI from quoting `business.forwardingNumber` (the owner's number) when asking the customer to confirm their callback number. The `business.forwardingNumber` field in BUSINESS INFO is labeled "Owner's business line (mention only when redirecting customers to call, never as their callback number)" specifically to reinforce this distinction.
 - Instructions for special tags:
   - `[APPOINTMENT_BOOKED: datetime="YYYY-MM-DD HH:mm" service="..." name="..." address="..."]` — legacy AI-side booking
   - `[LEAD_CAPTURED: name="..." service="..." email="..." address="..." timeframe="..."]`
@@ -965,7 +966,7 @@ Only runs when `business.calendarEnabled == true`. Uses `Conversation.bookingFlo
 
 **Conversation history:** All previous messages in the conversation are passed as `user`/`assistant` turns.
 
-**Model:** Uses `claude-3-5-haiku-20241022` or similar (check current anthropic SDK default).
+**Model:** `claude-haiku-4-5-20251001` (both lead-only and calendar modes).
 
 **Error handling:** If Claude API fails (503, overload), sends fallback "Let me have someone get back to you" message and calls `notifyOwnerOnAIFailed()`.
 
@@ -1088,7 +1089,7 @@ async function sendSMS(business, to, text)
 
 | Route | Method | Purpose |
 |---|---|---|
-| `/api/contact` | POST | Website contact form. Body: `{ name, phone?, message?, smsConsent, businessId?, businessSlug?, email? }`. Sends email via Resend, creates Contact + WebsiteLead in background. |
+| `/api/contact` | POST | Website contact form. Body: `{ name, phone?, message?, smsConsent, businessId?, businessSlug?, email? }`. When **no** `businessId`/`businessSlug` is present (marketing page): sends Resend email to `YOUR_EMAIL`. When either is present (client tenant site): skips the email entirely and only writes to the DB. In both cases creates Contact (`source='website_form'`) + WebsiteLead in background fire-and-forget. All user input in the email body is HTML-escaped via a local `escapeHtml()` helper. No auth, no rate limiting — open endpoint. |
 | `/api/book-demo` | POST | Demo request form submission |
 
 ---
@@ -1801,6 +1802,8 @@ const isPublicApiRoute = createRouteMatcher([
 19. **Conversation status `appointment_booked` vs `lead_captured`** — After booking, status is `appointment_booked`. In lead flow (no calendar), status is `lead_captured`. Both statuses receive limited AI responses: only appointment-related questions get answered; other messages get "You're welcome! Call us if you need anything."
 
 20. **`callConnected` prevents duplicate SMS** — When a forwarding call connects (`callConnected=true`), `sendMissedCallSMS()` skips SMS. The check is: `if (conversation.callConnected && durationSeconds > 5)`. The >5s guard prevents triggering on connections that immediately dropped.
+
+21. **AI phone verification must use `conversation.callerPhone`, not `business.forwardingNumber`** — Both system prompts in `generateAIResponse()` contain `business.forwardingNumber` (labeled "Owner's business line") in the BUSINESS INFO section. Without an explicit anchor, the AI would quote that number when verifying the customer's callback number (confirmed in production: customers were asked "Is +1XXXXXXXXXX the best number?" where the number was the owner's). The fix: `conversation.callerPhone` is injected into a `CRITICAL` block at the top of each prompt and again inline in the phone-verification rule. Do NOT remove these CRITICAL blocks or rename the forwardingNumber label back to `- Phone:` without understanding this interaction.
 
 ### React / Component Architecture
 

@@ -2,6 +2,15 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { findOrCreateContact } from '@/lib/crm-utils'
 
+function escapeHtml(str: string): string {
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+}
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
@@ -16,7 +25,12 @@ export async function POST(request: NextRequest) {
 
     console.log('Contact form submission:', { name, phone, message, smsConsent })
 
-    if (process.env.RESEND_API_KEY && process.env.YOUR_EMAIL) {
+    const bid = typeof businessId === 'string' ? businessId.trim() || null : null
+    const slug = typeof businessSlug === 'string' ? businessSlug.trim() || null : null
+
+    // Only notify Jacob for unattributed submissions (marketing page). Client-tenant
+    // leads are saved to the DB silently — their own notification flows handle alerts.
+    if (!bid && !slug && process.env.RESEND_API_KEY && process.env.YOUR_EMAIL) {
       await fetch('https://api.resend.com/emails', {
         method: 'POST',
         headers: {
@@ -26,12 +40,13 @@ export async function POST(request: NextRequest) {
         body: JSON.stringify({
           from: 'Align and Acquire <onboarding@resend.dev>',
           to: process.env.YOUR_EMAIL,
-          subject: `New Contact Form: ${name}`,
+          subject: `New Contact Form: ${escapeHtml(name)}`,
           html: `
             <h2>New Contact Form Submission</h2>
-            <p><strong>Name:</strong> ${name}</p>
-            <p><strong>Phone:</strong> ${phone || 'Not provided'}</p>
-            <p><strong>Message:</strong> ${message || 'No message'}</p>
+            <p><strong>Name:</strong> ${escapeHtml(name)}</p>
+            <p><strong>Phone:</strong> ${escapeHtml(phone || 'Not provided')}</p>
+            <p><strong>Email:</strong> ${escapeHtml(email || 'Not provided')}</p>
+            <p><strong>Message:</strong> ${escapeHtml(message || 'No message')}</p>
             <p><strong>SMS Consent:</strong> ${smsConsent ? 'Yes' : 'No'}</p>
           `,
         }),
@@ -39,8 +54,6 @@ export async function POST(request: NextRequest) {
     }
 
     // CRM: link contact for client websites when businessId or businessSlug is provided (background, no effect on response)
-    const bid = typeof businessId === 'string' ? businessId.trim() || null : null
-    const slug = typeof businessSlug === 'string' ? businessSlug.trim() || null : null
     if (bid || slug) {
       void (async () => {
         const business = bid
