@@ -46,6 +46,7 @@ model Business {
   googleCalendarConnected Boolean   @default(false)
   slotDurationMinutes     Int       @default(30)   // Booking slot length (15, 30, 45, etc.)
   bufferMinutes           Int       @default(0)    // Buffer between back-to-back appointments
+  smsBookingEnabled       Boolean   @default(true) // When false, SMS AI captures leads instead of booking even if calendar is connected
 
   // Billing
   stripeCustomerId      String?   @unique

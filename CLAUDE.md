@@ -333,6 +333,7 @@ googleRefreshToken      String?   @db.Text              // Google OAuth2 refresh
 googleCalendarConnected Boolean   @default(false)       // Set to true after successful OAuth callback
 slotDurationMinutes     Int       @default(30)          // Length of each booking slot (15, 30, 45, 60, 90, 120)
 bufferMinutes           Int       @default(0)           // Gap between back-to-back bookings
+smsBookingEnabled       Boolean   @default(true)        // When false, SMS AI captures leads instead of booking (website-only booking mode)
 
 stripeCustomerId        String?   @unique
 stripeSubscriptionId    String?
@@ -386,7 +387,8 @@ websiteLeads            WebsiteLead[]
 
 **Critical flags:**
 - `missedCallAiEnabled = false` → no missed-call SMS; call screener only triggers voicemail recording (if forwarding fails)
-- `calendarEnabled + googleCalendarConnected` must both be `true` for the SMS booking state machine to activate
+- `calendarEnabled + googleCalendarConnected` must both be `true` for the SMS booking state machine to activate; `smsBookingEnabled = false` overrides this — SMS AI falls back to lead capture even when calendar is connected
+- `smsBookingEnabled = false` → website booking still works; SMS AI does lead capture only (use when client wants website-only scheduling)
 - `callScreenerEnabled` without `forwardingNumber` = IVR gate → speak → hangup (no actual forwarding)
 - `callScreenerEnabled` with `forwardingNumber` = IVR gate → "please hold" → dial B-leg → bridge
 - `massMessagingEnabled = false` → Outreach tab (email + SMS campaigns) shows a locked FeatureGate overlay; all campaign API routes return 403
@@ -927,7 +929,7 @@ When Claude returns `[HUMAN_NEEDED]`:
 
 ### `handleSmsBookingFlow()` — Calendar booking state machine
 
-Only runs when `business.calendarEnabled == true`. Uses `Conversation.bookingFlowState` (JSON) to persist state between SMS messages.
+Only runs when `business.calendarEnabled == true` AND `business.smsBookingEnabled == true`. When `smsBookingEnabled=false`, the routing block skips this function and falls through to `handleSmsLeadFlow` (lead capture mode) even if the calendar is connected. Uses `Conversation.bookingFlowState` (JSON) to persist state between SMS messages.
 
 **Booking state machine steps:**
 

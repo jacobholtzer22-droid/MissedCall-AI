@@ -41,6 +41,7 @@ export async function PATCH(
       'missedCallAiEnabled',
       'slotDurationMinutes',
       'bufferMinutes',
+      'smsBookingEnabled',
       'cooldownBypassNumbers',
       'bookingPageTitle',
       'bookingPageServiceLabel',

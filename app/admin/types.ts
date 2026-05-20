@@ -16,6 +16,7 @@ export interface AdminBusiness {
   callScreenerMessage: string | null
   spamFilterEnabled: boolean
   calendarEnabled: boolean
+  smsBookingEnabled: boolean
   googleCalendarConnected: boolean
   googleAdsEnabled: boolean
   bookingRequiresAddress: boolean

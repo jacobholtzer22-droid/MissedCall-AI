@@ -338,10 +338,11 @@ export async function POST(request: NextRequest) {
         return new NextResponse('OK', { status: 200 })
       }
 
-      // ── SMS LEAD FLOW (calendar disabled) ─────────────────────────
-      // Non-calendar: AI handles lead capture conversationally. No rigid state machine.
+      // ── SMS LEAD FLOW (calendar disabled, or SMS booking disabled) ────────────────
+      // smsBookingEnabled=false means website-only booking — SMS AI captures leads instead
+      // of running the booking state machine, even when the calendar is connected.
       // handleSmsLeadFlow only returns true when already lead_captured (skip processing).
-      if (!business.calendarEnabled) {
+      if (!business.calendarEnabled || !business.smsBookingEnabled) {
         const leadHandled = await handleSmsLeadFlow(business, conversation, text, from)
         if (leadHandled) {
           const totalMs = Date.now() - new Date(timing.webhookReceivedAt).getTime()
@@ -361,7 +362,7 @@ export async function POST(request: NextRequest) {
       // AI response (pass bookingFlowState so AI can guide back when customer goes off-topic)
       timing.aiStartAt = timing.now()
       console.log('⏱️ [SMS] AI processing started at:', timing.aiStartAt)
-      const aiResult = await generateAIResponse(business, conversation, text, conversation.bookingFlowState, business.calendarEnabled)
+      const aiResult = await generateAIResponse(business, conversation, text, conversation.bookingFlowState, business.calendarEnabled && business.smsBookingEnabled !== false)
       timing.aiEndAt = timing.now()
       console.log('⏱️ [SMS] AI processing finished at:', timing.aiEndAt)
 
@@ -948,7 +949,7 @@ async function handleSmsLeadFlow(
   _text: string,
   _from: string
 ): Promise<boolean> {
-  if (business.calendarEnabled) return false
+  if (business.calendarEnabled && business.smsBookingEnabled !== false) return false
   if (conversation.status === 'lead_captured') return true // Skip — handled in NO_AI_RESPONSE block
   // All other messages go to AI for conversational lead capture
   return false
@@ -968,8 +969,8 @@ async function handleSmsBookingFlow(
     bookingFlowState: conversation.bookingFlowState,
     customerMessage: text?.slice(0, 80),
   })
-  if (!business.calendarEnabled) {
-    console.log('[SMS BOOKING] Calendar not enabled — skipping booking flow')
+  if (!business.calendarEnabled || !business.smsBookingEnabled) {
+    console.log('[SMS BOOKING] Calendar not enabled or SMS booking disabled — skipping booking flow')
     return false
   }
   // Do not restart or continue flow if already confirmed or has booking

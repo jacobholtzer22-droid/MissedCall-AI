@@ -256,6 +256,15 @@ export function TogglesTab({ business, onUpdateBusiness, onToast }: Props) {
         disabled={saving === 'calendarEnabled'}
       />
 
+      <ToggleRow
+        icon={MessageSquare}
+        label="SMS Auto-Booking"
+        description="When off, the SMS AI will capture leads instead of trying to book appointments, even if calendar is connected. Use this when the client wants website-only booking."
+        checked={business.smsBookingEnabled}
+        onToggle={() => patch('smsBookingEnabled', !business.smsBookingEnabled, 'SMS auto-booking')}
+        disabled={saving === 'smsBookingEnabled'}
+      />
+
       {/* Google Calendar — read-only status badge */}
       <div className="py-4 border-b border-gray-800/50">
         <div className="flex items-center gap-3">
