@@ -7,7 +7,6 @@ const nextConfig = {
         headers: [
           { key: 'X-Frame-Options', value: 'ALLOWALL' },
           { key: 'Content-Security-Policy', value: 'frame-ancestors *' },
-          { key: 'Access-Control-Allow-Origin', value: '*' },
         ],
       },
     ]
