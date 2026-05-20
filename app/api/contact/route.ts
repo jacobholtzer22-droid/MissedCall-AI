@@ -2,6 +2,19 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { findOrCreateContact } from '@/lib/crm-utils'
 
+// CORS — open for now so client tenant websites (e.g. bernal-landscaping.vercel.app)
+// can POST cross-origin. Lock this down to known origins later.
+const CORS_HEADERS = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type',
+  'Access-Control-Max-Age': '86400',
+} as const
+
+export function OPTIONS() {
+  return new NextResponse(null, { status: 204, headers: CORS_HEADERS })
+}
+
 function escapeHtml(str: string): string {
   return str
     .replace(/&/g, '&amp;')
@@ -19,7 +32,7 @@ export async function POST(request: NextRequest) {
     if (!name || !smsConsent) {
       return NextResponse.json(
         { error: 'Name and consent are required' },
-        { status: 400 }
+        { status: 400, headers: CORS_HEADERS }
       )
     }
 
@@ -97,9 +110,9 @@ export async function POST(request: NextRequest) {
       })()
     }
 
-    return NextResponse.json({ success: true })
+    return NextResponse.json({ success: true }, { headers: CORS_HEADERS })
   } catch (error) {
     console.error('Contact form error:', error)
-    return NextResponse.json({ success: false }, { status: 500 })
+    return NextResponse.json({ success: false }, { status: 500, headers: CORS_HEADERS })
   }
 }
