@@ -20,6 +20,16 @@ type Project = {
 
 const projects: Project[] = [
   {
+    title: 'Fraaza Enterprises',
+    category: 'Hydroseeding & Landscaping',
+    description:
+      'A bold, photo-driven website for West Michigan’s hydroseeding experts, owner-operated since 2004. Showcases their hydroseeding, landscaping, soil prep, and retaining wall work with a filterable project gallery, dedicated service pages, and clear calls to call or request a free quote.',
+    image1: '/images/portfolio/fraaza-1.png',
+    image2: '/images/portfolio/fraaza-2.png',
+    url: 'https://www.fraazaenterprises.com/',
+    features: ['Custom Website Design', 'Filterable Project Gallery', 'SEO Optimization', 'Free Quote Requests'],
+  },
+  {
     title: 'Jack of All Blades Landscaping',
     category: 'Landscaping',
     description:
