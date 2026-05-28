@@ -1,6 +1,7 @@
 export type ConversationBucket = 'cold' | 'active' | 'stalled' | 'closed'
 
 export type ConversationForBucket = {
+  status: string
   messages: { direction: string }[]
   lastMessageAt: Date | string
   customerEmail: string | null
@@ -11,10 +12,12 @@ export type ConversationForBucket = {
 
 export function getConversationBucket(conv: ConversationForBucket): ConversationBucket {
   const isClosed = !!(
+    conv.status === 'lead_captured' ||
+    conv.status === 'appointment_booked' ||
+    conv.appointment ||
     conv.customerEmail ||
     conv.customerAddress ||
-    conv.customerTimeframe ||
-    conv.appointment
+    conv.customerTimeframe
   )
   if (isClosed) return 'closed'
 

@@ -614,6 +614,81 @@ export async function POST(request: NextRequest) {
         }
       }
 
+      // ── BACKSTOP: capture leads when AI forgot to emit [READY_TO_CAPTURE] ──
+      // AI often finishes the lead-capture conversation naturally ("someone will follow up")
+      // without emitting [READY_TO_CAPTURE]. Without this backstop, the owner is never
+      // notified and the conversation drifts into the "stalled" bucket. Mirrors the gate
+      // and pipeline used by the explicit [READY_TO_CAPTURE] handler above; fires when we
+      // have an address OR a timeframe (name not required — owner already has the phone
+      // number from the missed call). Notify must succeed before we flip status, so a
+      // failed notify leaves the conversation 'active' and the next inbound retries.
+      const inboundCount = conversation.messages.filter((m: any) => m.direction === 'inbound').length
+      const shouldRunBackstop =
+        !business.calendarEnabled &&
+        !readyToCapture &&
+        !humanNeededMatch &&
+        conversation.status !== 'lead_captured' &&
+        conversation.status !== 'appointment_booked' &&
+        !conversation.appointment &&
+        inboundCount >= 2
+      if (shouldRunBackstop) {
+        const extracted = await extractLeadFromConversation(anthropic, business, conversation)
+        const hasAddress = !!extracted?.customerAddress?.trim()
+        const hasTimeframe = !!extracted?.customerTimeframe?.trim()
+        if (extracted && (hasAddress || hasTimeframe)) {
+          const name = extracted.customerName?.trim() || 'Customer'
+          const service = cleanServiceForOwner(extracted.customerService?.trim() || 'service')
+          console.log('[SMS BACKSTOP] AI gathered lead info without [READY_TO_CAPTURE] — capturing now', {
+            conversationId: conversation.id,
+            hasAddress,
+            hasTimeframe,
+          })
+          let notified = false
+          try {
+            await notifyOwnerOnLeadCaptured(business, {
+              customerName: name,
+              customerPhone: from,
+              customerEmail: extracted.customerEmail?.trim() || undefined,
+              customerAddress: extracted.customerAddress?.trim() || undefined,
+              customerTimeframe: extracted.customerTimeframe?.trim() || undefined,
+              service,
+              conversationTranscript,
+              conversationId: conversation.id,
+            })
+            notified = true
+          } catch (err) {
+            // Notify failed — leave status 'active' so the next inbound retries the backstop.
+            console.error('❌ [SMS BACKSTOP] Failed to notify owner of lead — leaving status active for retry:', err)
+          }
+          if (notified) {
+            try {
+              await db.conversation.update({
+                where: { id: conversation.id },
+                data: {
+                  status: 'lead_captured',
+                  callerName: name,
+                  intent: 'lead_capture',
+                  serviceRequested: service,
+                  customerEmail: extracted.customerEmail?.trim() || null,
+                  customerAddress: extracted.customerAddress?.trim() || null,
+                  customerTimeframe: extracted.customerTimeframe?.trim() || null,
+                },
+              })
+            } catch (err) {
+              console.error('❌ [SMS BACKSTOP] Failed to mark conversation lead_captured:', err)
+            }
+            void findOrCreateContact({
+              businessId: business.id,
+              phoneNumber: from,
+              email: extracted.customerEmail?.trim() || undefined,
+              name: extracted.customerName?.trim() || undefined,
+              address: extracted.customerAddress?.trim() || undefined,
+              source: 'missed_call',
+            }).catch(() => {})
+          }
+        }
+      }
+
       await sendSMSAndLog(business, conversation.id, from, cleanResponse, timing)
       const totalMs = Date.now() - new Date(timing.webhookReceivedAt).getTime()
       timing.totalMs = totalMs
