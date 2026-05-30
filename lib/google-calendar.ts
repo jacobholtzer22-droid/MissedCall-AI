@@ -539,6 +539,7 @@ export type CreateMarketingCalendarEventOptions = {
   customerEmail?: string | null
   businessName: string
   servicesInterested: string[] // interests from form
+  serviceType?: string | null // derived booking type — used in the event title when present
   message?: string | null
 }
 
@@ -553,7 +554,7 @@ export async function createMarketingCalendarEvent(
   customerName: string,
   options: CreateMarketingCalendarEventOptions
 ): Promise<string | null> {
-  const { customerPhone, customerEmail, businessName, servicesInterested, message } = options
+  const { customerPhone, customerEmail, businessName, servicesInterested, serviceType, message } = options
 
   const calendar = await getCalendarClient(businessId)
   if (!calendar) return null
@@ -564,7 +565,9 @@ export async function createMarketingCalendarEvent(
   })
   const tz = business?.timezone ?? 'America/New_York'
 
-  const summary = `Discovery Call — ${customerName}`
+  const summary = serviceType?.trim()
+    ? `${serviceType.trim()} — ${customerName}`
+    : `Discovery Call — ${customerName}`
   const descriptionLines = [
     `Name: ${customerName}`,
     `Phone: ${customerPhone}`,

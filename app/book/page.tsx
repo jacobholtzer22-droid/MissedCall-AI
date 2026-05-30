@@ -1,22 +1,31 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { Calendar, Check, ArrowLeft, Clock, Loader2 } from 'lucide-react'
 import { Logo } from '@/app/components/Logo'
 
-const INTEREST_OPTIONS = [
-  'MissedCall AI',
-  'Custom Website',
-  'Google Ads Management',
-  'Mass Email & SMS Campaigns',
-  'Spam Call Screening',
-  'CRM Dashboard & Calendar',
-  'Full Package — I Want It All',
-  "Not Sure Yet — Let's Talk About It",
+// Step 4 — "Do you need help with anything else?" multi-select options.
+const EXTRA_NEEDS_OPTIONS = [
+  'Website',
+  'Ads',
+  'Spam call blocking',
+  'Just the Missed-Call AI system',
 ] as const
 
-type Step = 'calendar' | 'form' | 'confirmation'
+// Selecting this alone (or nothing) means they only want the core product —
+// no extra consultation services. Kept in sync with the API route's derivation.
+const JUST_AI_OPTION = 'Just the Missed-Call AI system'
+
+type Step =
+  | 'qualify-business' // Step 1: do you run a service-based business?
+  | 'disqualified' // dead-end for "No"
+  | 'qualify-trade' // Step 2: what kind of service business?
+  | 'qualify-misses' // Step 3: how many calls do you miss?
+  | 'qualify-needs' // Step 4: need help with anything else?
+  | 'calendar'
+  | 'form'
+  | 'confirmation'
 
 type ApiDay = {
   date: string
@@ -33,23 +42,42 @@ type SelectedSlot = {
 }
 
 export default function BookPage() {
-  const [step, setStep] = useState<Step>('calendar')
+  const [step, setStep] = useState<Step>('qualify-business')
   const [days, setDays] = useState<ApiDay[]>([])
   const [loadingSlots, setLoadingSlots] = useState(true)
   const [slotsError, setSlotsError] = useState<string | null>(null)
   const [selectedDate, setSelectedDate] = useState<string | null>(null)
   const [selectedSlot, setSelectedSlot] = useState<SelectedSlot | null>(null)
+
+  // Pre-qualification answers (Steps 2–4)
+  const [tradeType, setTradeType] = useState('')
+  const [missedCalls, setMissedCalls] = useState('')
+  const [extraNeeds, setExtraNeeds] = useState<string[]>([])
+
   const [formData, setFormData] = useState({
     name: '',
     phone: '',
     email: '',
     businessName: '',
-    interest: [] as string[],
     message: '',
     smsConsent: false,
   })
   const [submitting, setSubmitting] = useState(false)
   const [formError, setFormError] = useState('')
+
+  // Part 3: fire the Meta Pixel 'Schedule' conversion exactly once, only after a
+  // booking is successfully created (step flips to 'confirmation'). One-shot guard
+  // so it never fires on re-render — and never for disqualified visitors, who
+  // never reach this state.
+  const scheduleFiredRef = useRef(false)
+  useEffect(() => {
+    if (step !== 'confirmation') return
+    if (scheduleFiredRef.current) return
+    scheduleFiredRef.current = true
+    if (typeof window !== 'undefined' && (window as any).fbq) {
+      (window as any).fbq('track', 'Schedule')
+    }
+  }, [step])
 
   useEffect(() => {
     let cancelled = false
@@ -113,17 +141,10 @@ export default function BookPage() {
     }
   }
 
-  function toggleInterest(option: (typeof INTEREST_OPTIONS)[number]) {
-    setFormError('')
-    setFormData((prev) => {
-      const isSelected = prev.interest.includes(option)
-      return {
-        ...prev,
-        interest: isSelected
-          ? prev.interest.filter((item) => item !== option)
-          : [...prev.interest, option],
-      }
-    })
+  function toggleExtraNeed(option: (typeof EXTRA_NEEDS_OPTIONS)[number]) {
+    setExtraNeeds((prev) =>
+      prev.includes(option) ? prev.filter((item) => item !== option) : [...prev, option]
+    )
   }
 
   async function handleFormSubmit(e: React.FormEvent) {
@@ -165,7 +186,10 @@ export default function BookPage() {
           phone: formData.phone.trim(),
           email: formData.email.trim(),
           businessName: formData.businessName.trim(),
-          interests: formData.interest,
+          // Pre-qualification answers (Steps 2–4) threaded to the booking.
+          tradeType: tradeType.trim() || undefined,
+          missedCalls: missedCalls.trim() || undefined,
+          extraNeeds,
           notes: formData.message.trim() || undefined,
           smsConsent: formData.smsConsent,
           slotStart: selectedSlot.iso,
@@ -182,6 +206,12 @@ export default function BookPage() {
       setSubmitting(false)
     }
   }
+
+  const cardWrapClass = 'relative'
+  const cardGlowClass =
+    'absolute inset-0 bg-gradient-to-r from-blue-600/20 to-purple-600/20 rounded-3xl blur-2xl'
+  const cardClass =
+    'relative bg-gray-900/90 backdrop-blur-sm border border-white/10 rounded-3xl p-6 md:p-8'
 
   return (
     <div className="min-h-screen bg-gray-950 text-white">
@@ -210,8 +240,212 @@ export default function BookPage() {
       </header>
 
       <main className="relative z-10 container mx-auto px-6 py-12 md:py-16 max-w-4xl">
+        {/* Step 1: Do you run a service-based business? */}
+        {step === 'qualify-business' && (
+          <div className="max-w-2xl mx-auto">
+            <div className="text-center mb-10">
+              <h1 className="text-4xl md:text-5xl font-bold mb-3">Let&apos;s see if we&apos;re a fit</h1>
+              <p className="text-gray-400 text-lg">A couple quick questions before we grab a time.</p>
+            </div>
+            <div className={cardWrapClass}>
+              <div className={cardGlowClass} />
+              <div className={cardClass}>
+                <p className="text-xl md:text-2xl font-semibold mb-6 text-center">
+                  Do you run a service-based business?
+                </p>
+                <div className="grid sm:grid-cols-2 gap-4">
+                  <button
+                    type="button"
+                    onClick={() => setStep('qualify-trade')}
+                    className="w-full bg-gradient-to-r from-blue-600 to-purple-600 text-white py-4 rounded-xl text-lg font-semibold hover:from-blue-500 hover:to-purple-500 transition-all"
+                  >
+                    Yes
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setStep('disqualified')}
+                    className="w-full bg-white/5 border border-white/10 text-gray-200 py-4 rounded-xl text-lg font-semibold hover:bg-white/10 transition-all"
+                  >
+                    No
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Dead-end for non-service businesses — no calendar, no booking. */}
+        {step === 'disqualified' && (
+          <div className="text-center max-w-xl mx-auto">
+            <h1 className="text-3xl md:text-4xl font-bold mb-4">
+              Looks like we&apos;re not the right fit right now
+            </h1>
+            <p className="text-gray-300 text-lg mb-10">
+              Our system is built specifically for service-based businesses. Thanks for checking us
+              out — if that changes down the road, we&apos;d love to talk.
+            </p>
+            <Link
+              href="/"
+              className="cta-hover inline-flex items-center justify-center bg-white text-gray-900 px-8 py-4 rounded-xl text-lg font-semibold hover:bg-gray-100 transition"
+            >
+              Back to home
+            </Link>
+          </div>
+        )}
+
+        {/* Step 2: What kind of service business? */}
+        {step === 'qualify-trade' && (
+          <div className="max-w-2xl mx-auto">
+            <button
+              type="button"
+              onClick={() => setStep('qualify-business')}
+              className="text-gray-400 hover:text-white transition text-sm mb-6 inline-flex items-center gap-2"
+            >
+              <ArrowLeft className="h-4 w-4" />
+              Back
+            </button>
+            <div className={cardWrapClass}>
+              <div className={cardGlowClass} />
+              <div className={cardClass}>
+                <label htmlFor="qualify-trade-input" className="block text-xl md:text-2xl font-semibold mb-6">
+                  What kind of service business?
+                </label>
+                <input
+                  id="qualify-trade-input"
+                  type="text"
+                  value={tradeType}
+                  onChange={(e) => setTradeType(e.target.value)}
+                  placeholder="e.g. Plumbing, HVAC, Landscaping, Auto Detailing"
+                  autoFocus
+                  className="w-full px-4 py-3 bg-gray-800 border border-white/10 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 transition"
+                />
+                <button
+                  type="button"
+                  onClick={() => setStep('qualify-misses')}
+                  disabled={!tradeType.trim()}
+                  className="mt-6 w-full bg-gradient-to-r from-blue-600 to-purple-600 text-white py-4 rounded-xl text-lg font-semibold hover:from-blue-500 hover:to-purple-500 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Next
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Step 3: How many calls do you miss a week or month? */}
+        {step === 'qualify-misses' && (
+          <div className="max-w-2xl mx-auto">
+            <button
+              type="button"
+              onClick={() => setStep('qualify-trade')}
+              className="text-gray-400 hover:text-white transition text-sm mb-6 inline-flex items-center gap-2"
+            >
+              <ArrowLeft className="h-4 w-4" />
+              Back
+            </button>
+            <div className={cardWrapClass}>
+              <div className={cardGlowClass} />
+              <div className={cardClass}>
+                <label htmlFor="qualify-misses-input" className="block text-xl md:text-2xl font-semibold mb-6">
+                  Roughly how many calls do you miss a week or month?
+                </label>
+                <input
+                  id="qualify-misses-input"
+                  type="text"
+                  value={missedCalls}
+                  onChange={(e) => setMissedCalls(e.target.value)}
+                  placeholder="e.g. 10–15 a week, not sure, a ton"
+                  autoFocus
+                  className="w-full px-4 py-3 bg-gray-800 border border-white/10 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 transition"
+                />
+                <button
+                  type="button"
+                  onClick={() => setStep('qualify-needs')}
+                  disabled={!missedCalls.trim()}
+                  className="mt-6 w-full bg-gradient-to-r from-blue-600 to-purple-600 text-white py-4 rounded-xl text-lg font-semibold hover:from-blue-500 hover:to-purple-500 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Next
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Step 4: Need help with anything else? (multi-select) */}
+        {step === 'qualify-needs' && (
+          <div className="max-w-2xl mx-auto">
+            <button
+              type="button"
+              onClick={() => setStep('qualify-misses')}
+              className="text-gray-400 hover:text-white transition text-sm mb-6 inline-flex items-center gap-2"
+            >
+              <ArrowLeft className="h-4 w-4" />
+              Back
+            </button>
+            <div className={cardWrapClass}>
+              <div className={cardGlowClass} />
+              <div className={cardClass}>
+                <p className="block text-xl md:text-2xl font-semibold mb-6">
+                  Do you need help with anything else?
+                </p>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  {EXTRA_NEEDS_OPTIONS.map((opt) => {
+                    const isSelected = extraNeeds.includes(opt)
+                    return (
+                      <label
+                        key={opt}
+                        className={`group relative flex cursor-pointer items-center justify-between gap-3 rounded-xl border px-4 py-3 text-sm font-medium transition
+                          ${
+                            isSelected
+                              ? 'border-blue-400 bg-gradient-to-r from-blue-600/70 to-purple-600/70 text-white shadow-lg shadow-blue-500/30'
+                              : 'border-white/10 bg-gray-800/70 text-gray-200 hover:border-blue-500/60 hover:bg-gray-800'
+                          }`}
+                      >
+                        <span className="flex-1">{opt}</span>
+                        <span
+                          className={`flex h-5 w-5 items-center justify-center rounded-md border text-[10px] transition
+                            ${
+                              isSelected
+                                ? 'border-transparent bg-white text-blue-600'
+                                : 'border-white/30 bg-black/20 text-transparent group-hover:text-white/60'
+                            }`}
+                        >
+                          <Check className="h-3 w-3" />
+                        </span>
+                        <input
+                          type="checkbox"
+                          name="extraNeeds"
+                          value={opt}
+                          checked={isSelected}
+                          onChange={() => toggleExtraNeed(opt)}
+                          className="sr-only"
+                        />
+                      </label>
+                    )
+                  })}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setStep('calendar')}
+                  className="mt-6 w-full bg-gradient-to-r from-blue-600 to-purple-600 text-white py-4 rounded-xl text-lg font-semibold hover:from-blue-500 hover:to-purple-500 transition-all"
+                >
+                  Continue to scheduling
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {step === 'calendar' && (
           <>
+            <button
+              type="button"
+              onClick={() => setStep('qualify-needs')}
+              className="text-gray-400 hover:text-white transition text-sm mb-6 inline-flex items-center gap-2"
+            >
+              <ArrowLeft className="h-4 w-4" />
+              Back
+            </button>
             <div className="text-center mb-10">
               <h1 className="text-4xl md:text-5xl font-bold mb-3">
                 Let&apos;s Talk — Pick a Time That Works
@@ -403,47 +637,6 @@ export default function BookPage() {
                       placeholder="Your business"
                       className="w-full px-4 py-3 bg-gray-800 border border-white/10 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 transition"
                     />
-                  </div>
-                </div>
-                <div className="mb-5">
-                  <p className="block text-sm font-medium text-gray-300 mb-2">
-                    What services are you interested in?
-                  </p>
-                  <div className="grid gap-2 sm:grid-cols-2">
-                    {INTEREST_OPTIONS.map((opt) => {
-                      const isSelected = formData.interest.includes(opt)
-                      return (
-                        <label
-                          key={opt}
-                          className={`group relative flex cursor-pointer items-center justify-between gap-3 rounded-xl border px-4 py-3 text-sm font-medium transition
-                            ${
-                              isSelected
-                                ? 'border-blue-400 bg-gradient-to-r from-blue-600/70 to-purple-600/70 text-white shadow-lg shadow-blue-500/30'
-                                : 'border-white/10 bg-gray-800/70 text-gray-200 hover:border-blue-500/60 hover:bg-gray-800'
-                            }`}
-                        >
-                          <span className="flex-1">{opt}</span>
-                          <span
-                            className={`flex h-5 w-5 items-center justify-center rounded-md border text-[10px] transition
-                              ${
-                                isSelected
-                                  ? 'border-transparent bg-white text-blue-600'
-                                  : 'border-white/30 bg-black/20 text-transparent group-hover:text-white/60'
-                              }`}
-                          >
-                            <Check className="h-3 w-3" />
-                          </span>
-                          <input
-                            type="checkbox"
-                            name="interest"
-                            value={opt}
-                            checked={isSelected}
-                            onChange={() => toggleInterest(opt)}
-                            className="sr-only"
-                          />
-                        </label>
-                      )
-                    })}
                   </div>
                 </div>
                 <div className="mb-6">

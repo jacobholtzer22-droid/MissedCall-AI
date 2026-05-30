@@ -19,10 +19,34 @@ type BookingPayload = {
   phone: string
   email: string
   businessName: string
-  interests: string[]
+  // Pre-qualification answers from /book (marketing flow only)
+  tradeType?: string // Step 2: what kind of service business
+  missedCalls?: string // Step 3: how many calls missed per week/month
+  extraNeeds?: string[] // Step 4: "need help with anything else" multi-select
+  interests?: string[] // legacy field — superseded by extraNeeds
   notes?: string
   smsConsent: boolean
   slotStart: string // ISO string in ET
+}
+
+// Kept in sync with EXTRA_NEEDS_OPTIONS / JUST_AI_OPTION in app/book/page.tsx
+const JUST_AI_OPTION = 'Just the Missed-Call AI system'
+
+/**
+ * Build the appointment serviceType / calendar event title from the Step 4
+ * "anything else" answers (marketing booking only).
+ *  - only "Just the Missed-Call AI system" (or nothing extra) → "Missed Call AI"
+ *  - additional services selected → "Consultation — interested in: Missed Call AI + [...]"
+ *  - field absent / malformed → "General Consultation"
+ */
+function deriveServiceType(extraNeeds: unknown): string {
+  if (!Array.isArray(extraNeeds)) return 'General Consultation'
+  const additional = extraNeeds
+    .filter((s): s is string => typeof s === 'string')
+    .map((s) => s.trim())
+    .filter((s) => s && s !== JUST_AI_OPTION)
+  if (additional.length === 0) return 'Missed Call AI'
+  return `Consultation — interested in: Missed Call AI + ${additional.join(', ')}`
 }
 
 function getNowInTz() {
@@ -269,7 +293,13 @@ export async function POST(request: NextRequest) {
   try {
     const body = (await request.json()) as BookingPayload
 
-    const { name, phone, email, businessName, interests, notes, smsConsent, slotStart } = body
+    const { name, phone, email, businessName, tradeType, missedCalls, extraNeeds, notes, smsConsent, slotStart } = body
+
+    // Step 4 answers drive the serviceType / calendar event title.
+    const serviceType = deriveServiceType(extraNeeds)
+    const extraList = Array.isArray(extraNeeds)
+      ? extraNeeds.filter((s): s is string => typeof s === 'string' && s.trim().length > 0)
+      : []
 
     if (!name?.trim() || !phone?.trim() || !email?.trim() || !businessName?.trim()) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
@@ -343,8 +373,15 @@ export async function POST(request: NextRequest) {
             customerPhone: phone.trim(),
             customerEmail: email.trim(),
             businessName: businessName.trim(),
-            servicesInterested: interests && interests.length ? interests : [],
-            message: notes?.trim() || null,
+            serviceType,
+            servicesInterested: extraList,
+            message: [
+              tradeType?.trim() ? `Service business type: ${tradeType.trim()}` : null,
+              missedCalls?.trim() ? `Missed calls: ${missedCalls.trim()}` : null,
+              notes?.trim() || null,
+            ]
+              .filter(Boolean)
+              .join('\n') || null,
           }
         )
         if (googleEventId) {
@@ -363,12 +400,14 @@ export async function POST(request: NextRequest) {
         customerName: name.trim(),
         customerPhone: phone.trim(),
         customerEmail: email.trim(),
-        serviceType: interests && interests.length ? interests.join(', ') : 'Discovery Call',
+        serviceType,
         scheduledAt: slotStartDate,
         duration: SLOT_MINUTES,
         notes: [
           `Business: ${businessName.trim()}`,
-          interests && interests.length ? `Services: ${interests.join(', ')}` : null,
+          tradeType?.trim() ? `Service business type: ${tradeType.trim()}` : null,
+          missedCalls?.trim() ? `Missed calls per week/month: ${missedCalls.trim()}` : null,
+          extraList.length ? `Also interested in: ${extraList.join(', ')}` : null,
           notes?.trim() ? `Notes: ${notes.trim()}` : null,
         ]
           .filter(Boolean)
@@ -417,7 +456,10 @@ export async function POST(request: NextRequest) {
               <p><strong>Phone:</strong> ${phone}</p>
               <p><strong>Email:</strong> ${email}</p>
               <p><strong>Business Name:</strong> ${businessName}</p>
-              <p><strong>Selected Services:</strong> ${interests && interests.length ? interests.join(', ') : 'Not specified'}</p>
+              <p><strong>Service business type:</strong> ${tradeType?.trim() || 'Not specified'}</p>
+              <p><strong>Missed calls/week or month:</strong> ${missedCalls?.trim() || 'Not specified'}</p>
+              <p><strong>Booking type:</strong> ${serviceType}</p>
+              <p><strong>Also interested in:</strong> ${extraList.length ? extraList.join(', ') : 'Not specified'}</p>
               <p><strong>Time:</strong> ${dateLabel} at ${timeLabel} (Eastern Time)</p>
               <p><strong>Notes:</strong> ${notes?.trim() || 'None'}</p>
             `,
@@ -432,9 +474,7 @@ export async function POST(request: NextRequest) {
     if (telnyxFrom && ownerPhone && process.env.TELNYX_API_KEY) {
       try {
         const telnyx = new Telnyx({ apiKey: process.env.TELNYX_API_KEY })
-        const smsText = `📅 New strategy call booked with Align and Acquire.\nName: ${name}\nPhone: ${phone}\nEmail: ${email}\nBusiness: ${businessName}\nServices: ${
-          interests && interests.length ? interests.join(', ') : 'Not specified'
-        }\nTime: ${dateLabel} at ${timeLabel} (ET).`
+        const smsText = `📅 New strategy call booked with Align and Acquire.\nName: ${name}\nPhone: ${phone}\nEmail: ${email}\nBusiness: ${businessName}\nType: ${tradeType?.trim() || 'Not specified'}\nMissed calls: ${missedCalls?.trim() || 'Not specified'}\nBooking: ${serviceType}\nTime: ${dateLabel} at ${timeLabel} (ET).`
         await telnyx.messages.send({
           from: telnyxFrom,
           to: ownerPhone,
