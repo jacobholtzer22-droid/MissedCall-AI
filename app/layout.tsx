@@ -8,6 +8,7 @@ import type { Metadata } from 'next'
 import { Inter } from 'next/font/google'
 import { ClerkProvider } from '@clerk/nextjs'
 import { ConditionalNavBar } from './components/ConditionalNavBar'
+import MetaPixel from './components/MetaPixel'
 import './globals.css'
 
 // Use Inter font (clean, professional)
@@ -31,6 +32,7 @@ export default function RootLayout({
     <ClerkProvider>
       <html lang="en">
         <body className={`${inter.className} bg-gray-950 text-white antialiased`}>
+          <MetaPixel />
           <ConditionalNavBar />
           {children}
         </body>
