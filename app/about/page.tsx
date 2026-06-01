@@ -1,6 +1,8 @@
-import Image from 'next/image'
+'use client'
+
 import Link from 'next/link'
-import { ArrowRight, Quote, Wind, Leaf, Car, Droplets, Wrench } from 'lucide-react'
+import { useState } from 'react'
+import { ArrowRight, Quote, Wind, Leaf, Car, Droplets, Wrench, ImageOff } from 'lucide-react'
 import ScrollReveal from '@/app/components/ScrollReveal'
 import BrandFooter from '@/app/components/BrandFooter'
 
@@ -27,6 +29,33 @@ const TESTIMONIALS = [
     placeholder: true,
   },
 ]
+
+// ─────────────────────────────────────────────────────────
+// Founder photo with React-state fallback (no document API)
+// ─────────────────────────────────────────────────────────
+function FounderPhoto({ src, alt }: { src: string; alt: string }) {
+  const [errored, setErrored] = useState(false)
+  return (
+    <div className="relative border-2 overflow-hidden aspect-[3/4]" style={{ borderColor: '#16181C' }}>
+      {errored ? (
+        <div className="w-full h-full flex flex-col items-center justify-center gap-3" style={{ background: 'rgba(110,118,129,0.12)' }}>
+          <ImageOff size={28} strokeWidth={1.5} style={{ color: '#6E7681' }} />
+          <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-center px-4" style={{ color: '#6E7681' }}>
+            Photo coming soon
+          </span>
+        </div>
+      ) : (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={src}
+          alt={alt}
+          className="w-full h-full object-cover"
+          onError={() => setErrored(true)}
+        />
+      )}
+    </div>
+  )
+}
 
 // ─────────────────────────────────────────────────────────
 // Eyebrow
@@ -190,48 +219,8 @@ export default function AboutPage() {
           {/* Photos */}
           <ScrollReveal>
             <div className="grid sm:grid-cols-2 gap-5 max-w-3xl mx-auto mb-14">
-              {/* Photo 1 */}
-              <div className="relative border-2 overflow-hidden aspect-[3/4]" style={{ borderColor: '#16181C' }}>
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src="/images/jacob-1.jpg"
-                  alt="Jacob Holtzer — Founder, Align and Acquire"
-                  className="w-full h-full object-cover"
-                  onError={(e) => {
-                    const el = e.currentTarget as HTMLImageElement
-                    el.style.display = 'none'
-                    const parent = el.parentElement
-                    if (parent) {
-                      const placeholder = document.createElement('div')
-                      placeholder.className = 'w-full h-full flex items-center justify-center'
-                      placeholder.style.background = 'rgba(110,118,129,0.15)'
-                      placeholder.innerHTML = '<span style="color:#6E7681;font-size:12px;font-family:monospace;text-transform:uppercase;letter-spacing:0.2em">Photo coming soon</span>'
-                      parent.appendChild(placeholder)
-                    }
-                  }}
-                />
-              </div>
-              {/* Photo 2 */}
-              <div className="relative border-2 overflow-hidden aspect-[3/4]" style={{ borderColor: '#16181C' }}>
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src="/images/jacob-2.jpg"
-                  alt="Jacob Holtzer — Founder, Align and Acquire"
-                  className="w-full h-full object-cover"
-                  onError={(e) => {
-                    const el = e.currentTarget as HTMLImageElement
-                    el.style.display = 'none'
-                    const parent = el.parentElement
-                    if (parent) {
-                      const placeholder = document.createElement('div')
-                      placeholder.className = 'w-full h-full flex items-center justify-center'
-                      placeholder.style.background = 'rgba(110,118,129,0.15)'
-                      placeholder.innerHTML = '<span style="color:#6E7681;font-size:12px;font-family:monospace;text-transform:uppercase;letter-spacing:0.2em">Photo coming soon</span>'
-                      parent.appendChild(placeholder)
-                    }
-                  }}
-                />
-              </div>
+              <FounderPhoto src="/images/jacob-1.jpg" alt="Jacob Holtzer — Founder, Align and Acquire" />
+              <FounderPhoto src="/images/jacob-2.jpg" alt="Jacob Holtzer — Founder, Align and Acquire" />
             </div>
           </ScrollReveal>
 
