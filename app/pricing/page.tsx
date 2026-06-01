@@ -85,6 +85,22 @@ const TIERS: Tier[] = [
     ],
     notIncluded: [],
   },
+  {
+    name: 'AI Complete',
+    tagline: 'The full system — fully automated by AI',
+    price: 900,
+    setup: 750,
+    popular: false,
+    description: 'Everything in Full System, plus AI that handles your website chat, email replies, Google reviews, and your entire CRM — automatically. Your business keeps running and responding even when you\'re completely off the clock.',
+    includes: [
+      'Everything in Full System',
+      'AI website chatbot — answers visitor questions 24/7',
+      'AI email response — replies to inquiries automatically',
+      'AI Google review manager — monitors and responds to reviews',
+      'Full CRM AI integration — contacts, follow-ups, and notes automated',
+    ],
+    notIncluded: [],
+  },
 ]
 
 const ALA_CARTE: AlaCarteService[] = [
@@ -436,13 +452,13 @@ export default function PricingPage() {
                 <span style={{ color: '#EE6B1A' }}>System tiers</span>
               </div>
               <h2 className="text-[clamp(2rem,5vw,3.2rem)] font-black uppercase leading-[0.95] tracking-tight" style={{ color: '#16181C' }}>
-                Three levels of the system.
+                Four levels of the system.
               </h2>
             </div>
           </ScrollReveal>
-          <div className="grid lg:grid-cols-3 gap-5 items-start">
+          <div className="grid sm:grid-cols-2 xl:grid-cols-4 gap-5 items-stretch">
             {TIERS.map((tier, i) => (
-              <ScrollReveal key={i}>
+              <ScrollReveal key={i} className="h-full">
                 <TierCard tier={tier} />
               </ScrollReveal>
             ))}
