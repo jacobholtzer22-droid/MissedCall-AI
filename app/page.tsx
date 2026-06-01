@@ -4,6 +4,7 @@ import ContactForm from './components/ContactForm'
 import ScrollReveal from './components/ScrollReveal'
 import BrandFooter from './components/BrandFooter'
 import SmsThread from './components/SmsThread'
+import ROICalculator from './components/roi-calculator'
 
 const SERVICES = [
   {
@@ -196,6 +197,30 @@ export default function HomePage() {
               </ScrollReveal>
             ))}
           </div>
+        </div>
+      </section>
+
+      {/* ════════════════════
+          ROI Calculator
+          ════════════════════ */}
+      <section className="aa-grid-bg">
+        <div className="mx-auto max-w-4xl px-5 py-16 sm:px-8 lg:py-24">
+          <ScrollReveal>
+            <div className="text-center mb-8">
+              <div className="inline-flex items-center gap-2 font-mono text-[11px] font-semibold uppercase tracking-[0.28em] mb-4">
+                <span className="inline-block h-2.5 w-2.5" style={{ background: '#EE6B1A' }} />
+                <span style={{ color: '#EE6B1A' }}>See the math</span>
+              </div>
+              <h2 className="text-[clamp(2rem,5vw,3rem)] font-black uppercase leading-[0.95] tracking-tight">
+                How much are you<br />
+                <span style={{ color: '#EE6B1A' }}>leaving on the table?</span>
+              </h2>
+              <p className="mt-4 text-[15px] max-w-md mx-auto" style={{ color: 'rgba(242,240,235,0.6)' }}>
+                Adjust the sliders to your business and see what MissedCall AI would recover for you every month.
+              </p>
+            </div>
+            <ROICalculator />
+          </ScrollReveal>
         </div>
       </section>
 

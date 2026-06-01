@@ -199,7 +199,7 @@ function TierCard({ tier }: { tier: Tier }) {
       className="relative border-2 p-7 sm:p-8 flex flex-col h-full"
       style={tier.popular
         ? { borderColor: '#EE6B1A', background: '#16181C', color: '#F2F0EB' }
-        : { borderColor: 'rgba(110,118,129,0.35)', background: 'rgba(242,240,235,0.03)', color: '#F2F0EB' }
+        : { borderColor: 'rgba(110,118,129,0.4)', background: '#16181C', color: '#F2F0EB' }
       }
     >
       {tier.popular && (
