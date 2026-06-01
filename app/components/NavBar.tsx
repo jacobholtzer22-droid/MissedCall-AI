@@ -1,7 +1,6 @@
 import Link from 'next/link'
 import { Logo } from './Logo'
 import { NavMenu } from './NavMenu'
-import { ServicesDropdown } from './ServicesDropdown'
 
 export function NavBar() {
   return (
@@ -35,7 +34,9 @@ export function NavBar() {
             <Link href="/missedcall-ai" className="aa-nav-link text-[13px] font-semibold" style={{ color: '#F2F0EB' }}>
               MissedCall AI
             </Link>
-            <ServicesDropdown />
+            <Link href="/services" className="aa-nav-link text-[13px] font-semibold" style={{ color: '#F2F0EB' }}>
+              Services
+            </Link>
             <Link href="/pricing" className="aa-nav-link text-[13px] font-semibold" style={{ color: '#F2F0EB' }}>
               Pricing
             </Link>
@@ -57,7 +58,6 @@ export function NavBar() {
             >
               Get started
             </Link>
-            {/* Hamburger — mobile only */}
             <NavMenu />
           </div>
 

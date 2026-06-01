@@ -1,79 +1,408 @@
+'use client'
+
 import Link from 'next/link'
-import { Check, X, ArrowRight, ShieldBan, MessageSquare, Globe, TrendingUp, Calendar, Search, Megaphone } from 'lucide-react'
-import ROICalculator from '../components/roi-calculator'
+import { useState } from 'react'
+import {
+  Check, X, ArrowRight, ShieldBan, PhoneMissed, Globe,
+  BarChart3, Megaphone, CalendarCheck, LayoutDashboard,
+  ChevronDown, ChevronUp, Calculator,
+} from 'lucide-react'
 import ScrollReveal from '../components/ScrollReveal'
-import Marquee from '../components/Marquee'
 import BrandFooter from '../components/BrandFooter'
 
-const packages = [
+// ─────────────────────────────────────────────────────────
+// Types
+// ─────────────────────────────────────────────────────────
+type Tier = {
+  name: string
+  tagline: string
+  price: number
+  setup: number
+  popular: boolean
+  description: string
+  includes: string[]
+  notIncluded: string[]
+}
+
+type AlaCarteService = {
+  id: string
+  label: string
+  icon: React.ElementType
+  monthlyPrice: number
+  setupPrice: number
+  description: string
+}
+
+// ─────────────────────────────────────────────────────────
+// Data
+// ─────────────────────────────────────────────────────────
+const TIERS: Tier[] = [
   {
-    name: 'Growth',
-    subtitle: 'Website + Ads Management',
-    setupFee: 400,
+    name: 'Capture',
+    tagline: 'Stop losing leads you\'re already getting',
     price: 200,
+    setup: 400,
     popular: false,
-    cta: 'Start growing',
-    features: [
-      { name: 'Custom website (built in 3 days)', included: true },
-      { name: 'Unlimited website changes', included: true },
-      { name: 'Google Ads setup & management', included: true },
-      { name: 'Monthly ad performance reports', included: true },
-      { name: 'MissedCall AI (24/7 lead recovery)', included: false },
-      { name: 'CRM dashboard + analytics', included: false },
-      { name: 'Calendar integration', included: false },
-      { name: 'Spam call screening (+$75/mo add-on)', included: false },
+    description: 'Your phone rings and your website gets traffic every day. The question is how much of that you\'re actually converting. MissedCall AI catches every missed call. Your custom website turns visitors into quote requests.',
+    includes: [
+      'MissedCall AI — 24/7 AI text-back',
+      'Custom website (built in 3 days)',
+      'Unlimited website changes',
+      'Lead capture + CRM dashboard',
+      'Calendar integration',
     ],
+    notIncluded: ['Google Ads management', 'Mass email & SMS campaigns'],
   },
   {
-    name: 'Pro',
-    subtitle: 'Website + MissedCall AI + CRM',
-    setupFee: 400,
+    name: 'Scale',
+    tagline: 'Capture more and get found by more',
     price: 290,
-    popular: false,
-    cta: "Let's go Pro",
-    features: [
-      { name: 'Custom website (built in 3 days)', included: true },
-      { name: 'Unlimited website changes', included: true },
-      { name: 'MissedCall AI (24/7 lead recovery)', included: true },
-      { name: 'CRM dashboard + analytics', included: true },
-      { name: 'Mass email & SMS campaigns', included: true },
-      { name: 'Google Ads management', included: false },
-      { name: 'Calendar integration', included: false },
-      { name: 'Spam call screening (+$75/mo add-on)', included: false },
+    setup: 400,
+    popular: true,
+    description: 'You\'re not just recovering missed leads anymore — you\'re generating new ones. Google Ads puts you at the top when someone in your area searches for what you do. Everything in Capture, plus a managed ads pipeline that works while you\'re on the job.',
+    includes: [
+      'Everything in Capture',
+      'Google Ads setup & management',
+      'Monthly ad performance reports',
+      'Keyword research & optimization',
+      'A/B ad testing',
     ],
+    notIncluded: ['Mass email & SMS campaigns'],
   },
   {
-    name: 'All In',
-    subtitle: 'Website + MissedCall AI + Ads + CRM',
-    setupFee: 500,
+    name: 'Full System',
+    tagline: 'The complete growth engine, running together',
     price: 385,
-    popular: true,
-    cta: 'I want it all',
-    features: [
-      { name: 'Custom website (built in 3 days)', included: true },
-      { name: 'Unlimited website changes', included: true },
-      { name: 'Google Ads setup & management', included: true },
-      { name: 'Monthly ad performance reports', included: true },
-      { name: 'MissedCall AI (24/7 lead recovery)', included: true },
-      { name: 'CRM dashboard + analytics', included: true },
-      { name: 'Mass email & SMS campaigns', included: true },
-      { name: 'Calendar integration', included: true },
-      { name: 'Spam call screening (+$75/mo add-on)', included: false },
+    setup: 500,
+    popular: false,
+    description: 'Every lead captured. Every past customer re-engaged. Every search result owned. This is what a fully scaled trade business looks like — all of it managed by one team, built to work together.',
+    includes: [
+      'Everything in Scale',
+      'Mass email & SMS campaigns',
+      'Campaign analytics & tracking',
+      'Automated follow-up sequences',
+      'Priority setup & support',
     ],
+    notIncluded: [],
   },
 ]
 
-const standaloneServices = [
-  { name: 'Custom Website', price: 75, setupFee: 200, icon: Globe, description: 'Professional website built from scratch. Hosting, security, unlimited changes.' },
-  { name: 'MissedCall AI', price: 225, setupFee: 250, icon: MessageSquare, description: 'AI texts back instantly, captures leads, books appointments. 24/7.' },
-  { name: 'Ads Management', price: 125, setupFee: 250, icon: TrendingUp, description: 'Google Ads setup, optimization, keyword management, monthly reporting.' },
-  { name: 'Spam Call Screening', price: 75, setupFee: 150, icon: ShieldBan, description: 'Press 1 to connect IVR. Blocks robocalls. Only real customers get through.' },
-  { name: 'Mass Email & SMS Campaigns', price: 75, setupFee: 100, icon: Megaphone, description: 'Send bulk email and text campaigns to your entire client list. Requires CRM Dashboard.' },
-  { name: 'Calendar + CRM Integration', price: 75, setupFee: null, icon: Calendar, description: 'Sync bookings, manage client data, full relationship history.' },
-  { name: 'Google Business Profile Setup', price: null, setupFee: null, priceLabel: 'One-time fee (ask us)', icon: Globe, description: 'Setup and optimization of your Google Business listing.' },
-  { name: 'SEO Optimization', price: null, setupFee: null, priceLabel: 'Custom pricing (ask us)', icon: Search, description: 'On-page SEO, keyword targeting, Google Business optimization.' },
+const ALA_CARTE: AlaCarteService[] = [
+  { id: 'missedcall', label: 'MissedCall AI',          icon: PhoneMissed,      monthlyPrice: 225, setupPrice: 250, description: '24/7 AI text-back, lead capture, calendar booking' },
+  { id: 'website',    label: 'Custom Website',          icon: Globe,            monthlyPrice: 75,  setupPrice: 200, description: 'Built from scratch, SEO-ready, unlimited changes' },
+  { id: 'ads',        label: 'Google Ads Management',   icon: BarChart3,        monthlyPrice: 125, setupPrice: 250, description: 'Setup, keyword management, monthly optimization' },
+  { id: 'campaigns',  label: 'Mass Email & SMS',        icon: Megaphone,        monthlyPrice: 75,  setupPrice: 100, description: 'Unlimited campaigns, list segmentation, analytics' },
+  { id: 'crm',        label: 'CRM Dashboard',           icon: LayoutDashboard,  monthlyPrice: 75,  setupPrice: 0,   description: 'Client records, activity timeline, contact management' },
+  { id: 'calendar',   label: 'Calendar Integration',    icon: CalendarCheck,    monthlyPrice: 75,  setupPrice: 0,   description: 'Google Calendar sync, online booking, reminders' },
 ]
 
+// ─────────────────────────────────────────────────────────
+// "See your numbers" preview panel
+// ─────────────────────────────────────────────────────────
+function NumbersPreview({
+  tier,
+  onClose,
+}: {
+  tier: Tier
+  onClose: () => void
+}) {
+  const [missedCalls, setMissedCalls] = useState(20)
+  const [jobValue, setJobValue] = useState(300)
+
+  const convRate = 0.3
+  const recaptured = Math.round(missedCalls * convRate)
+  const monthlyRecovery = recaptured * jobValue
+  const netGain = monthlyRecovery - tier.price
+  const roi = tier.price > 0 ? Math.round((netGain / tier.price) * 100) : 0
+
+  return (
+    <div className="mt-4 border-2 p-6 animate-[aa-slide-down_0.22s_ease-out]" style={{ borderColor: '#EE6B1A', background: 'rgba(238,107,26,0.06)' }}>
+      <div className="flex items-center justify-between mb-5">
+        <div className="flex items-center gap-2">
+          <Calculator size={16} strokeWidth={2.25} style={{ color: '#EE6B1A' }} />
+          <span className="font-mono text-[11px] font-bold uppercase tracking-[0.2em]" style={{ color: '#EE6B1A' }}>
+            Your numbers — {tier.name}
+          </span>
+        </div>
+        <button
+          type="button"
+          onClick={onClose}
+          className="font-mono text-[10px] uppercase tracking-widest transition-colors"
+          style={{ color: '#6E7681' }}
+        >
+          Close ✕
+        </button>
+      </div>
+
+      {/* Inputs */}
+      <div className="grid sm:grid-cols-2 gap-5 mb-5">
+        <div>
+          <div className="flex items-center justify-between mb-2">
+            <label className="font-mono text-[10px] uppercase tracking-[0.18em]" style={{ color: '#6E7681' }}>
+              Missed calls / month
+            </label>
+            <span className="font-black text-[18px] tabular-nums" style={{ color: '#EE6B1A' }}>{missedCalls}</span>
+          </div>
+          <input
+            type="range" min={1} max={100} value={missedCalls}
+            onChange={e => setMissedCalls(Number(e.target.value))}
+            className="aa-slider w-full h-2 appearance-none"
+            style={{ accentColor: '#EE6B1A', background: 'rgba(110,118,129,0.3)' }}
+          />
+        </div>
+        <div>
+          <div className="flex items-center justify-between mb-2">
+            <label className="font-mono text-[10px] uppercase tracking-[0.18em]" style={{ color: '#6E7681' }}>
+              Avg job value
+            </label>
+            <span className="font-black text-[18px] tabular-nums" style={{ color: '#EE6B1A' }}>${jobValue}</span>
+          </div>
+          <input
+            type="range" min={100} max={2000} step={50} value={jobValue}
+            onChange={e => setJobValue(Number(e.target.value))}
+            className="aa-slider w-full h-2 appearance-none"
+            style={{ accentColor: '#EE6B1A', background: 'rgba(110,118,129,0.3)' }}
+          />
+        </div>
+      </div>
+
+      {/* Results */}
+      <div className="grid grid-cols-3 gap-3 mb-4">
+        <div className="border-2 p-3 text-center" style={{ borderColor: 'rgba(110,118,129,0.3)' }}>
+          <div className="text-[22px] font-black tabular-nums" style={{ color: '#F2F0EB' }}>{recaptured}</div>
+          <div className="font-mono text-[9px] uppercase tracking-wider mt-1" style={{ color: '#6E7681' }}>Jobs recovered</div>
+        </div>
+        <div className="border-2 p-3 text-center" style={{ borderColor: '#EE6B1A', background: 'rgba(238,107,26,0.1)' }}>
+          <div className="text-[22px] font-black tabular-nums" style={{ color: '#EE6B1A' }}>${monthlyRecovery.toLocaleString()}</div>
+          <div className="font-mono text-[9px] uppercase tracking-wider mt-1" style={{ color: '#6E7681' }}>Revenue/mo</div>
+        </div>
+        <div className="border-2 p-3 text-center" style={{ borderColor: 'rgba(26,74,112,0.5)', background: 'rgba(26,74,112,0.1)' }}>
+          <div className="text-[22px] font-black tabular-nums" style={{ color: '#F2F0EB' }}>{roi}%</div>
+          <div className="font-mono text-[9px] uppercase tracking-wider mt-1" style={{ color: '#6E7681' }}>ROI</div>
+        </div>
+      </div>
+      <p className="font-mono text-[10px]" style={{ color: '#6E7681' }}>
+        *Estimates assume 30% conversion rate on recovered missed calls. Your actual results may vary.
+      </p>
+    </div>
+  )
+}
+
+// ─────────────────────────────────────────────────────────
+// Tier card
+// ─────────────────────────────────────────────────────────
+function TierCard({ tier }: { tier: Tier }) {
+  const [showPreview, setShowPreview] = useState(false)
+
+  return (
+    <div
+      className="relative border-2 p-7 sm:p-8 flex flex-col h-full"
+      style={tier.popular
+        ? { borderColor: '#EE6B1A', background: '#16181C', color: '#F2F0EB' }
+        : { borderColor: 'rgba(110,118,129,0.35)', background: 'rgba(242,240,235,0.03)', color: '#F2F0EB' }
+      }
+    >
+      {tier.popular && (
+        <span className="absolute -top-3.5 left-7 px-3 py-1 font-mono text-[10px] font-bold uppercase tracking-widest" style={{ background: '#EE6B1A', color: '#16181C' }}>
+          Most popular
+        </span>
+      )}
+
+      <div className="font-mono text-[11px] font-bold uppercase tracking-[0.2em] mb-1" style={{ color: tier.popular ? '#EE6B1A' : '#6E7681' }}>
+        {tier.name}
+      </div>
+      <div className="text-[14px] mb-5 leading-snug" style={{ color: 'rgba(242,240,235,0.6)' }}>
+        {tier.tagline}
+      </div>
+
+      <div className="text-[12px] mb-1" style={{ color: '#6E7681' }}>${tier.setup} one-time setup</div>
+      <div className="flex items-end gap-1 mb-5">
+        <span className="text-[26px] font-black leading-none">$</span>
+        <span className="text-[54px] font-black leading-none tabular-nums">{tier.price}</span>
+        <span className="mb-1.5 text-[14px]" style={{ color: '#6E7681' }}>/mo</span>
+      </div>
+
+      <p className="text-[13.5px] leading-relaxed mb-6" style={{ color: 'rgba(242,240,235,0.65)' }}>
+        {tier.description}
+      </p>
+
+      <ul className="space-y-2.5 mb-4 flex-1">
+        {tier.includes.map((f, i) => (
+          <li key={i} className="flex items-start gap-2.5 text-[13px]">
+            <Check size={15} strokeWidth={3} className="shrink-0 mt-0.5" style={{ color: '#EE6B1A' }} />
+            <span style={{ color: 'rgba(242,240,235,0.88)' }}>{f}</span>
+          </li>
+        ))}
+        {tier.notIncluded.map((f, i) => (
+          <li key={i} className="flex items-start gap-2.5 text-[13px]">
+            <X size={15} strokeWidth={2.5} className="shrink-0 mt-0.5" style={{ color: '#6E7681' }} />
+            <span style={{ color: '#6E7681', textDecoration: 'line-through' }}>{f}</span>
+          </li>
+        ))}
+      </ul>
+
+      {/* See your numbers */}
+      <button
+        type="button"
+        onClick={() => setShowPreview(v => !v)}
+        className="flex items-center justify-between w-full px-4 py-2.5 mb-4 border-2 font-mono text-[11px] font-bold uppercase tracking-[0.18em] transition-colors"
+        style={{
+          borderColor: showPreview ? '#EE6B1A' : 'rgba(110,118,129,0.35)',
+          color: showPreview ? '#EE6B1A' : '#6E7681',
+          background: 'transparent',
+        }}
+      >
+        See your numbers
+        {showPreview
+          ? <ChevronUp size={14} strokeWidth={2.5} />
+          : <ChevronDown size={14} strokeWidth={2.5} />
+        }
+      </button>
+
+      {showPreview && (
+        <NumbersPreview tier={tier} onClose={() => setShowPreview(false)} />
+      )}
+
+      <Link
+        href="/book"
+        className="aa-btn mt-4 inline-flex items-center justify-center gap-2 px-5 py-3.5 text-[14px] font-bold uppercase tracking-wide"
+        style={tier.popular
+          ? { background: '#EE6B1A', color: '#16181C' }
+          : { background: 'rgba(242,240,235,0.1)', color: '#F2F0EB', border: '2px solid rgba(110,118,129,0.35)' }
+        }
+      >
+        Get started <ArrowRight size={15} strokeWidth={2.5} />
+      </Link>
+    </div>
+  )
+}
+
+// ─────────────────────────────────────────────────────────
+// À la carte plan builder
+// ─────────────────────────────────────────────────────────
+function PlanBuilder() {
+  const [selected, setSelected] = useState<Set<string>>(new Set())
+
+  const toggle = (id: string) => {
+    setSelected(prev => {
+      const next = new Set(prev)
+      next.has(id) ? next.delete(id) : next.add(id)
+      return next
+    })
+  }
+
+  const monthly = ALA_CARTE
+    .filter(s => selected.has(s.id))
+    .reduce((sum, s) => sum + s.monthlyPrice, 0)
+  const setup = ALA_CARTE
+    .filter(s => selected.has(s.id))
+    .reduce((sum, s) => sum + s.setupPrice, 0)
+
+  return (
+    <div className="border-2" style={{ borderColor: 'rgba(110,118,129,0.35)', background: 'rgba(242,240,235,0.02)' }}>
+      {/* Header */}
+      <div className="border-b-2 px-7 py-5" style={{ borderColor: 'rgba(110,118,129,0.25)' }}>
+        <div className="font-mono text-[11px] font-bold uppercase tracking-[0.22em] mb-1" style={{ color: '#EE6B1A' }}>
+          Build your own plan
+        </div>
+        <p className="text-[14px]" style={{ color: '#6E7681' }}>
+          Not sure which tier fits? Pick exactly what you need. The total updates as you go.
+        </p>
+      </div>
+
+      {/* Service toggles */}
+      <div className="divide-y-2" style={{ borderColor: 'rgba(110,118,129,0.15)' }}>
+        {ALA_CARTE.map(service => {
+          const isOn = selected.has(service.id)
+          const Icon = service.icon
+          return (
+            <button
+              key={service.id}
+              type="button"
+              onClick={() => toggle(service.id)}
+              className="w-full flex items-center gap-5 px-7 py-5 text-left transition-colors cursor-pointer"
+              style={{ background: isOn ? 'rgba(238,107,26,0.06)' : 'transparent' }}
+            >
+              {/* Checkbox */}
+              <span
+                className="grid h-6 w-6 shrink-0 place-items-center border-2 transition-colors"
+                style={{
+                  borderColor: isOn ? '#EE6B1A' : 'rgba(110,118,129,0.4)',
+                  background: isOn ? '#EE6B1A' : 'transparent',
+                }}
+              >
+                {isOn && <Check size={14} strokeWidth={3} style={{ color: '#16181C' }} />}
+              </span>
+
+              {/* Icon */}
+              <span className="grid h-10 w-10 shrink-0 place-items-center" style={{ background: isOn ? 'rgba(26,74,112,0.5)' : 'rgba(110,118,129,0.15)' }}>
+                <Icon size={18} strokeWidth={2.25} style={{ color: isOn ? '#EE6B1A' : '#6E7681' }} />
+              </span>
+
+              {/* Label + description */}
+              <div className="flex-1 min-w-0">
+                <div className="text-[14px] font-semibold" style={{ color: isOn ? '#F2F0EB' : '#6E7681' }}>{service.label}</div>
+                <div className="text-[12px] mt-0.5" style={{ color: '#6E7681' }}>{service.description}</div>
+              </div>
+
+              {/* Price */}
+              <div className="text-right shrink-0">
+                <div className="text-[15px] font-bold tabular-nums" style={{ color: isOn ? '#EE6B1A' : '#6E7681' }}>
+                  ${service.monthlyPrice}/mo
+                </div>
+                {service.setupPrice > 0 && (
+                  <div className="font-mono text-[10px] uppercase tracking-wider" style={{ color: '#6E7681' }}>
+                    +${service.setupPrice} setup
+                  </div>
+                )}
+              </div>
+            </button>
+          )
+        })}
+      </div>
+
+      {/* Running total */}
+      <div className="border-t-2 px-7 py-5" style={{ borderColor: 'rgba(110,118,129,0.25)', background: selected.size > 0 ? 'rgba(238,107,26,0.06)' : 'transparent' }}>
+        {selected.size === 0 ? (
+          <p className="text-[13px] text-center" style={{ color: '#6E7681' }}>
+            Select services above to see your plan total.
+          </p>
+        ) : (
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+            <div>
+              <div className="font-mono text-[10px] uppercase tracking-[0.2em] mb-1" style={{ color: '#6E7681' }}>Your plan total</div>
+              <div className="flex items-end gap-3">
+                <div>
+                  <span className="text-[36px] font-black tabular-nums" style={{ color: '#EE6B1A' }}>${monthly}</span>
+                  <span className="text-[14px] ml-1" style={{ color: '#6E7681' }}>/mo</span>
+                </div>
+                {setup > 0 && (
+                  <span className="font-mono text-[11px] uppercase tracking-wider mb-1.5" style={{ color: '#6E7681' }}>
+                    + ${setup} one-time setup
+                  </span>
+                )}
+              </div>
+              <div className="font-mono text-[10px] uppercase tracking-widest mt-1" style={{ color: '#6E7681' }}>
+                {selected.size} service{selected.size !== 1 ? 's' : ''} selected
+              </div>
+            </div>
+            <Link
+              href="/book"
+              className="aa-btn inline-flex items-center justify-center gap-2 px-6 py-3.5 text-[14px] font-bold uppercase tracking-wide shrink-0"
+              style={{ background: '#EE6B1A', color: '#16181C' }}
+            >
+              Start with this plan <ArrowRight size={15} strokeWidth={2.5} />
+            </Link>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ─────────────────────────────────────────────────────────
+// PAGE
+// ─────────────────────────────────────────────────────────
 export default function PricingPage() {
   return (
     <div className="min-h-dvh w-full overflow-x-hidden" style={{ background: '#16181C', color: '#F2F0EB' }}>
@@ -84,195 +413,115 @@ export default function PricingPage() {
         <div className="mx-auto max-w-7xl px-5 sm:px-8 pt-10 text-center">
           <div className="inline-flex items-center gap-2 font-mono text-[11px] font-semibold uppercase tracking-[0.28em] mb-5">
             <span className="inline-block h-2.5 w-2.5" style={{ background: '#EE6B1A' }} />
-            <span style={{ color: '#EE6B1A' }}>No contracts. No BS. Cancel anytime.</span>
+            <span style={{ color: '#EE6B1A' }}>No contracts. No surprises. Cancel anytime.</span>
           </div>
-          <h1 className="text-[clamp(2.6rem,8vw,5rem)] font-black uppercase leading-[0.92] tracking-[-0.02em] mb-6">
-            Simple pricing.<br />
-            <span style={{ color: '#EE6B1A' }}>No surprises.</span>
+          <h1 className="text-[clamp(2.6rem,7vw,5rem)] font-black uppercase leading-[0.92] tracking-[-0.02em] mb-6">
+            Pick your system.<br />
+            <span style={{ color: '#EE6B1A' }}>Scale your business.</span>
           </h1>
           <p className="text-[16px] sm:text-[18px] leading-relaxed max-w-2xl mx-auto" style={{ color: 'rgba(242,240,235,0.65)' }}>
-            Every missed call is lost revenue. Every day without a website is a day your competitors win. Stop leaving money on the table.
+            Every plan is built around the same goal: more leads captured, more jobs booked, less left on the table. Choose the tier that fits where you are now.
           </p>
         </div>
         <div className="aa-hazard mt-16 opacity-50" />
       </section>
 
-      {/* ── Ticker ───────────────────────────────────────── */}
-      <div className="border-y-2 py-4 overflow-hidden" style={{ borderColor: 'rgba(110,118,129,0.3)', background: 'rgba(242,240,235,0.03)' }}>
-        <Marquee
-          items={['No Contracts', 'Cancel Anytime', '30-Day Money-Back Guarantee', 'Setup in Days Not Months', 'Real Humans Real Support', 'Pays for Itself']}
-          separator="⚡"
-          speed="normal"
-          className="font-mono text-[11px] uppercase tracking-[0.2em]"
-        />
-      </div>
-
-      {/* ── Package Cards ────────────────────────────────── */}
+      {/* ── Tier cards ───────────────────────────────────── */}
       <section style={{ background: '#F2F0EB', color: '#16181C' }}>
         <div className="mx-auto max-w-7xl px-5 py-16 sm:px-8 lg:py-24">
           <ScrollReveal>
-            <div className="mb-12 text-center">
+            <div className="text-center mb-12">
               <div className="inline-flex items-center gap-2 font-mono text-[11px] font-semibold uppercase tracking-[0.28em] mb-4">
                 <span className="inline-block h-2.5 w-2.5" style={{ background: '#EE6B1A' }} />
-                <span style={{ color: '#EE6B1A' }}>Bundle packages</span>
+                <span style={{ color: '#EE6B1A' }}>System tiers</span>
               </div>
-              <h2 className="text-[clamp(2rem,5vw,3.2rem)] font-black uppercase leading-[0.95] tracking-tight">
-                Pick your path.
+              <h2 className="text-[clamp(2rem,5vw,3.2rem)] font-black uppercase leading-[0.95] tracking-tight" style={{ color: '#16181C' }}>
+                Three levels of the system.
               </h2>
             </div>
           </ScrollReveal>
           <div className="grid lg:grid-cols-3 gap-5 items-start">
-            {packages.map((pkg) => (
-              <ScrollReveal key={pkg.name}>
-                <div
-                  className="relative border-2 p-7 sm:p-8 flex flex-col h-full"
-                  style={pkg.popular
-                    ? { borderColor: '#EE6B1A', background: '#16181C', color: '#F2F0EB' }
-                    : { borderColor: '#16181C', background: '#FFFFFF', color: '#16181C' }
-                  }
-                >
-                  {pkg.popular && (
-                    <span className="absolute -top-3 left-7 px-3 py-1 font-mono text-[10px] font-bold uppercase tracking-widest" style={{ background: '#EE6B1A', color: '#16181C' }}>
-                      Most popular
-                    </span>
-                  )}
-                  <div className="text-[12px] font-bold uppercase tracking-[0.14em] mb-1" style={{ color: pkg.popular ? '#EE6B1A' : '#6E7681' }}>{pkg.name}</div>
-                  <div className="text-[13px] mb-5" style={{ color: pkg.popular ? 'rgba(242,240,235,0.65)' : '#6E7681' }}>{pkg.subtitle}</div>
-
-                  <div className="text-[12px] mb-1" style={{ color: pkg.popular ? '#6E7681' : '#6E7681' }}>
-                    ${pkg.setupFee} one-time setup
-                  </div>
-                  <div className="flex items-end gap-1 mb-6">
-                    <span className="text-[28px] font-black leading-none">$</span>
-                    <span className="text-[56px] font-black leading-none tabular-nums tracking-tight">{pkg.price}</span>
-                    <span className="mb-2 text-[14px] font-semibold" style={{ color: '#6E7681' }}>/mo</span>
-                  </div>
-
-                  <ul className="space-y-3 mb-6 flex-1">
-                    {pkg.features.map((f) => (
-                      <li key={f.name} className="flex items-start gap-2.5 text-[13.5px]">
-                        {f.included
-                          ? <Check size={17} strokeWidth={3} className="shrink-0 mt-0.5" style={{ color: '#EE6B1A' }} />
-                          : <X size={17} strokeWidth={2.5} className="shrink-0 mt-0.5" style={{ color: '#6E7681' }} />}
-                        <span style={{ color: f.included ? (pkg.popular ? '#F2F0EB' : '#16181C') : '#6E7681', textDecoration: f.included ? 'none' : 'line-through' }}>{f.name}</span>
-                      </li>
-                    ))}
-                  </ul>
-
-                  <Link
-                    href="/book"
-                    className="aa-btn mt-auto inline-flex items-center justify-center gap-2 px-5 py-3.5 text-[14px] font-bold uppercase tracking-wide"
-                    style={pkg.popular
-                      ? { background: '#EE6B1A', color: '#16181C' }
-                      : { background: '#16181C', color: '#F2F0EB' }}
-                  >
-                    {pkg.cta}
-                    <ArrowRight size={15} strokeWidth={2.5} />
-                  </Link>
-                </div>
+            {TIERS.map((tier, i) => (
+              <ScrollReveal key={i}>
+                <TierCard tier={tier} />
               </ScrollReveal>
             ))}
           </div>
 
-          {/* Spam add-on bar */}
+          {/* Spam add-on */}
           <ScrollReveal>
-            <div className="mt-6 flex flex-col items-start justify-between gap-4 border-2 p-6 sm:flex-row sm:items-center" style={{ borderColor: '#16181C', background: '#FFFFFF' }}>
+            <div
+              className="mt-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-2 p-6"
+              style={{ borderColor: 'rgba(110,118,129,0.35)', background: 'rgba(242,240,235,0.02)' }}
+            >
               <div className="flex items-start gap-4">
                 <span className="grid h-12 w-12 shrink-0 place-items-center" style={{ background: '#16181C' }}>
-                  <ShieldBan size={22} strokeWidth={2.25} style={{ color: '#EE6B1A' }} />
+                  <ShieldBan size={20} strokeWidth={2.25} style={{ color: '#EE6B1A' }} />
                 </span>
                 <div>
-                  <div className="text-[16px] font-extrabold tracking-tight">Spam call screening add-on</div>
-                  <div className="mt-1 text-[14px]" style={{ color: '#6E7681' }}>
-                    Filter robocalls on any plan. <span className="font-semibold" style={{ color: '#16181C' }}>$75/mo · $150 one-time setup.</span>
+                  <div className="text-[15px] font-extrabold tracking-tight" style={{ color: '#F2F0EB' }}>
+                    Spam call screening — add to any plan
+                  </div>
+                  <div className="mt-1 text-[13.5px]" style={{ color: '#6E7681' }}>
+                    Filter the noise. Only real customers reach you. <span className="font-semibold" style={{ color: '#F2F0EB' }}>$75/mo · $150 one-time setup.</span>
                   </div>
                 </div>
               </div>
-              <span className="font-mono text-[12px] font-bold uppercase tracking-widest" style={{ color: '#1A4A70' }}>Add to any plan</span>
+              <Link href="/book" className="aa-btn shrink-0 inline-flex items-center gap-2 px-5 py-2.5 text-[13px] font-bold uppercase tracking-wide" style={{ background: '#EE6B1A', color: '#16181C' }}>
+                Add to plan <ArrowRight size={14} strokeWidth={2.5} />
+              </Link>
             </div>
           </ScrollReveal>
         </div>
       </section>
 
-      {/* ── Standalone Services ──────────────────────────── */}
+      {/* ── À la carte builder ───────────────────────────── */}
       <section className="aa-grid-bg">
-        <div className="mx-auto max-w-7xl px-5 py-16 sm:px-8 lg:py-24">
+        <div className="mx-auto max-w-4xl px-5 py-16 sm:px-8 lg:py-24">
           <ScrollReveal>
-            <div className="mb-12">
+            <div className="mb-8">
               <div className="inline-flex items-center gap-2 font-mono text-[11px] font-semibold uppercase tracking-[0.28em] mb-4">
                 <span className="inline-block h-2.5 w-2.5" style={{ background: '#EE6B1A' }} />
                 <span style={{ color: '#EE6B1A' }}>À la carte</span>
               </div>
-              <h2 className="text-[clamp(2rem,5vw,3.2rem)] font-black uppercase leading-[0.95] tracking-tight">
-                Need just one thing?<br /><span style={{ color: '#EE6B1A' }}>No problem.</span>
-              </h2>
-            </div>
-          </ScrollReveal>
-          <ScrollReveal stagger>
-            <div className="grid sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-px" style={{ background: 'rgba(110,118,129,0.2)' }}>
-              {standaloneServices.map((service) => {
-                const Icon = service.icon
-                const hasCustomPrice = 'priceLabel' in service && service.priceLabel
-                return (
-                  <div key={service.name} className="aa-feature-card scroll-reveal p-6 flex flex-col" style={{ background: '#16181C' }}>
-                    <div className="grid h-11 w-11 place-items-center mb-4" style={{ background: '#1A4A70' }}>
-                      <Icon size={20} strokeWidth={2.25} style={{ color: '#EE6B1A' }} />
-                    </div>
-                    <h3 className="font-extrabold text-[16px] tracking-tight mb-2" style={{ color: '#F2F0EB' }}>{service.name}</h3>
-                    {hasCustomPrice ? (
-                      <div className="text-[16px] font-bold mb-2" style={{ color: '#EE6B1A' }}>{service.priceLabel}</div>
-                    ) : (
-                      <>
-                        <div className="flex items-baseline gap-1">
-                          <span className="text-[22px] font-black tabular-nums">${service.price}</span>
-                          <span className="text-[13px]" style={{ color: '#6E7681' }}>/mo</span>
-                        </div>
-                        {service.setupFee != null && (
-                          <span className="text-[11px] mb-1" style={{ color: '#6E7681' }}>${service.setupFee} setup fee</span>
-                        )}
-                      </>
-                    )}
-                    <p className="text-[13px] leading-relaxed flex-1 mt-2 mb-4" style={{ color: '#6E7681' }}>{service.description}</p>
-                    <Link href="/book" className="aa-btn inline-flex items-center justify-center py-2.5 text-[13px] font-bold uppercase tracking-wide border-2" style={{ borderColor: 'rgba(110,118,129,0.4)', color: '#F2F0EB' }}>
-                      Let&apos;s talk
-                    </Link>
-                    <span className="aa-feature-bar" />
-                  </div>
-                )
-              })}
-            </div>
-          </ScrollReveal>
-        </div>
-      </section>
-
-      {/* ── ROI Calculator ──────────────────────────────── */}
-      <section id="calculator" style={{ background: '#F2F0EB', color: '#16181C' }}>
-        <div className="mx-auto max-w-4xl px-5 py-16 sm:px-8 lg:py-24">
-          <ScrollReveal>
-            <div className="mb-8 text-center">
-              <div className="inline-flex items-center gap-2 font-mono text-[11px] font-semibold uppercase tracking-[0.28em] mb-4">
-                <span className="inline-block h-2.5 w-2.5" style={{ background: '#EE6B1A' }} />
-                <span style={{ color: '#EE6B1A' }}>The math</span>
-              </div>
               <h2 className="text-[clamp(2rem,5vw,3rem)] font-black uppercase leading-[0.95] tracking-tight">
-                The math speaks<br /><span style={{ color: '#1A4A70' }}>for itself.</span>
+                Build your own plan.
               </h2>
             </div>
-            <ROICalculator hideHeading />
+            <PlanBuilder />
           </ScrollReveal>
         </div>
       </section>
 
-      {/* ── Fine print ────────────────────────────────────── */}
-      <section className="border-t-2" style={{ borderColor: 'rgba(110,118,129,0.3)' }}>
-        <div className="mx-auto max-w-3xl px-5 py-10 sm:px-8 text-center space-y-3 text-[13.5px]" style={{ color: '#6E7681' }}>
-          <p><span style={{ color: '#F2F0EB', fontWeight: 600 }}>Setup fees</span> vary slightly based on complexity — exact costs covered on your discovery call.</p>
-          <p>All ad spend goes directly to Google and is <span style={{ color: '#F2F0EB', fontWeight: 600 }}>separate from these fees</span>.</p>
-          <p className="font-mono text-[11px] uppercase tracking-[0.18em]">No contracts · Cancel anytime · 30-day money-back guarantee</p>
+      {/* ── Fine print + trust ───────────────────────────── */}
+      <section style={{ background: '#F2F0EB', color: '#16181C' }}>
+        <div className="mx-auto max-w-3xl px-5 py-12 sm:px-8">
+          <ScrollReveal>
+            <div className="space-y-4 text-center text-[14px]" style={{ color: '#6E7681' }}>
+              <p>
+                <span className="font-semibold" style={{ color: '#16181C' }}>Setup fees</span> are one-time and vary slightly based on complexity — exact costs confirmed on your discovery call.
+              </p>
+              <p>
+                All ad spend goes directly to Google and is{' '}
+                <span className="font-semibold" style={{ color: '#16181C' }}>separate from these fees</span>. We never touch your ad budget.
+              </p>
+              <div className="pt-4 border-t-2" style={{ borderColor: 'rgba(110,118,129,0.3)' }}>
+                <p className="text-[15px] font-semibold mb-2" style={{ color: '#16181C' }}>
+                  No account managers. No outsourced support.
+                </p>
+                <p>
+                  When you work with Align and Acquire, you have direct access to the team that runs your system. That&apos;s not a selling point — it&apos;s just how we operate.
+                </p>
+              </div>
+              <p className="font-mono text-[11px] uppercase tracking-[0.18em] pt-2">
+                No contracts · Cancel anytime · 30-day money-back guarantee
+              </p>
+            </div>
+          </ScrollReveal>
         </div>
       </section>
 
-      {/* ── CTA ────────────────────────────────────────────── */}
+      {/* ── CTA ──────────────────────────────────────────── */}
       <section style={{ background: '#1A4A70' }}>
         <div className="mx-auto max-w-5xl px-5 py-16 sm:px-8 lg:py-24 text-center">
           <ScrollReveal>
@@ -281,14 +530,14 @@ export default function PricingPage() {
               <span style={{ color: '#EE6B1A' }}>money on the table?</span>
             </h2>
             <p className="text-[16px] mb-9 max-w-lg mx-auto" style={{ color: 'rgba(242,240,235,0.65)' }}>
-              Pick a package or build your own. No contracts, cancel anytime.
+              Pick a plan or build your own. Either way, we&apos;ll get you live in days — not months.
             </p>
             <div className="flex flex-col items-center gap-3 sm:flex-row sm:justify-center">
               <Link href="/book" className="aa-btn inline-flex items-center gap-2 px-7 py-4 text-[15px] font-bold uppercase tracking-wide" style={{ background: '#EE6B1A', color: '#16181C' }}>
-                <MessageSquare size={18} strokeWidth={2.5} />Let&apos;s talk
+                Book a free call <ArrowRight size={18} strokeWidth={2.5} />
               </Link>
-              <Link href="/missedcall-ai" className="aa-btn-ghost inline-flex items-center gap-2 border-2 px-7 py-4 text-[15px] font-bold uppercase tracking-wide" style={{ borderColor: 'rgba(242,240,235,0.3)', color: '#F2F0EB' }}>
-                Show me the demo
+              <Link href="/services" className="aa-btn-ghost inline-flex items-center gap-2 border-2 px-7 py-4 text-[15px] font-bold uppercase tracking-wide" style={{ borderColor: 'rgba(242,240,235,0.3)', color: '#F2F0EB' }}>
+                See all services
               </Link>
             </div>
           </ScrollReveal>

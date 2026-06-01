@@ -1,7 +1,6 @@
 import Link from 'next/link'
 import { MessageSquare, Globe, Megaphone, ArrowRight, ArrowUpRight, Check, Wind, Leaf, Car, Droplets } from 'lucide-react'
 import ContactForm from './components/ContactForm'
-import Marquee from './components/Marquee'
 import ScrollReveal from './components/ScrollReveal'
 import BrandFooter from './components/BrandFooter'
 import SmsThread from './components/SmsThread'
@@ -10,30 +9,28 @@ const SERVICES = [
   {
     icon: MessageSquare,
     title: 'MissedCall AI',
-    body: 'Stop losing money to voicemail. Our AI texts back instantly, qualifies the lead, books the appointment, and saves the sale — 24/7, even at 3am.',
+    body: 'Every unanswered call is money walking out the door. Our AI texts back in seconds, captures the lead, and books the job — before they call your competitor.',
     cta: 'See how it works',
-    href: '/missedcall-ai',
-    tag: 'Most popular',
+    href: '/services#missedcall-ai',
+    tag: 'Our flagship',
   },
   {
     icon: Globe,
-    title: 'Custom Websites',
-    body: 'No templates. No WordPress. Real code that loads fast, looks incredible, and turns visitors into customers in days — not months.',
-    cta: 'See the portfolio',
-    href: '/websites',
+    title: 'Websites + Google Ads',
+    body: "If they can't find you, they'll find someone else. A site that converts and ads that put you first — designed to work together, not as two separate tools.",
+    cta: 'Learn more',
+    href: '/services#websites',
     tag: null,
   },
   {
     icon: Megaphone,
-    title: 'Mass Campaigns',
-    body: 'Blast emails and texts to your entire client list in one click. Past customers, new leads, everyone — stay top of mind and bring old revenue back.',
+    title: 'Outreach + Campaigns',
+    body: 'Your cheapest leads are already in your phone. One text to your past customers fills slow weeks faster than any ad campaign.',
     cta: 'Learn more',
-    href: '/campaigns',
+    href: '/services#campaigns',
     tag: null,
   },
 ]
-
-const BRAND_FEEL = ['Trustworthy', 'Sharp', 'Modern', 'Built for Working Pros', 'Never Miss a Lead']
 
 const WHAT_YOU_GET = [
   "Direct access to the person who built it",
@@ -129,18 +126,6 @@ export default function HomePage() {
         <div className="aa-hazard opacity-50" />
       </section>
 
-      {/* ════════════════════
-          Brand-feel ticker
-          ════════════════════ */}
-      <section className="overflow-hidden border-y-2 py-4" style={{ borderColor: '#16181C', background: '#EE6B1A' }}>
-        <Marquee
-          items={BRAND_FEEL}
-          separator="⚡"
-          speed="normal"
-          className="text-[18px] sm:text-[22px] font-black uppercase tracking-tight"
-        />
-      </section>
-
       {/* ════════════
           Stats band
           ════════════ */}
@@ -177,9 +162,9 @@ export default function HomePage() {
                 <span style={{ color: '#EE6B1A' }}>What we do</span>
               </div>
               <h2 className="text-[clamp(2rem,5vw,3.2rem)] font-black uppercase leading-[0.95] tracking-tight">
-                Three tools.<br />
-                <span style={{ color: '#1A4A70' }}>One goal — more work</span><br />
-                in your hands.
+                One system.<br />
+                <span style={{ color: '#1A4A70' }}>Built to scale</span><br />
+                your business.
               </h2>
             </div>
           </ScrollReveal>
