@@ -350,12 +350,9 @@ export default function ServicesPage() {
                 <BarChart3 size={14} strokeWidth={2.5} style={{ color: '#EE6B1A' }} />
                 Service 03
               </div>
-              <h2 className="text-[clamp(2.2rem,5vw,3.6rem)] font-black uppercase leading-[0.88] tracking-tight mb-3">
+              <h2 className="text-[clamp(2.2rem,5vw,3.6rem)] font-black uppercase leading-[0.88] tracking-tight mb-6">
                 Google Ads Management
               </h2>
-              <p className="text-[18px] font-semibold leading-snug mb-6" style={{ color: '#1A4A70' }}>
-                When someone searches for your service, the top results are paid ads — and your competitors are already there.
-              </p>
               <p className="text-[15px] leading-relaxed mb-8" style={{ color: 'rgba(22,24,28,0.72)' }}>
                 When someone types "HVAC repair near me" or "lawn care [your city]" into Google, the businesses at the top paid to be there. We set up and manage those ads for you — picking the right search terms, writing the ads, and making sure your budget is going toward people who are actually looking to hire, not just browsing. Your ad spend goes directly to Google. We handle the strategy and the day-to-day management.
               </p>
@@ -491,47 +488,13 @@ export default function ServicesPage() {
       <Divider />
 
       {/* ══════════════════════════════════════════════════
-          SERVICE 6 — CRM DASHBOARD
+          SERVICE 6 — LEADS DASHBOARD
           ══════════════════════════════════════════════════ */}
       <section id="crm" className="aa-grid-bg">
         <div className="mx-auto max-w-7xl px-5 py-16 sm:px-8 lg:py-24">
           <div className="grid lg:grid-cols-2 gap-16 items-center">
 
-            {/* Copy */}
-            <ScrollReveal>
-              <div className="inline-flex items-center gap-2 font-mono text-[11px] font-bold uppercase tracking-[0.28em] mb-4" style={{ color: '#EE6B1A' }}>
-                <LayoutDashboard size={14} strokeWidth={2.5} style={{ color: '#EE6B1A' }} />
-                Service 06
-              </div>
-              <h2 className="text-[clamp(2.2rem,5vw,3.6rem)] font-black uppercase leading-[0.88] tracking-tight mb-3" style={{ color: '#F2F0EB' }}>
-                CRM Dashboard
-              </h2>
-              <p className="text-[18px] font-semibold leading-snug mb-6" style={{ color: '#EE6B1A' }}>
-                Every lead, call, and customer in one place.
-              </p>
-              <p className="text-[15px] leading-relaxed mb-8" style={{ color: 'rgba(242,240,235,0.7)' }}>
-                Every missed call, text conversation, website lead, and booked job flows into one dashboard automatically. You see who reached out, what they needed, where they are in your pipeline, and the work you've done for them. No spreadsheets, nothing logged by hand.
-              </p>
-              <ul className="space-y-3 mb-8">
-                {[
-                  'Every lead from every source in one place',
-                  'Full history on every customer: calls, texts, jobs and notes',
-                  'Track leads from new to booked to completed',
-                  'Tag and segment contacts for follow-up',
-                  'Fills itself in automatically, nothing to log manually',
-                ].map((item, i) => (
-                  <li key={i} className="flex items-start gap-3 text-[14px]">
-                    <Check size={16} strokeWidth={3} className="shrink-0 mt-0.5" style={{ color: '#EE6B1A' }} />
-                    <span style={{ color: 'rgba(242,240,235,0.8)' }}>{item}</span>
-                  </li>
-                ))}
-              </ul>
-              <Link href="/pricing" className="aa-btn inline-flex items-center gap-2 px-5 py-3.5 text-[14px] font-bold uppercase tracking-wide" style={{ background: '#EE6B1A', color: '#16181C' }}>
-                See pricing <ArrowRight size={15} strokeWidth={2.5} />
-              </Link>
-            </ScrollReveal>
-
-            {/* CRM mockup */}
+            {/* Leads Dashboard mockup — LEFT (swapped for visual flow) */}
             <ScrollReveal>
               <div className="w-full max-w-[420px] mx-auto border-2 overflow-hidden" style={{ borderColor: 'rgba(110,118,129,0.35)', background: '#16181C' }}>
                 {/* Header */}
@@ -567,6 +530,40 @@ export default function ServicesPage() {
                   All sources, one dashboard
                 </div>
               </div>
+            </ScrollReveal>
+
+            {/* Copy — RIGHT */}
+            <ScrollReveal>
+              <div className="inline-flex items-center gap-2 font-mono text-[11px] font-bold uppercase tracking-[0.28em] mb-4" style={{ color: '#EE6B1A' }}>
+                <LayoutDashboard size={14} strokeWidth={2.5} style={{ color: '#EE6B1A' }} />
+                Service 06
+              </div>
+              <h2 className="text-[clamp(2.2rem,5vw,3.6rem)] font-black uppercase leading-[0.88] tracking-tight mb-3" style={{ color: '#F2F0EB' }}>
+                Leads Dashboard
+              </h2>
+              <p className="text-[18px] font-semibold leading-snug mb-6" style={{ color: '#EE6B1A' }}>
+                Every contact from your missed calls and website leads, in one place.
+              </p>
+              <p className="text-[15px] leading-relaxed mb-8" style={{ color: 'rgba(242,240,235,0.7)' }}>
+                Every missed call, text conversation, and website lead flows into one dashboard automatically. You see who reached out, what they needed, and where they stand. No spreadsheets, nothing logged by hand.
+              </p>
+              <ul className="space-y-3 mb-8">
+                {[
+                  'Every lead from missed calls and your website in one place',
+                  'Full history on every contact: calls, texts and notes',
+                  'Track leads from new to booked to completed',
+                  'Tag and segment contacts for follow-up',
+                  'Fills itself in automatically, nothing to log manually',
+                ].map((item, i) => (
+                  <li key={i} className="flex items-start gap-3 text-[14px]">
+                    <Check size={16} strokeWidth={3} className="shrink-0 mt-0.5" style={{ color: '#EE6B1A' }} />
+                    <span style={{ color: 'rgba(242,240,235,0.8)' }}>{item}</span>
+                  </li>
+                ))}
+              </ul>
+              <Link href="/pricing" className="aa-btn inline-flex items-center gap-2 px-5 py-3.5 text-[14px] font-bold uppercase tracking-wide" style={{ background: '#EE6B1A', color: '#16181C' }}>
+                See pricing <ArrowRight size={15} strokeWidth={2.5} />
+              </Link>
             </ScrollReveal>
           </div>
         </div>

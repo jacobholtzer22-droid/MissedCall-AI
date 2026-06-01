@@ -47,8 +47,7 @@ const TIERS: Tier[] = [
     includes: [
       'MissedCall AI: every missed caller gets an instant text back',
       'Custom Website: built from scratch, ranks on Google, unlimited same-day updates',
-      'CRM Dashboard: every lead and contact in one place',
-      'Calendar Integration: customers book appointments online',
+      'Leads Dashboard: all contacts from missed calls and website leads in one place',
     ],
     notIncluded: [],
     addOns: ['Spam Call Screening available as add-on (+$75/mo)'],
@@ -61,10 +60,10 @@ const TIERS: Tier[] = [
     popular: true,
     includes: [
       'Everything in Catch',
+      'Calendar Integration: customers book appointments online',
       'Google Ads Management: paid search, keyword research, bid optimization, A/B testing and plain-English monthly reports',
       'Mass Email Sending: reach your whole contact list at once with open and click tracking',
       'Mass SMS Sending: text your full contact list with response tracking',
-      'Automated follow-up sequences: re-engage leads who went quiet',
       'Priority setup and support',
     ],
     notIncluded: [],
@@ -81,7 +80,7 @@ const TIERS: Tier[] = [
       'AI Website Chatbot: answers visitor questions 24/7',
       'AI Email Responses: reads and replies to incoming email automatically',
       'AI Google Review Manager: monitors and posts review responses',
-      'Full CRM AI Integration: auto-updates contacts, follow-ups and notes',
+      'Full Leads Dashboard AI Integration: auto-updates contacts, follow-ups and notes',
       'Spam Call Screening: included',
     ],
     notIncluded: [],
@@ -92,10 +91,11 @@ const TIERS: Tier[] = [
 const ALA_CARTE: AlaCarteService[] = [
   { id: 'missedcall', label: 'MissedCall AI',         icon: PhoneMissed,     monthlyPrice: 299, setupPrice: 299, description: 'Automatic text-back for every missed call, lead capture, calendar booking' },
   { id: 'website',    label: 'Custom Website',         icon: Globe,           monthlyPrice: 125, setupPrice: 250, description: 'Built from scratch, SEO-ready, shows up on Google, unlimited updates' },
-  { id: 'ads',        label: 'Google Ads Management',  icon: BarChart3,       monthlyPrice: 175, setupPrice: 300, description: 'Full ad setup, keyword management, monthly reporting & optimization' },
+  { id: 'ads',        label: 'Google Ads Management',  icon: BarChart3,       monthlyPrice: 175, setupPrice: 300, description: '' },
   { id: 'campaigns',  label: 'Email & SMS Campaigns',  icon: Megaphone,       monthlyPrice: 125, setupPrice: 150, description: 'Blast messages to your full contact list — unlimited campaigns' },
-  { id: 'crm',        label: 'CRM Dashboard',          icon: LayoutDashboard, monthlyPrice: 99,  setupPrice: 0,   description: 'Track all your leads and client contacts in one place' },
+  { id: 'crm',        label: 'Leads Dashboard',        icon: LayoutDashboard, monthlyPrice: 99,  setupPrice: 0,   description: 'All contacts from missed calls and website leads in one place' },
   { id: 'calendar',   label: 'Calendar Integration',   icon: CalendarCheck,   monthlyPrice: 89,  setupPrice: 0,   description: 'Online booking synced to your Google Calendar' },
+  { id: 'spam',       label: 'Spam Call Screening',    icon: ShieldBan,       monthlyPrice: 75,  setupPrice: 150, description: 'Blocks robocalls before they reach you — only real customers get through' },
 ]
 
 // ─────────────────────────────────────────────────────────
@@ -321,7 +321,9 @@ function PlanBuilder() {
               </span>
               <div className="flex-1 min-w-0">
                 <div className="text-[14px] font-semibold" style={{ color: isOn ? '#F2F0EB' : '#6E7681' }}>{service.label}</div>
-                <div className="text-[12px] mt-0.5" style={{ color: '#6E7681' }}>{service.description}</div>
+                {service.description && (
+                  <div className="text-[12px] mt-0.5" style={{ color: '#6E7681' }}>{service.description}</div>
+                )}
               </div>
               <div className="text-right shrink-0">
                 <div className="text-[15px] font-bold tabular-nums" style={{ color: isOn ? '#EE6B1A' : '#6E7681' }}>
