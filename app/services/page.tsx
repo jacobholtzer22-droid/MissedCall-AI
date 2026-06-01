@@ -211,19 +211,18 @@ export default function ServicesPage() {
 
             {/* Copy */}
             <ScrollReveal>
-              <div className="inline-flex items-center gap-2 font-mono text-[11px] font-bold uppercase tracking-[0.28em] mb-2" style={{ color: '#EE6B1A' }}>
+              <div className="inline-flex items-center gap-2 font-mono text-[11px] font-bold uppercase tracking-[0.28em] mb-4" style={{ color: '#EE6B1A' }}>
                 <PhoneMissed size={14} strokeWidth={2.5} style={{ color: '#EE6B1A' }} />
                 Service 01
               </div>
-              <h2 className="text-[clamp(2rem,5vw,3.4rem)] font-black uppercase leading-[0.92] tracking-tight mb-5">
-                Every unanswered call<br />is money walking<br />
-                <span style={{ color: '#1A4A70' }}>out the door.</span>
+              <h2 className="text-[clamp(2.2rem,5vw,3.6rem)] font-black uppercase leading-[0.88] tracking-tight mb-3">
+                MissedCall AI
               </h2>
-              <p className="text-[15px] leading-relaxed mb-6" style={{ color: 'rgba(22,24,28,0.72)' }}>
-                You're on a job. The phone rings. You can't answer. In that 30 seconds, there's a 65% chance they've already called someone else. MissedCall AI texts them back before they even hang up — in your voice, with your business name, asking exactly the right questions to capture the lead and book the job.
+              <p className="text-[18px] font-semibold leading-snug mb-6" style={{ color: '#1A4A70' }}>
+                When you miss a call, a text goes out automatically — before they call someone else.
               </p>
               <p className="text-[15px] leading-relaxed mb-8" style={{ color: 'rgba(22,24,28,0.72)' }}>
-                No voicemail. No missed revenue. No follow-up you have to remember to do. The AI handles the first conversation, qualifies the lead, and either books the appointment or hands it off to you — 24/7, including nights and weekends.
+                When you miss a call, this service sends the caller a text message within seconds — in your business's name. It asks what they need, collects their information, and can book an appointment straight to your calendar. You don't have to do anything. By the time you're off the job you're on, the lead is already handled.
               </p>
               <ul className="space-y-3 mb-8">
                 {[
@@ -300,19 +299,18 @@ export default function ServicesPage() {
 
             {/* Copy */}
             <ScrollReveal>
-              <div className="inline-flex items-center gap-2 font-mono text-[11px] font-bold uppercase tracking-[0.28em] mb-2" style={{ color: '#EE6B1A' }}>
+              <div className="inline-flex items-center gap-2 font-mono text-[11px] font-bold uppercase tracking-[0.28em] mb-4" style={{ color: '#EE6B1A' }}>
                 <Globe size={14} strokeWidth={2.5} style={{ color: '#EE6B1A' }} />
                 Service 02
               </div>
-              <h2 className="text-[clamp(2rem,5vw,3.4rem)] font-black uppercase leading-[0.92] tracking-tight mb-5" style={{ color: '#F2F0EB' }}>
-                If they can't find you<br />on Google, they'll find<br />
-                <span style={{ color: '#EE6B1A' }}>someone who is.</span>
+              <h2 className="text-[clamp(2.2rem,5vw,3.6rem)] font-black uppercase leading-[0.88] tracking-tight mb-3" style={{ color: '#F2F0EB' }}>
+                Custom Website
               </h2>
-              <p className="text-[15px] leading-relaxed mb-6" style={{ color: 'rgba(242,240,235,0.7)' }}>
-                Most trade business websites are brochures — they exist, but they don't work. We build custom websites from real code that load in under two seconds, rank on Google, and turn visitors into quote requests. No WordPress, no page builders, no templates. Just a site that performs.
+              <p className="text-[18px] font-semibold leading-snug mb-6" style={{ color: '#EE6B1A' }}>
+                Most people look you up online before they ever pick up the phone.
               </p>
               <p className="text-[15px] leading-relaxed mb-8" style={{ color: 'rgba(242,240,235,0.7)' }}>
-                And because we manage everything — hosting, security, updates — you never deal with a login or a dashboard. If something needs to change, you tell us and it's done same day.
+                If your website doesn't show up on Google — or looks outdated when it does — most people will move on without contacting you. We build your website from scratch so it shows up in search results, looks professional on any device, and makes it simple for visitors to reach out or request a quote. Once it's live, we handle everything — hosting, updates, security. You never have to log into anything.
               </p>
               <ul className="space-y-3 mb-8">
                 {[
@@ -347,19 +345,18 @@ export default function ServicesPage() {
 
             {/* Copy */}
             <ScrollReveal>
-              <div className="inline-flex items-center gap-2 font-mono text-[11px] font-bold uppercase tracking-[0.28em] mb-2" style={{ color: '#EE6B1A' }}>
+              <div className="inline-flex items-center gap-2 font-mono text-[11px] font-bold uppercase tracking-[0.28em] mb-4" style={{ color: '#EE6B1A' }}>
                 <BarChart3 size={14} strokeWidth={2.5} style={{ color: '#EE6B1A' }} />
                 Service 03
               </div>
-              <h2 className="text-[clamp(2rem,5vw,3.4rem)] font-black uppercase leading-[0.92] tracking-tight mb-5">
-                Your competitors are paying<br />to show up above you.<br />
-                <span style={{ color: '#1A4A70' }}>Right now.</span>
+              <h2 className="text-[clamp(2.2rem,5vw,3.6rem)] font-black uppercase leading-[0.88] tracking-tight mb-3">
+                Google Ads Management
               </h2>
-              <p className="text-[15px] leading-relaxed mb-6" style={{ color: 'rgba(22,24,28,0.72)' }}>
-                When someone searches "HVAC repair near me" or "landscaping company [your city]," the top results are ads. Those businesses are paying to be there — and their phones are ringing because of it. We set up, manage, and continuously optimize your Google Ads so you're in that position, not watching your competitors take the calls.
+              <p className="text-[18px] font-semibold leading-snug mb-6" style={{ color: '#1A4A70' }}>
+                When someone searches for your service, the top results are paid ads — and your competitors are already there.
               </p>
               <p className="text-[15px] leading-relaxed mb-8" style={{ color: 'rgba(22,24,28,0.72)' }}>
-                Your ad budget goes directly to Google — it never passes through us. Our fee covers the strategy, the setup, the keyword management, the testing, and the monthly reporting so you always know exactly what your money is doing.
+                When someone types "HVAC repair near me" or "lawn care [your city]" into Google, the businesses at the top paid to be there. We set up and manage those ads for you — picking the right search terms, writing the ads, and making sure your budget is going toward people who are actually looking to hire, not just browsing. Your ad spend goes directly to Google. We handle the strategy and the day-to-day management.
               </p>
               <ul className="space-y-3 mb-8">
                 {[
@@ -404,19 +401,18 @@ export default function ServicesPage() {
 
             {/* Copy */}
             <ScrollReveal>
-              <div className="inline-flex items-center gap-2 font-mono text-[11px] font-bold uppercase tracking-[0.28em] mb-2" style={{ color: '#EE6B1A' }}>
+              <div className="inline-flex items-center gap-2 font-mono text-[11px] font-bold uppercase tracking-[0.28em] mb-4" style={{ color: '#EE6B1A' }}>
                 <Megaphone size={14} strokeWidth={2.5} style={{ color: '#EE6B1A' }} />
                 Service 04
               </div>
-              <h2 className="text-[clamp(2rem,5vw,3.4rem)] font-black uppercase leading-[0.92] tracking-tight mb-5" style={{ color: '#F2F0EB' }}>
-                Your cheapest leads<br />are already<br />
-                <span style={{ color: '#EE6B1A' }}>in your phone.</span>
+              <h2 className="text-[clamp(2.2rem,5vw,3.6rem)] font-black uppercase leading-[0.88] tracking-tight mb-3" style={{ color: '#F2F0EB' }}>
+                Email &amp; SMS Campaigns
               </h2>
-              <p className="text-[15px] leading-relaxed mb-6" style={{ color: 'rgba(242,240,235,0.7)' }}>
-                Every customer you've ever worked with already trusts you. They don't need to be convinced — they just need to hear from you at the right moment. One text or email to your client list about a seasonal service or a limited-time offer fills slow weeks faster than any ad campaign.
+              <p className="text-[18px] font-semibold leading-snug mb-6" style={{ color: '#EE6B1A' }}>
+                The people who&apos;ve already hired you are the easiest ones to get back.
               </p>
               <p className="text-[15px] leading-relaxed mb-8" style={{ color: 'rgba(242,240,235,0.7)' }}>
-                We build the campaigns, write the messages, and send them from your dashboard. You pick who gets it — everyone, past customers only, new leads only, or a custom list — and we track who opened, who replied, and who booked.
+                Sending a text or email to your existing contacts about a seasonal service, a deal, or a simple reminder is one of the fastest ways to get more work on the schedule. This service lets you send that message to your entire contact list at once — whether that&apos;s 50 people or 500. You pick what to say, we send it, and you can see who responded.
               </p>
               <ul className="space-y-3 mb-8">
                 {[
@@ -451,19 +447,18 @@ export default function ServicesPage() {
 
             {/* Copy */}
             <ScrollReveal>
-              <div className="inline-flex items-center gap-2 font-mono text-[11px] font-bold uppercase tracking-[0.28em] mb-2" style={{ color: '#EE6B1A' }}>
+              <div className="inline-flex items-center gap-2 font-mono text-[11px] font-bold uppercase tracking-[0.28em] mb-4" style={{ color: '#EE6B1A' }}>
                 <ShieldBan size={14} strokeWidth={2.5} style={{ color: '#EE6B1A' }} />
                 Service 05
               </div>
-              <h2 className="text-[clamp(2rem,5vw,3.4rem)] font-black uppercase leading-[0.92] tracking-tight mb-5">
-                Stop answering calls<br />
-                <span style={{ color: '#1A4A70' }}>you&apos;re not getting paid for.</span>
+              <h2 className="text-[clamp(2.2rem,5vw,3.6rem)] font-black uppercase leading-[0.88] tracking-tight mb-3">
+                Spam Call Screening
               </h2>
-              <p className="text-[15px] leading-relaxed mb-6" style={{ color: 'rgba(22,24,28,0.72)' }}>
-                The average trade business gets 8–12 spam calls per day. That's 30–60 minutes of your time — every single day — answering calls that will never turn into work. Worse, every second you spend on a robocall is a real customer getting your voicemail.
+              <p className="text-[18px] font-semibold leading-snug mb-6" style={{ color: '#1A4A70' }}>
+                Robocalls waste your time and tie up your line when real customers are trying to reach you.
               </p>
               <p className="text-[15px] leading-relaxed mb-8" style={{ color: 'rgba(22,24,28,0.72)' }}>
-                Our spam screening system makes every caller press 1 before they reach you. Robots can't press buttons. Real customers do it without thinking twice. Installed on your existing number — nothing changes for your real callers.
+                This service adds one simple step before any call connects to you — the caller hears a short prompt and has to press 1. Real people do it without thinking. Automated spam calls can&apos;t, so they hang up before they ever reach you. Your customers won&apos;t notice a difference. It takes about 24 hours to set up and works on your existing number.
               </p>
               <ul className="space-y-3 mb-8">
                 {[
