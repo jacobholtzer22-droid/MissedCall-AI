@@ -1,15 +1,22 @@
 /**
- * Shared config for Services dropdown in NavBar and NavMenu.
- * Used for both desktop dropdown and mobile expandable section.
+ * Shared nav services config.
+ * Desktop: ServicesDropdown renders all 5 with icon + description.
+ * Mobile: NavMenu renders a flat list (no accordion) — just label + href.
  */
-export const NAV_SERVICES = [
-  { label: 'MissedCall AI', href: '/missedcall-ai', emoji: '🤖' },
-  { label: 'Custom Websites', href: '/websites', emoji: '🌐' },
-  { label: 'Google Ads Management', href: '/ads-management', emoji: '📊' },
-  { label: 'Mass Campaigns', href: '/campaigns', emoji: '📣' },
-  { label: 'Spam Call Screening', href: '/spam-screening', emoji: '🛡️' },
-  { label: 'CRM Dashboard', href: '/pricing#add-ons', emoji: '📋' },
-  { label: 'Calendar Integration', href: '/pricing#add-ons', emoji: '📅' },
-  { label: 'SEO Optimization', href: '/pricing#add-ons', emoji: '🔍' },
-  { label: 'Google Business Profile Setup', href: '/pricing#add-ons', emoji: '📍' },
-] as const
+import type { LucideIcon } from 'lucide-react'
+import { PhoneMissed, Globe, BarChart3, Megaphone, ShieldBan } from 'lucide-react'
+
+export type NavService = {
+  label: string
+  href: string
+  icon: LucideIcon
+  description: string
+}
+
+export const NAV_SERVICES: NavService[] = [
+  { label: 'MissedCall AI',     href: '/missedcall-ai',  icon: PhoneMissed, description: '24/7 AI texts back instantly'       },
+  { label: 'Custom Websites',   href: '/websites',       icon: Globe,       description: 'Real code, not templates'          },
+  { label: 'Google Ads',        href: '/ads-management', icon: BarChart3,   description: 'We run it, you get the leads'      },
+  { label: 'Mass Campaigns',    href: '/campaigns',      icon: Megaphone,   description: 'One message, every customer'       },
+  { label: 'Spam Screening',    href: '/spam-screening', icon: ShieldBan,   description: 'Only real callers get through'     },
+]
