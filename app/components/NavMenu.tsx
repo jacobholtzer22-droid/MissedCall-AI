@@ -10,6 +10,7 @@ const NAV_LINKS = [
   { label: 'MissedCall AI', href: '/missedcall-ai' },
   { label: 'Services',      href: '/services' },
   { label: 'Pricing',       href: '/pricing' },
+  { label: 'About',         href: '/about' },
   { label: 'Book a call',   href: '/book' },
 ]
 

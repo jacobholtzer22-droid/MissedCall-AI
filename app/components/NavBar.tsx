@@ -30,7 +30,7 @@ export function NavBar() {
           </Link>
 
           {/* ── Center: 3 primary nav items (desktop only) ── */}
-          <nav className="hidden md:flex items-center gap-8 absolute left-1/2 -translate-x-1/2">
+          <nav className="hidden md:flex items-center gap-7 absolute left-1/2 -translate-x-1/2">
             <Link href="/missedcall-ai" className="aa-nav-link text-[13px] font-semibold" style={{ color: '#F2F0EB' }}>
               MissedCall AI
             </Link>
@@ -39,6 +39,9 @@ export function NavBar() {
             </Link>
             <Link href="/pricing" className="aa-nav-link text-[13px] font-semibold" style={{ color: '#F2F0EB' }}>
               Pricing
+            </Link>
+            <Link href="/about" className="aa-nav-link text-[13px] font-semibold" style={{ color: '#F2F0EB' }}>
+              About
             </Link>
           </nav>
 

@@ -6,11 +6,13 @@ import { Wind, Leaf, Car, Droplets } from 'lucide-react'
 
 const LINKS = [
   { label: 'MissedCall AI', href: '/missedcall-ai' },
+  { label: 'Services', href: '/services' },
   { label: 'Websites', href: '/websites' },
   { label: 'Google Ads', href: '/ads-management' },
   { label: 'Campaigns', href: '/campaigns' },
   { label: 'Spam Screening', href: '/spam-screening' },
   { label: 'Pricing', href: '/pricing' },
+  { label: 'About', href: '/about' },
   { label: 'Privacy Policy', href: '/privacy' },
   { label: 'Terms', href: '/terms' },
 ]
