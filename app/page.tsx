@@ -1,355 +1,293 @@
 import Link from 'next/link'
-import { MessageSquare, Globe, Megaphone, ArrowRight, Code } from 'lucide-react'
-import { Logo } from './components/Logo'
+import { MessageSquare, Globe, Megaphone, ArrowRight, ArrowUpRight, Check, Wind, Leaf, Car, Droplets, Zap } from 'lucide-react'
 import ContactForm from './components/ContactForm'
 import Marquee from './components/Marquee'
 import ScrollReveal from './components/ScrollReveal'
 import CountUp from './components/CountUp'
+import BrandFooter from './components/BrandFooter'
+
+const SERVICES = [
+  {
+    icon: MessageSquare,
+    title: 'MissedCall AI',
+    body: 'Stop losing money to voicemail. Our AI texts back instantly, qualifies the lead, books the appointment, and saves the sale — 24/7, even at 3am.',
+    cta: 'See how it works',
+    href: '/missedcall-ai',
+    tag: 'Most popular',
+  },
+  {
+    icon: Globe,
+    title: 'Custom Websites',
+    body: 'No templates. No WordPress. Real code that loads fast, looks incredible, and turns visitors into customers in days — not months.',
+    cta: 'See the portfolio',
+    href: '/websites',
+    tag: null,
+  },
+  {
+    icon: Megaphone,
+    title: 'Mass Campaigns',
+    body: 'Blast emails and texts to your entire client list in one click. Past customers, new leads, everyone — stay top of mind and bring old revenue back.',
+    cta: 'Learn more',
+    href: '/campaigns',
+    tag: null,
+  },
+]
+
+const BRAND_FEEL = ['Trustworthy', 'Sharp', 'Modern', 'Built for Working Pros', 'Never Miss a Lead']
+
+const WHAT_YOU_GET = [
+  'Direct access to the person who built it',
+  'Custom solutions, not cookie-cutter templates',
+  'Turnaround measured in days, not months',
+  "Ongoing support that doesn't cost extra",
+  "AI that works around the clock so you don't have to",
+]
 
 export default function HomePage() {
   return (
-    <div className="min-h-screen bg-gray-950 text-white overflow-hidden page-fade-in">
-      {/* Hero */}
-      <section className="relative min-h-screen flex items-center justify-center pt-20">
-        {/* Animated Gradient Mesh Background */}
-        <div className="absolute inset-0 gradient-mesh"></div>
+    <div className="min-h-dvh w-full overflow-x-hidden" style={{ background: '#16181C', color: '#F2F0EB' }}>
 
-        {/* Decorative Floating Shapes */}
-        <div className="absolute inset-0 overflow-hidden pointer-events-none">
-          <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-blue-500/20 rounded-full blur-3xl"></div>
-          <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-purple-500/20 rounded-full blur-3xl"></div>
-          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[800px] bg-gradient-to-r from-blue-500/10 to-purple-500/10 rounded-full blur-3xl"></div>
-          <div className="absolute top-20 right-[15%] w-3 h-3 bg-blue-400/30 rounded-full animate-float"></div>
-          <div className="absolute top-[40%] left-[8%] w-2 h-2 bg-purple-400/40 rounded-full animate-float" style={{ animationDelay: '2s' }}></div>
-          <div className="absolute bottom-[30%] right-[10%] w-4 h-4 bg-blue-400/20 rounded-full animate-float" style={{ animationDelay: '4s' }}></div>
-          <div className="absolute top-[60%] left-[20%] w-2 h-2 bg-purple-400/30 rounded-full animate-float" style={{ animationDelay: '1s' }}></div>
-          <div className="absolute top-[15%] left-[60%] w-5 h-5 border border-blue-400/10 rounded-full animate-float" style={{ animationDelay: '3s' }}></div>
-          <div className="absolute bottom-[20%] left-[40%] w-6 h-6 border border-purple-400/10 rounded-full animate-float" style={{ animationDelay: '5s' }}></div>
-        </div>
-
-        <div className="relative z-10 container mx-auto px-6 py-20">
-          <div className="text-center mb-16">
-            <h1 className="text-5xl md:text-7xl font-bold mb-3 leading-tight">
-              Catalyzing Business Growth.
+      {/* ── Hero ───────────────────────────────────────────── */}
+      <section className="relative aa-grid-bg pt-28 pb-16 sm:pt-36 sm:pb-24">
+        <div className="aa-hazard" />
+        <div className="mx-auto max-w-7xl px-5 sm:px-8 pt-10">
+          <div className="max-w-3xl">
+            <div className="inline-flex items-center gap-2 font-mono text-[11px] font-semibold uppercase tracking-[0.28em] mb-5">
+              <span className="inline-block h-2.5 w-2.5" style={{ background: '#EE6B1A' }} />
+              <span style={{ color: '#EE6B1A' }}>Missed-call lead capture · Catalyzing business growth</span>
+            </div>
+            <h1 className="text-[clamp(2.6rem,8vw,5rem)] font-black uppercase leading-[0.92] tracking-[-0.02em] mb-6">
+              Stop losing work<br />
+              <span style={{ color: '#EE6B1A' }}>to voicemail.</span>
             </h1>
-            <p className="text-lg md:text-xl text-gray-400 max-w-2xl mx-auto mb-4">
-              <span className="bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">
-                Your competitors aren&apos;t waiting. Neither should you.
-              </span>
+            <p className="text-[16px] sm:text-[18px] leading-relaxed max-w-2xl mb-8" style={{ color: 'rgba(242,240,235,0.72)' }}>
+              When you can't answer, our AI texts every missed caller back in seconds, qualifies the lead, and books the job — so you never miss a paycheck. Plus custom websites and mass campaigns.
             </p>
-            <p className="text-xl md:text-2xl text-gray-400 max-w-3xl mx-auto leading-relaxed">
-              Automation that actually works. Websites that actually convert.
-              <br className="hidden md:block" />
-              A guy who actually picks up the phone.
-            </p>
-          </div>
-
-          {/* Service Cards */}
-          <div className="grid md:grid-cols-3 gap-6 max-w-6xl mx-auto">
-            {/* MissedCall AI Card */}
-            <Link href="/missedcall-ai" className="group relative">
-              <div className="absolute inset-0 bg-gradient-to-r from-blue-600 to-blue-400 rounded-3xl blur-xl opacity-50 group-hover:opacity-75 transition-opacity"></div>
-              <div className="relative bg-gradient-to-br from-gray-900 to-gray-800 border border-white/10 rounded-3xl p-8 h-full hover:border-blue-500/50 transition-all hover:-translate-y-2 duration-300 hover:shadow-[0_20px_40px_rgba(59,130,246,0.15)]">
-                <div className="bg-blue-500/20 w-16 h-16 rounded-2xl flex items-center justify-center mb-6 card-icon">
-                  <MessageSquare className="h-8 w-8 text-blue-400" />
-                </div>
-                <h2 className="text-3xl font-bold mb-4">📞 MissedCall AI</h2>
-                <p className="text-gray-400 mb-6 text-lg">
-                  Stop losing money to voicemail. Our AI texts back instantly, books appointments, and recovers missed revenue — 24/7, even at 3am.
-                </p>
-                <div className="flex items-center text-blue-400 font-semibold text-lg">
-                  Show me how it works
-                  <ArrowRight className="ml-2 h-5 w-5 group-hover:translate-x-2 transition-transform" />
-                </div>
-              </div>
-            </Link>
-
-            {/* Websites Card */}
-            <Link href="/websites" className="group relative">
-              <div className="absolute inset-0 bg-gradient-to-r from-purple-600 to-pink-400 rounded-3xl blur-xl opacity-50 group-hover:opacity-75 transition-opacity"></div>
-              <div className="relative bg-gradient-to-br from-gray-900 to-gray-800 border border-white/10 rounded-3xl p-8 h-full hover:border-purple-500/50 transition-all hover:-translate-y-2 duration-300 hover:shadow-[0_20px_40px_rgba(139,92,246,0.15)]">
-                <div className="bg-purple-500/20 w-16 h-16 rounded-2xl flex items-center justify-center mb-6 card-icon">
-                  <Globe className="h-8 w-8 text-purple-400" />
-                </div>
-                <h2 className="text-3xl font-bold mb-4">🌐 Custom Websites</h2>
-                <p className="text-gray-400 mb-6 text-lg">
-                  No templates. No WordPress. Just clean, custom code that loads fast, looks incredible, and actually turns visitors into customers.
-                </p>
-                <div className="flex items-center text-purple-400 font-semibold text-lg">
-                  See the portfolio
-                  <ArrowRight className="ml-2 h-5 w-5 group-hover:translate-x-2 transition-transform" />
-                </div>
-              </div>
-            </Link>
-
-            {/* Campaigns Card */}
-            <Link href="/campaigns" className="group relative">
-              <div className="absolute inset-0 bg-gradient-to-r from-amber-600 to-orange-400 rounded-3xl blur-xl opacity-50 group-hover:opacity-75 transition-opacity"></div>
-              <div className="relative bg-gradient-to-br from-gray-900 to-gray-800 border border-white/10 rounded-3xl p-8 h-full hover:border-amber-500/50 transition-all hover:-translate-y-2 duration-300 hover:shadow-[0_20px_40px_rgba(245,158,11,0.15)]">
-                <div className="bg-amber-500/20 w-16 h-16 rounded-2xl flex items-center justify-center mb-6 card-icon">
-                  <Megaphone className="h-8 w-8 text-amber-400" />
-                </div>
-                <h2 className="text-3xl font-bold mb-4">📣 Mass Campaigns</h2>
-                <p className="text-gray-400 mb-6 text-lg">
-                  Blast emails and texts to your entire client list in one click. Past customers, new leads, everyone. Stay top of mind and bring old customers back.
-                </p>
-                <div className="flex items-center text-amber-400 font-semibold text-lg">
-                  Learn more
-                  <ArrowRight className="ml-2 h-5 w-5 group-hover:translate-x-2 transition-transform" />
-                </div>
-              </div>
-            </Link>
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+              <Link
+                href="/missedcall-ai"
+                className="aa-btn inline-flex items-center justify-center gap-2 px-6 py-4 text-[15px] font-bold uppercase tracking-wide"
+                style={{ background: '#EE6B1A', color: '#16181C' }}
+              >
+                See MissedCall AI
+                <ArrowUpRight size={18} strokeWidth={2.5} />
+              </Link>
+              <Link
+                href="/book"
+                className="aa-btn-ghost inline-flex items-center justify-center gap-2 border-2 px-6 py-4 text-[15px] font-bold uppercase tracking-wide"
+                style={{ borderColor: '#6E7681', color: '#F2F0EB' }}
+              >
+                Book a free call
+              </Link>
+            </div>
+            <div className="mt-8 flex flex-wrap gap-2">
+              {[
+                { icon: Wind, label: 'HVAC' },
+                { icon: Leaf, label: 'Landscaping' },
+                { icon: Car, label: 'Car Detailing' },
+                { icon: Droplets, label: 'Plumbing' },
+              ].map((t) => (
+                <span
+                  key={t.label}
+                  className="inline-flex items-center gap-1.5 border px-3 py-1.5 text-[12px] font-semibold"
+                  style={{ borderColor: 'rgba(110,118,129,0.4)', color: '#F2F0EB' }}
+                >
+                  <t.icon size={13} strokeWidth={2.25} style={{ color: '#EE6B1A' }} />
+                  {t.label}
+                </span>
+              ))}
+            </div>
           </div>
         </div>
+        <div className="aa-hazard mt-16 opacity-50" />
       </section>
 
-      {/* Scrolling Marquee - Problem Awareness */}
-      <div className="border-y border-white/5 bg-gray-900/30 py-4">
+      {/* ── Brand-feel ticker ──────────────────────────────── */}
+      <section className="overflow-hidden border-y-2 py-4" style={{ borderColor: '#16181C', background: '#EE6B1A' }}>
         <Marquee
-          items={[
-            'Missed Calls → Money Lost',
-            'Bad Website → No Trust',
-            'No Ads → Invisible',
-            'Slow Response → Lost Lead',
-            'No Automation → Burnout',
-          ]}
-          separator="✦"
+          items={BRAND_FEEL}
+          separator="⚡"
           speed="normal"
-          className="text-gray-500 text-sm font-medium tracking-wide uppercase"
+          className="text-[18px] sm:text-[22px] font-black uppercase tracking-tight"
         />
-      </div>
+      </section>
 
-      {/* Book a Call - Calendar CTA */}
-      <section className="relative z-10 py-20 dot-pattern">
-        <div className="container mx-auto px-6">
-          <div className="max-w-2xl mx-auto">
-            <ScrollReveal>
-              <div className="text-center mb-10">
-                <h2 className="text-4xl font-bold mb-3">Let&apos;s Talk 🚀</h2>
-                <p className="text-gray-400 text-lg">
-                  Pick a time that works. 15 minutes, no pitch, no pressure.
-                </p>
-              </div>
-            </ScrollReveal>
-            <ScrollReveal delay={150}>
-              <div className="relative">
-                <div className="absolute inset-0 bg-gradient-to-r from-blue-600/20 to-purple-600/20 rounded-2xl blur-2xl"></div>
-                <div className="relative bg-gray-900/90 backdrop-blur-sm border border-white/10 rounded-2xl p-8 md:p-10 text-center">
-                  <p className="text-gray-300 mb-6">
-                    Book a free 15-minute call. We&apos;ll talk about what your business needs — no strings attached.
-                  </p>
-                  <Link
-                    href="/book"
-                    className="cta-hover inline-flex items-center justify-center bg-gradient-to-r from-blue-600 to-purple-600 text-white px-8 py-4 rounded-xl text-lg font-semibold hover:from-blue-500 hover:to-purple-500 transition-all"
-                  >
-                    Pick a time →
-                  </Link>
+      {/* ── Stats ──────────────────────────────────────────── */}
+      <section style={{ background: '#1A4A70' }}>
+        <div className="mx-auto grid max-w-7xl grid-cols-2 divide-x-2 divide-y-2 sm:grid-cols-4 sm:divide-y-0" style={{ borderColor: 'rgba(255,255,255,0.14)' }}>
+          {[
+            { value: '<60s', label: 'Text-back time', sub: 'Before they call the next guy' },
+            { value: '24/7', label: 'Always on', sub: 'Nights, weekends, on the job' },
+            { value: '0', label: 'Leads dropped', sub: 'Every missed call gets worked' },
+            { value: '5 min', label: 'To go live', sub: 'Keep your number, no new gear' },
+          ].map((s, i) => (
+            <ScrollReveal key={i}>
+              <div className="px-5 py-8 sm:px-7 sm:py-10" style={{ borderColor: 'rgba(255,255,255,0.14)' }}>
+                <div className="text-[clamp(2rem,5vw,3.2rem)] font-black tabular-nums leading-none" style={{ color: '#FFFFFF' }}>
+                  {s.value}
                 </div>
+                <div className="mt-3 text-[13px] font-bold uppercase tracking-wide" style={{ color: '#EE6B1A' }}>{s.label}</div>
+                <div className="mt-1 text-[12.5px] leading-snug" style={{ color: 'rgba(242,240,235,0.65)' }}>{s.sub}</div>
               </div>
             </ScrollReveal>
-          </div>
+          ))}
         </div>
       </section>
 
-      {/* Stats Bar */}
-      <section className="relative z-10 py-16 border-y border-white/10 bg-gray-900/50 backdrop-blur-sm">
-        <div className="container mx-auto px-6">
+      {/* ── Services ───────────────────────────────────────── */}
+      <section style={{ background: '#F2F0EB', color: '#16181C' }}>
+        <div className="mx-auto max-w-7xl px-5 py-16 sm:px-8 lg:py-24">
           <ScrollReveal>
-            <p className="text-center text-sm text-gray-500 uppercase tracking-widest mb-8 font-medium">The numbers don&apos;t lie</p>
+            <div className="mb-12">
+              <div className="inline-flex items-center gap-2 font-mono text-[11px] font-semibold uppercase tracking-[0.28em] mb-4">
+                <span className="inline-block h-2.5 w-2.5" style={{ background: '#EE6B1A' }} />
+                <span style={{ color: '#EE6B1A' }}>What we do</span>
+              </div>
+              <h2 className="text-[clamp(2rem,5vw,3.2rem)] font-black uppercase leading-[0.95] tracking-tight">
+                Three tools. <span style={{ color: '#1A4A70' }}>One goal —</span><br />
+                more work in your hands.
+              </h2>
+            </div>
           </ScrollReveal>
-          <div className="grid grid-cols-2 md:grid-cols-3 gap-8 text-center">
-            <div>
-              <CountUp
-                end={150}
-                suffix="+"
-                className="text-4xl font-bold bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent"
-              />
-              <p className="text-gray-500 mt-1">Businesses Growing</p>
-            </div>
-            <div>
-              <CountUp
-                end={98.3}
-                suffix="%"
-                decimals={1}
-                className="text-4xl font-bold bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent"
-              />
-              <p className="text-gray-500 mt-1">Client Retention</p>
-            </div>
-            <div>
-              <p className="text-4xl font-bold bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">24/7</p>
-              <p className="text-gray-500 mt-1">AI That Never Sleeps</p>
-            </div>
+
+          <div className="grid gap-px sm:grid-cols-3" style={{ background: 'rgba(110,118,129,0.35)' }}>
+            {SERVICES.map((s, i) => (
+              <ScrollReveal key={i}>
+                <Link href={s.href} className="aa-feature-card group block h-full p-7 sm:p-8" style={{ background: '#F2F0EB' }}>
+                  {s.tag && (
+                    <span className="mb-4 inline-block font-mono text-[10px] font-bold uppercase tracking-widest px-2.5 py-1" style={{ background: '#EE6B1A', color: '#16181C' }}>
+                      {s.tag}
+                    </span>
+                  )}
+                  <div className="grid h-12 w-12 place-items-center mb-5" style={{ background: '#16181C' }}>
+                    <s.icon size={22} strokeWidth={2.25} style={{ color: '#EE6B1A' }} />
+                  </div>
+                  <h3 className="text-[20px] font-extrabold tracking-tight mb-3">{s.title}</h3>
+                  <p className="text-[14.5px] leading-relaxed mb-5" style={{ color: 'rgba(22,24,28,0.7)' }}>{s.body}</p>
+                  <div className="inline-flex items-center gap-2 text-[13px] font-bold uppercase tracking-wide" style={{ color: '#EE6B1A' }}>
+                    {s.cta} <ArrowRight size={15} strokeWidth={2.5} className="transition-transform group-hover:translate-x-1" />
+                  </div>
+                  <span className="aa-feature-bar" />
+                </Link>
+              </ScrollReveal>
+            ))}
           </div>
         </div>
       </section>
 
-      {/* Trust Marquee */}
-      <div className="bg-gray-900/30 py-3 border-b border-white/5">
-        <Marquee
-          items={[
-            '150+ Businesses Growing',
-            '98.3% Client Retention',
-            '24/7 AI That Never Sleeps',
-            'Websites Built in Days, Not Months',
-            'No Contracts, Cancel Anytime',
-          ]}
-          separator="★"
-          speed="slow"
-          reverse
-          className="text-blue-400/60 text-xs font-semibold tracking-wider uppercase"
-        />
-      </div>
-
-      {/* About Section */}
-      <section className="relative z-10 py-24 grid-pattern">
-        {/* Sparkle decorations */}
-        <div className="absolute inset-0 pointer-events-none sparkle-container">
-          <div className="sparkle"></div>
-          <div className="sparkle"></div>
-          <div className="sparkle"></div>
-          <div className="sparkle"></div>
-        </div>
-
-        <div className="container mx-auto px-6">
-          <div className="max-w-4xl mx-auto">
-            <div className="grid md:grid-cols-2 gap-12 items-center">
-              <ScrollReveal>
+      {/* ── About ──────────────────────────────────────────── */}
+      <section className="aa-grid-bg">
+        <div className="mx-auto max-w-7xl px-5 py-16 sm:px-8 lg:py-24">
+          <div className="grid lg:grid-cols-2 gap-12 items-center">
+            <ScrollReveal>
+              <div className="inline-flex items-center gap-2 font-mono text-[11px] font-semibold uppercase tracking-[0.28em] mb-5">
+                <span className="inline-block h-2.5 w-2.5" style={{ background: '#EE6B1A' }} />
+                <span style={{ color: '#EE6B1A' }}>Built by a founder</span>
+              </div>
+              <h2 className="text-[clamp(2rem,5vw,3rem)] font-black uppercase leading-[0.95] tracking-tight mb-6">
+                Not an agency.<br />
+                <span style={{ color: '#EE6B1A' }}>One person</span><br />
+                who picks up.
+              </h2>
+              <p className="text-[15px] leading-relaxed mb-4" style={{ color: 'rgba(242,240,235,0.72)' }}>
+                I&apos;m Jacob. I don&apos;t have a team of 50. I don&apos;t have a fancy office. What I do have is a system that works and a phone that I actually answer.
+              </p>
+              <p className="text-[15px] leading-relaxed mb-8" style={{ color: 'rgba(242,240,235,0.72)' }}>
+                Every line of code is mine. When you call, I pick up. When something breaks, I fix it — no account managers, no ticket systems, no &ldquo;we&apos;ll circle back next quarter.&rdquo;
+              </p>
+              <div className="flex items-center gap-4">
+                <div className="grid h-12 w-12 place-items-center font-black text-[20px] shrink-0" style={{ background: '#1A4A70', color: '#FFFFFF' }}>
+                  J
+                </div>
                 <div>
-                  <h2 className="text-4xl font-bold mb-6">
-                    Built by a Founder,
-                    <br />
-                    <span className="text-gray-500">Not an Agency</span>
-                  </h2>
-                  <p className="text-gray-400 text-lg mb-6">
-                    I&apos;m Jacob. I don&apos;t have a team of 50 people. I don&apos;t have a fancy office. What I do have is a system that works and a phone that I actually answer.
-                  </p>
-                  <p className="text-gray-400 text-lg mb-4">
-                    Every website, every AI system, every line of code — that&apos;s me. When you call, I pick up. When something breaks, I fix it. No account managers. No ticket systems. No &ldquo;we&apos;ll circle back next quarter.&rdquo;
-                  </p>
-                  <p className="text-gray-300 text-lg mb-8 font-medium italic">
-                    &ldquo;You deserve tools that actually work, from someone who actually cares.&rdquo;
-                  </p>
-                  <div className="flex items-center space-x-4">
-                    <div className="w-12 h-12 bg-gradient-to-r from-blue-500 to-purple-500 rounded-full flex items-center justify-center text-xl font-bold">
-                      J
-                    </div>
-                    <div>
-                      <p className="font-semibold">Jacob Holtzer</p>
-                      <p className="text-gray-500 text-sm">Founder & the only person you&apos;ll ever talk to</p>
-                    </div>
-                  </div>
+                  <p className="font-bold text-[15px]">Jacob Holtzer</p>
+                  <p className="text-[12.5px]" style={{ color: '#6E7681' }}>Founder &amp; the only person you&apos;ll ever talk to</p>
                 </div>
-              </ScrollReveal>
-              <ScrollReveal delay={200}>
-                <div className="relative">
-                  <div className="absolute inset-0 bg-gradient-to-r from-blue-500/20 to-purple-500/20 rounded-3xl blur-2xl"></div>
-                  <div className="relative bg-gray-900 border border-white/10 rounded-3xl p-8 card-hover">
-                    <Code className="h-12 w-12 text-blue-400 mb-4 card-icon" />
-                    <h3 className="text-xl font-semibold mb-3">Here&apos;s What You Get</h3>
-                    <ul className="space-y-3 text-gray-400">
-                      <li className="flex items-center">
-                        <span className="w-2 h-2 bg-blue-400 rounded-full mr-3 shrink-0"></span>
-                        Direct access to the person who built it
-                      </li>
-                      <li className="flex items-center">
-                        <span className="w-2 h-2 bg-purple-400 rounded-full mr-3 shrink-0"></span>
-                        Custom solutions, not cookie-cutter crap
-                      </li>
-                      <li className="flex items-center">
-                        <span className="w-2 h-2 bg-pink-400 rounded-full mr-3 shrink-0"></span>
-                        Turnaround measured in days, not months
-                      </li>
-                      <li className="flex items-center">
-                        <span className="w-2 h-2 bg-green-400 rounded-full mr-3 shrink-0"></span>
-                        Ongoing support that doesn&apos;t cost extra
-                      </li>
-                      <li className="flex items-center">
-                        <span className="w-2 h-2 bg-amber-400 rounded-full mr-3 shrink-0"></span>
-                        CRM dashboard and mass campaigns when you need them
-                      </li>
-                    </ul>
-                  </div>
-                </div>
-              </ScrollReveal>
-            </div>
-          </div>
-        </div>
-      </section>
+              </div>
+            </ScrollReveal>
 
-      {/* Contact Form - secondary option below the fold */}
-      <section id="contact" className="relative z-10 py-20 dot-pattern">
-        <div className="container mx-auto px-6">
-          <div className="max-w-2xl mx-auto">
             <ScrollReveal>
-              <div className="text-center mb-10">
-                <h2 className="text-4xl font-bold mb-3">Prefer to just send a message?</h2>
-                <p className="text-gray-400 text-lg">
-                  No pitch deck. No 47-step funnel. Just tell me what you need.
-                </p>
-              </div>
-            </ScrollReveal>
-            <ScrollReveal delay={150}>
-              <div className="relative">
-                <div className="absolute inset-0 bg-gradient-to-r from-blue-600/20 to-purple-600/20 rounded-2xl blur-2xl"></div>
-                <div className="relative">
-                  <ContactForm />
+              <div className="border-2 p-7 sm:p-8" style={{ borderColor: 'rgba(110,118,129,0.35)', background: 'rgba(242,240,235,0.03)' }}>
+                <div className="font-mono text-[11px] font-bold uppercase tracking-[0.22em] mb-6" style={{ color: '#EE6B1A' }}>
+                  What you get
                 </div>
+                <ul className="space-y-4">
+                  {WHAT_YOU_GET.map((item, i) => (
+                    <li key={i} className="flex items-start gap-3 text-[14.5px]" style={{ color: 'rgba(242,240,235,0.85)' }}>
+                      <Check size={17} strokeWidth={3} className="shrink-0 mt-0.5" style={{ color: '#EE6B1A' }} />
+                      {item}
+                    </li>
+                  ))}
+                </ul>
+                <Link
+                  href="/pricing"
+                  className="aa-btn mt-8 inline-flex items-center gap-2 px-5 py-3 text-[13px] font-bold uppercase tracking-wide"
+                  style={{ background: '#EE6B1A', color: '#16181C' }}
+                >
+                  See pricing <ArrowRight size={15} strokeWidth={2.5} />
+                </Link>
               </div>
             </ScrollReveal>
           </div>
         </div>
       </section>
 
-      {/* CTA Section */}
-      <section className="relative z-10 py-24">
-        <div className="container mx-auto px-6">
+      {/* ── Contact ────────────────────────────────────────── */}
+      <section id="contact" style={{ background: '#F2F0EB', color: '#16181C' }}>
+        <div className="mx-auto max-w-7xl px-5 py-16 sm:px-8 lg:py-24">
           <ScrollReveal>
-            <div className="relative max-w-4xl mx-auto">
-              <div className="absolute inset-0 bg-gradient-to-r from-blue-600 to-purple-600 rounded-3xl blur-2xl opacity-50"></div>
-              <div className="relative bg-gradient-to-r from-blue-600 to-purple-600 rounded-3xl p-12 text-center">
-                <h2 className="text-4xl font-bold mb-4">Stop Losing Leads. Seriously.</h2>
-                <p className="text-blue-100 text-lg mb-8 max-w-2xl mx-auto">
-                  Whether you need an AI that never misses a call or a website that actually converts — let&apos;s make it happen.
-                </p>
-                <div className="flex flex-col sm:flex-row gap-4 justify-center">
-                  <Link href="/book" className="cta-hover bg-white text-gray-900 px-8 py-4 rounded-xl text-lg font-semibold hover:bg-gray-100 transition inline-flex items-center justify-center">
-                    <MessageSquare className="mr-2 h-5 w-5" />
-                    Show Me the Demo
-                  </Link>
-                  <Link href="/book" className="cta-hover bg-white/10 backdrop-blur-sm text-white border border-white/30 px-8 py-4 rounded-xl text-lg font-semibold hover:bg-white/20 transition inline-flex items-center justify-center">
-                    <Globe className="mr-2 h-5 w-5" />
-                    I Need a Website
-                  </Link>
-                </div>
+            <div className="max-w-2xl mx-auto">
+              <div className="inline-flex items-center gap-2 font-mono text-[11px] font-semibold uppercase tracking-[0.28em] mb-5">
+                <span className="inline-block h-2.5 w-2.5" style={{ background: '#EE6B1A' }} />
+                <span style={{ color: '#EE6B1A' }}>Send a message</span>
               </div>
+              <h2 className="text-[clamp(1.8rem,4vw,2.8rem)] font-black uppercase leading-[0.95] tracking-tight mb-3">
+                Prefer to just send a message?
+              </h2>
+              <p className="text-[15px] mb-8" style={{ color: 'rgba(22,24,28,0.65)' }}>
+                No pitch deck. No 47-step funnel. Just tell me what you need.
+              </p>
+              <ContactForm />
             </div>
           </ScrollReveal>
         </div>
       </section>
 
-      {/* Footer */}
-      <footer className="relative z-10 border-t border-white/10 py-12">
-        <div className="container mx-auto px-6">
-          <div className="flex flex-col md:flex-row justify-between items-center">
-            <div className="flex items-center gap-3 mb-4 md:mb-0">
-              <Logo size="xs" />
-              <span className="font-bold">Align and Acquire</span>
+      {/* ── Final CTA ──────────────────────────────────────── */}
+      <section className="aa-grid-bg">
+        <div className="aa-hazard" />
+        <div className="mx-auto max-w-5xl px-5 py-20 sm:px-8 lg:py-28 text-center">
+          <ScrollReveal>
+            <h2 className="text-[clamp(2.2rem,6.5vw,4.4rem)] font-black uppercase leading-[0.92] tracking-tight mb-5">
+              Stop losing leads.<br />
+              <span style={{ color: '#EE6B1A' }}>Seriously.</span>
+            </h2>
+            <p className="text-[16px] sm:text-[18px] leading-relaxed max-w-xl mx-auto mb-9" style={{ color: 'rgba(242,240,235,0.72)' }}>
+              Whether you need an AI that never misses a call or a website that actually converts — let&apos;s make it happen.
+            </p>
+            <div className="flex flex-col items-center gap-3 sm:flex-row sm:justify-center">
+              <Link
+                href="/missedcall-ai"
+                className="aa-btn inline-flex items-center gap-2 px-7 py-4 text-[15px] font-bold uppercase tracking-wide"
+                style={{ background: '#EE6B1A', color: '#16181C' }}
+              >
+                <MessageSquare size={18} strokeWidth={2.5} />
+                Show me the demo
+              </Link>
+              <Link
+                href="/book"
+                className="aa-btn-ghost inline-flex items-center gap-2 border-2 px-7 py-4 text-[15px] font-bold uppercase tracking-wide"
+                style={{ borderColor: '#6E7681', color: '#F2F0EB' }}
+              >
+                Book a free call
+              </Link>
             </div>
-            <div className="flex flex-wrap justify-center gap-x-8 gap-y-2 mb-4 md:mb-0">
-              <Link href="/missedcall-ai" className="text-gray-500 hover:text-white transition">MissedCall AI</Link>
-              <Link href="/websites" className="text-gray-500 hover:text-white transition">Websites</Link>
-              <Link href="/campaigns" className="text-gray-500 hover:text-white transition">Campaigns</Link>
-              <Link href="/pricing" className="text-gray-500 hover:text-white transition">Pricing</Link>
-              <Link href="/privacy" className="text-gray-500 hover:text-white transition">Privacy Policy</Link>
-              <Link href="/terms" className="text-gray-500 hover:text-white transition">Terms & Conditions</Link>
-            </div>
-            <div className="text-center md:text-right">
-              <p className="text-gray-500">&copy; {new Date().getFullYear()} Align and Acquire</p>
-              <p className="text-gray-600 text-sm mt-1">Made with caffeine and code in Michigan ☕</p>
-            </div>
-          </div>
+          </ScrollReveal>
         </div>
-      </footer>
+        <div className="aa-hazard opacity-50" />
+      </section>
+
+      <BrandFooter />
     </div>
   )
 }

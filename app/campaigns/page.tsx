@@ -1,75 +1,24 @@
 'use client'
 
 import Link from 'next/link'
-import {
-  ArrowRight,
-  Upload,
-  Mail,
-  Send,
-  MessageSquare,
-  Users,
-  BarChart3,
-  RefreshCw,
-  History,
-  Megaphone,
-  Check,
-} from 'lucide-react'
-import { Logo } from '@/app/components/Logo'
+import { ArrowRight, Upload, Mail, Send, MessageSquare, Users, BarChart3, RefreshCw, History, Megaphone, Check } from 'lucide-react'
 import ScrollReveal from '@/app/components/ScrollReveal'
 import Marquee from '@/app/components/Marquee'
+import BrandFooter from '@/app/components/BrandFooter'
 
 const steps = [
-  {
-    title: 'Import your clients',
-    description:
-      'Upload your existing client list or let new leads flow in automatically from MissedCall AI and your website.',
-    icon: Upload,
-  },
-  {
-    title: 'Build your campaign',
-    description:
-      'Write your message, pick email or SMS (or both), choose who gets it — all clients, new leads only, past customers, or a custom list.',
-    icon: Mail,
-  },
-  {
-    title: 'Hit send',
-    description:
-      'Blast it out to everyone at once. Track opens, clicks, and responses right from your dashboard.',
-    icon: Send,
-  },
+  { title: 'Import your clients', description: 'Upload your existing client list or let new leads flow in automatically from MissedCall AI and your website.', icon: Upload },
+  { title: 'Build your campaign', description: 'Write your message, pick email or SMS (or both), choose who gets it — all clients, new leads, past customers, or custom.', icon: Mail },
+  { title: 'Hit send', description: 'Blast it out to everyone at once. Track opens, clicks, and responses right from your dashboard.', icon: Send },
 ]
 
 const features = [
-  {
-    title: 'Mass SMS Blasts',
-    description: 'Text your whole client list at once with promotions, updates, or reminders.',
-    icon: MessageSquare,
-  },
-  {
-    title: 'Mass Email Campaigns',
-    description: 'Professional emails to stay top of mind with your customers.',
-    icon: Mail,
-  },
-  {
-    title: 'Client Segmentation',
-    description: 'Send to all clients, just new leads, just past customers, or build custom lists.',
-    icon: Users,
-  },
-  {
-    title: 'Campaign Analytics',
-    description: 'See who opened, who clicked, who replied — all from your dashboard.',
-    icon: BarChart3,
-  },
-  {
-    title: 'Automated Follow-ups',
-    description: 'Set up drip sequences that go out automatically after someone becomes a lead.',
-    icon: RefreshCw,
-  },
-  {
-    title: 'Client History',
-    description: 'See every message, every interaction, every job tied to each client.',
-    icon: History,
-  },
+  { title: 'Mass SMS Blasts', description: 'Text your whole client list at once with promotions, updates, or reminders.', icon: MessageSquare },
+  { title: 'Mass Email Campaigns', description: 'Professional emails to stay top of mind with your customers.', icon: Mail },
+  { title: 'Client Segmentation', description: 'Send to all clients, just new leads, past customers, or build custom lists.', icon: Users },
+  { title: 'Campaign Analytics', description: 'See who opened, who clicked, who replied — all from your dashboard.', icon: BarChart3 },
+  { title: 'Automated Follow-ups', description: 'Set up drip sequences that go out automatically after someone becomes a lead.', icon: RefreshCw },
+  { title: 'Client History', description: 'Every message, every interaction, every job tied to each client.', icon: History },
 ]
 
 const useCases = [
@@ -80,208 +29,106 @@ const useCases = [
 ]
 
 export default function CampaignsPage() {
-  const scrollToDemo = () => {
-    document.getElementById('demo')?.scrollIntoView({ behavior: 'smooth' })
-  }
-  const scrollToPricing = () => {
-    document.getElementById('pricing')?.scrollIntoView({ behavior: 'smooth' })
-  }
+  const scrollTo = (id: string) => document.getElementById(id)?.scrollIntoView({ behavior: 'smooth' })
 
   return (
-    <div className="min-h-screen bg-gray-950 text-white page-fade-in">
-      {/* Hero */}
-      <section className="relative pt-36 pb-20 overflow-hidden">
-        <div className="absolute inset-0 gradient-mesh"></div>
-        <div className="absolute inset-0 overflow-hidden pointer-events-none">
-          <div className="absolute top-20 left-[10%] w-3 h-3 bg-amber-400/30 rounded-full animate-float"></div>
-          <div className="absolute top-[50%] right-[5%] w-2 h-2 bg-blue-400/40 rounded-full animate-float" style={{ animationDelay: '3s' }}></div>
-          <div className="absolute bottom-[25%] left-[20%] w-4 h-4 bg-purple-400/20 rounded-full animate-float" style={{ animationDelay: '1s' }}></div>
-        </div>
+    <div className="min-h-dvh w-full overflow-x-hidden" style={{ background: '#16181C', color: '#F2F0EB' }}>
 
-        <div className="container mx-auto px-6 text-center relative z-10">
-          <div className="inline-block bg-amber-500/20 text-amber-400 px-4 py-1.5 rounded-full text-sm font-medium mb-6 border border-amber-500/30">
-            📣 Mass email & SMS — one click, everyone gets it
+      {/* ── Hero ─────────────────────────────────────────── */}
+      <section className="aa-grid-bg pt-28 sm:pt-36 pb-16">
+        <div className="aa-hazard" />
+        <div className="mx-auto max-w-7xl px-5 sm:px-8 pt-10 text-center">
+          <div className="inline-flex items-center gap-2 font-mono text-[11px] font-semibold uppercase tracking-[0.28em] mb-5">
+            <span className="inline-block h-2.5 w-2.5" style={{ background: '#EE6B1A' }} />
+            <span style={{ color: '#EE6B1A' }}>Mass email & SMS · One click, everyone gets it</span>
           </div>
-          <h1 className="text-5xl md:text-6xl font-bold mb-6">
-            One Message. Every Customer.{' '}
-            <span className="bg-gradient-to-r from-amber-400 to-orange-400 bg-clip-text text-transparent">
-              Instant Impact.
-            </span>
+          <h1 className="text-[clamp(2.6rem,8vw,5rem)] font-black uppercase leading-[0.92] tracking-[-0.02em] mb-6">
+            One message.<br />
+            Every customer.<br />
+            <span style={{ color: '#EE6B1A' }}>Instant impact.</span>
           </h1>
-          <p className="text-xl text-gray-400 mb-10 max-w-3xl mx-auto">
-            Send mass email and SMS campaigns to your entire client list — past customers, new leads, everyone. Built right into your Align and Acquire dashboard.
+          <p className="text-[16px] sm:text-[18px] leading-relaxed max-w-3xl mx-auto mb-8" style={{ color: 'rgba(242,240,235,0.65)' }}>
+            Send mass email and SMS campaigns to your entire client list — past customers, new leads, everyone. Built right into your dashboard.
           </p>
-          <div className="flex flex-col sm:flex-row gap-4 justify-center">
-            <button
-              onClick={scrollToDemo}
-              className="cta-hover bg-white text-gray-900 px-8 py-4 rounded-lg text-lg font-semibold hover:bg-gray-200 transition inline-flex items-center justify-center"
-            >
-              See it in action
-              <ArrowRight className="ml-2 h-5 w-5" />
+          <div className="flex flex-col items-center gap-3 sm:flex-row sm:justify-center">
+            <button onClick={() => scrollTo('demo')} className="aa-btn inline-flex items-center gap-2 px-6 py-4 text-[15px] font-bold uppercase tracking-wide" style={{ background: '#EE6B1A', color: '#16181C' }}>
+              See it in action <ArrowRight size={18} strokeWidth={2.5} />
             </button>
-            <button
-              onClick={scrollToPricing}
-              className="cta-hover bg-amber-500/20 text-amber-400 border border-amber-500/40 px-8 py-4 rounded-lg text-lg font-semibold hover:bg-amber-500/30 transition inline-flex items-center justify-center"
-            >
+            <button onClick={() => scrollTo('pricing')} className="aa-btn-ghost inline-flex items-center gap-2 border-2 px-6 py-4 text-[15px] font-bold uppercase tracking-wide" style={{ borderColor: '#6E7681', color: '#F2F0EB' }}>
               Add campaigns to my plan
             </button>
           </div>
         </div>
+        <div className="aa-hazard mt-16 opacity-50" />
       </section>
 
-      {/* Marquee */}
-      <div className="border-y border-white/5 bg-gray-900/30 py-4">
+      {/* ── Ticker ───────────────────────────────────────── */}
+      <div className="border-y-2 py-4 overflow-hidden" style={{ borderColor: 'rgba(110,118,129,0.3)', background: 'rgba(242,240,235,0.03)' }}>
         <Marquee
-          items={[
-            'Mass SMS',
-            'Mass Email',
-            'Segment Your List',
-            'Track Opens & Clicks',
-            'Drip Campaigns',
-            'All in One Dashboard',
-          ]}
-          separator="✦"
+          items={['Mass SMS', 'Mass Email', 'Segment Your List', 'Track Opens & Clicks', 'Drip Campaigns', 'All in One Dashboard']}
+          separator="⚡"
           speed="normal"
-          className="text-amber-400/60 text-sm font-medium tracking-wide uppercase"
+          className="font-mono text-[11px] uppercase tracking-[0.2em]"
         />
       </div>
 
-      {/* How it works */}
-      <section className="py-20 border-b border-white/10 dot-pattern">
-        <div className="container mx-auto px-6">
+      {/* ── How It Works ─────────────────────────────────── */}
+      <section style={{ background: '#F2F0EB', color: '#16181C' }}>
+        <div className="mx-auto max-w-7xl px-5 py-16 sm:px-8 lg:py-24">
           <ScrollReveal>
-            <div className="text-center mb-16">
-              <h2 className="text-3xl font-bold mb-4">How It Works 🔧</h2>
-              <p className="text-gray-400 max-w-2xl mx-auto">Three steps from list to blast.</p>
-            </div>
-          </ScrollReveal>
-          <ScrollReveal stagger>
-            <div className="grid md:grid-cols-3 gap-8 max-w-4xl mx-auto">
-              {steps.map((step, i) => {
-                const Icon = step.icon
-                return (
-                  <div
-                    key={step.title}
-                    className="scroll-reveal text-center card-hover p-6 rounded-xl bg-gray-900/50 border border-white/10"
-                  >
-                    <div className="bg-amber-500/20 w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-4 card-icon">
-                      <Icon className="h-8 w-8 text-amber-400" />
-                    </div>
-                    <span className="text-xs font-semibold text-amber-400/80 uppercase tracking-wider">
-                      Step {i + 1}
-                    </span>
-                    <h3 className="text-xl font-semibold mt-2 mb-3">{step.title}</h3>
-                    <p className="text-gray-400 text-sm">{step.description}</p>
-                  </div>
-                )
-              })}
-            </div>
-          </ScrollReveal>
-        </div>
-      </section>
-
-      {/* What you can do — feature grid */}
-      <section className="py-20 relative">
-        <div className="absolute inset-0 pointer-events-none sparkle-container">
-          <div className="sparkle"></div>
-          <div className="sparkle"></div>
-          <div className="sparkle"></div>
-        </div>
-        <div className="container mx-auto px-6 relative z-10">
-          <ScrollReveal>
-            <div className="text-center mb-16">
-              <h2 className="text-3xl font-bold mb-4">What You Can Do ✨</h2>
-              <p className="text-gray-400 max-w-2xl mx-auto">Everything you need to reach your whole list — and know what works.</p>
-            </div>
-          </ScrollReveal>
-          <ScrollReveal stagger>
-            <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6 max-w-5xl mx-auto">
-              {features.map((f) => {
-                const Icon = f.icon
-                return (
-                  <div
-                    key={f.title}
-                    className="scroll-reveal bg-gray-900 border border-white/10 p-6 rounded-xl card-hover"
-                  >
-                    <div className="bg-amber-500/20 w-12 h-12 rounded-xl flex items-center justify-center mb-4 card-icon">
-                      <Icon className="h-6 w-6 text-amber-400" />
-                    </div>
-                    <h3 className="font-semibold text-lg mb-2">{f.title}</h3>
-                    <p className="text-gray-400 text-sm">{f.description}</p>
-                  </div>
-                )
-              })}
-            </div>
-          </ScrollReveal>
-        </div>
-      </section>
-
-      {/* Screenshot / mockup section */}
-      <section id="demo" className="py-20 border-y border-white/10 bg-gray-900/50 grid-pattern">
-        <div className="container mx-auto px-6">
-          <div className="max-w-5xl mx-auto">
-            <ScrollReveal>
-              <div className="grid md:grid-cols-2 gap-12 items-center">
-                {/* Device mockup */}
-                <div className="relative flex justify-center">
-                  <div className="relative w-full max-w-sm">
-                    <div className="absolute inset-0 bg-gradient-to-r from-amber-500/10 to-orange-500/10 rounded-[2.5rem] blur-2xl"></div>
-                    <div className="relative bg-gray-800 border-4 border-gray-700 rounded-[2.5rem] p-3 shadow-2xl">
-                      <div className="bg-gray-900 rounded-[1.5rem] overflow-hidden aspect-[4/3] flex items-center justify-center border border-white/10">
-                        <div className="text-center p-6">
-                          <Megaphone className="h-16 w-16 text-amber-400/50 mx-auto mb-3" />
-                          <p className="text-gray-500 text-sm">Campaign builder & analytics</p>
-                          <p className="text-gray-600 text-xs mt-1">Dashboard screenshot placeholder</p>
-                        </div>
-                      </div>
-                      <div className="absolute top-4 left-1/2 -translate-x-1/2 w-24 h-6 bg-gray-700 rounded-full"></div>
-                    </div>
-                  </div>
-                </div>
-                <div>
-                  <h2 className="text-2xl md:text-3xl font-bold mb-6">All in One Place 📊</h2>
-                  <ul className="space-y-4">
-                    {[
-                      'Create campaigns in minutes — no separate tools',
-                      'Pick your audience: everyone, new leads, past customers, or custom',
-                      'Send email, SMS, or both in one campaign',
-                      'See opens, clicks, and replies without leaving the dashboard',
-                    ].map((benefit, i) => (
-                      <li key={i} className="flex items-start gap-3">
-                        <Check className="h-5 w-5 text-amber-400 shrink-0 mt-0.5" />
-                        <span className="text-gray-300">{benefit}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
+            <div className="mb-12 text-center">
+              <div className="inline-flex items-center gap-2 font-mono text-[11px] font-semibold uppercase tracking-[0.28em] mb-4">
+                <span className="inline-block h-2.5 w-2.5" style={{ background: '#EE6B1A' }} />
+                <span style={{ color: '#EE6B1A' }}>How it works</span>
               </div>
-            </ScrollReveal>
+              <h2 className="text-[clamp(2rem,5vw,3.2rem)] font-black uppercase leading-[0.95] tracking-tight">
+                Three steps. <span style={{ color: '#1A4A70' }}>From list to blast.</span>
+              </h2>
+            </div>
+          </ScrollReveal>
+          <div className="grid gap-px sm:grid-cols-3" style={{ background: 'rgba(110,118,129,0.35)' }}>
+            {steps.map((s, i) => (
+              <ScrollReveal key={s.title}>
+                <div className="h-full p-7 sm:p-8" style={{ background: '#F2F0EB' }}>
+                  <div className="flex items-start justify-between mb-6">
+                    <span className="grid h-12 w-12 place-items-center" style={{ background: '#16181C' }}>
+                      <s.icon size={22} strokeWidth={2.25} style={{ color: '#EE6B1A' }} />
+                    </span>
+                    <span className="font-mono text-[40px] font-black tabular-nums leading-none" style={{ color: 'rgba(110,118,129,0.3)' }}>0{i + 1}</span>
+                  </div>
+                  <h3 className="text-[19px] font-extrabold tracking-tight mb-2">{s.title}</h3>
+                  <p className="text-[14px] leading-relaxed" style={{ color: 'rgba(22,24,28,0.65)' }}>{s.description}</p>
+                </div>
+              </ScrollReveal>
+            ))}
           </div>
         </div>
       </section>
 
-      {/* Who is this for */}
-      <section className="py-20 dot-pattern">
-        <div className="container mx-auto px-6">
+      {/* ── Features ─────────────────────────────────────── */}
+      <section className="aa-grid-bg">
+        <div className="mx-auto max-w-7xl px-5 py-16 sm:px-8 lg:py-24">
           <ScrollReveal>
-            <div className="max-w-3xl mx-auto text-center mb-12">
-              <h2 className="text-3xl md:text-4xl font-bold mb-6">
-                You Already Have Customers. They Already Trust You.
+            <div className="mb-12">
+              <div className="inline-flex items-center gap-2 font-mono text-[11px] font-semibold uppercase tracking-[0.28em] mb-4">
+                <span className="inline-block h-2.5 w-2.5" style={{ background: '#EE6B1A' }} />
+                <span style={{ color: '#EE6B1A' }}>What you can do</span>
+              </div>
+              <h2 className="text-[clamp(2rem,5vw,3.2rem)] font-black uppercase leading-[0.95] tracking-tight">
+                Everything you need<br /><span style={{ color: '#EE6B1A' }}>to reach everyone.</span>
               </h2>
-              <p className="text-xl text-amber-400/90 font-medium">
-                This is the easiest money you&apos;ll ever make.
-              </p>
             </div>
           </ScrollReveal>
           <ScrollReveal stagger>
-            <div className="grid sm:grid-cols-2 gap-4 max-w-3xl mx-auto">
-              {useCases.map((useCase) => (
-                <div
-                  key={useCase}
-                  className="scroll-reveal flex items-center gap-3 bg-gray-900 border border-white/10 rounded-xl p-4 card-hover"
-                >
-                  <span className="text-amber-400 text-lg">→</span>
-                  <span className="text-gray-300">{useCase}</span>
+            <div className="grid gap-px sm:grid-cols-2 lg:grid-cols-3" style={{ background: 'rgba(110,118,129,0.2)' }}>
+              {features.map((f) => (
+                <div key={f.title} className="aa-feature-card scroll-reveal p-7" style={{ background: '#16181C' }}>
+                  <div className="grid h-11 w-11 place-items-center mb-5" style={{ background: '#1A4A70' }}>
+                    <f.icon size={20} strokeWidth={2.25} style={{ color: '#EE6B1A' }} />
+                  </div>
+                  <h3 className="text-[17px] font-extrabold tracking-tight mb-2" style={{ color: '#F2F0EB' }}>{f.title}</h3>
+                  <p className="text-[13.5px] leading-relaxed" style={{ color: '#6E7681' }}>{f.description}</p>
+                  <span className="aa-feature-bar" />
                 </div>
               ))}
             </div>
@@ -289,106 +136,105 @@ export default function CampaignsPage() {
         </div>
       </section>
 
-      {/* Pricing */}
-      <section id="pricing" className="py-20 border-t border-white/10">
-        <div className="container mx-auto px-6">
+      {/* ── Demo / Use Cases ─────────────────────────────── */}
+      <section id="demo" style={{ background: '#F2F0EB', color: '#16181C' }}>
+        <div className="mx-auto max-w-7xl px-5 py-16 sm:px-8 lg:py-24">
           <ScrollReveal>
-            <div className="max-w-2xl mx-auto">
-              <div className="text-center mb-10">
-                <h2 className="text-3xl font-bold mb-4">Campaigns Pricing 💰</h2>
-                <p className="text-gray-400">Simple add-on pricing. No surprises.</p>
-              </div>
-              <div className="relative">
-                <div className="absolute inset-0 bg-gradient-to-r from-amber-600/20 to-orange-600/20 rounded-3xl blur-2xl"></div>
-                <div className="relative bg-gray-900 border border-white/10 rounded-2xl p-8">
-                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
-                    <div>
-                      <p className="text-sm text-gray-500">One-time setup</p>
-                      <p className="text-3xl font-bold text-amber-400">$100</p>
-                      <p className="text-gray-400 text-sm">Client list import, campaign template setup, configuration</p>
-                    </div>
-                    <div>
-                      <p className="text-sm text-gray-500">Monthly</p>
-                      <p className="text-3xl font-bold">$75<span className="text-gray-400 text-lg font-normal">/mo</span></p>
-                      <p className="text-gray-400 text-sm">Unlimited campaigns</p>
-                    </div>
-                  </div>
-                  <div className="border-t border-white/10 pt-6 space-y-3 text-sm text-gray-400">
-                    <p>
-                      <span className="text-white font-medium">Requires the CRM dashboard.</span> Available as an add-on to any package or as a standalone service. If you&apos;re on <span className="text-amber-400/90">Growth</span> or a standalone service, you&apos;ll need both CRM ($75/mo) and Campaigns ($75/mo). If you&apos;re on <span className="text-amber-400/90">Pro</span> or <span className="text-amber-400/90">All In</span>, you already have the CRM — just add Campaigns ($75/mo).
-                    </p>
-                  </div>
-                  <div className="mt-8">
-                    <Link
-                      href="/book"
-                      className="cta-hover w-full sm:w-auto inline-flex justify-center items-center bg-amber-500 text-gray-900 px-8 py-4 rounded-xl font-semibold hover:bg-amber-400 transition"
-                    >
-                      Add Campaigns to My Plan
-                      <ArrowRight className="ml-2 h-5 w-5" />
-                    </Link>
-                  </div>
+            <div className="grid lg:grid-cols-2 gap-12 items-center">
+              <div>
+                <div className="inline-flex items-center gap-2 font-mono text-[11px] font-semibold uppercase tracking-[0.28em] mb-5">
+                  <span className="inline-block h-2.5 w-2.5" style={{ background: '#EE6B1A' }} />
+                  <span style={{ color: '#EE6B1A' }}>All in one place</span>
                 </div>
-              </div>
-            </div>
-          </ScrollReveal>
-        </div>
-      </section>
-
-      {/* CTA */}
-      <section className="py-20">
-        <div className="container mx-auto px-6">
-          <ScrollReveal>
-            <div className="relative max-w-4xl mx-auto">
-              <div className="absolute inset-0 bg-gradient-to-r from-amber-600 to-orange-600 rounded-3xl blur-2xl opacity-50"></div>
-              <div className="relative bg-gradient-to-r from-amber-600 to-orange-600 rounded-3xl p-8 sm:p-12 text-center">
-                <h2 className="text-3xl sm:text-4xl font-bold mb-4">Ready to Reach Everyone?</h2>
-                <p className="text-amber-100 text-lg mb-8 max-w-2xl mx-auto">
-                  Add Campaigns to your plan and start blasting — past customers, new leads, everyone. One click.
+                <h2 className="text-[clamp(2rem,5vw,3rem)] font-black uppercase leading-[0.95] tracking-tight mb-6">
+                  You already have<br />customers.<br />
+                  <span style={{ color: '#1A4A70' }}>They already trust you.</span>
+                </h2>
+                <p className="text-[16px] font-bold mb-6" style={{ color: '#EE6B1A' }}>
+                  This is the easiest money you&apos;ll ever make.
                 </p>
-                <div className="flex flex-col sm:flex-row gap-4 justify-center">
-                  <Link
-                    href="/book"
-                    className="cta-hover bg-white text-gray-900 px-8 py-4 rounded-xl text-lg font-semibold hover:bg-gray-100 transition inline-flex items-center justify-center"
-                  >
-                    Add Campaigns to My Plan
-                  </Link>
-                  <Link
-                    href="/pricing"
-                    className="cta-hover bg-white/10 backdrop-blur-sm text-white border border-white/30 px-8 py-4 rounded-xl text-lg font-semibold hover:bg-white/20 transition inline-flex items-center justify-center"
-                  >
-                    View All Pricing
-                  </Link>
-                </div>
+                <ul className="space-y-3">
+                  {useCases.map((u, i) => (
+                    <li key={i} className="flex items-start gap-3 text-[14.5px]">
+                      <Check size={17} strokeWidth={3} className="shrink-0 mt-0.5" style={{ color: '#EE6B1A' }} />
+                      <span style={{ color: 'rgba(22,24,28,0.8)' }}>{u}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+              <div className="border-2 p-10 text-center" style={{ borderColor: '#16181C', background: '#FFFFFF' }}>
+                <Megaphone size={60} strokeWidth={1.5} className="mx-auto mb-4" style={{ color: '#EE6B1A' }} />
+                <p className="text-[16px] font-extrabold uppercase tracking-tight mb-2">Campaign builder included</p>
+                <p className="text-[13.5px]" style={{ color: '#6E7681' }}>Create campaigns in minutes from your Align and Acquire dashboard. No extra tools needed.</p>
               </div>
             </div>
           </ScrollReveal>
         </div>
       </section>
 
-      {/* Footer */}
-      <footer className="border-t border-white/10 py-12">
-        <div className="container mx-auto px-6">
-          <div className="flex flex-col md:flex-row justify-between items-center">
-            <div className="flex items-center gap-3 mb-4 md:mb-0">
-              <Logo size="xs" />
-              <span className="font-bold">Align and Acquire</span>
+      {/* ── Pricing ──────────────────────────────────────── */}
+      <section id="pricing" className="aa-grid-bg">
+        <div className="mx-auto max-w-2xl px-5 py-16 sm:px-8 lg:py-24">
+          <ScrollReveal>
+            <div className="mb-8 text-center">
+              <div className="inline-flex items-center gap-2 font-mono text-[11px] font-semibold uppercase tracking-[0.28em] mb-4">
+                <span className="inline-block h-2.5 w-2.5" style={{ background: '#EE6B1A' }} />
+                <span style={{ color: '#EE6B1A' }}>Pricing</span>
+              </div>
+              <h2 className="text-[clamp(2rem,5vw,3rem)] font-black uppercase leading-[0.95] tracking-tight">
+                Simple. No surprises.
+              </h2>
             </div>
-            <div className="flex flex-wrap justify-center gap-x-8 gap-y-2 mb-4 md:mb-0">
-              <Link href="/" className="text-gray-500 hover:text-white transition">Home</Link>
-              <Link href="/missedcall-ai" className="text-gray-500 hover:text-white transition">MissedCall AI</Link>
-              <Link href="/websites" className="text-gray-500 hover:text-white transition">Websites</Link>
-              <Link href="/campaigns" className="text-gray-500 hover:text-white transition">Campaigns</Link>
-              <Link href="/pricing" className="text-gray-500 hover:text-white transition">Pricing</Link>
-              <Link href="/privacy" className="text-gray-500 hover:text-white transition">Privacy Policy</Link>
-              <Link href="/terms" className="text-gray-500 hover:text-white transition">Terms & Conditions</Link>
+            <div className="border-2 p-8" style={{ borderColor: 'rgba(110,118,129,0.35)', background: 'rgba(242,240,235,0.03)' }}>
+              <div className="grid sm:grid-cols-2 gap-6 mb-6">
+                <div>
+                  <div className="font-mono text-[11px] uppercase tracking-widest mb-1" style={{ color: '#6E7681' }}>One-time setup</div>
+                  <div className="text-[32px] font-black tabular-nums" style={{ color: '#EE6B1A' }}>$100</div>
+                  <div className="text-[12.5px]" style={{ color: '#6E7681' }}>Client list import, template setup</div>
+                </div>
+                <div>
+                  <div className="font-mono text-[11px] uppercase tracking-widest mb-1" style={{ color: '#6E7681' }}>Monthly</div>
+                  <div className="flex items-end gap-1">
+                    <span className="text-[32px] font-black tabular-nums">$75</span>
+                    <span className="mb-1 text-[14px]" style={{ color: '#6E7681' }}>/mo</span>
+                  </div>
+                  <div className="text-[12.5px]" style={{ color: '#6E7681' }}>Unlimited campaigns</div>
+                </div>
+              </div>
+              <div className="border-t-2 pt-5 text-[13px] mb-7" style={{ borderColor: 'rgba(110,118,129,0.25)', color: '#6E7681' }}>
+                <span style={{ color: '#F2F0EB', fontWeight: 600 }}>Requires CRM dashboard.</span> Available as add-on to any package. On Pro or All In you already have the CRM — just add Campaigns ($75/mo).
+              </div>
+              <Link href="/book" className="aa-btn w-full inline-flex items-center justify-center gap-2 py-4 text-[14px] font-bold uppercase tracking-wide" style={{ background: '#EE6B1A', color: '#16181C' }}>
+                Add campaigns to my plan <ArrowRight size={15} strokeWidth={2.5} />
+              </Link>
             </div>
-            <div className="text-center md:text-right">
-              <p className="text-gray-500">&copy; {new Date().getFullYear()} Align and Acquire</p>
-              <p className="text-gray-600 text-sm mt-1">Made with caffeine and code in Michigan ☕</p>
-            </div>
-          </div>
+          </ScrollReveal>
         </div>
-      </footer>
+      </section>
+
+      {/* ── CTA ──────────────────────────────────────────── */}
+      <section style={{ background: '#1A4A70' }}>
+        <div className="mx-auto max-w-5xl px-5 py-16 sm:px-8 lg:py-24 text-center">
+          <ScrollReveal>
+            <h2 className="text-[clamp(2.2rem,6.5vw,4.2rem)] font-black uppercase leading-[0.92] tracking-tight mb-5" style={{ color: '#FFFFFF' }}>
+              Ready to reach<br /><span style={{ color: '#EE6B1A' }}>everyone?</span>
+            </h2>
+            <p className="text-[16px] mb-9 max-w-md mx-auto" style={{ color: 'rgba(242,240,235,0.65)' }}>
+              Add Campaigns to your plan and start blasting. One click.
+            </p>
+            <div className="flex flex-col items-center gap-3 sm:flex-row sm:justify-center">
+              <Link href="/book" className="aa-btn inline-flex items-center gap-2 px-7 py-4 text-[15px] font-bold uppercase tracking-wide" style={{ background: '#EE6B1A', color: '#16181C' }}>
+                Add campaigns to my plan
+              </Link>
+              <Link href="/pricing" className="aa-btn-ghost inline-flex items-center gap-2 border-2 px-7 py-4 text-[15px] font-bold uppercase tracking-wide" style={{ borderColor: 'rgba(242,240,235,0.3)', color: '#F2F0EB' }}>
+                View all pricing
+              </Link>
+            </div>
+          </ScrollReveal>
+        </div>
+      </section>
+
+      <BrandFooter />
     </div>
   )
 }

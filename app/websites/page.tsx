@@ -1,10 +1,10 @@
 import Link from 'next/link'
 import Image from 'next/image'
 import { ArrowRight, ExternalLink, Code, Smartphone, Palette } from 'lucide-react'
-import { Logo } from '@/app/components/Logo'
 import WebsiteQuoteForm from '@/app/components/WebsiteQuoteForm'
 import ScrollReveal from '@/app/components/ScrollReveal'
 import Marquee from '@/app/components/Marquee'
+import BrandFooter from '@/app/components/BrandFooter'
 
 type Project = {
   title: string
@@ -22,8 +22,7 @@ const projects: Project[] = [
   {
     title: 'Fraaza Enterprises',
     category: 'Hydroseeding & Landscaping',
-    description:
-      'A bold, photo-driven website for West Michigan’s hydroseeding experts, owner-operated since 2004. Showcases their hydroseeding, landscaping, soil prep, and retaining wall work with a filterable project gallery, dedicated service pages, and clear calls to call or request a free quote.',
+    description: "A bold, photo-driven website for West Michigan's hydroseeding experts, owner-operated since 2004. Showcases hydroseeding, landscaping, soil prep, and retaining wall work with a filterable project gallery and clear calls to action.",
     image1: '/images/portfolio/fraaza-1.png',
     image2: '/images/portfolio/fraaza-2.png',
     url: 'https://www.fraazaenterprises.com/',
@@ -32,8 +31,7 @@ const projects: Project[] = [
   {
     title: 'Jack of All Blades Landscaping',
     category: 'Landscaping',
-    description:
-      'A modern, professional website built for a full-service landscaping company in the Grand Rapids, MI area. Features include online quote request booking, mobile-responsive design, service showcase, and AI-powered missed call recovery to ensure no lead goes unanswered.',
+    description: 'A modern, professional website built for a full-service landscaping company in the Grand Rapids, MI area. Features online quote request booking, mobile-responsive design, and AI-powered missed call recovery.',
     image1: '/images/portfolio/jack-of-all-blades-1.png',
     image2: '/images/portfolio/jack-of-all-blades-2.png',
     url: 'https://jackofallbladeslandscaping.com',
@@ -42,8 +40,7 @@ const projects: Project[] = [
   {
     title: 'Aesthetic Gardener',
     category: 'Landscaping',
-    description:
-      'High-converting marketing site for a premium landscaping company in Holland, MI. Focused on showcasing real project photos, building trust with social proof, and driving quote requests from homeowners across West Michigan.',
+    description: 'High-converting marketing site for a premium landscaping company in Holland, MI. Focused on showcasing real project photos and driving quote requests from homeowners across West Michigan.',
     image1: '/images/portfolio/aesthetic-gardener-2.png',
     image2: '/images/portfolio/aesthetic-gardener-1.png',
     url: 'https://www.aestheticgardener.net/',
@@ -52,8 +49,7 @@ const projects: Project[] = [
   {
     title: 'Learning Logs',
     category: 'SaaS Application',
-    description:
-      'Educational platform that helps users turn passive content into durable memory. Full authentication system with user accounts.',
+    description: 'Educational platform that helps users turn passive content into durable memory. Full authentication system with user accounts and progress tracking.',
     image1: '/images/portfolio/learning-logs-1.png',
     image2: '/images/portfolio/learning-logs-2.png',
     url: 'https://learning-log-app.vercel.app/',
@@ -64,8 +60,7 @@ const projects: Project[] = [
   {
     title: 'Apex Detail Studio',
     category: 'Business Website',
-    description:
-      'Premium auto detailing website for a car detailing company. Features service packages, gallery, testimonials, and booking integration.',
+    description: 'Premium auto detailing website. Features service packages, gallery, testimonials, and booking integration.',
     image1: '/images/portfolio/detailing-1.png',
     image2: '/images/portfolio/detailing-2.png',
     url: 'https://detailing-site-seven.vercel.app/',
@@ -74,8 +69,7 @@ const projects: Project[] = [
   {
     title: 'Breeze Tees',
     category: 'E-Commerce',
-    description:
-      'Modern t-shirt brand with a clean, stylish design. Built for showcasing products and driving conversions.',
+    description: 'Modern t-shirt brand with a clean, stylish design. Built for showcasing products and driving conversions.',
     image1: '/images/portfolio/breeze-tees-1.png',
     image2: '/images/portfolio/breeze-tees-2.png',
     url: null,
@@ -83,147 +77,105 @@ const projects: Project[] = [
   },
 ]
 
+const whyUs = [
+  { icon: Code, title: 'Custom Code', body: 'No WordPress. No Wix. No Squarespace. Real code that loads fast and actually ranks on Google.' },
+  { icon: Smartphone, title: 'Mobile First', body: '70% of your visitors are on their phone. Your site better look damn good on it.' },
+  { icon: Palette, title: 'Your Vision', body: "We build what you need, not what a template allows. Your business, your site, your rules." },
+]
+
 export default function WebsitesPage() {
   return (
-    <div className="min-h-screen bg-gray-950 text-white">
-      {/* Hero */}
-      <section className="relative pt-36 pb-20 overflow-hidden">
-        {/* Background */}
-        <div className="absolute inset-0 gradient-mesh"></div>
-        <div className="absolute inset-0 overflow-hidden pointer-events-none">
-          <div className="absolute top-20 left-[10%] w-3 h-3 bg-purple-400/30 rounded-full animate-float"></div>
-          <div className="absolute top-[50%] right-[5%] w-2 h-2 bg-blue-400/40 rounded-full animate-float" style={{ animationDelay: '3s' }}></div>
-          <div className="absolute bottom-[25%] left-[20%] w-4 h-4 bg-purple-400/20 rounded-full animate-float" style={{ animationDelay: '1s' }}></div>
-        </div>
+    <div className="min-h-dvh w-full overflow-x-hidden" style={{ background: '#16181C', color: '#F2F0EB' }}>
 
-        <div className="container mx-auto px-6 text-center relative z-10">
-          <div className="inline-block bg-purple-500/20 text-purple-400 px-4 py-1.5 rounded-full text-sm font-medium mb-6 border border-purple-500/30">
-            🌐 No templates. No page builders. Just real code.
+      {/* ── Hero ─────────────────────────────────────────── */}
+      <section className="aa-grid-bg pt-28 sm:pt-36 pb-16">
+        <div className="aa-hazard" />
+        <div className="mx-auto max-w-7xl px-5 sm:px-8 pt-10 text-center">
+          <div className="inline-flex items-center gap-2 font-mono text-[11px] font-semibold uppercase tracking-[0.28em] mb-5">
+            <span className="inline-block h-2.5 w-2.5" style={{ background: '#EE6B1A' }} />
+            <span style={{ color: '#EE6B1A' }}>No templates. No page builders. Real code.</span>
           </div>
-          <h1 className="text-5xl md:text-6xl font-bold mb-6">
-            Websites That Actually <span className="bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">Convert</span>
+          <h1 className="text-[clamp(2.6rem,8vw,5rem)] font-black uppercase leading-[0.92] tracking-[-0.02em] mb-6">
+            Websites that<br />
+            actually <span style={{ color: '#EE6B1A' }}>convert.</span>
           </h1>
-          <p className="text-xl text-gray-400 mb-8 max-w-3xl mx-auto">
+          <p className="text-[16px] sm:text-[18px] leading-relaxed max-w-3xl mx-auto mb-8" style={{ color: 'rgba(242,240,235,0.65)' }}>
             Your website shouldn&apos;t just exist — it should work for you. Custom code, mobile-first, blazing fast. The kind of site that makes visitors think &ldquo;okay, these people are legit.&rdquo;
           </p>
-          <Link href="/book" className="cta-hover bg-white text-gray-900 px-8 py-4 rounded-lg text-lg font-semibold hover:bg-gray-200 transition inline-flex items-center">
-            Start Your Project <ArrowRight className="ml-2 h-5 w-5" />
+          <Link href="/book" className="aa-btn inline-flex items-center gap-2 px-6 py-4 text-[15px] font-bold uppercase tracking-wide" style={{ background: '#EE6B1A', color: '#16181C' }}>
+            Start your project <ArrowRight size={18} strokeWidth={2.5} />
           </Link>
         </div>
+        <div className="aa-hazard mt-16 opacity-50" />
       </section>
 
-      {/* Marquee */}
-      <div className="border-y border-white/5 bg-gray-900/30 py-4">
+      {/* ── Ticker ───────────────────────────────────────── */}
+      <div className="border-y-2 py-4 overflow-hidden" style={{ borderColor: 'rgba(110,118,129,0.3)', background: 'rgba(242,240,235,0.03)' }}>
         <Marquee
-          items={[
-            'Custom Code, Not Templates',
-            'Mobile-First Design',
-            'Blazing Fast Load Times',
-            'SEO Built In',
-            'Launched in Days, Not Months',
-            'Looks Great on Every Device',
-          ]}
-          separator="✦"
+          items={['Custom Code Not Templates', 'Mobile-First Design', 'Blazing Fast Load Times', 'SEO Built In', 'Launched in Days Not Months', 'Looks Great on Every Device']}
+          separator="⚡"
           speed="normal"
-          className="text-purple-400/60 text-sm font-medium tracking-wide uppercase"
+          className="font-mono text-[11px] uppercase tracking-[0.2em]"
         />
       </div>
 
-      {/* Portfolio */}
-      <section id="portfolio" className="py-20 relative">
-        {/* Sparkle decorations */}
-        <div className="absolute inset-0 pointer-events-none sparkle-container">
-          <div className="sparkle"></div>
-          <div className="sparkle"></div>
-          <div className="sparkle"></div>
-          <div className="sparkle"></div>
-        </div>
-
-        <div className="container mx-auto px-6">
+      {/* ── Portfolio ────────────────────────────────────── */}
+      <section id="portfolio" style={{ background: '#F2F0EB', color: '#16181C' }}>
+        <div className="mx-auto max-w-5xl px-5 py-16 sm:px-8 lg:py-24">
           <ScrollReveal>
-            <div className="text-center mb-16">
-              <h2 className="text-4xl md:text-5xl font-bold mb-4 bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">
-                The Work Speaks for Itself
+            <div className="mb-14">
+              <div className="inline-flex items-center gap-2 font-mono text-[11px] font-semibold uppercase tracking-[0.28em] mb-4">
+                <span className="inline-block h-2.5 w-2.5" style={{ background: '#EE6B1A' }} />
+                <span style={{ color: '#EE6B1A' }}>Portfolio</span>
+              </div>
+              <h2 className="text-[clamp(2rem,5vw,3.2rem)] font-black uppercase leading-[0.95] tracking-tight">
+                The work speaks<br /><span style={{ color: '#1A4A70' }}>for itself.</span>
               </h2>
-              <p className="text-gray-400 max-w-2xl mx-auto">Real projects. Real businesses. Real results.</p>
             </div>
           </ScrollReveal>
 
-          <div className="space-y-20 max-w-4xl mx-auto">
+          <div className="space-y-20">
             {projects.map((project, index) => (
-              <ScrollReveal key={project.title} delay={index * 100}>
-                <div className="space-y-10">
-                  <div className="text-center">
-                    <span className="text-blue-400 font-medium">{project.category}</span>
-                    <h3 className="text-3xl font-bold mt-2 mb-4">{project.title}</h3>
-                    <p className="text-gray-400 mb-6">{project.description}</p>
-                    
-                    <div className="flex flex-wrap gap-2 mb-6 justify-center">
-                      {project.features.map((feature) => (
-                        <span key={feature} className="bg-gray-800 text-gray-300 px-3 py-1 rounded-full text-sm border border-white/10">
-                          {feature}
-                        </span>
+              <ScrollReveal key={project.title}>
+                <div>
+                  <div className="border-l-4 pl-6 mb-8" style={{ borderColor: '#EE6B1A' }}>
+                    <span className="font-mono text-[11px] font-bold uppercase tracking-widest" style={{ color: '#EE6B1A' }}>{project.category}</span>
+                    <h3 className="text-[26px] font-extrabold tracking-tight mt-1 mb-3">{project.title}</h3>
+                    <p className="text-[14.5px] leading-relaxed mb-4" style={{ color: 'rgba(22,24,28,0.68)' }}>{project.description}</p>
+                    <div className="flex flex-wrap gap-2 mb-4">
+                      {project.features.map((f) => (
+                        <span key={f} className="border-2 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide" style={{ borderColor: '#16181C', color: '#16181C' }}>{f}</span>
                       ))}
                     </div>
-
                     {project.url ? (
-                      <a 
-                        href={project.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="inline-flex items-center text-blue-400 font-semibold hover:text-blue-300 transition"
-                      >
-                        View Live Site <ExternalLink className="ml-2 h-4 w-4" />
+                      <a href={project.url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 text-[13px] font-bold uppercase tracking-wide" style={{ color: '#1A4A70' }}>
+                        View live site <ExternalLink size={14} strokeWidth={2.25} />
                       </a>
                     ) : (
-                      <span className="inline-flex items-center text-gray-500 font-semibold cursor-not-allowed">
-                        View Live Site <ExternalLink className="ml-2 h-4 w-4" />
+                      <span className="inline-flex items-center gap-2 text-[13px] font-bold uppercase tracking-wide cursor-not-allowed" style={{ color: '#6E7681' }}>
+                        View live site <ExternalLink size={14} strokeWidth={2.25} />
                       </span>
                     )}
                   </div>
 
-                  <div className={project.imageCompact ? 'max-w-lg mx-auto' : 'max-w-5xl mx-auto'}>
+                  <div className={project.imageCompact ? 'max-w-lg mx-auto' : 'max-w-4xl'}>
                     {project.imagesSeparate ? (
                       <div className="relative">
-                        <div className="bg-gray-900 rounded-2xl overflow-hidden shadow-xl border border-white/10">
-                          <Image 
-                            src={project.image2} 
-                            alt={`${project.title} detail`}
-                            width={project.imageCompact ? 480 : 1200}
-                            height={project.imageCompact ? 300 : 750}
-                            className="w-full h-auto"
-                          />
+                        <div className="border-2 overflow-hidden" style={{ borderColor: '#16181C' }}>
+                          <Image src={project.image2} alt={`${project.title} detail`} width={project.imageCompact ? 480 : 1200} height={project.imageCompact ? 300 : 750} className="w-full h-auto" />
                         </div>
-                        <div className="absolute -top-6 -right-6 w-2/3 bg-gray-900 rounded-2xl overflow-hidden shadow-xl border-4 border-gray-800">
-                          <Image 
-                            src={project.image1} 
-                            alt={project.title}
-                            width={project.imageCompact ? 240 : 600}
-                            height={project.imageCompact ? 150 : 360}
-                            className="w-full h-auto"
-                          />
+                        <div className="absolute -top-6 -right-6 w-2/3 border-4 overflow-hidden" style={{ borderColor: '#16181C' }}>
+                          <Image src={project.image1} alt={project.title} width={project.imageCompact ? 240 : 600} height={project.imageCompact ? 150 : 360} className="w-full h-auto" />
                         </div>
                       </div>
                     ) : (
                       <div className="relative">
-                        <div className="bg-gray-900 rounded-2xl overflow-hidden shadow-xl border border-white/10">
-                          <Image 
-                            src={project.image1} 
-                            alt={project.title}
-                            width={1200}
-                            height={750}
-                            className="w-full h-auto"
-                          />
+                        <div className="border-2 overflow-hidden" style={{ borderColor: '#16181C' }}>
+                          <Image src={project.image1} alt={project.title} width={1200} height={750} className="w-full h-auto" />
                         </div>
                         {project.image1 !== project.image2 && (
-                          <div className="absolute -bottom-6 -right-6 w-2/3 bg-gray-900 rounded-2xl overflow-hidden shadow-xl border-4 border-gray-800">
-                            <Image 
-                              src={project.image2} 
-                              alt={`${project.title} detail`}
-                              width={600}
-                              height={360}
-                              className="w-full h-auto"
-                            />
+                          <div className="absolute -bottom-6 -right-6 w-2/3 border-4 overflow-hidden" style={{ borderColor: '#F2F0EB', outline: '2px solid #16181C' }}>
+                            <Image src={project.image2} alt={`${project.title} detail`} width={600} height={360} className="w-full h-auto" />
                           </div>
                         )}
                       </div>
@@ -236,86 +188,61 @@ export default function WebsitesPage() {
         </div>
       </section>
 
-      {/* Why Work With Us */}
-      <section className="py-20 border-y border-white/10 bg-gray-900/50 grid-pattern">
-        <div className="container mx-auto px-6">
+      {/* ── Why Us ───────────────────────────────────────── */}
+      <section className="aa-grid-bg">
+        <div className="mx-auto max-w-7xl px-5 py-16 sm:px-8 lg:py-24">
           <ScrollReveal>
-            <div className="text-center mb-16">
-              <h2 className="text-3xl font-bold mb-4">Why Work With Us</h2>
-              <p className="text-gray-400 max-w-2xl mx-auto">Here&apos;s what makes working with Align and Acquire different.</p>
+            <div className="mb-12 text-center">
+              <div className="inline-flex items-center gap-2 font-mono text-[11px] font-semibold uppercase tracking-[0.28em] mb-4">
+                <span className="inline-block h-2.5 w-2.5" style={{ background: '#EE6B1A' }} />
+                <span style={{ color: '#EE6B1A' }}>Why us</span>
+              </div>
+              <h2 className="text-[clamp(2rem,5vw,3.2rem)] font-black uppercase leading-[0.95] tracking-tight">
+                What makes us<br /><span style={{ color: '#EE6B1A' }}>different.</span>
+              </h2>
             </div>
           </ScrollReveal>
-          <ScrollReveal stagger>
-            <div className="grid md:grid-cols-3 gap-8 max-w-4xl mx-auto">
-              <div className="scroll-reveal text-center card-hover p-6 rounded-xl">
-                <div className="bg-blue-500/20 w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-4 card-icon">
-                  <Code className="h-8 w-8 text-blue-400" />
+          <div className="grid gap-px sm:grid-cols-3" style={{ background: 'rgba(110,118,129,0.2)' }}>
+            {whyUs.map((item, i) => (
+              <ScrollReveal key={i}>
+                <div className="aa-feature-card h-full p-7" style={{ background: '#16181C' }}>
+                  <div className="grid h-12 w-12 place-items-center mb-5" style={{ background: '#1A4A70' }}>
+                    <item.icon size={22} strokeWidth={2.25} style={{ color: '#EE6B1A' }} />
+                  </div>
+                  <h3 className="text-[19px] font-extrabold tracking-tight mb-2" style={{ color: '#F2F0EB' }}>{item.title}</h3>
+                  <p className="text-[14px] leading-relaxed" style={{ color: '#6E7681' }}>{item.body}</p>
+                  <span className="aa-feature-bar" />
                 </div>
-                <h3 className="text-xl font-semibold mb-2">Custom Code</h3>
-                <p className="text-gray-400">No WordPress. No Wix. No Squarespace. Real code that loads fast and actually ranks on Google.</p>
-              </div>
-              <div className="scroll-reveal text-center card-hover p-6 rounded-xl">
-                <div className="bg-blue-500/20 w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-4 card-icon">
-                  <Smartphone className="h-8 w-8 text-blue-400" />
-                </div>
-                <h3 className="text-xl font-semibold mb-2">Mobile First</h3>
-                <p className="text-gray-400">70% of your visitors are on their phone. Your site better look damn good on it.</p>
-              </div>
-              <div className="scroll-reveal text-center card-hover p-6 rounded-xl">
-                <div className="bg-blue-500/20 w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-4 card-icon">
-                  <Palette className="h-8 w-8 text-blue-400" />
-                </div>
-                <h3 className="text-xl font-semibold mb-2">Your Vision</h3>
-                <p className="text-gray-400">We build what you need, not what a template allows. Your business, your site, your rules.</p>
-              </div>
-            </div>
-          </ScrollReveal>
-        </div>
-      </section>
-
-      {/* Contact Form */}
-      <section id="contact" className="py-20">
-        <div className="container mx-auto px-6">
-          <ScrollReveal>
-            <div className="relative max-w-2xl mx-auto">
-              <div className="absolute inset-0 bg-gradient-to-r from-blue-600 to-purple-600 rounded-3xl blur-2xl opacity-50"></div>
-              <div className="relative bg-gradient-to-r from-blue-600 to-purple-600 rounded-3xl p-8 md:p-12">
-                <div className="text-center mb-10">
-                  <h2 className="text-3xl font-bold text-white mb-4">Let&apos;s Build Something 🚀</h2>
-                  <p className="text-blue-100 text-lg">Tell me about your business. I&apos;ll tell you exactly what I&apos;d build and what it costs. No surprises.</p>
-                </div>
-                <div className="bg-gray-900/80 backdrop-blur-sm rounded-2xl p-8 border border-white/10">
-                  <WebsiteQuoteForm />
-                  <p className="text-center text-sm text-gray-400 mt-4">I&apos;ll get back to you within 24 hours. Usually way faster.</p>
-                </div>
-              </div>
-            </div>
-          </ScrollReveal>
-        </div>
-      </section>
-
-      {/* Footer */}
-      <footer className="border-t border-white/10 py-12">
-        <div className="container mx-auto px-6">
-          <div className="flex flex-col md:flex-row justify-between items-center">
-            <div className="flex items-center gap-3 mb-4 md:mb-0">
-              <Logo size="xs" />
-              <span className="font-bold">Align and Acquire</span>
-            </div>
-            <div className="flex flex-wrap justify-center gap-x-8 gap-y-2 mb-4 md:mb-0">
-              <Link href="/" className="text-gray-500 hover:text-white transition">Home</Link>
-              <Link href="/missedcall-ai" className="text-gray-500 hover:text-white transition">MissedCall AI</Link>
-              <Link href="/websites" className="text-gray-500 hover:text-white transition">Websites</Link>
-              <Link href="/privacy" className="text-gray-500 hover:text-white transition">Privacy Policy</Link>
-              <Link href="/terms" className="text-gray-500 hover:text-white transition">Terms & Conditions</Link>
-            </div>
-            <div className="text-center md:text-right">
-              <p className="text-gray-500">&copy; {new Date().getFullYear()} Align and Acquire</p>
-              <p className="text-gray-600 text-sm mt-1">Made with caffeine and code in Michigan ☕</p>
-            </div>
+              </ScrollReveal>
+            ))}
           </div>
         </div>
-      </footer>
+      </section>
+
+      {/* ── Contact / Quote Form ─────────────────────────── */}
+      <section id="contact" style={{ background: '#F2F0EB', color: '#16181C' }}>
+        <div className="mx-auto max-w-2xl px-5 py-16 sm:px-8 lg:py-24">
+          <ScrollReveal>
+            <div className="mb-8">
+              <div className="inline-flex items-center gap-2 font-mono text-[11px] font-semibold uppercase tracking-[0.28em] mb-4">
+                <span className="inline-block h-2.5 w-2.5" style={{ background: '#EE6B1A' }} />
+                <span style={{ color: '#EE6B1A' }}>Start a project</span>
+              </div>
+              <h2 className="text-[clamp(2rem,5vw,3rem)] font-black uppercase leading-[0.95] tracking-tight mb-3">
+                Let&apos;s build something.
+              </h2>
+              <p className="text-[15px]" style={{ color: 'rgba(22,24,28,0.65)' }}>
+                Tell me about your business. I&apos;ll tell you exactly what I&apos;d build and what it costs. I&apos;ll get back to you within 24 hours. Usually way faster.
+              </p>
+            </div>
+            <div className="border-2 p-7 sm:p-9" style={{ borderColor: '#16181C', background: '#FFFFFF' }}>
+              <WebsiteQuoteForm />
+            </div>
+          </ScrollReveal>
+        </div>
+      </section>
+
+      <BrandFooter />
     </div>
   )
 }

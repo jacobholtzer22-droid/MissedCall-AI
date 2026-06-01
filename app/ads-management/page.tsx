@@ -1,16 +1,8 @@
 import Link from 'next/link'
-import {
-  ArrowRight,
-  Check,
-  BarChart3,
-  Search as SearchIcon,
-  Rocket,
-  RefreshCw,
-  Shield,
-} from 'lucide-react'
-import { Logo } from '@/app/components/Logo'
+import { ArrowRight, Check, BarChart3, Search as SearchIcon, Rocket, RefreshCw, Shield } from 'lucide-react'
 import ScrollReveal from '@/app/components/ScrollReveal'
 import Marquee from '@/app/components/Marquee'
+import BrandFooter from '@/app/components/BrandFooter'
 
 const features = [
   'Google Ads account setup and configuration',
@@ -24,86 +16,56 @@ const features = [
 ]
 
 const steps = [
-  {
-    title: 'We research your market',
-    description: 'Keyword research, competitor analysis, audience targeting.',
-    icon: SearchIcon,
-  },
-  {
-    title: 'We build and launch your campaigns',
-    description: 'Live within 3–5 days of signing up.',
-    icon: Rocket,
-  },
-  {
-    title: 'We optimize every month',
-    description: 'Cutting waste, scaling winners, reporting results.',
-    icon: RefreshCw,
-  },
+  { title: 'We research your market', description: 'Keyword research, competitor analysis, audience targeting.', icon: SearchIcon },
+  { title: 'We build and launch your campaigns', description: 'Live within 3–5 days of signing up.', icon: Rocket },
+  { title: 'We optimize every month', description: 'Cutting waste, scaling winners, reporting results.', icon: RefreshCw },
 ]
 
 export default function AdsManagementPage() {
   return (
-    <div className="min-h-screen bg-gray-950 text-white page-fade-in">
-      {/* Hero */}
-      <section className="relative pt-36 pb-20 overflow-hidden">
-        <div className="absolute inset-0 gradient-mesh"></div>
-        <div className="absolute inset-0 overflow-hidden pointer-events-none">
-          <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-amber-500/20 rounded-full blur-3xl"></div>
-          <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-orange-500/20 rounded-full blur-3xl"></div>
-          <div className="absolute top-20 right-[20%] w-3 h-3 bg-amber-400/30 rounded-full animate-float"></div>
-          <div className="absolute bottom-[30%] left-[10%] w-2 h-2 bg-orange-400/40 rounded-full animate-float" style={{ animationDelay: '2s' }}></div>
-          <div className="absolute top-[50%] left-[15%] w-4 h-4 bg-amber-400/15 rounded-full animate-float" style={{ animationDelay: '4s' }}></div>
-        </div>
+    <div className="min-h-dvh w-full overflow-x-hidden" style={{ background: '#16181C', color: '#F2F0EB' }}>
 
-        <div className="container mx-auto px-6 text-center relative z-10">
-          <div className="inline-block bg-amber-500/20 text-amber-400 px-4 py-1.5 rounded-full text-sm font-medium mb-6 border border-amber-500/30">
-            📊 Google Ads — we run it, you get the leads
+      {/* ── Hero ─────────────────────────────────────────── */}
+      <section className="aa-grid-bg pt-28 sm:pt-36 pb-16">
+        <div className="aa-hazard" />
+        <div className="mx-auto max-w-7xl px-5 sm:px-8 pt-10 text-center">
+          <div className="inline-flex items-center gap-2 font-mono text-[11px] font-semibold uppercase tracking-[0.28em] mb-5">
+            <span className="inline-block h-2.5 w-2.5" style={{ background: '#EE6B1A' }} />
+            <span style={{ color: '#EE6B1A' }}>Google Ads — we run it, you get the leads</span>
           </div>
-          <h1 className="text-5xl md:text-6xl font-bold mb-6 leading-tight">
-            Show Up When It{' '}
-            <span className="bg-gradient-to-r from-amber-400 to-orange-400 bg-clip-text text-transparent">
-              Matters Most
-            </span>
+          <h1 className="text-[clamp(2.6rem,8vw,5rem)] font-black uppercase leading-[0.92] tracking-[-0.02em] mb-6">
+            Show up when<br />
+            it <span style={{ color: '#EE6B1A' }}>matters most.</span>
           </h1>
-          <p className="text-xl text-gray-400 mb-10 max-w-3xl mx-auto leading-relaxed">
+          <p className="text-[16px] sm:text-[18px] leading-relaxed max-w-3xl mx-auto mb-8" style={{ color: 'rgba(242,240,235,0.65)' }}>
             Your customers are searching for exactly what you offer. Google Ads puts you at the top of the results. We set it up, run it, and make it better every month.
           </p>
-          <Link
-            href="/book"
-            className="cta-hover inline-flex items-center justify-center bg-white text-gray-900 px-8 py-4 rounded-xl text-lg font-semibold hover:bg-gray-200 transition"
-          >
-            Book a Free Call
-            <ArrowRight className="ml-2 h-5 w-5" />
+          <Link href="/book" className="aa-btn inline-flex items-center gap-2 px-6 py-4 text-[15px] font-bold uppercase tracking-wide" style={{ background: '#EE6B1A', color: '#16181C' }}>
+            Book a free call <ArrowRight size={18} strokeWidth={2.5} />
           </Link>
         </div>
+        <div className="aa-hazard mt-16 opacity-50" />
       </section>
 
-      {/* Marquee */}
-      <div className="border-y border-white/5 bg-gray-900/30 py-4">
+      {/* ── Ticker ───────────────────────────────────────── */}
+      <div className="border-y-2 py-4 overflow-hidden" style={{ borderColor: 'rgba(110,118,129,0.3)', background: 'rgba(242,240,235,0.03)' }}>
         <Marquee
-          items={[
-            'Keyword Research',
-            'Campaign Setup',
-            'Monthly Optimization',
-            'Performance Reports',
-            'Negative Keywords',
-            'A/B Testing',
-          ]}
-          separator="✦"
+          items={['Keyword Research', 'Campaign Setup', 'Monthly Optimization', 'Performance Reports', 'Negative Keywords', 'A/B Testing']}
+          separator="⚡"
           speed="normal"
-          className="text-amber-400/60 text-sm font-medium tracking-wide uppercase"
+          className="font-mono text-[11px] uppercase tracking-[0.2em]"
         />
       </div>
 
-      {/* The problem */}
-      <section className="relative z-10 py-20 dot-pattern">
-        <div className="container mx-auto px-6">
+      {/* ── The Problem ──────────────────────────────────── */}
+      <section style={{ background: '#F2F0EB', color: '#16181C' }}>
+        <div className="mx-auto max-w-4xl px-5 py-16 sm:px-8 lg:py-20">
           <ScrollReveal>
-            <div className="max-w-3xl mx-auto text-center">
-              <h2 className="text-3xl md:text-4xl font-bold mb-6">
+            <div className="border-l-4 pl-6" style={{ borderColor: '#EE6B1A' }}>
+              <h2 className="text-[clamp(2rem,5vw,3rem)] font-black uppercase leading-[0.95] tracking-tight mb-4">
                 Right now, your competitors are paying to show up above you on Google.
               </h2>
-              <p className="text-xl text-gray-400 leading-relaxed">
+              <p className="text-[16px] leading-relaxed" style={{ color: 'rgba(22,24,28,0.65)' }}>
                 Every search you&apos;re not showing up for is a customer walking into someone else&apos;s door.
               </p>
             </div>
@@ -111,29 +73,26 @@ export default function AdsManagementPage() {
         </div>
       </section>
 
-      {/* What's included */}
-      <section className="relative z-10 py-20 border-t border-white/10">
-        <div className="absolute inset-0 pointer-events-none sparkle-container">
-          <div className="sparkle"></div>
-          <div className="sparkle"></div>
-          <div className="sparkle"></div>
-        </div>
-        <div className="container mx-auto px-6 relative z-10">
+      {/* ── What's Included ──────────────────────────────── */}
+      <section className="aa-grid-bg">
+        <div className="mx-auto max-w-3xl px-5 py-16 sm:px-8 lg:py-24">
           <ScrollReveal>
-            <div className="text-center mb-16">
-              <h2 className="text-3xl md:text-4xl font-bold mb-4">What&apos;s Included ✨</h2>
-              <p className="text-gray-400 max-w-2xl mx-auto">Everything you need to show up, convert, and not waste a dime.</p>
+            <div className="mb-10">
+              <div className="inline-flex items-center gap-2 font-mono text-[11px] font-semibold uppercase tracking-[0.28em] mb-4">
+                <span className="inline-block h-2.5 w-2.5" style={{ background: '#EE6B1A' }} />
+                <span style={{ color: '#EE6B1A' }}>What&apos;s included</span>
+              </div>
+              <h2 className="text-[clamp(2rem,5vw,3rem)] font-black uppercase leading-[0.95] tracking-tight">
+                Everything you need.<br /><span style={{ color: '#EE6B1A' }}>Nothing you don&apos;t.</span>
+              </h2>
             </div>
           </ScrollReveal>
           <ScrollReveal stagger>
-            <div className="max-w-2xl mx-auto space-y-4">
-              {features.map((feature, i) => (
-                <div
-                  key={i}
-                  className="scroll-reveal flex items-start gap-4 bg-gray-900/50 border border-white/10 rounded-xl p-5 card-hover"
-                >
-                  <Check className="h-6 w-6 text-amber-400 shrink-0 mt-0.5" />
-                  <span className="text-gray-300">{feature}</span>
+            <div className="space-y-3">
+              {features.map((f, i) => (
+                <div key={i} className="scroll-reveal flex items-start gap-4 border-2 p-5" style={{ borderColor: 'rgba(110,118,129,0.3)', background: 'rgba(242,240,235,0.03)' }}>
+                  <Check size={19} strokeWidth={2.5} className="shrink-0 mt-0.5" style={{ color: '#EE6B1A' }} />
+                  <span className="text-[14.5px]" style={{ color: '#F2F0EB' }}>{f}</span>
                 </div>
               ))}
             </div>
@@ -141,168 +100,115 @@ export default function AdsManagementPage() {
         </div>
       </section>
 
-      {/* How it works */}
-      <section className="relative z-10 py-20 border-t border-white/10 dot-pattern">
-        <div className="container mx-auto px-6">
+      {/* ── How It Works ─────────────────────────────────── */}
+      <section style={{ background: '#F2F0EB', color: '#16181C' }}>
+        <div className="mx-auto max-w-7xl px-5 py-16 sm:px-8 lg:py-24">
           <ScrollReveal>
-            <div className="text-center mb-16">
-              <h2 className="text-3xl md:text-4xl font-bold mb-4">How It Works 🔧</h2>
-              <p className="text-gray-400 max-w-2xl mx-auto">Three steps from sign-up to scaling.</p>
+            <div className="mb-12 text-center">
+              <div className="inline-flex items-center gap-2 font-mono text-[11px] font-semibold uppercase tracking-[0.28em] mb-4">
+                <span className="inline-block h-2.5 w-2.5" style={{ background: '#EE6B1A' }} />
+                <span style={{ color: '#EE6B1A' }}>How it works</span>
+              </div>
+              <h2 className="text-[clamp(2rem,5vw,3.2rem)] font-black uppercase leading-[0.95] tracking-tight">
+                Three steps.<br /><span style={{ color: '#1A4A70' }}>Sign-up to scaling.</span>
+              </h2>
             </div>
           </ScrollReveal>
-          <ScrollReveal stagger>
-            <div className="grid md:grid-cols-3 gap-8 max-w-4xl mx-auto">
-              {steps.map((step, i) => {
-                const Icon = step.icon
-                return (
-                  <div
-                    key={step.title}
-                    className="scroll-reveal text-center card-hover p-6 rounded-xl bg-gray-900/50 border border-white/10"
-                  >
-                    <div className="bg-amber-500/20 w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-4 card-icon">
-                      <Icon className="h-8 w-8 text-amber-400" />
-                    </div>
-                    <span className="text-xs font-semibold text-amber-400/80 uppercase tracking-wider">
-                      Step {i + 1}
+          <div className="grid gap-px sm:grid-cols-3" style={{ background: 'rgba(110,118,129,0.35)' }}>
+            {steps.map((s, i) => (
+              <ScrollReveal key={s.title}>
+                <div className="h-full p-7 sm:p-8" style={{ background: '#F2F0EB' }}>
+                  <div className="flex items-start justify-between mb-6">
+                    <span className="grid h-12 w-12 place-items-center" style={{ background: '#16181C' }}>
+                      <s.icon size={22} strokeWidth={2.25} style={{ color: '#EE6B1A' }} />
                     </span>
-                    <h3 className="text-xl font-semibold mt-2 mb-3">{step.title}</h3>
-                    <p className="text-gray-400 text-sm">{step.description}</p>
+                    <span className="font-mono text-[40px] font-black tabular-nums leading-none" style={{ color: 'rgba(110,118,129,0.3)' }}>0{i + 1}</span>
                   </div>
-                )
-              })}
-            </div>
-          </ScrollReveal>
-        </div>
-      </section>
-
-      {/* Important note */}
-      <section className="relative z-10 py-16 border-t border-white/10 bg-gray-900/30">
-        <div className="container mx-auto px-6">
-          <ScrollReveal>
-            <div className="max-w-3xl mx-auto">
-              <div className="flex flex-col sm:flex-row items-start gap-4 bg-gray-900 border border-amber-500/20 rounded-2xl p-8">
-                <div className="bg-amber-500/20 w-12 h-12 rounded-xl flex items-center justify-center shrink-0 card-icon">
-                  <Shield className="h-6 w-6 text-amber-400" />
+                  <h3 className="text-[19px] font-extrabold tracking-tight mb-2">{s.title}</h3>
+                  <p className="text-[14px] leading-relaxed" style={{ color: 'rgba(22,24,28,0.65)' }}>{s.description}</p>
                 </div>
-                <div>
-                  <h3 className="text-lg font-semibold mb-2 text-amber-400/90">Important note</h3>
-                  <p className="text-gray-300 leading-relaxed">
-                    Your ad budget goes directly to Google — it never touches our hands. Our fee covers the strategy, setup, and ongoing management. You control how much you spend on ads.
-                  </p>
-                </div>
-              </div>
-            </div>
-          </ScrollReveal>
-        </div>
-      </section>
-
-      {/* Pricing */}
-      <section className="relative z-10 py-20 border-t border-white/10">
-        <div className="container mx-auto px-6">
-          <ScrollReveal>
-            <div className="max-w-2xl mx-auto">
-              <div className="text-center mb-10">
-                <h2 className="text-3xl md:text-4xl font-bold mb-4">Pricing 💰</h2>
-                <p className="text-gray-400">Simple. No surprises. You own your ad spend.</p>
-              </div>
-              <div className="relative">
-                <div className="absolute inset-0 bg-gradient-to-r from-amber-600/20 to-orange-600/20 rounded-3xl blur-2xl"></div>
-                <div className="relative bg-gray-900 border border-white/10 rounded-2xl p-8">
-                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-6 mb-6">
-                    <div>
-                      <p className="text-sm text-gray-500">One-time setup</p>
-                      <p className="text-3xl font-bold text-amber-400">$250</p>
-                    </div>
-                    <div>
-                      <p className="text-sm text-gray-500">Monthly management</p>
-                      <p className="text-3xl font-bold">$125<span className="text-gray-400 text-lg font-normal">/mo</span></p>
-                    </div>
-                  </div>
-                  <p className="text-gray-400 text-sm border-t border-white/10 pt-6 mb-8">
-                    Ad spend goes directly to Google — you choose the budget.
-                  </p>
-                  <Link
-                    href="/book"
-                    className="cta-hover w-full sm:w-auto inline-flex justify-center items-center bg-amber-500 text-gray-900 px-8 py-4 rounded-xl font-semibold hover:bg-amber-400 transition"
-                  >
-                    Book a Free Call
-                    <ArrowRight className="ml-2 h-5 w-5" />
-                  </Link>
-                </div>
-              </div>
-            </div>
-          </ScrollReveal>
-        </div>
-      </section>
-
-      {/* Social proof placeholder */}
-      <section className="relative z-10 py-20 border-t border-white/10 dot-pattern">
-        <div className="container mx-auto px-6">
-          <ScrollReveal>
-            <div className="max-w-2xl mx-auto text-center">
-              <div className="bg-gray-900/50 border border-white/10 border-dashed rounded-2xl p-12">
-                <BarChart3 className="h-12 w-12 text-amber-400/40 mx-auto mb-4" />
-                <p className="text-gray-500 text-sm font-medium uppercase tracking-wider mb-2">
-                  Social proof
-                </p>
-                <p className="text-gray-500">
-                  Testimonial or stat about ad results — drop it in when you have one.
-                </p>
-              </div>
-            </div>
-          </ScrollReveal>
-        </div>
-      </section>
-
-      {/* CTA */}
-      <section className="relative z-10 py-20">
-        <div className="container mx-auto px-6">
-          <ScrollReveal>
-            <div className="relative max-w-4xl mx-auto">
-              <div className="absolute inset-0 bg-gradient-to-r from-amber-600 to-orange-600 rounded-3xl blur-2xl opacity-50"></div>
-              <div className="relative bg-gradient-to-r from-amber-600 to-orange-600 rounded-3xl p-8 sm:p-12 text-center">
-                <h2 className="text-3xl sm:text-4xl font-bold mb-4">Ready to Show Up on Google?</h2>
-                <p className="text-amber-100 text-lg mb-8 max-w-2xl mx-auto">
-                  Book a free call. We&apos;ll talk about your market, your goals, and whether Google Ads is the right move. No pressure.
-                </p>
-                <Link
-                  href="/book"
-                  className="cta-hover inline-flex items-center justify-center bg-white text-gray-900 px-8 py-4 rounded-xl text-lg font-semibold hover:bg-gray-100 transition"
-                >
-                  Book a Free Call
-                  <ArrowRight className="ml-2 h-5 w-5" />
-                </Link>
-              </div>
-            </div>
-          </ScrollReveal>
-        </div>
-      </section>
-
-      {/* Footer */}
-      <footer className="border-t border-white/10 py-12">
-        <div className="container mx-auto px-6">
-          <div className="flex flex-col md:flex-row justify-between items-center">
-            <div className="flex items-center gap-3 mb-4 md:mb-0">
-              <Logo size="xs" />
-              <span className="font-bold">Align and Acquire</span>
-            </div>
-            <div className="flex flex-wrap justify-center gap-x-8 gap-y-2 mb-4 md:mb-0">
-              <Link href="/" className="text-gray-500 hover:text-white transition">Home</Link>
-              <Link href="/missedcall-ai" className="text-gray-500 hover:text-white transition">MissedCall AI</Link>
-              <Link href="/websites" className="text-gray-500 hover:text-white transition">Websites</Link>
-              <Link href="/ads-management" className="text-gray-500 hover:text-white transition">Google Ads</Link>
-              <Link href="/campaigns" className="text-gray-500 hover:text-white transition">Campaigns</Link>
-              <Link href="/pricing" className="text-gray-500 hover:text-white transition">Pricing</Link>
-              <Link href="/privacy" className="text-gray-500 hover:text-white transition">Privacy Policy</Link>
-              <Link href="/terms" className="text-gray-500 hover:text-white transition">Terms & Conditions</Link>
-            </div>
-            <div className="text-center md:text-right">
-              <p className="text-gray-500">&copy; {new Date().getFullYear()} Align and Acquire</p>
-              <p className="text-gray-600 text-sm mt-1">Made with caffeine and code in Michigan ☕</p>
-            </div>
+              </ScrollReveal>
+            ))}
           </div>
         </div>
-      </footer>
+      </section>
+
+      {/* ── Important note ───────────────────────────────── */}
+      <section className="aa-grid-bg">
+        <div className="mx-auto max-w-3xl px-5 py-12 sm:px-8">
+          <ScrollReveal>
+            <div className="flex flex-col sm:flex-row items-start gap-5 border-2 p-7" style={{ borderColor: 'rgba(110,118,129,0.35)', background: 'rgba(238,107,26,0.05)' }}>
+              <div className="grid h-12 w-12 shrink-0 place-items-center" style={{ background: '#EE6B1A' }}>
+                <Shield size={22} strokeWidth={2.25} style={{ color: '#16181C' }} />
+              </div>
+              <div>
+                <div className="font-mono text-[11px] font-bold uppercase tracking-[0.2em] mb-2" style={{ color: '#EE6B1A' }}>Important note</div>
+                <p className="text-[14.5px] leading-relaxed" style={{ color: '#F2F0EB' }}>
+                  Your ad budget goes directly to Google — it never touches our hands. Our fee covers the strategy, setup, and ongoing management. You control how much you spend on ads.
+                </p>
+              </div>
+            </div>
+          </ScrollReveal>
+        </div>
+      </section>
+
+      {/* ── Pricing ──────────────────────────────────────── */}
+      <section style={{ background: '#F2F0EB', color: '#16181C' }}>
+        <div className="mx-auto max-w-2xl px-5 py-16 sm:px-8 lg:py-24">
+          <ScrollReveal>
+            <div className="text-center mb-10">
+              <div className="inline-flex items-center gap-2 font-mono text-[11px] font-semibold uppercase tracking-[0.28em] mb-4">
+                <span className="inline-block h-2.5 w-2.5" style={{ background: '#EE6B1A' }} />
+                <span style={{ color: '#EE6B1A' }}>Pricing</span>
+              </div>
+              <h2 className="text-[clamp(2rem,5vw,3rem)] font-black uppercase leading-[0.95] tracking-tight">
+                Simple. You own<br /><span style={{ color: '#1A4A70' }}>your ad spend.</span>
+              </h2>
+            </div>
+            <div className="border-2 p-8" style={{ borderColor: '#16181C', background: '#FFFFFF' }}>
+              <div className="grid sm:grid-cols-2 gap-6 mb-6">
+                <div>
+                  <div className="font-mono text-[11px] uppercase tracking-widest mb-1" style={{ color: '#6E7681' }}>One-time setup</div>
+                  <div className="text-[32px] font-black tabular-nums" style={{ color: '#EE6B1A' }}>$250</div>
+                </div>
+                <div>
+                  <div className="font-mono text-[11px] uppercase tracking-widest mb-1" style={{ color: '#6E7681' }}>Monthly management</div>
+                  <div className="flex items-end gap-1">
+                    <span className="text-[32px] font-black tabular-nums">$125</span>
+                    <span className="mb-1 text-[14px]" style={{ color: '#6E7681' }}>/mo</span>
+                  </div>
+                </div>
+              </div>
+              <p className="text-[12.5px] border-t-2 pt-5 mb-7" style={{ borderColor: 'rgba(110,118,129,0.2)', color: '#6E7681' }}>
+                Ad spend goes directly to Google — you choose the budget.
+              </p>
+              <Link href="/book" className="aa-btn w-full inline-flex items-center justify-center gap-2 py-4 text-[14px] font-bold uppercase tracking-wide" style={{ background: '#16181C', color: '#F2F0EB' }}>
+                Book a free call <ArrowRight size={15} strokeWidth={2.5} />
+              </Link>
+            </div>
+          </ScrollReveal>
+        </div>
+      </section>
+
+      {/* ── CTA ──────────────────────────────────────────── */}
+      <section style={{ background: '#1A4A70' }}>
+        <div className="mx-auto max-w-5xl px-5 py-16 sm:px-8 lg:py-24 text-center">
+          <ScrollReveal>
+            <h2 className="text-[clamp(2.2rem,6.5vw,4.2rem)] font-black uppercase leading-[0.92] tracking-tight mb-5" style={{ color: '#FFFFFF' }}>
+              Ready to show up<br />
+              <span style={{ color: '#EE6B1A' }}>on Google?</span>
+            </h2>
+            <p className="text-[16px] mb-9 max-w-md mx-auto" style={{ color: 'rgba(242,240,235,0.65)' }}>
+              Book a free call. We&apos;ll talk about your market and whether Google Ads is the right move. No pressure.
+            </p>
+            <Link href="/book" className="aa-btn inline-flex items-center gap-2 px-7 py-4 text-[15px] font-bold uppercase tracking-wide" style={{ background: '#EE6B1A', color: '#16181C' }}>
+              Book a free call <ArrowRight size={18} strokeWidth={2.5} />
+            </Link>
+          </ScrollReveal>
+        </div>
+      </section>
+
+      <BrandFooter />
     </div>
   )
 }

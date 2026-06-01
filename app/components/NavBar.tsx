@@ -5,31 +5,53 @@ import { ServicesDropdown } from './ServicesDropdown'
 
 export function NavBar() {
   return (
-    <nav className="fixed top-0 left-0 right-0 z-50 bg-gray-950/80 backdrop-blur-lg border-b border-white/10">
-      <div className="container mx-auto px-6 py-4">
-        <div className="flex items-center justify-between">
-          <Link href="/" className="flex items-center gap-3">
-            <Logo size="lg" className="shrink-0" />
-            <span className="text-xl font-bold text-white">Align and Acquire</span>
+    <nav
+      className="fixed top-0 left-0 right-0 z-50 border-b-2"
+      style={{
+        background: 'rgba(22,24,28,0.92)',
+        backdropFilter: 'blur(8px)',
+        WebkitBackdropFilter: 'blur(8px)',
+        borderColor: 'rgba(110,118,129,0.3)',
+      }}
+    >
+      <div className="mx-auto max-w-7xl px-5 sm:px-8">
+        <div className="flex items-center justify-between py-3.5">
+          {/* Logo */}
+          <Link href="/" className="flex items-center shrink-0">
+            <Logo size="sm" />
           </Link>
-          <div className="flex items-center gap-6">
-            <Link href="/" className="text-gray-400 hover:text-white transition hidden sm:inline">Home</Link>
-            <Link href="/missedcall-ai" className="text-gray-400 hover:text-white transition hidden sm:inline">MissedCall AI</Link>
+
+          {/* Desktop nav links */}
+          <div className="hidden items-center gap-7 md:flex">
+            <Link href="/" className="aa-nav-link text-[13px] font-semibold" style={{ color: '#F2F0EB' }}>
+              Home
+            </Link>
+            <Link href="/missedcall-ai" className="aa-nav-link text-[13px] font-semibold" style={{ color: '#F2F0EB' }}>
+              MissedCall AI
+            </Link>
             <ServicesDropdown />
-            <Link href="/pricing" className="text-gray-400 hover:text-white transition hidden sm:inline">Pricing</Link>
-            <Link href="/book" className="text-gray-400 hover:text-white transition hidden sm:inline">Book a Call</Link>
+            <Link href="/pricing" className="aa-nav-link text-[13px] font-semibold" style={{ color: '#F2F0EB' }}>
+              Pricing
+            </Link>
           </div>
-          <div className="relative flex items-center gap-2 sm:gap-4 flex-shrink-0">
+
+          {/* Right side */}
+          <div className="flex items-center gap-3 shrink-0">
+            <Link
+              href="/sign-in"
+              className="hidden text-[13px] font-semibold sm:block aa-nav-link"
+              style={{ color: '#6E7681' }}
+            >
+              Sign in
+            </Link>
+            <Link
+              href="/book"
+              className="aa-btn inline-flex items-center gap-1.5 border-0 px-4 py-2.5 text-[13px] font-bold uppercase tracking-wide"
+              style={{ background: '#EE6B1A', color: '#16181C' }}
+            >
+              Get started
+            </Link>
             <NavMenu />
-            <Link href="/sign-in" className="text-gray-400 hover:text-white transition text-sm sm:text-base">
-              Sign In
-            </Link>
-            <Link href="/sign-up" className="text-gray-400 hover:text-white transition text-sm sm:text-base">
-              Sign Up
-            </Link>
-            <Link href="/book" className="bg-white text-gray-900 px-4 py-2 rounded-lg hover:bg-gray-200 transition font-medium">
-              Get Started
-            </Link>
           </div>
         </div>
       </div>

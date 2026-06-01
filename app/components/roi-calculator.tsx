@@ -1,187 +1,138 @@
-'use client';
+'use client'
 
-import { useState } from 'react';
+import { useState } from 'react'
 
 export default function ROICalculator({ hideHeading = false }: { hideHeading?: boolean }) {
-  const [missedCallsPerMonth, setMissedCallsPerMonth] = useState(20);
-  const [appointmentValue, setAppointmentValue] = useState(200);
+  const [missedCallsPerMonth, setMissedCallsPerMonth] = useState(20)
+  const [appointmentValue, setAppointmentValue] = useState(200)
 
-  // Calculate metrics
-  const missedCallsPerYear = missedCallsPerMonth * 12;
-  
-  // Conservative conversion rate: 30% of missed calls would book
-  const conversionRate = 0.30;
-  const appointmentsPerMonth = missedCallsPerMonth * conversionRate;
-  const appointmentsPerYear = missedCallsPerYear * conversionRate;
-  
-  const monthlyRevenueLoss = appointmentsPerMonth * appointmentValue;
-  const yearlyRevenueLoss = appointmentsPerYear * appointmentValue;
-  
-  const monthlyServiceCost = 299;
-  const monthlyNetGain = monthlyRevenueLoss - monthlyServiceCost;
-  const yearlyNetGain = (monthlyRevenueLoss * 12) - (monthlyServiceCost * 12);
-  
-  const roi = ((monthlyNetGain / monthlyServiceCost) * 100).toFixed(0);
+  const conversionRate = 0.30
+  const appointmentsPerMonth = missedCallsPerMonth * conversionRate
+  const appointmentsPerYear = missedCallsPerMonth * 12 * conversionRate
+  const monthlyRevenueLoss = appointmentsPerMonth * appointmentValue
+  const yearlyRevenueLoss = appointmentsPerYear * appointmentValue
+  const monthlyServiceCost = 299
+  const monthlyNetGain = monthlyRevenueLoss - monthlyServiceCost
+  const yearlyNetGain = (monthlyRevenueLoss * 12) - (monthlyServiceCost * 12)
+  const roi = ((monthlyNetGain / monthlyServiceCost) * 100).toFixed(0)
 
   return (
-    <div className="bg-gray-900 border border-white/10 rounded-2xl p-5 md:p-6">
-      <div className="max-w-3xl mx-auto">
-        {!hideHeading && (
-          <div className="text-center mb-6">
-            <h2 className="text-2xl md:text-3xl font-bold mb-2">
-              Calculate Your Revenue Loss
-            </h2>
-            <p className="text-base text-gray-400">
-              See exactly how much revenue you&apos;re leaving on the table
-            </p>
+    <div className="border-2 p-6 md:p-8" style={{ background: '#16181C', borderColor: 'rgba(110,118,129,0.35)', color: '#F2F0EB' }}>
+      {!hideHeading && (
+        <div className="text-center mb-6">
+          <h2 className="text-[26px] md:text-[32px] font-black uppercase tracking-tight mb-2">
+            Calculate Your Revenue Loss
+          </h2>
+          <p className="text-[14px]" style={{ color: '#6E7681' }}>
+            See exactly how much revenue you&apos;re leaving on the table
+          </p>
+        </div>
+      )}
+
+      {/* Sliders */}
+      <div className="border-2 p-5 mb-6 space-y-7" style={{ borderColor: 'rgba(110,118,129,0.25)', background: 'rgba(242,240,235,0.03)' }}>
+        <div>
+          <div className="flex justify-between items-center mb-3">
+            <label className="font-mono text-[11px] font-bold uppercase tracking-[0.2em]" style={{ color: '#6E7681' }}>
+              Missed Calls Per Month
+            </label>
+            <span className="text-[22px] font-black tabular-nums" style={{ color: '#EE6B1A' }}>{missedCallsPerMonth}</span>
           </div>
-        )}
-
-        <div className="bg-gray-800/50 border border-white/10 rounded-xl p-5 mb-6">
-          <div className="space-y-6">
-            {/* Missed Calls Input */}
-            <div>
-              <div className="flex justify-between items-center mb-3">
-                <label className="text-sm font-semibold text-gray-300 uppercase tracking-wide">
-                  Missed Calls Per Month
-                </label>
-                <span className="text-xl font-bold text-blue-400">
-                  {missedCallsPerMonth}
-                </span>
-              </div>
-              <input
-                type="range"
-                min="1"
-                max="150"
-                value={missedCallsPerMonth}
-                onChange={(e) => setMissedCallsPerMonth(Number(e.target.value))}
-                className="w-full h-3 bg-gray-700 rounded-lg appearance-none cursor-pointer slider"
-              />
-              <div className="flex justify-between text-xs text-gray-500 mt-2">
-                <span>1</span>
-                <span>75</span>
-                <span>150</span>
-              </div>
-            </div>
-
-            {/* Appointment Value Input */}
-            <div>
-              <div className="flex justify-between items-center mb-3">
-                <label className="text-sm font-semibold text-gray-300 uppercase tracking-wide">
-                  Average Appointment Value
-                </label>
-                <span className="text-xl font-bold text-blue-400">
-                  ${appointmentValue}
-                </span>
-              </div>
-              <input
-                type="range"
-                min="50"
-                max="1000"
-                step="1"
-                value={appointmentValue}
-                onChange={(e) => setAppointmentValue(Number(e.target.value))}
-                className="w-full h-3 bg-gray-700 rounded-lg appearance-none cursor-pointer slider"
-              />
-              <div className="flex justify-between text-xs text-gray-500 mt-2">
-                <span>$50</span>
-                <span>$500</span>
-                <span>$1,000</span>
-              </div>
-            </div>
+          <input
+            type="range"
+            min="1"
+            max="150"
+            value={missedCallsPerMonth}
+            onChange={e => setMissedCallsPerMonth(Number(e.target.value))}
+            className="aa-slider w-full h-2 appearance-none cursor-pointer"
+            style={{ accentColor: '#EE6B1A', background: 'rgba(110,118,129,0.3)' }}
+          />
+          <div className="flex justify-between font-mono text-[10px] mt-2" style={{ color: '#6E7681' }}>
+            <span>1</span><span>75</span><span>150</span>
           </div>
         </div>
 
-        {/* Results Grid */}
-        <div className="grid md:grid-cols-2 gap-4 mb-6">
-          {/* Revenue Loss */}
-          <div className="bg-red-950/50 border border-red-500/30 rounded-xl p-4">
-            <div className="text-xs font-semibold text-red-400 uppercase tracking-wide mb-1">
-              You're Currently Losing
-            </div>
-            <div className="text-3xl font-bold text-red-400 mb-0.5">
-              ${monthlyRevenueLoss.toLocaleString()}
-            </div>
-            <div className="text-sm text-red-300/90">
-              per month (est. {appointmentsPerMonth.toFixed(0)} bookings lost from those missed calls at 30% conversion)
-            </div>
-            <div className="mt-3 pt-3 border-t border-red-500/30">
-              <div className="text-xs text-red-400 mb-0.5">Annual Revenue Loss</div>
-              <div className="text-xl font-bold text-red-400">
-                ${yearlyRevenueLoss.toLocaleString()}
-              </div>
-            </div>
+        <div>
+          <div className="flex justify-between items-center mb-3">
+            <label className="font-mono text-[11px] font-bold uppercase tracking-[0.2em]" style={{ color: '#6E7681' }}>
+              Average Job Value
+            </label>
+            <span className="text-[22px] font-black tabular-nums" style={{ color: '#EE6B1A' }}>${appointmentValue}</span>
           </div>
-
-          {/* Net Gain with MissedCall AI */}
-          <div className="bg-green-950/50 border border-green-500/30 rounded-xl p-4">
-            <div className="text-xs font-semibold text-green-400 uppercase tracking-wide mb-1">
-              Your Monthly Net Gain
-            </div>
-            <div className="text-3xl font-bold text-green-400 mb-0.5">
-              ${monthlyNetGain.toLocaleString()}
-            </div>
-            <div className="text-sm text-green-300/90">
-              after $299/mo service cost
-            </div>
-            <div className="text-sm text-green-300/90">
-              Based on 30% of missed calls converting to bookings
-            </div>
-            <div className="mt-3 pt-3 border-t border-green-500/30">
-              <div className="text-xs text-green-400 mb-0.5">Annual Net Gain</div>
-              <div className="text-xl font-bold text-green-400">
-                ${yearlyNetGain.toLocaleString()}
-              </div>
-            </div>
+          <input
+            type="range"
+            min="50"
+            max="1000"
+            step="1"
+            value={appointmentValue}
+            onChange={e => setAppointmentValue(Number(e.target.value))}
+            className="aa-slider w-full h-2 appearance-none cursor-pointer"
+            style={{ accentColor: '#EE6B1A', background: 'rgba(110,118,129,0.3)' }}
+          />
+          <div className="flex justify-between font-mono text-[10px] mt-2" style={{ color: '#6E7681' }}>
+            <span>$50</span><span>$500</span><span>$1,000</span>
           </div>
-        </div>
-
-        {/* ROI Highlight */}
-        <div className="bg-gradient-to-r from-blue-600 to-purple-600 rounded-xl p-5 text-center text-white">
-          <div className="text-xs font-semibold uppercase tracking-wide mb-1 opacity-90">
-            Return on Investment
-          </div>
-          <div className="text-5xl font-bold mb-1">
-            {roi}%
-          </div>
-          <div className="text-base opacity-90 mb-4">
-            Every $1 spent returns ${(Number(roi) / 100 + 1).toFixed(2)}
-          </div>
-          <a
-            href="/book"
-            className="inline-block bg-white text-gray-900 font-bold px-6 py-3 rounded-lg hover:bg-gray-200 transition-colors shadow-lg text-sm"
-          >
-            Book Your Free Demo →
-          </a>
-        </div>
-
-        {/* Fine Print */}
-        <div className="text-center mt-4 text-xs text-gray-500">
-          *Calculations assume 30% conversion rate on missed calls. Your actual results may vary.
         </div>
       </div>
 
-      <style jsx>{`
-        .slider::-webkit-slider-thumb {
-          appearance: none;
-          width: 20px;
-          height: 20px;
-          background: #4f46e5;
-          cursor: pointer;
-          border-radius: 50%;
-          box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
-        }
+      {/* Results */}
+      <div className="grid md:grid-cols-2 gap-4 mb-4">
+        <div className="border-2 p-5" style={{ borderColor: 'rgba(238,107,26,0.4)', background: 'rgba(238,107,26,0.07)' }}>
+          <div className="font-mono text-[10px] font-bold uppercase tracking-[0.2em] mb-1" style={{ color: '#EE6B1A' }}>
+            You&apos;re currently losing
+          </div>
+          <div className="text-[32px] font-black tabular-nums mb-0.5" style={{ color: '#EE6B1A' }}>
+            ${monthlyRevenueLoss.toLocaleString()}
+          </div>
+          <div className="text-[12px]" style={{ color: 'rgba(238,107,26,0.8)' }}>
+            per month (est. {appointmentsPerMonth.toFixed(0)} jobs lost · 30% conv.)
+          </div>
+          <div className="mt-3 pt-3 border-t" style={{ borderColor: 'rgba(238,107,26,0.25)' }}>
+            <div className="font-mono text-[10px] uppercase tracking-widest mb-0.5" style={{ color: '#EE6B1A' }}>Annual loss</div>
+            <div className="text-[20px] font-black tabular-nums" style={{ color: '#EE6B1A' }}>${yearlyRevenueLoss.toLocaleString()}</div>
+          </div>
+        </div>
 
-        .slider::-moz-range-thumb {
-          width: 20px;
-          height: 20px;
-          background: #4f46e5;
-          cursor: pointer;
-          border-radius: 50%;
-          border: none;
-          box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
-        }
-      `}</style>
+        <div className="border-2 p-5" style={{ borderColor: 'rgba(26,74,112,0.5)', background: 'rgba(26,74,112,0.1)' }}>
+          <div className="font-mono text-[10px] font-bold uppercase tracking-[0.2em] mb-1" style={{ color: '#1A4A70' }}>
+            Monthly net gain
+          </div>
+          <div className="text-[32px] font-black tabular-nums mb-0.5" style={{ color: '#F2F0EB' }}>
+            ${monthlyNetGain.toLocaleString()}
+          </div>
+          <div className="text-[12px]" style={{ color: '#6E7681' }}>
+            after $299/mo service cost
+          </div>
+          <div className="mt-3 pt-3 border-t" style={{ borderColor: 'rgba(110,118,129,0.25)' }}>
+            <div className="font-mono text-[10px] uppercase tracking-widest mb-0.5" style={{ color: '#6E7681' }}>Annual net gain</div>
+            <div className="text-[20px] font-black tabular-nums" style={{ color: '#F2F0EB' }}>${yearlyNetGain.toLocaleString()}</div>
+          </div>
+        </div>
+      </div>
+
+      {/* ROI highlight */}
+      <div className="p-5 text-center" style={{ background: '#1A4A70' }}>
+        <div className="font-mono text-[10px] font-bold uppercase tracking-[0.22em] mb-1" style={{ color: 'rgba(242,240,235,0.7)' }}>
+          Return on investment
+        </div>
+        <div className="text-[52px] font-black tabular-nums leading-none mb-1" style={{ color: '#EE6B1A' }}>
+          {roi}%
+        </div>
+        <div className="text-[14px] mb-5" style={{ color: 'rgba(242,240,235,0.7)' }}>
+          Every $1 spent returns ${(Number(roi) / 100 + 1).toFixed(2)}
+        </div>
+        <a
+          href="/book"
+          className="aa-btn inline-block px-7 py-3.5 text-[14px] font-bold uppercase tracking-wide"
+          style={{ background: '#EE6B1A', color: '#16181C' }}
+        >
+          Book your free demo →
+        </a>
+      </div>
+
+      <p className="text-center mt-3 text-[11px]" style={{ color: '#6E7681' }}>
+        *Assumes 30% conversion rate on missed calls. Actual results may vary.
+      </p>
     </div>
-  );
+  )
 }

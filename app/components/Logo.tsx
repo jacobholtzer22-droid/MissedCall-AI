@@ -1,31 +1,30 @@
 /**
- * Nav logo using native <img> so the file isn't recompressed by Next.js Image,
- * which keeps it sharp. Use variant for light (dashboard) vs dark (nav/footer) backgrounds.
+ * Primary logo — uses the AAA logo primary lockup image.
+ * Native <img> keeps it sharp (no Next.js recompression).
  */
 export function Logo({
   size = 'sm',
-  variant = 'dark',
+  variant: _variant,
   className = '',
 }: {
   size?: 'xs' | 'sm' | 'lg'
+  /** @deprecated kept for backward-compat with dashboard components */
   variant?: 'dark' | 'light'
   className?: string
 }) {
-  const sizeMap = { xs: { dim: 80, class: 'h-10 w-auto' }, sm: { dim: 160, class: 'h-12 w-auto' }, lg: { dim: 320, class: 'h-20 w-auto md:h-24' } }
-  const { dim, class: sizeClass } = sizeMap[size]
-  const variantClass = variant === 'light' ? 'drop-shadow-sm' : ''
+  const sizeClass = {
+    xs: 'h-8 w-auto',
+    sm: 'h-10 w-auto',
+    lg: 'h-14 w-auto md:h-16',
+  }[size]
+
   return (
-    <picture>
-      <source srcSet="/images/portfolio/logo.webp" type="image/webp" />
-      <img
-        src="/images/portfolio/logo.png"
-        alt="Align and Acquire"
-        width={dim}
-        height={dim}
-        className={`object-contain ${sizeClass} ${variantClass} ${className}`.trim()}
-        draggable={false}
-        decoding="async"
-      />
-    </picture>
+    <img
+      src="/images/logo-primary.png"
+      alt="Align and Acquire"
+      className={`object-contain ${sizeClass} ${className}`.trim()}
+      draggable={false}
+      decoding="async"
+    />
   )
 }

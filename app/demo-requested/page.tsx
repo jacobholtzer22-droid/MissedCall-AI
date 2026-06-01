@@ -1,23 +1,32 @@
 import Link from 'next/link'
-import { CheckCircle, Phone } from 'lucide-react'
+import { CircleCheckBig, ArrowRight } from 'lucide-react'
 
 export default function DemoRequestedPage() {
   return (
-    <div className="min-h-screen bg-gray-950 flex items-center justify-center p-4 text-white">
-      <div className="max-w-md w-full text-center">
-        <div className="bg-green-500/20 border border-green-500/30 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-6">
-          <CheckCircle className="h-10 w-10 text-green-400" />
+    <div className="min-h-dvh flex items-center justify-center p-6 aa-grid-bg" style={{ background: '#16181C', color: '#F2F0EB' }}>
+      <div className="max-w-md w-full text-center border-2 p-10" style={{ borderColor: 'rgba(110,118,129,0.35)', background: 'rgba(242,240,235,0.03)' }}>
+        <div className="flex justify-center mb-6">
+          <CircleCheckBig size={56} strokeWidth={1.75} style={{ color: '#EE6B1A' }} />
         </div>
-        <h1 className="text-3xl font-bold mb-4">Demo Request Received!</h1>
-        <p className="text-gray-400 mb-8">
-          Thanks for your interest in MissedCall AI. We'll reach out within 24 hours to schedule your free demo call.
+        <div className="inline-flex items-center gap-2 font-mono text-[11px] font-semibold uppercase tracking-[0.28em] mb-4">
+          <span className="inline-block h-2.5 w-2.5" style={{ background: '#EE6B1A' }} />
+          <span style={{ color: '#EE6B1A' }}>Demo request received</span>
+        </div>
+        <h1 className="text-[clamp(1.8rem,5vw,2.8rem)] font-black uppercase leading-[0.95] tracking-tight mb-4">
+          You&apos;re all set.
+        </h1>
+        <p className="text-[15px] leading-relaxed mb-3" style={{ color: 'rgba(242,240,235,0.65)' }}>
+          Thanks for your interest in MissedCall AI. We&apos;ll reach out within 24 hours to schedule your free demo call.
         </p>
-        <p className="text-gray-500 mb-8">
+        <p className="text-[13.5px] mb-8" style={{ color: '#6E7681' }}>
           Check your email for a confirmation.
         </p>
-        <Link href="/" className="inline-flex items-center text-blue-400 hover:text-blue-300 font-medium transition">
-          <Phone className="h-4 w-4 mr-2" />
-          Back to Home
+        <Link
+          href="/"
+          className="aa-btn inline-flex items-center gap-2 px-6 py-3.5 text-[14px] font-bold uppercase tracking-wide"
+          style={{ background: '#EE6B1A', color: '#16181C' }}
+        >
+          Back to home <ArrowRight size={15} strokeWidth={2.5} />
         </Link>
       </div>
     </div>
