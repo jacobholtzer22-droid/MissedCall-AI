@@ -4,6 +4,7 @@ import {
   PhoneMissed, Globe, BarChart3, Megaphone, ShieldBan,
   ArrowRight, Check, TrendingUp, Users, Clock, DollarSign,
   MessageSquareText, CalendarCheck, Search, Mail,
+  LayoutDashboard, ChevronRight,
 } from 'lucide-react'
 import ScrollReveal from '@/app/components/ScrollReveal'
 import Marquee from '@/app/components/Marquee'
@@ -188,7 +189,7 @@ export default function ServicesPage() {
             <span style={{ color: '#EE6B1A' }}>All the tools.</span>
           </h1>
           <p className="text-[16px] sm:text-[18px] leading-relaxed max-w-2xl mx-auto mb-10" style={{ color: 'rgba(242,240,235,0.65)' }}>
-            From capturing every missed call to filling your Google results to re-engaging past customers — built as one system, not sold as five separate tools.
+            From capturing every missed call to filling your Google results to re-engaging past customers — built as one system, not sold as seven separate tools.
           </p>
           <div className="flex flex-col items-center gap-3 sm:flex-row sm:justify-center">
             <Link href="/pricing" className="aa-btn inline-flex items-center gap-2 px-6 py-4 text-[15px] font-bold uppercase tracking-wide" style={{ background: '#EE6B1A', color: '#16181C' }}>
@@ -482,6 +483,180 @@ export default function ServicesPage() {
             {/* Demo */}
             <ScrollReveal>
               <SpamMockup />
+            </ScrollReveal>
+          </div>
+        </div>
+      </section>
+
+      <Divider />
+
+      {/* ══════════════════════════════════════════════════
+          SERVICE 6 — CRM DASHBOARD
+          ══════════════════════════════════════════════════ */}
+      <section id="crm" className="aa-grid-bg">
+        <div className="mx-auto max-w-7xl px-5 py-16 sm:px-8 lg:py-24">
+          <div className="grid lg:grid-cols-2 gap-16 items-center">
+
+            {/* Copy */}
+            <ScrollReveal>
+              <div className="inline-flex items-center gap-2 font-mono text-[11px] font-bold uppercase tracking-[0.28em] mb-4" style={{ color: '#EE6B1A' }}>
+                <LayoutDashboard size={14} strokeWidth={2.5} style={{ color: '#EE6B1A' }} />
+                Service 06
+              </div>
+              <h2 className="text-[clamp(2.2rem,5vw,3.6rem)] font-black uppercase leading-[0.88] tracking-tight mb-3" style={{ color: '#F2F0EB' }}>
+                CRM Dashboard
+              </h2>
+              <p className="text-[18px] font-semibold leading-snug mb-6" style={{ color: '#EE6B1A' }}>
+                Every lead, call, and customer in one place.
+              </p>
+              <p className="text-[15px] leading-relaxed mb-8" style={{ color: 'rgba(242,240,235,0.7)' }}>
+                Every missed call, text conversation, website lead, and booked job flows into one dashboard automatically. You see who reached out, what they needed, where they are in your pipeline, and the work you've done for them. No spreadsheets, nothing logged by hand.
+              </p>
+              <ul className="space-y-3 mb-8">
+                {[
+                  'Every lead from every source in one place',
+                  'Full history on every customer: calls, texts, jobs and notes',
+                  'Track leads from new to booked to completed',
+                  'Tag and segment contacts for follow-up',
+                  'Fills itself in automatically, nothing to log manually',
+                ].map((item, i) => (
+                  <li key={i} className="flex items-start gap-3 text-[14px]">
+                    <Check size={16} strokeWidth={3} className="shrink-0 mt-0.5" style={{ color: '#EE6B1A' }} />
+                    <span style={{ color: 'rgba(242,240,235,0.8)' }}>{item}</span>
+                  </li>
+                ))}
+              </ul>
+              <Link href="/pricing" className="aa-btn inline-flex items-center gap-2 px-5 py-3.5 text-[14px] font-bold uppercase tracking-wide" style={{ background: '#EE6B1A', color: '#16181C' }}>
+                See pricing <ArrowRight size={15} strokeWidth={2.5} />
+              </Link>
+            </ScrollReveal>
+
+            {/* CRM mockup */}
+            <ScrollReveal>
+              <div className="w-full max-w-[420px] mx-auto border-2 overflow-hidden" style={{ borderColor: 'rgba(110,118,129,0.35)', background: '#16181C' }}>
+                {/* Header */}
+                <div className="flex items-center justify-between px-5 py-3 border-b-2" style={{ borderColor: 'rgba(110,118,129,0.3)', background: '#1A4A70' }}>
+                  <div className="text-[12px] font-bold" style={{ color: '#FFFFFF' }}>All Contacts</div>
+                  <div className="font-mono text-[10px] uppercase tracking-widest" style={{ color: 'rgba(242,240,235,0.65)' }}>14 leads this week</div>
+                </div>
+                {/* Column headers */}
+                <div className="grid grid-cols-3 px-5 py-2 border-b" style={{ borderColor: 'rgba(110,118,129,0.15)' }}>
+                  {['Name', 'Source', 'Status'].map(h => (
+                    <div key={h} className="font-mono text-[9px] uppercase tracking-widest" style={{ color: '#6E7681' }}>{h}</div>
+                  ))}
+                </div>
+                {/* Rows */}
+                {[
+                  { name: 'Marcus Bell', source: 'Missed call', status: 'New', color: '#EE6B1A' },
+                  { name: 'Sarah K.', source: 'Website', status: 'Quoted', color: '#1A4A70' },
+                  { name: 'Tom Rivera', source: 'Missed call', status: 'Booked', color: '#6E7681' },
+                  { name: 'Lisa P.', source: 'Website', status: 'Completed', color: '#6E7681' },
+                  { name: 'Dev S.', source: 'Missed call', status: 'New', color: '#EE6B1A' },
+                ].map((row, i) => (
+                  <div key={i} className="grid grid-cols-3 items-center px-5 py-3 border-b" style={{ borderColor: 'rgba(110,118,129,0.1)' }}>
+                    <div className="text-[12.5px] font-semibold" style={{ color: '#F2F0EB' }}>{row.name}</div>
+                    <div className="font-mono text-[10px] uppercase tracking-wider" style={{ color: '#6E7681' }}>{row.source}</div>
+                    <div>
+                      <span className="font-mono text-[9.5px] font-bold uppercase tracking-wider px-2 py-0.5" style={{ background: `${row.color}20`, color: row.color }}>
+                        {row.status}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+                <div className="px-5 py-3 font-mono text-[10px] uppercase tracking-widest text-center" style={{ color: '#6E7681' }}>
+                  All sources, one dashboard
+                </div>
+              </div>
+            </ScrollReveal>
+          </div>
+        </div>
+      </section>
+
+      <Divider />
+
+      {/* ══════════════════════════════════════════════════
+          SERVICE 7 — CALENDAR INTEGRATION
+          ══════════════════════════════════════════════════ */}
+      <section id="calendar" style={{ background: '#F2F0EB', color: '#16181C' }}>
+        <div className="mx-auto max-w-7xl px-5 py-16 sm:px-8 lg:py-24">
+          <div className="grid lg:grid-cols-2 gap-16 items-center">
+
+            {/* Copy */}
+            <ScrollReveal>
+              <div className="inline-flex items-center gap-2 font-mono text-[11px] font-bold uppercase tracking-[0.28em] mb-4" style={{ color: '#EE6B1A' }}>
+                <CalendarCheck size={14} strokeWidth={2.5} style={{ color: '#EE6B1A' }} />
+                Service 07
+              </div>
+              <h2 className="text-[clamp(2.2rem,5vw,3.6rem)] font-black uppercase leading-[0.88] tracking-tight mb-3">
+                Calendar Integration
+              </h2>
+              <p className="text-[18px] font-semibold leading-snug mb-6" style={{ color: '#1A4A70' }}>
+                Customers book their own appointments straight onto your calendar.
+              </p>
+              <p className="text-[15px] leading-relaxed mb-8" style={{ color: 'rgba(22,24,28,0.72)' }}>
+                Connect your Google Calendar and customers can see your real availability and book a slot themselves, from your website or right inside a missed-call text conversation. No phone tag, no double-bookings. It only offers times you're actually open.
+              </p>
+              <ul className="space-y-3 mb-8">
+                {[
+                  'Customers book online from your site or by text',
+                  'Syncs with your existing Google Calendar',
+                  'Only shows times you\'re actually free, so no double-bookings',
+                  'Set your hours, slot length and buffer between jobs',
+                  'Confirmations and reminders sent automatically',
+                ].map((item, i) => (
+                  <li key={i} className="flex items-start gap-3 text-[14px]">
+                    <Check size={16} strokeWidth={3} className="shrink-0 mt-0.5" style={{ color: '#EE6B1A' }} />
+                    <span style={{ color: 'rgba(22,24,28,0.8)' }}>{item}</span>
+                  </li>
+                ))}
+              </ul>
+              <Link href="/pricing" className="aa-btn inline-flex items-center gap-2 px-5 py-3.5 text-[14px] font-bold uppercase tracking-wide" style={{ background: '#16181C', color: '#F2F0EB' }}>
+                See pricing <ArrowRight size={15} strokeWidth={2.5} />
+              </Link>
+            </ScrollReveal>
+
+            {/* Calendar mockup */}
+            <ScrollReveal>
+              <div className="w-full max-w-[420px] mx-auto border-2 overflow-hidden" style={{ borderColor: '#16181C', background: '#FFFFFF' }}>
+                {/* Header */}
+                <div className="flex items-center justify-between px-5 py-3 border-b-2" style={{ borderColor: '#16181C', background: '#1A4A70' }}>
+                  <div className="text-[12px] font-bold" style={{ color: '#FFFFFF' }}>This Week</div>
+                  <div className="font-mono text-[10px] uppercase tracking-widest" style={{ color: 'rgba(242,240,235,0.65)' }}>3 slots open today</div>
+                </div>
+                {/* Days */}
+                <div className="grid grid-cols-5 border-b-2" style={{ borderColor: '#16181C' }}>
+                  {['Mon', 'Tue', 'Wed', 'Thu', 'Fri'].map(d => (
+                    <div key={d} className="py-2 text-center font-mono text-[10px] uppercase tracking-widest border-r last:border-r-0" style={{ borderColor: '#16181C', color: '#6E7681' }}>{d}</div>
+                  ))}
+                </div>
+                {/* Time slots */}
+                {[
+                  { time: '9:00 AM', slots: [true, false, true, true, true] },
+                  { time: '10:00 AM', slots: [false, false, true, false, true] },
+                  { time: '11:00 AM', slots: [true, true, false, true, false] },
+                  { time: '1:00 PM', slots: [false, true, true, false, true] },
+                  { time: '2:00 PM', slots: [true, false, false, true, true] },
+                ].map((row, ri) => (
+                  <div key={ri} className="grid grid-cols-5 border-b last:border-b-0" style={{ borderColor: 'rgba(110,118,129,0.2)' }}>
+                    {row.slots.map((open, si) => (
+                      <div
+                        key={si}
+                        className="py-2.5 text-center text-[9.5px] font-semibold border-r last:border-r-0"
+                        style={{
+                          borderColor: 'rgba(110,118,129,0.15)',
+                          background: open ? 'rgba(26,74,112,0.08)' : 'rgba(238,107,26,0.08)',
+                          color: open ? '#1A4A70' : '#6E7681',
+                        }}
+                      >
+                        {si === 0 && ri === 0 ? row.time : open ? 'Open' : '—'}
+                      </div>
+                    ))}
+                  </div>
+                ))}
+                <div className="px-5 py-3 font-mono text-[10px] uppercase tracking-widest text-center border-t-2" style={{ borderColor: '#16181C', color: '#6E7681' }}>
+                  Customers only see what's actually free
+                </div>
+              </div>
             </ScrollReveal>
           </div>
         </div>

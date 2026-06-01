@@ -3,7 +3,7 @@
 import Link from 'next/link'
 import { useState } from 'react'
 import {
-  Check, X, ArrowRight, ShieldBan, PhoneMissed, Globe,
+  Check, ArrowRight, ShieldBan, PhoneMissed, Globe,
   BarChart3, Megaphone, CalendarCheck, LayoutDashboard,
   Calculator,
 } from 'lucide-react'
@@ -19,9 +19,10 @@ type Tier = {
   price: number
   setup: number
   popular: boolean
-  description: string
+  description?: string
   includes: string[]
   notIncluded: string[]
+  addOns?: string[]
 }
 
 type AlaCarteService = {
@@ -38,71 +39,50 @@ type AlaCarteService = {
 // ─────────────────────────────────────────────────────────
 const TIERS: Tier[] = [
   {
-    name: 'Capture',
-    tagline: 'Stop losing leads you\'re already getting',
-    price: 269,
-    setup: 400,
-    popular: false,
-    description: 'Your phone rings and your site gets traffic every day. This tier makes sure none of that goes to waste — every missed call gets a text back, and every website visitor has an easy way to contact you.',
-    includes: [
-      'MissedCall AI — automatically texts back every missed caller',
-      'Custom Website — built from scratch, shows up on Google',
-      'Unlimited website updates — changes done same day, no extra cost',
-      'CRM Dashboard — tracks all your leads and client contacts in one place',
-      'Calendar Integration — lets customers book appointments online',
-    ],
-    notIncluded: [
-      'Google Ads Management',
-      'Email & SMS Campaigns',
-    ],
-  },
-  {
-    name: 'Scale',
-    tagline: 'Capture more and get found by more',
+    name: 'Catch',
+    tagline: 'Stop losing the leads you already get.',
     price: 349,
     setup: 400,
-    popular: true,
-    description: 'Everything in Capture, plus Google Ads so you show up at the top when someone in your area searches for what you do. You\'re not just catching leads — you\'re generating them.',
-    includes: [
-      'Everything in Capture',
-      'Google Ads Management — we run your paid search ads for you',
-      'Monthly ad reports — plain English, no jargon',
-      'Keyword research & bid optimization — your budget goes to the right searches',
-      'A/B ad testing — find what gets you the most calls',
-    ],
-    notIncluded: [
-      'Email & SMS Campaigns',
-    ],
-  },
-  {
-    name: 'Full System',
-    tagline: 'The complete growth engine, running together',
-    price: 449,
-    setup: 500,
     popular: false,
-    description: 'Everything in Scale, plus the ability to reach your entire contact list at once with email and text campaigns. Missed calls recovered, ads running, and past customers hearing from you regularly.',
     includes: [
-      'Everything in Scale',
-      'Email & SMS Campaigns — send messages to your full contact list at once',
-      'Campaign analytics — see who opened, clicked, and responded',
-      'Automated follow-up sequences — re-engage leads who didn\'t respond',
-      'Priority setup & support',
+      'MissedCall AI: every missed caller gets an instant text back',
+      'Custom Website: built from scratch, ranks on Google, unlimited same-day updates',
+      'CRM Dashboard: every lead and contact in one place',
+      'Calendar Integration: customers book appointments online',
     ],
     notIncluded: [],
+    addOns: ['Spam Call Screening available as add-on (+$75/mo)'],
   },
   {
-    name: 'AI Complete',
-    tagline: 'The full system — fully automated by AI',
+    name: 'Grow',
+    tagline: 'Generate new leads and bring old ones back.',
+    price: 549,
+    setup: 500,
+    popular: true,
+    includes: [
+      'Everything in Catch',
+      'Google Ads Management: paid search, keyword research, bid optimization, A/B testing and plain-English monthly reports',
+      'Mass Email Sending: reach your whole contact list at once with open and click tracking',
+      'Mass SMS Sending: text your full contact list with response tracking',
+      'Automated follow-up sequences: re-engage leads who went quiet',
+      'Priority setup and support',
+    ],
+    notIncluded: [],
+    addOns: ['Spam Call Screening available as add-on (+$75/mo)'],
+  },
+  {
+    name: 'Automate',
+    tagline: 'Let AI run it while you\'re off the clock.',
     price: 900,
     setup: 750,
     popular: false,
-    description: 'Everything in Full System, plus AI that handles your website chat, email replies, Google reviews, and CRM automatically. Your business keeps running and responding even when you\'re completely off the clock.',
     includes: [
-      'Everything in Full System',
-      'AI Website Chatbot — talks to website visitors and answers their questions 24/7',
-      'AI Email Responses — reads and replies to incoming emails automatically',
-      'AI Google Review Manager — monitors new reviews and posts responses',
-      'Full CRM AI Integration — automates contact records, follow-ups, and notes',
+      'Everything in Grow',
+      'AI Website Chatbot: answers visitor questions 24/7',
+      'AI Email Responses: reads and replies to incoming email automatically',
+      'AI Google Review Manager: monitors and posts review responses',
+      'Full CRM AI Integration: auto-updates contacts, follow-ups and notes',
+      'Spam Call Screening: included',
     ],
     notIncluded: [],
   },
@@ -150,10 +130,6 @@ function TierCard({ tier }: { tier: Tier }) {
         <span className="mb-1.5 text-[13px]" style={{ color: '#6E7681' }}>/mo</span>
       </div>
 
-      <p className="text-[12.5px] leading-relaxed mb-5" style={{ color: 'rgba(242,240,235,0.6)' }}>
-        {tier.description}
-      </p>
-
       <ul className="space-y-2 flex-1 mb-5">
         {tier.includes.map((f, i) => (
           <li key={i} className="flex items-start gap-2.5 text-[12.5px]">
@@ -161,10 +137,10 @@ function TierCard({ tier }: { tier: Tier }) {
             <span style={{ color: 'rgba(242,240,235,0.85)' }}>{f}</span>
           </li>
         ))}
-        {tier.notIncluded.map((f, i) => (
-          <li key={i} className="flex items-start gap-2.5 text-[12.5px]">
-            <X size={14} strokeWidth={2.5} className="shrink-0 mt-0.5" style={{ color: '#6E7681' }} />
-            <span style={{ color: '#6E7681', textDecoration: 'line-through' }}>{f}</span>
+        {tier.addOns?.map((f, i) => (
+          <li key={`addon-${i}`} className="flex items-start gap-2.5 text-[12.5px] mt-1 pt-2 border-t" style={{ borderColor: 'rgba(110,118,129,0.2)' }}>
+            <span className="shrink-0 mt-0.5 font-black text-[13px] leading-none" style={{ color: '#6E7681' }}>+</span>
+            <span style={{ color: '#6E7681' }}>{f}</span>
           </li>
         ))}
       </ul>
@@ -213,7 +189,7 @@ function NumbersSection() {
       </div>
 
       {/* Tier selector tabs */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 border-b-2" style={{ borderColor: 'rgba(110,118,129,0.25)' }}>
+      <div className="grid grid-cols-3 border-b-2" style={{ borderColor: 'rgba(110,118,129,0.25)' }}>
         {TIERS.map((t, i) => (
           <button
             key={i}
@@ -436,11 +412,11 @@ export default function PricingPage() {
                 <span style={{ color: '#EE6B1A' }}>System tiers</span>
               </div>
               <h2 className="text-[clamp(2rem,5vw,3.2rem)] font-black uppercase leading-[0.95] tracking-tight" style={{ color: '#16181C' }}>
-                Four levels of the system.
+                Three levels of the system.
               </h2>
             </div>
           </ScrollReveal>
-          <div className="grid sm:grid-cols-2 xl:grid-cols-4 gap-5 items-stretch">
+          <div className="grid sm:grid-cols-3 gap-5 items-stretch">
             {TIERS.map((tier, i) => (
               <ScrollReveal key={i} className="h-full">
                 <TierCard tier={tier} />
