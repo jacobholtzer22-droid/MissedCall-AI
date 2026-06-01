@@ -456,25 +456,6 @@ export default function PricingPage() {
         </div>
       </section>
 
-      {/* ── See your numbers ─────────────────────────────── */}
-      <section className="aa-grid-bg">
-        <div className="mx-auto max-w-4xl px-5 py-16 sm:px-8 lg:py-24">
-          <ScrollReveal>
-            <div className="mb-8">
-              <div className="inline-flex items-center gap-2 font-mono text-[11px] font-semibold uppercase tracking-[0.28em] mb-4">
-                <span className="inline-block h-2.5 w-2.5" style={{ background: '#EE6B1A' }} />
-                <span style={{ color: '#EE6B1A' }}>Does it pay for itself?</span>
-              </div>
-              <h2 className="text-[clamp(2rem,5vw,3rem)] font-black uppercase leading-[0.95] tracking-tight">
-                See what each plan<br />
-                <span style={{ color: '#EE6B1A' }}>recovers for your business.</span>
-              </h2>
-            </div>
-            <NumbersSection />
-          </ScrollReveal>
-        </div>
-      </section>
-
       {/* ── À la carte builder ───────────────────────────── */}
       <section style={{ background: '#F2F0EB', color: '#16181C' }}>
         <div className="mx-auto max-w-4xl px-5 py-16 sm:px-8 lg:py-24">
