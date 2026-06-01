@@ -33,9 +33,9 @@ function FeatureCard({ icon: Icon, title, description }: { icon: React.ElementTy
 
 function FAQItem({ question, answer }: { question: string; answer: string }) {
   return (
-    <details className="group border-2" style={{ borderColor: 'rgba(110,118,129,0.3)', background: 'rgba(242,240,235,0.02)' }}>
+    <details className="group border-2" style={{ borderColor: 'rgba(110,118,129,0.35)', background: '#FFFFFF' }}>
       <summary className="flex items-center justify-between p-5 cursor-pointer list-none">
-        <span className="font-semibold text-[15px]" style={{ color: '#F2F0EB' }}>{question}</span>
+        <span className="font-semibold text-[15px]" style={{ color: '#16181C' }}>{question}</span>
         <ChevronDown className="h-5 w-5 shrink-0 group-open:rotate-180 transition-transform" style={{ color: '#6E7681' }} />
       </summary>
       <div className="px-5 pb-5 text-[14px] leading-relaxed" style={{ color: '#6E7681', borderTop: '1px solid rgba(110,118,129,0.2)' }}>

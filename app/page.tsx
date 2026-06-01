@@ -247,7 +247,10 @@ export default function HomePage() {
                 Every line of code is mine. When you call, I pick up. When something breaks, I fix it. No account managers, no ticket systems.
               </p>
               <div className="flex items-center gap-4">
-                <div className="grid h-12 w-12 place-items-center font-black text-[20px] shrink-0" style={{ background: '#1A4A70', color: '#FFFFFF' }}>J</div>
+                <div className="h-12 w-12 shrink-0 overflow-hidden border-2" style={{ borderColor: '#1A4A70' }}>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src="/images/jacob-headshot.jpg" alt="Jacob Holtzer" className="h-full w-full object-cover object-top" />
+                </div>
                 <div>
                   <p className="font-bold text-[15px]">Jacob Holtzer</p>
                   <p className="text-[12.5px]" style={{ color: '#6E7681' }}>Founder &amp; the only person you&apos;ll ever talk to</p>

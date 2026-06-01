@@ -219,8 +219,10 @@ export default function AboutPage() {
           {/* Photos */}
           <ScrollReveal>
             <div className="grid sm:grid-cols-2 gap-5 max-w-3xl mx-auto mb-14">
-              <FounderPhoto src="/images/jacob-1.jpg" alt="Jacob Holtzer — Founder, Align and Acquire" />
-              <FounderPhoto src="/images/jacob-2.jpg" alt="Jacob Holtzer — Founder, Align and Acquire" />
+              {/* jacob-desk.jpg = on-the-phone-at-desk working photo */}
+              <FounderPhoto src="/images/jacob-desk.jpg" alt="Jacob Holtzer on the phone, Align and Acquire" />
+              {/* jacob-headshot.jpg = professional headshot, gray background */}
+              <FounderPhoto src="/images/jacob-headshot.jpg" alt="Jacob Holtzer, Founder of Align and Acquire" />
             </div>
           </ScrollReveal>
 
@@ -233,7 +235,14 @@ export default function AboutPage() {
                   "I built the whole system myself. When you call, you get me — not a support team, not someone reading off your file. Just me, and I know how every part of it works."
                 </p>
                 <div className="mt-4 flex items-center gap-3">
-                  <div className="grid h-10 w-10 place-items-center font-black text-[16px]" style={{ background: '#1A4A70', color: '#FFFFFF' }}>J</div>
+                  <div className="h-11 w-11 shrink-0 overflow-hidden border-2" style={{ borderColor: '#1A4A70' }}>
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src="/images/jacob-headshot.jpg"
+                      alt="Jacob Holtzer"
+                      className="h-full w-full object-cover object-top"
+                    />
+                  </div>
                   <div>
                     <div className="font-bold text-[14px]">Jacob Holtzer</div>
                     <div className="font-mono text-[10px] uppercase tracking-widest" style={{ color: '#6E7681' }}>Founder, Align and Acquire</div>
