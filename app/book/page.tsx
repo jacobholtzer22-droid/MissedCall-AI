@@ -321,7 +321,7 @@ export default function BookPage() {
               Looks like we&apos;re not<br />the right fit right now.
             </h1>
             <p className="text-[15px] leading-relaxed max-w-md mx-auto mb-10" style={{ color: 'rgba(242,240,235,0.65)' }}>
-              Our system is built specifically for service-based businesses. Thanks for checking us out — if that changes down the road, we&apos;d love to talk.
+              Our system is built specifically for service-based businesses. Thanks for checking us out. If that changes down the road, we&apos;d love to talk.
             </p>
             <Link
               href="/"
@@ -482,7 +482,7 @@ export default function BookPage() {
                 Let&apos;s talk. Pick<br />a time that works.
               </h1>
               <p className="text-[14px]" style={{ color: 'rgba(242,240,235,0.6)' }}>
-                Free strategy call. No pitch, no pressure — just a conversation about what your business needs.
+                Free strategy call. No pitch, no pressure. Just a conversation about what your business needs.
               </p>
             </div>
 
@@ -721,7 +721,7 @@ export default function BookPage() {
               </div>
             )}
             <p className="text-[14px] mb-10" style={{ color: 'rgba(242,240,235,0.55)' }}>
-              Check your email for confirmation. Talk soon — Jacob.
+              Check your email for confirmation. Talk soon. Jacob.
             </p>
             <Link
               href="/"

@@ -88,14 +88,16 @@ const TIERS: Tier[] = [
 ]
 
 // À la carte — priced so bundles are clearly the better deal
+// À la carte — standalone pricing. Two or more services together will cost
+// significantly more than a bundle, which is intentional.
 const ALA_CARTE: AlaCarteService[] = [
-  { id: 'missedcall', label: 'MissedCall AI',         icon: PhoneMissed,     monthlyPrice: 299, setupPrice: 299, description: 'Automatic text-back for every missed call, lead capture, calendar booking' },
-  { id: 'website',    label: 'Custom Website',         icon: Globe,           monthlyPrice: 125, setupPrice: 250, description: 'Built from scratch, SEO-ready, shows up on Google, unlimited updates' },
-  { id: 'ads',        label: 'Google Ads Management',  icon: BarChart3,       monthlyPrice: 175, setupPrice: 300, description: '' },
-  { id: 'campaigns',  label: 'Email & SMS Campaigns',  icon: Megaphone,       monthlyPrice: 125, setupPrice: 150, description: 'Blast messages to your full contact list — unlimited campaigns' },
-  { id: 'crm',        label: 'Leads Dashboard',        icon: LayoutDashboard, monthlyPrice: 99,  setupPrice: 0,   description: 'All contacts from missed calls and website leads in one place' },
-  { id: 'calendar',   label: 'Calendar Integration',   icon: CalendarCheck,   monthlyPrice: 89,  setupPrice: 0,   description: 'Online booking synced to your Google Calendar' },
-  { id: 'spam',       label: 'Spam Call Screening',    icon: ShieldBan,       monthlyPrice: 75,  setupPrice: 150, description: 'Blocks robocalls before they reach you — only real customers get through' },
+  { id: 'missedcall', label: 'MissedCall AI',         icon: PhoneMissed,     monthlyPrice: 349, setupPrice: 299, description: 'Automatic text-back for every missed caller, lead capture, calendar booking' },
+  { id: 'website',    label: 'Custom Website',         icon: Globe,           monthlyPrice: 179, setupPrice: 250, description: 'Built from scratch, shows up on Google, unlimited same-day updates' },
+  { id: 'ads',        label: 'Google Ads Management',  icon: BarChart3,       monthlyPrice: 225, setupPrice: 300, description: '' },
+  { id: 'campaigns',  label: 'Email & SMS Campaigns',  icon: Megaphone,       monthlyPrice: 175, setupPrice: 150, description: 'Blast messages to your full contact list, unlimited campaigns' },
+  { id: 'crm',        label: 'Leads Dashboard',        icon: LayoutDashboard, monthlyPrice: 129, setupPrice: 0,   description: 'All contacts from missed calls and website leads in one place' },
+  { id: 'calendar',   label: 'Calendar Integration',   icon: CalendarCheck,   monthlyPrice: 99,  setupPrice: 0,   description: 'Online booking synced to your Google Calendar' },
+  { id: 'spam',       label: 'Spam Call Screening',    icon: ShieldBan,       monthlyPrice: 89,  setupPrice: 150, description: 'Blocks robocalls before they reach you. Only real customers get through.' },
 ]
 
 // ─────────────────────────────────────────────────────────
@@ -486,7 +488,7 @@ export default function PricingPage() {
                 Build your own plan.
               </h2>
               <p className="mt-3 text-[14px]" style={{ color: '#6E7681' }}>
-                Bundles are priced to save you money — but if you only need one or two services, you can build exactly what you need below.
+                These are standalone prices. If you need two or more services, the plans above will almost always cost less and include more. This is here for people who genuinely only need one thing.
               </p>
             </div>
             <PlanBuilder />

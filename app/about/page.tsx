@@ -230,7 +230,7 @@ export default function AboutPage() {
               {/* Pull quote */}
               <div className="border-l-4 pl-7 mb-10" style={{ borderColor: '#EE6B1A' }}>
                 <p className="text-[20px] sm:text-[24px] font-black uppercase leading-[1.1] tracking-tight" style={{ color: '#16181C' }}>
-                  "You're getting on the phone directly with the founder who knows the ins and outs of the entire system he created himself."
+                  "I built the whole system myself. When you call, you get me — not a support team, not someone reading off your file. Just me, and I know how every part of it works."
                 </p>
                 <div className="mt-4 flex items-center gap-3">
                   <div className="grid h-10 w-10 place-items-center font-black text-[16px]" style={{ background: '#1A4A70', color: '#FFFFFF' }}>J</div>
@@ -244,13 +244,13 @@ export default function AboutPage() {
               {/* Bio */}
               <div className="space-y-5 text-[15px] leading-relaxed" style={{ color: 'rgba(22,24,28,0.75)' }}>
                 <p>
-                  Jacob founded Align and Acquire with a straightforward conviction: trade businesses are underserved by the technology and marketing industry, and most of the tools being sold to them were built by people who have never run a service route in their life.
+                  I started Align and Acquire because trade businesses kept getting sold tools by people who had no idea how those businesses actually worked. Most of that software was built for offices, not job sites. I wanted to build something that actually made sense for the people using it.
                 </p>
                 <p>
-                  Every system at Align and Acquire — the AI text-back, the website infrastructure, the ad management workflows, the campaign tools — was designed, built, and is actively managed by Jacob. There is no layer of contractors, no offshore support team, no account manager standing between you and answers.
+                  Everything you're running on, I built. The missed-call AI, the website, the ads setup, the dashboard. It's all mine and I manage all of it. There's no team behind the scenes, no contractors, nothing outsourced. When something needs to be fixed or changed, it gets done the same day.
                 </p>
                 <p>
-                  When you call, Jacob picks up. When something needs to change, it changes the same day. When you're scaling and want to add a service, you talk to the person who will actually build it. That's not a promise made on a website — it's just how the operation works.
+                  When you call, I pick up. If you want to add a service or something isn't working right, you're talking to the person who's actually going to do it. That's just how it works here.
                 </p>
               </div>
 

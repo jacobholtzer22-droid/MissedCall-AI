@@ -66,7 +66,7 @@ export default function MissedCallAIPage() {
                 is <span style={{ color: '#EE6B1A' }}>money<br />walking away.</span>
               </h1>
               <p className="text-[16px] sm:text-[18px] leading-relaxed max-w-xl mb-8" style={{ color: 'rgba(242,240,235,0.72)' }}>
-                You&apos;re on the job. The phone rings out. Our AI texts back in seconds, qualifies the lead, and books the appointment — while you keep your hands on the work.
+                You&apos;re on the job. The phone rings out. Our AI texts back in seconds, qualifies the lead, and books the appointment while you keep your hands on the work.
               </p>
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
                 <a href="#book-demo" className="aa-btn inline-flex items-center justify-center gap-2 px-6 py-4 text-[15px] font-bold uppercase tracking-wide" style={{ background: '#EE6B1A', color: '#16181C' }}>
@@ -164,9 +164,9 @@ export default function MissedCallAIPage() {
           </ScrollReveal>
           <div className="grid gap-px sm:grid-cols-3" style={{ background: 'rgba(110,118,129,0.4)' }}>
             {[
-              { n: '01', icon: Phone, title: 'You miss a call', body: "You're on a ladder, in the chair, under the hood — life happens. The phone rings out." },
+              { n: '01', icon: Phone, title: 'You miss a call', body: "You're on a ladder, in the chair, under the hood. Life happens. The phone rings out." },
               { n: '02', icon: MessageSquareText, title: 'AI texts instantly', body: 'In seconds, in your business voice: "Sorry we missed you! How can we help?" Feels human. Works like magic.' },
-              { n: '03', icon: CalendarCheck, title: 'Job gets booked', body: 'Name, address, appointment — all done. Shows up on your calendar. You show up and get paid.' },
+              { n: '03', icon: CalendarCheck, title: 'Job gets booked', body: 'Name, address, appointment. All done. Shows up on your calendar. You show up and get paid.' },
             ].map((s, i) => (
               <ScrollReveal key={i}>
                 <div className="h-full p-7 sm:p-8" style={{ background: '#F2F0EB' }}>
@@ -201,7 +201,7 @@ export default function MissedCallAIPage() {
           </ScrollReveal>
           <ScrollReveal stagger>
             <div className="grid gap-px sm:grid-cols-2 lg:grid-cols-3" style={{ background: 'rgba(110,118,129,0.2)' }}>
-              <FeatureCard icon={Zap}            title="Instant response"    description="Texts go out within seconds. No delay, no lost leads — faster than any human." />
+              <FeatureCard icon={Zap}            title="Instant response"    description="Texts go out within seconds. No delay, no lost leads. Faster than any human." />
               <FeatureCard icon={MessageSquareText} title="Natural conversations" description="Sounds human, not robotic. Customers have no idea they're talking to an AI." />
               <FeatureCard icon={CalendarCheck}  title="Auto booking"       description="Appointments created and added to your calendar. No back-and-forth." />
               <FeatureCard icon={Clock}          title="24/7 coverage"      description="Nights, weekends, holidays. Your AI never calls in sick." />
@@ -227,10 +227,10 @@ export default function MissedCallAIPage() {
             </div>
           </ScrollReveal>
           <div className="space-y-3">
-            <ScrollReveal><FAQItem question="How does it work with my existing phone number?" answer="You keep your number. Set up call forwarding so unanswered calls go to your MissedCall AI number. Your customers never see the difference — they just get a helpful text when you can't answer." /></ScrollReveal>
+            <ScrollReveal><FAQItem question="How does it work with my existing phone number?" answer="You keep your number. Set up call forwarding so unanswered calls go to your MissedCall AI number. Your customers never see the difference. They just get a helpful text when you can't answer." /></ScrollReveal>
             <ScrollReveal><FAQItem question="What if the AI can't help a customer?" answer="It knows its limits. Complex or frustrated customers get flagged for human follow-up. You get notified, and they get a real person calling back." /></ScrollReveal>
             <ScrollReveal><FAQItem question="How much does it cost?" answer="Plans start at $200/month with a one-time setup fee. It typically pays for itself with one recovered appointment. Book a demo and we'll find the right plan for your business." /></ScrollReveal>
-            <ScrollReveal><FAQItem question="Can I customize what the AI says?" answer="100%. Greeting, services, special instructions, business hours — you control all of it. The AI adapts to your specific business." /></ScrollReveal>
+            <ScrollReveal><FAQItem question="Can I customize what the AI says?" answer="100%. Greeting, services, special instructions, business hours. You control all of it. The AI adapts to your specific business." /></ScrollReveal>
             <ScrollReveal><FAQItem question="How long does setup take?" answer="Most businesses are live in under 15 minutes. We walk you through everything." /></ScrollReveal>
             <ScrollReveal><FAQItem question="What if I want to cancel?" answer="No contracts. Cancel anytime. 30-day money-back guarantee. We're confident you won't want to, though." /></ScrollReveal>
           </div>

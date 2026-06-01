@@ -62,7 +62,7 @@ function GoogleAdsMockup() {
           <span className="font-mono text-[10px]" style={{ color: '#6E7681' }}>alignandacquire.com/hvac</span>
         </div>
         <div className="text-[15px] font-semibold mb-1" style={{ color: '#1A0DAB' }}>Your Business · HVAC Repair &amp; Service</div>
-        <div className="text-[12.5px]" style={{ color: '#4D5156' }}>Fast, reliable HVAC repair. Same-day service available. Call now — we answer every call.</div>
+        <div className="text-[12.5px]" style={{ color: '#4D5156' }}>Fast, reliable HVAC repair. Same-day service available. Call now. We answer every call.</div>
         <div className="flex gap-3 mt-2">
           {['Schedule Now', 'Call Us', 'Get a Quote'].map(t => (
             <span key={t} className="text-[11px] underline" style={{ color: '#1A0DAB' }}>{t}</span>
@@ -189,7 +189,7 @@ export default function ServicesPage() {
             <span style={{ color: '#EE6B1A' }}>All the tools.</span>
           </h1>
           <p className="text-[16px] sm:text-[18px] leading-relaxed max-w-2xl mx-auto mb-10" style={{ color: 'rgba(242,240,235,0.65)' }}>
-            From capturing every missed call to filling your Google results to re-engaging past customers — built as one system, not sold as seven separate tools.
+            From capturing every missed call to filling your Google results to re-engaging past customers. Built as one system, not sold as seven separate tools.
           </p>
           <div className="flex flex-col items-center gap-3 sm:flex-row sm:justify-center">
             <Link href="/pricing" className="aa-btn inline-flex items-center gap-2 px-6 py-4 text-[15px] font-bold uppercase tracking-wide" style={{ background: '#EE6B1A', color: '#16181C' }}>
@@ -220,14 +220,14 @@ export default function ServicesPage() {
                 MissedCall AI
               </h2>
               <p className="text-[18px] font-semibold leading-snug mb-6" style={{ color: '#1A4A70' }}>
-                When you miss a call, a text goes out automatically — before they call someone else.
+                When you miss a call, a text goes out automatically before they call someone else.
               </p>
               <p className="text-[15px] leading-relaxed mb-8" style={{ color: 'rgba(22,24,28,0.72)' }}>
-                When you miss a call, this service sends the caller a text message within seconds — in your business's name. It asks what they need, collects their information, and can book an appointment straight to your calendar. You don't have to do anything. By the time you're off the job you're on, the lead is already handled.
+                When you miss a call, this service sends the caller a text message within seconds, in your business&apos;s name. It asks what they need, collects their information, and can book an appointment straight to your calendar. You don&apos;t have to do anything. By the time you&apos;re off the job you&apos;re on, the lead is already handled.
               </p>
               <ul className="space-y-3 mb-8">
                 {[
-                  'Texts back in under 60 seconds — before they call your competitor',
+                  'Texts back in under 60 seconds, before they call your competitor',
                   'Captures name, address, service needed, and preferred time',
                   'Books directly to your calendar when connected',
                   'Flags complex leads for your personal follow-up',
@@ -311,11 +311,11 @@ export default function ServicesPage() {
                 Most people look you up online before they ever pick up the phone.
               </p>
               <p className="text-[15px] leading-relaxed mb-8" style={{ color: 'rgba(242,240,235,0.7)' }}>
-                If your website doesn't show up on Google — or looks outdated when it does — most people will move on without contacting you. We build your website from scratch so it shows up in search results, looks professional on any device, and makes it simple for visitors to reach out or request a quote. Once it's live, we handle everything — hosting, updates, security. You never have to log into anything.
+                If your website doesn&apos;t show up on Google, or looks outdated when it does, most people will move on without contacting you. We build your website from scratch so it shows up in search results, looks professional on any device, and makes it simple for visitors to reach out or request a quote. Once it&apos;s live, we handle everything: hosting, updates, security. You never have to log into anything.
               </p>
               <ul className="space-y-3 mb-8">
                 {[
-                  'Built from scratch — no templates, no WordPress, no Wix',
+                  'Built from scratch. No templates, no WordPress, no Wix.',
                   'Mobile-first design built for your phone-browsing customers',
                   'SEO built into every page from day one',
                   'Hosting, security, and unlimited updates included',
@@ -354,15 +354,15 @@ export default function ServicesPage() {
                 Google Ads Management
               </h2>
               <p className="text-[15px] leading-relaxed mb-8" style={{ color: 'rgba(22,24,28,0.72)' }}>
-                When someone types "HVAC repair near me" or "lawn care [your city]" into Google, the businesses at the top paid to be there. We set up and manage those ads for you — picking the right search terms, writing the ads, and making sure your budget is going toward people who are actually looking to hire, not just browsing. Your ad spend goes directly to Google. We handle the strategy and the day-to-day management.
+                When someone types "HVAC repair near me" or "lawn care [your city]" into Google, the businesses at the top paid to be there. We set up and manage those ads for you: the right search terms, the right ad copy, and a budget pointed at people who are ready to hire. Your ad spend goes directly to Google. We handle the strategy and the day-to-day management.
               </p>
               <ul className="space-y-3 mb-8">
                 {[
                   'Keyword research built for your specific trade and market',
                   'Campaign live within 3–5 business days',
-                  'Negative keywords managed monthly — no wasted spend on junk clicks',
+                  'Negative keywords managed monthly so your budget doesn\'t go to junk clicks',
                   'A/B ad testing to find what converts in your market',
-                  'Monthly performance reports — plain English, no jargon',
+                  'Monthly performance reports in plain English',
                 ].map((item, i) => (
                   <li key={i} className="flex items-start gap-3 text-[14px]">
                     <Check size={16} strokeWidth={3} className="shrink-0 mt-0.5" style={{ color: '#EE6B1A' }} />
@@ -410,12 +410,12 @@ export default function ServicesPage() {
                 The people who&apos;ve already hired you are the easiest ones to get back.
               </p>
               <p className="text-[15px] leading-relaxed mb-8" style={{ color: 'rgba(242,240,235,0.7)' }}>
-                Sending a text or email to your existing contacts about a seasonal service, a deal, or a simple reminder is one of the fastest ways to get more work on the schedule. This service lets you send that message to your entire contact list at once — whether that&apos;s 50 people or 500. You pick what to say, we send it, and you can see who responded.
+                Sending a text or email to your existing contacts about a seasonal service, a deal, or a simple reminder is one of the fastest ways to get more work on the schedule. This service lets you send that message to your entire contact list at once, whether that&apos;s 50 people or 500. You pick what to say, we send it, and you can see who responded.
               </p>
               <ul className="space-y-3 mb-8">
                 {[
                   'Mass SMS and email campaigns from one dashboard',
-                  'Segment your list — all clients, past customers, new leads, or custom',
+                  'Segment your list by all clients, past customers, new leads, or a custom group',
                   'Track opens, clicks, and replies in real time',
                   'Automated follow-up sequences for leads who didn\'t respond',
                   'Campaign history tied to every client contact record',
@@ -456,14 +456,14 @@ export default function ServicesPage() {
                 Robocalls waste your time and tie up your line when real customers are trying to reach you.
               </p>
               <p className="text-[15px] leading-relaxed mb-8" style={{ color: 'rgba(22,24,28,0.72)' }}>
-                This service adds one simple step before any call connects to you — the caller hears a short prompt and has to press 1. Real people do it without thinking. Automated spam calls can&apos;t, so they hang up before they ever reach you. Your customers won&apos;t notice a difference. It takes about 24 hours to set up and works on your existing number.
+                This service adds one simple step before any call connects to you: the caller hears a short prompt and has to press 1. Real people do it without thinking. Automated spam calls can&apos;t, so they hang up before they ever reach you. Your customers won&apos;t notice a difference. It takes about 24 hours to set up and works on your existing number.
               </p>
               <ul className="space-y-3 mb-8">
                 {[
-                  'Works with your existing phone number — nothing changes for customers',
+                  'Works with your existing phone number. Nothing changes for customers.',
                   'Robocalls and warranty scams blocked before they reach you',
                   'Real customers press 1 and connect in under 3 seconds',
-                  'Pairs with MissedCall AI — real callers who don\'t get through still get a text back',
+                  'Pairs with MissedCall AI: real callers who don\'t get through still get a text back',
                   'Set up in under 24 hours',
                 ].map((item, i) => (
                   <li key={i} className="flex items-start gap-3 text-[14px]">
@@ -670,7 +670,7 @@ export default function ServicesPage() {
               <span style={{ color: '#EE6B1A' }}>We handle the rest.</span>
             </h2>
             <p className="text-[16px] leading-relaxed max-w-xl mx-auto mb-9" style={{ color: 'rgba(242,240,235,0.65)' }}>
-              No account managers. No outsourced support. When you work with Align and Acquire, you have direct access to the team that runs your system. That's not a selling point — it's just how we operate.
+              No account managers. No outsourced support. When you work with Align and Acquire, you have direct access to the person who runs your system. That&apos;s just how we operate.
             </p>
             <div className="flex flex-col items-center gap-3 sm:flex-row sm:justify-center">
               <Link href="/pricing" className="aa-btn inline-flex items-center gap-2 px-7 py-4 text-[15px] font-bold uppercase tracking-wide" style={{ background: '#EE6B1A', color: '#16181C' }}>

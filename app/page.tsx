@@ -10,7 +10,7 @@ const SERVICES = [
   {
     icon: MessageSquare,
     title: 'MissedCall AI',
-    body: 'Every unanswered call is money walking out the door. Our AI texts back in seconds, captures the lead, and books the job — before they call your competitor.',
+    body: 'Every unanswered call is money walking out the door. Our AI texts back in seconds, captures the lead, and books the job before they call your competitor.',
     cta: 'See how it works',
     href: '/services#missedcall-ai',
     tag: 'Our flagship',
@@ -18,7 +18,7 @@ const SERVICES = [
   {
     icon: Globe,
     title: 'Websites + Google Ads',
-    body: "If they can't find you, they'll find someone else. A site that converts and ads that put you first — designed to work together, not as two separate tools.",
+    body: "If they can't find you, they'll find someone else. A site that converts and ads that put you first. Built to work together, not sold as two separate tools.",
     cta: 'Learn more',
     href: '/services#websites',
     tag: null,
@@ -66,7 +66,7 @@ export default function HomePage() {
               </h1>
 
               <p className="text-[16px] sm:text-[18px] leading-relaxed max-w-xl mb-8" style={{ color: 'rgba(242,240,235,0.72)' }}>
-                When you can't answer, our AI texts every missed caller back in seconds, qualifies the lead, and books the job — so you never miss a paycheck.
+                When you can't answer, our AI texts every missed caller back in seconds, qualifies the lead, and books the job. You never miss a paycheck.
               </p>
 
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center mb-8">
@@ -244,7 +244,7 @@ export default function HomePage() {
                 I&apos;m Jacob. I don&apos;t have a team of 50. I don&apos;t have a fancy office. What I do have is a system that works and a phone that I actually answer.
               </p>
               <p className="text-[15px] leading-relaxed mb-8" style={{ color: 'rgba(242,240,235,0.72)' }}>
-                Every line of code is mine. When you call, I pick up. When something breaks, I fix it — no account managers, no ticket systems.
+                Every line of code is mine. When you call, I pick up. When something breaks, I fix it. No account managers, no ticket systems.
               </p>
               <div className="flex items-center gap-4">
                 <div className="grid h-12 w-12 place-items-center font-black text-[20px] shrink-0" style={{ background: '#1A4A70', color: '#FFFFFF' }}>J</div>
@@ -316,7 +316,7 @@ export default function HomePage() {
               <span style={{ color: '#EE6B1A' }}>Seriously.</span>
             </h2>
             <p className="text-[16px] sm:text-[18px] leading-relaxed max-w-xl mx-auto mb-9" style={{ color: 'rgba(242,240,235,0.72)' }}>
-              Whether you need an AI that never misses a call or a website that actually converts — let&apos;s make it happen.
+              Whether you need an AI that never misses a call or a website that actually converts. Let&apos;s make it happen.
             </p>
             <div className="flex flex-col items-center gap-3 sm:flex-row sm:justify-center">
               <Link
