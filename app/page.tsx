@@ -233,7 +233,7 @@ export default function HomePage() {
             <div className="max-w-2xl mx-auto">
               <div className="border-l-4 pl-6 mb-8" style={{ borderColor: '#EE6B1A' }}>
                 <p className="text-[18px] sm:text-[22px] font-black uppercase leading-[1.1] tracking-tight" style={{ color: '#16181C' }}>
-                  "I built the whole system myself. When you call, you get me. Not a support team, not someone reading off your file. Just me."
+                  "I built this whole thing myself. When you call, you&apos;re getting me on the phone. No support team, no one who just pulled up your account. I know how every part of it works because I&apos;m the one who built it."
                 </p>
                 <div className="mt-4 flex items-center gap-3">
                   <div className="h-10 w-10 shrink-0 overflow-hidden border-2" style={{ borderColor: '#1A4A70' }}>
