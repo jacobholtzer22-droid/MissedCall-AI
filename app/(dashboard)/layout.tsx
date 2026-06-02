@@ -19,11 +19,16 @@ function getNavigation(business: {
 
   const items: { name: string; href: string; icon: string }[] = [
     { name: 'Overview', href: '/dashboard', icon: 'LayoutDashboard' },
-    // Leads = Missed Call (conversations) + Website leads, as two tabs.
-    { name: 'Leads', href: '/dashboard/leads', icon: 'MessagesSquare' },
-    { name: 'Outreach', href: '/dashboard/outreach', icon: 'Send' },
+    // Leads = combined closed missed-call leads + website leads.
+    { name: 'Leads', href: '/dashboard/leads', icon: 'Mailbox' },
   ]
 
+  // Conversations = full AI SMS thread viewer (its own page again).
+  if (features.hasMissedCallAi) {
+    items.push({ name: 'Conversations', href: '/dashboard/conversations', icon: 'MessagesSquare' })
+  }
+
+  items.push({ name: 'Outreach', href: '/dashboard/outreach', icon: 'Send' })
   items.push({ name: 'Analytics', href: '/dashboard/analytics', icon: 'BarChart3' })
 
   if (features.hasMissedCallAi) {

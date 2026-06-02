@@ -5,11 +5,7 @@ import { getBusinessForDashboard } from '@/lib/get-business-for-dashboard'
 import { FeatureGate } from '@/app/components/FeatureGate'
 import { LeadsClient } from './LeadsClient'
 
-export default async function LeadsPage({
-  searchParams,
-}: {
-  searchParams?: { tab?: string }
-}) {
+export default async function LeadsPage() {
   const { userId } = await auth()
   if (!userId) redirect('/sign-in')
 
@@ -20,10 +16,6 @@ export default async function LeadsPage({
 
   const { business } = await getBusinessForDashboard(userId, user?.business ?? null)
   if (!business) redirect('/onboarding')
-
-  // ?tab=conversations → chat-thread viewer; anything else (incl. legacy
-  // ?tab=website) → the combined Leads list, which now includes website leads.
-  const defaultTab = searchParams?.tab === 'conversations' ? 'conversations' : 'leads'
 
   return (
     <div className="space-y-6">
@@ -40,7 +32,7 @@ export default async function LeadsPage({
         valueProp="See every missed-call and website lead your AI captures, in one place"
         businessName={business.name}
       >
-        <LeadsClient defaultTab={defaultTab} />
+        <LeadsClient />
       </FeatureGate>
     </div>
   )
