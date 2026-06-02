@@ -12,6 +12,7 @@ export interface AdminBusiness {
 
   // Feature flags
   missedCallAiEnabled: boolean
+  knownContactVoicemailEnabled: boolean
   callScreenerEnabled: boolean
   callScreenerMessage: string | null
   spamFilterEnabled: boolean

@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { MessageCircle, Shield, ShieldCheck, Phone, Calendar, Megaphone, Globe, Mail, MessageSquare, CheckCircle, XCircle, Mailbox } from 'lucide-react'
+import { MessageCircle, Shield, ShieldCheck, Phone, Calendar, Megaphone, Globe, Mail, MessageSquare, CheckCircle, XCircle, Mailbox, Voicemail } from 'lucide-react'
 import type { AdminBusiness } from '../types'
 
 interface Props {
@@ -190,6 +190,15 @@ export function TogglesTab({ business, onUpdateBusiness, onToast }: Props) {
         checked={business.missedCallAiEnabled}
         onToggle={() => patch('missedCallAiEnabled', !business.missedCallAiEnabled, 'MissedCall AI')}
         disabled={saving === 'missedCallAiEnabled'}
+      />
+
+      <ToggleRow
+        icon={Voicemail}
+        label="Send known contacts to voicemail"
+        description="On a missed call, route the client's own saved contacts to voicemail instead of the AI SMS. Forwarding still rings the owner first."
+        checked={business.knownContactVoicemailEnabled}
+        onToggle={() => patch('knownContactVoicemailEnabled', !business.knownContactVoicemailEnabled, 'known-contact voicemail')}
+        disabled={saving === 'knownContactVoicemailEnabled'}
       />
 
       <ToggleRow

@@ -41,7 +41,7 @@ import { db } from '@/lib/db'
 import Telnyx from 'telnyx'
 import { format } from 'date-fns'
 import { checkCooldown, recordMessageSent, logCooldownSkip, isCooldownBypassNumber } from '@/lib/sms-cooldown'
-import { isExistingContact, logContactSkip } from '@/lib/contacts-check'
+import { isExistingContact, logContactSkip, isClientVoicemailContact } from '@/lib/contacts-check'
 import { normalizePhoneNumber, phonesMatch } from '@/lib/phone-utils'
 
 const VOICE = 'AWS.Polly.Joanna'
@@ -49,6 +49,8 @@ const DEFAULT_VOICE_MESSAGE =
   "We're sorry we can't get to the phone right now. You should receive a text message shortly."
 const NO_SMS_VOICE_MESSAGE =
   "We're sorry, no one is available. Please try again later. Goodbye."
+const VOICEMAIL_GREETING =
+  'Sorry, no one is available to take your call right now. Please leave a message after the tone.'
 const FORWARDING_TIMEOUT_SECS = 25       // When missedCallAiEnabled: ring out quickly → missed call SMS flow
 const FORWARDING_TIMEOUT_VOICEMAIL_SECS = 20  // When missedCallAiDisabled: longer ring so owner voicemail can pick up (~4-5 rings)
 
@@ -65,6 +67,7 @@ interface ClientState {
   aLegCallControlId?: string
   voicemailPending?: boolean
   announceCallerPending?: boolean
+  voicemailReason?: string   // 'client_contact' when voicemail was chosen via known-contact routing
 }
 
 export async function POST(request: NextRequest) {
@@ -148,19 +151,26 @@ export async function POST(request: NextRequest) {
           maximum_tries: 1,
         })
       } else {
-        if (business.missedCallAiEnabled) {
-          await sendMissedCallSMS(telnyx, business, callControlId, from, timing)
+        const routeToVoicemail =
+          business.knownContactVoicemailEnabled &&
+          (await isClientVoicemailContact(business.id, from))
+        if (routeToVoicemail) {
+          await startClientContactVoicemail(telnyx, callControlId, business.id, from)
         } else {
-          console.log('MissedCall AI disabled, skipping SMS')
+          if (business.missedCallAiEnabled) {
+            await sendMissedCallSMS(telnyx, business, callControlId, from, timing)
+          } else {
+            console.log('MissedCall AI disabled, skipping SMS')
+          }
+          const normalMsg = business.missedCallAiEnabled
+            ? (business.missedCallVoiceMessage || DEFAULT_VOICE_MESSAGE)
+            : (business.missedCallVoiceMessage || NO_SMS_VOICE_MESSAGE)
+          console.log('🔊 Speaking missed call message:', { callControlId, message: normalMsg })
+          await telnyx.calls.actions.speak(callControlId, {
+            payload: normalMsg,
+            voice: VOICE,
+          })
         }
-        const normalMsg = business.missedCallAiEnabled
-          ? (business.missedCallVoiceMessage || DEFAULT_VOICE_MESSAGE)
-          : (business.missedCallVoiceMessage || NO_SMS_VOICE_MESSAGE)
-        console.log('🔊 Speaking missed call message:', { callControlId, message: normalMsg })
-        await telnyx.calls.actions.speak(callControlId, {
-          payload: normalMsg,
-          voice: VOICE,
-        })
       }
 
       timing.totalMs = Date.now() - new Date(webhookReceivedAt).getTime()
@@ -282,6 +292,19 @@ export async function POST(request: NextRequest) {
             max_length: 120,
             timeout_secs: 5,
             play_beep: true,
+            // Carry voicemailReason into call.recording.saved so the owner is notified for
+            // known-contact voicemails. Omitted when undefined (existing spam-screening path),
+            // keeping that startRecording call byte-for-byte identical to today.
+            ...(state.voicemailReason
+              ? {
+                  client_state: toB64({
+                    businessId: state.businessId,
+                    callerPhone: state.callerPhone,
+                    voicemailPending: true,
+                    voicemailReason: state.voicemailReason,
+                  }),
+                }
+              : {}),
           })
         } catch (err) {
           console.error('❌ Failed to start voicemail recording:', err)
@@ -303,6 +326,41 @@ export async function POST(request: NextRequest) {
         if (!business?.forwardingNumber) {
           console.error('❌ No forwarding number found, falling back to missed call flow')
           if (business) {
+            const routeToVoicemail =
+              business.knownContactVoicemailEnabled &&
+              (await isClientVoicemailContact(business.id, state.callerPhone!))
+            if (routeToVoicemail) {
+              await startClientContactVoicemail(telnyx, callControlId, business.id, state.callerPhone!)
+            } else {
+              if (business.missedCallAiEnabled) {
+                await sendMissedCallSMS(telnyx, business, callControlId, state.callerPhone!, timing)
+              } else {
+                console.log('MissedCall AI disabled, skipping SMS')
+              }
+              const fallbackMsg = business.missedCallAiEnabled
+                ? (business.missedCallVoiceMessage || DEFAULT_VOICE_MESSAGE)
+                : (business.missedCallVoiceMessage || NO_SMS_VOICE_MESSAGE)
+              await telnyx.calls.actions.speak(callControlId, {
+                payload: fallbackMsg,
+                voice: VOICE,
+                client_state: toB64({ businessId: state.businessId, callerPhone: state.callerPhone }),
+              })
+            }
+          } else {
+            await telnyx.calls.actions.hangup(callControlId, {})
+          }
+          return NextResponse.json({}, { status: 200 })
+        }
+
+        const connectionId = state.connectionId || process.env.TELNYX_CONNECTION_ID
+        if (!connectionId) {
+          console.error('❌ No connection_id available for outbound call, falling back')
+          const routeToVoicemail =
+            business.knownContactVoicemailEnabled &&
+            (await isClientVoicemailContact(business.id, state.callerPhone!))
+          if (routeToVoicemail) {
+            await startClientContactVoicemail(telnyx, callControlId, business.id, state.callerPhone!)
+          } else {
             if (business.missedCallAiEnabled) {
               await sendMissedCallSMS(telnyx, business, callControlId, state.callerPhone!, timing)
             } else {
@@ -316,28 +374,7 @@ export async function POST(request: NextRequest) {
               voice: VOICE,
               client_state: toB64({ businessId: state.businessId, callerPhone: state.callerPhone }),
             })
-          } else {
-            await telnyx.calls.actions.hangup(callControlId, {})
           }
-          return NextResponse.json({}, { status: 200 })
-        }
-
-        const connectionId = state.connectionId || process.env.TELNYX_CONNECTION_ID
-        if (!connectionId) {
-          console.error('❌ No connection_id available for outbound call, falling back')
-          if (business.missedCallAiEnabled) {
-            await sendMissedCallSMS(telnyx, business, callControlId, state.callerPhone!, timing)
-          } else {
-            console.log('MissedCall AI disabled, skipping SMS')
-          }
-          const fallbackMsg = business.missedCallAiEnabled
-            ? (business.missedCallVoiceMessage || DEFAULT_VOICE_MESSAGE)
-            : (business.missedCallVoiceMessage || NO_SMS_VOICE_MESSAGE)
-          await telnyx.calls.actions.speak(callControlId, {
-            payload: fallbackMsg,
-            voice: VOICE,
-            client_state: toB64({ businessId: state.businessId, callerPhone: state.callerPhone }),
-          })
           return NextResponse.json({}, { status: 200 })
         }
 
@@ -367,19 +404,26 @@ export async function POST(request: NextRequest) {
           console.log('📞 Forwarding call created:', dialValue?.data?.call_control_id)
         } catch (dialErr) {
           console.error('❌ Failed to create forwarding call:', dialErr)
-          if (business.missedCallAiEnabled) {
-            await sendMissedCallSMS(telnyx, business, callControlId, state.callerPhone!, timing)
+          const routeToVoicemail =
+            business.knownContactVoicemailEnabled &&
+            (await isClientVoicemailContact(business.id, state.callerPhone!))
+          if (routeToVoicemail) {
+            await startClientContactVoicemail(telnyx, callControlId, business.id, state.callerPhone!)
           } else {
-            console.log('MissedCall AI disabled, skipping SMS')
+            if (business.missedCallAiEnabled) {
+              await sendMissedCallSMS(telnyx, business, callControlId, state.callerPhone!, timing)
+            } else {
+              console.log('MissedCall AI disabled, skipping SMS')
+            }
+            const fallbackMsg = business.missedCallAiEnabled
+              ? (business.missedCallVoiceMessage || DEFAULT_VOICE_MESSAGE)
+              : (business.missedCallVoiceMessage || NO_SMS_VOICE_MESSAGE)
+            await telnyx.calls.actions.speak(callControlId, {
+              payload: fallbackMsg,
+              voice: VOICE,
+              client_state: toB64({ businessId: state.businessId, callerPhone: state.callerPhone }),
+            })
           }
-          const fallbackMsg = business.missedCallAiEnabled
-            ? (business.missedCallVoiceMessage || DEFAULT_VOICE_MESSAGE)
-            : (business.missedCallVoiceMessage || NO_SMS_VOICE_MESSAGE)
-          await telnyx.calls.actions.speak(callControlId, {
-            payload: fallbackMsg,
-            voice: VOICE,
-            client_state: toB64({ businessId: state.businessId, callerPhone: state.callerPhone }),
-          })
         }
       } else {
         await telnyx.calls.actions.hangup(callControlId, {})
@@ -466,19 +510,26 @@ export async function POST(request: NextRequest) {
             const [speakResult, dialResult] = await Promise.allSettled([speakPromise, dialPromise])
             if (dialResult.status === 'rejected') {
               console.error('❌ Failed to create forwarding call (parallel dial):', dialResult.reason)
-              if (business.missedCallAiEnabled) {
-                await sendMissedCallSMS(telnyx, business, callControlId, callerPhone, timing)
+              const routeToVoicemail =
+                business.knownContactVoicemailEnabled &&
+                (await isClientVoicemailContact(business.id, callerPhone))
+              if (routeToVoicemail) {
+                await startClientContactVoicemail(telnyx, callControlId, business.id, callerPhone)
               } else {
-                console.log('MissedCall AI disabled, skipping SMS')
+                if (business.missedCallAiEnabled) {
+                  await sendMissedCallSMS(telnyx, business, callControlId, callerPhone, timing)
+                } else {
+                  console.log('MissedCall AI disabled, skipping SMS')
+                }
+                const fallbackMsg = business.missedCallAiEnabled
+                  ? (business.missedCallVoiceMessage || DEFAULT_VOICE_MESSAGE)
+                  : (business.missedCallVoiceMessage || NO_SMS_VOICE_MESSAGE)
+                await telnyx.calls.actions.speak(callControlId, {
+                  payload: fallbackMsg,
+                  voice: VOICE,
+                  client_state: toB64({ businessId, callerPhone }),
+                })
               }
-              const fallbackMsg = business.missedCallAiEnabled
-                ? (business.missedCallVoiceMessage || DEFAULT_VOICE_MESSAGE)
-                : (business.missedCallVoiceMessage || NO_SMS_VOICE_MESSAGE)
-              await telnyx.calls.actions.speak(callControlId, {
-                payload: fallbackMsg,
-                voice: VOICE,
-                client_state: toB64({ businessId, callerPhone }),
-              })
             } else {
               const dialValue = (dialResult.value as { data?: { call_control_id?: string } })?.data
               console.log('📞 Forwarding call created (parallel):', dialValue?.call_control_id)
@@ -492,19 +543,26 @@ export async function POST(request: NextRequest) {
           }
         } else {
           // ---- STANDARD SCREENING FLOW (no forwarding) ----
-          if (business.missedCallAiEnabled) {
-            await sendMissedCallSMS(telnyx, business, callControlId, callerPhone, timing)
+          const routeToVoicemail =
+            business.knownContactVoicemailEnabled &&
+            (await isClientVoicemailContact(business.id, callerPhone))
+          if (routeToVoicemail) {
+            await startClientContactVoicemail(telnyx, callControlId, business.id, callerPhone)
           } else {
-            console.log('MissedCall AI disabled, skipping SMS')
+            if (business.missedCallAiEnabled) {
+              await sendMissedCallSMS(telnyx, business, callControlId, callerPhone, timing)
+            } else {
+              console.log('MissedCall AI disabled, skipping SMS')
+            }
+            const missedMsg = business.missedCallAiEnabled
+              ? (business.missedCallVoiceMessage || DEFAULT_VOICE_MESSAGE)
+              : (business.missedCallVoiceMessage || NO_SMS_VOICE_MESSAGE)
+            console.log('🔊 Speaking missed call message:', { callControlId, message: missedMsg })
+            await telnyx.calls.actions.speak(callControlId, {
+              payload: missedMsg,
+              voice: VOICE,
+            })
           }
-          const missedMsg = business.missedCallAiEnabled
-            ? (business.missedCallVoiceMessage || DEFAULT_VOICE_MESSAGE)
-            : (business.missedCallVoiceMessage || NO_SMS_VOICE_MESSAGE)
-          console.log('🔊 Speaking missed call message:', { callControlId, message: missedMsg })
-          await telnyx.calls.actions.speak(callControlId, {
-            payload: missedMsg,
-            voice: VOICE,
-          })
         }
       } else {
         const noInput = digits == null || digits === ''
@@ -627,7 +685,9 @@ export async function POST(request: NextRequest) {
           })
           console.log('📞 Voicemail recording saved to conversation:', { callControlId, recordingUrl: urlToSave })
 
-          // Voicemail notifications to business owner (only when missedCallAiEnabled is false)
+          // Voicemail notifications to business owner: when AI SMS is off (spam-screening
+          // voicemail), OR when this was a known-contact voicemail (voicemailReason flag),
+          // so the owner still hears about it even while AI SMS is enabled.
           const business = await db.business.findUnique({
             where: { id: conv.businessId },
             select: {
@@ -640,7 +700,7 @@ export async function POST(request: NextRequest) {
               telnyxPhoneNumber: true,
             },
           })
-          if (business && !business.missedCallAiEnabled) {
+          if (business && (!business.missedCallAiEnabled || state.voicemailReason === 'client_contact')) {
             // Brief wait for transcription (call.transcription may have already saved it)
             await new Promise((r) => setTimeout(r, 8000))
             const convUpdated = await db.conversation.findUnique({ where: { id: conv.id } })
@@ -804,13 +864,16 @@ async function handleForwardingFallback(
   const business = await db.business.findUnique({ where: { id: state.businessId } })
   if (!business) return
 
-  if (business.missedCallAiEnabled) {
-    await sendMissedCallSMS(telnyx, business, state.aLegCallControlId, state.callerPhone, timing)
-  } else {
-    console.log('MissedCall AI disabled, skipping SMS')
-  }
+  const routeToVoicemail =
+    business.knownContactVoicemailEnabled &&
+    (await isClientVoicemailContact(business.id, state.callerPhone))
 
-  if (business.missedCallAiEnabled) {
+  if (routeToVoicemail) {
+    // Known contact → voicemail instead of AI SMS. The owner was already dialed first
+    // (forwarding happened above); this fork only affects the no-answer fallback.
+    await startClientContactVoicemail(telnyx, state.aLegCallControlId, business.id, state.callerPhone)
+  } else if (business.missedCallAiEnabled) {
+    await sendMissedCallSMS(telnyx, business, state.aLegCallControlId, state.callerPhone, timing)
     const missedMsg = business.missedCallVoiceMessage || DEFAULT_VOICE_MESSAGE
     try {
       await telnyx.calls.actions.speak(state.aLegCallControlId, {
@@ -826,11 +889,10 @@ async function handleForwardingFallback(
     }
   } else {
     // Spam-screening-only: play voicemail greeting then record
-    const voicemailGreeting =
-      'Sorry, no one is available to take your call right now. Please leave a message after the tone.'
+    console.log('MissedCall AI disabled, skipping SMS')
     try {
       await telnyx.calls.actions.speak(state.aLegCallControlId, {
-        payload: voicemailGreeting,
+        payload: VOICEMAIL_GREETING,
         voice: VOICE,
         client_state: toB64({
           businessId: state.businessId,
@@ -844,6 +906,56 @@ async function handleForwardingFallback(
         await telnyx.calls.actions.hangup(state.aLegCallControlId, {})
       } catch {}
     }
+  }
+}
+
+/**
+ * Known-contact voicemail: speak the existing voicemail greeting and flag the call so
+ * call.speak.ended → voicemailPending → startRecording records a message. voicemailReason
+ * is carried so call.recording.saved still notifies the owner even when AI SMS is enabled.
+ * Reuses the same greeting + VOICE + recording machinery as the spam-screening voicemail path.
+ *
+ * Ensures a Conversation exists (keyed on the unique callSid) BEFORE recording starts, because
+ * call.recording.saved only UPDATEs by callSid and never creates. Upsert on callSid:
+ *  - Sites 2-7: the existing screening/forwarding Conversation is found; update:{} leaves it
+ *    untouched (no duplicate row, no status change).
+ *  - Site 1 (call.initiated, no-screener): no row existed (sendMissedCallSMS is skipped on the
+ *    voicemail fork), so one is created with status 'active' — matching how existing
+ *    voicemail-only conversations are represented. It has no Message rows, so it is excluded
+ *    from the Conversations/Leads views (both require messages: { some: {} }) and is not
+ *    miscounted as an active lead, while still surfacing in the Voicemails view once
+ *    recording.saved attaches recordingUrl.
+ */
+async function startClientContactVoicemail(
+  telnyx: InstanceType<typeof Telnyx>,
+  callControlId: string,
+  businessId: string,
+  callerPhone: string,
+) {
+  try {
+    await db.conversation.upsert({
+      where: { callSid: callControlId },
+      create: { businessId, callerPhone, callSid: callControlId, status: 'active' },
+      update: {},
+    })
+  } catch (err) {
+    console.error('❌ Failed to upsert conversation for known-contact voicemail:', err)
+  }
+
+  try {
+    await telnyx.calls.actions.speak(callControlId, {
+      payload: VOICEMAIL_GREETING,
+      voice: VOICE,
+      client_state: toB64({
+        businessId,
+        callerPhone,
+        voicemailPending: true,
+        voicemailReason: 'client_contact',
+      }),
+    })
+  } catch (err) {
+    // Caller may have already hung up (Telnyx 90018 "Call has already ended"). Do not throw.
+    console.error('❌ Failed to speak known-contact voicemail greeting (caller may have hung up):', err)
   }
 }
 

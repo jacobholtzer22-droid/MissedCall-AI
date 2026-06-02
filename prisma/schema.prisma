@@ -67,6 +67,7 @@ model Business {
   callScreenerMessage   String?
   missedCallVoiceMessage String?  @default("We're sorry we can't get to the phone right now. You should receive a text message shortly.")
   missedCallAiEnabled   Boolean   @default(true)        // Send AI SMS after missed call
+  knownContactVoicemailEnabled Boolean @default(false)  // When on, missed calls from the client's own contacts (isClientContact) go to voicemail instead of AI SMS
   smsCooldownDays       Int?                            // Cooldown period in days (null = use env SMS_COOLDOWN_DAYS or default 7)
   cooldownBypassNumbers Json?     @default("[]")        // Admin: phone numbers that skip cooldown (for testing)
 

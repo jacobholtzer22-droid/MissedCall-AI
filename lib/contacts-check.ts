@@ -28,6 +28,29 @@ export async function isExistingContact(
 }
 
 /**
+ * Check if the caller is one of the client's own saved contacts (isClientContact = true).
+ * Used by the known-contact voicemail routing — separate from isExistingContact (which
+ * gates automated SMS on source IS NULL). Uses phonesMatch (last-10) rather than raw
+ * equality because contact phones are stored in mixed formats (E.164 and bare 10-digit).
+ */
+export async function isClientVoicemailContact(
+  businessId: string,
+  callerPhone: string
+): Promise<boolean> {
+  const contacts = await db.contact.findMany({
+    where: {
+      businessId,
+      isClientContact: true,
+    },
+    select: { phoneNumber: true },
+  })
+  const normalizedCaller = normalizePhoneNumber(callerPhone)
+  if (normalizedCaller.length < 10) return false
+
+  return contacts.some((c) => phonesMatch(callerPhone, c.phoneNumber))
+}
+
+/**
  * Log that a message was skipped because the caller is an existing contact.
  * Uses CooldownSkipLog for analytics / cost savings reporting.
  */
