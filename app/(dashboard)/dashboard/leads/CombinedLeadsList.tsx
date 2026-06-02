@@ -120,10 +120,13 @@ export function CombinedLeadsList({
   }, [])
 
   const merged = useMemo<UnifiedLead[]>(() => {
-    const fromConvos: UnifiedLead[] = conversations.map(c => {
-      const bucket = getConversationBucket(c)
-      return {
-        kind: 'missed_call',
+    // Missed-call leads = only captured/converted conversations (bucket === 'closed').
+    // Cold / in-progress / stalled threads stay in the Conversations tab, not here.
+    const fromConvos: UnifiedLead[] = conversations
+      .map(c => ({ c, bucket: getConversationBucket(c) }))
+      .filter(({ bucket }) => bucket === 'closed')
+      .map(({ c, bucket }) => ({
+        kind: 'missed_call' as const,
         key: `c-${c.id}`,
         conversationId: c.id,
         name: nameOrPhone(c.callerName, c.callerPhone),
@@ -136,8 +139,7 @@ export function CombinedLeadsList({
         message: null,
         sortTs: new Date(c.lastMessageAt || c.createdAt).getTime(),
         dateStr: formatRelativeTime(c.lastMessageAt || c.createdAt),
-      }
-    })
+      }))
     const fromWeb: UnifiedLead[] = websiteLeads.map(w => {
       const status = WEBSITE_STATUS[w.status] ?? { label: w.status, className: 'bg-gray-100 text-gray-700' }
       return {
