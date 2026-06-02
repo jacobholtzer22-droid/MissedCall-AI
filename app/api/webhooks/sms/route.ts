@@ -216,6 +216,14 @@ export async function POST(request: NextRequest) {
         return new NextResponse('OK', { status: 200 })
       }
 
+      // Empty/blank inbound (e.g. MMS with no text body) — nothing to act on.
+      // Saving it would create a blank bubble AND poison future AI calls, since
+      // Anthropic 400s on empty content blocks. Acknowledge and skip.
+      if (!text || !text.trim()) {
+        console.log('📭 Empty inbound SMS (no text body) — acknowledging without processing')
+        return new NextResponse('OK', { status: 200 })
+      }
+
       // Find or create conversation (prefer existing, including closed ones — never create new after booking)
       const NO_AI_RESPONSE_STATUSES = ['appointment_booked', 'lead_captured', 'closed', 'human_needed', 'needs_review', 'completed'] as const
       const closedWindowDays = 90
@@ -2112,10 +2120,15 @@ async function generateAIResponse(
   bookingFlowState?: unknown,
   calendarEnabled?: boolean
 ): Promise<{ response: string; aiFailed?: boolean }> {
-  const conversationHistory = conversation.messages.map((msg: any) => ({
-    role: msg.direction === 'inbound' ? ('user' as const) : ('assistant' as const),
-    content: msg.content,
-  }))
+  // Drop empty/whitespace-only messages: Anthropic rejects empty content blocks
+  // with a 400, which would crash every call for this thread (one blank inbound
+  // message — e.g. an MMS with no text body — poisons the whole conversation).
+  const conversationHistory = conversation.messages
+    .filter((msg: any) => typeof msg.content === 'string' && msg.content.trim().length > 0)
+    .map((msg: any) => ({
+      role: msg.direction === 'inbound' ? ('user' as const) : ('assistant' as const),
+      content: msg.content,
+    }))
 
   const tz = business.timezone ?? 'America/New_York'
   const todayStr = getTodayInTimezone(tz)
