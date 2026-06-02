@@ -161,7 +161,10 @@ function EmptyState({ activeTab }: { activeTab: TabKey }) {
   )
 }
 
-export function ConversationsClient({ embedded = false }: { embedded?: boolean } = {}) {
+export function ConversationsClient({
+  embedded = false,
+  selectConversationId = null,
+}: { embedded?: boolean; selectConversationId?: string | null } = {}) {
   const [conversations, setConversations] = useState<Conversation[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -186,6 +189,17 @@ export function ConversationsClient({ embedded = false }: { embedded?: boolean }
     }
     load()
   }, [])
+
+  // When opened from the combined Leads list, select that thread once data loads.
+  useEffect(() => {
+    if (!selectConversationId || conversations.length === 0) return
+    const target = conversations.find(c => c.id === selectConversationId)
+    if (target) {
+      setSelectedConvo(target)
+      setActiveTab('all')
+      setMobileChatOpen(true)
+    }
+  }, [selectConversationId, conversations])
 
   const bucketed = useMemo(() => {
     return conversations.map(c => ({ ...c, bucket: getConversationBucket(c) }))

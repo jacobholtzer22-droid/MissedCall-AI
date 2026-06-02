@@ -21,7 +21,9 @@ export default async function LeadsPage({
   const { business } = await getBusinessForDashboard(userId, user?.business ?? null)
   if (!business) redirect('/onboarding')
 
-  const defaultTab = searchParams?.tab === 'website' ? 'website' : 'missed-call'
+  // ?tab=conversations → chat-thread viewer; anything else (incl. legacy
+  // ?tab=website) → the combined Leads list, which now includes website leads.
+  const defaultTab = searchParams?.tab === 'conversations' ? 'conversations' : 'leads'
 
   return (
     <div className="space-y-6">
