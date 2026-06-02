@@ -165,7 +165,7 @@ export default function AboutPage() {
       </section>
 
       {/* ── Testimonials ─────────────────────────────────── */}
-      <section className="aa-grid-bg">
+      <section id="testimonials" className="aa-grid-bg">
         <div className="mx-auto max-w-7xl px-5 py-16 sm:px-8 lg:py-24">
           <ScrollReveal>
             <div className="mb-12">

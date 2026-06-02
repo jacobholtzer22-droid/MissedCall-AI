@@ -224,6 +224,53 @@ export default function HomePage() {
         </div>
       </section>
 
+      {/* ═══════════════════════════
+          Founder teaser
+          ═══════════════════════════ */}
+      <section style={{ background: '#F2F0EB', color: '#16181C' }}>
+        <div className="mx-auto max-w-5xl px-5 py-16 sm:px-8 lg:py-24">
+          <ScrollReveal>
+            <div className="grid sm:grid-cols-2 gap-5 max-w-2xl mx-auto mb-10">
+              <div className="border-2 overflow-hidden aspect-[3/4]" style={{ borderColor: '#16181C' }}>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src="/images/jacob-headshot.jpg" alt="Jacob Holtzer, Founder" className="w-full h-full object-cover object-top" />
+              </div>
+              <div className="border-2 overflow-hidden aspect-[3/4]" style={{ borderColor: '#16181C' }}>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src="/images/jacob-desk.jpg" alt="Jacob Holtzer on the phone" className="w-full h-full object-cover object-top" />
+              </div>
+            </div>
+
+            <div className="max-w-2xl mx-auto">
+              <div className="border-l-4 pl-6 mb-8" style={{ borderColor: '#EE6B1A' }}>
+                <p className="text-[18px] sm:text-[22px] font-black uppercase leading-[1.1] tracking-tight" style={{ color: '#16181C' }}>
+                  "I built the whole system myself. When you call, you get me. Not a support team, not someone reading off your file. Just me."
+                </p>
+                <div className="mt-4 flex items-center gap-3">
+                  <div className="h-10 w-10 shrink-0 overflow-hidden border-2" style={{ borderColor: '#1A4A70' }}>
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src="/images/jacob-headshot.jpg" alt="Jacob Holtzer" className="h-full w-full object-cover object-top" />
+                  </div>
+                  <div>
+                    <div className="font-bold text-[14px]">Jacob Holtzer</div>
+                    <div className="font-mono text-[10px] uppercase tracking-widest" style={{ color: '#6E7681' }}>Founder, Align and Acquire</div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex flex-col sm:flex-row gap-3">
+                <Link href="/about" className="aa-btn inline-flex items-center gap-2 px-5 py-3.5 text-[14px] font-bold uppercase tracking-wide" style={{ background: '#16181C', color: '#F2F0EB' }}>
+                  About us <ArrowRight size={15} strokeWidth={2.5} />
+                </Link>
+                <Link href="/about#testimonials" className="aa-btn-ghost inline-flex items-center gap-2 border-2 px-5 py-3.5 text-[14px] font-bold uppercase tracking-wide" style={{ borderColor: '#16181C', color: '#16181C' }}>
+                  See testimonials <ArrowRight size={15} strokeWidth={2.5} />
+                </Link>
+              </div>
+            </div>
+          </ScrollReveal>
+        </div>
+      </section>
+
       {/* ════════════
           About
           ════════════ */}
