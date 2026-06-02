@@ -7,28 +7,30 @@ import ScrollReveal from '@/app/components/ScrollReveal'
 import BrandFooter from '@/app/components/BrandFooter'
 
 // ─────────────────────────────────────────────────────────
-// Testimonial placeholder — swap in real ones tomorrow
+// Testimonial photo — client shaking hands with Jacob in
+// front of Master Gardener LLC truck.
+// File: public/images/testimonial-master-gardener.jpg
 // ─────────────────────────────────────────────────────────
-const TESTIMONIALS = [
-  {
-    quote: 'Testimonial coming soon.',
-    name: 'Client Name',
-    business: 'Business · Trade',
-    placeholder: true,
-  },
-  {
-    quote: 'Testimonial coming soon.',
-    name: 'Client Name',
-    business: 'Business · Trade',
-    placeholder: true,
-  },
-  {
-    quote: 'Testimonial coming soon.',
-    name: 'Client Name',
-    business: 'Business · Trade',
-    placeholder: true,
-  },
-]
+function TestimonialPhoto() {
+  const [errored, setErrored] = useState(false)
+  return (
+    <div className="relative w-full overflow-hidden border-2" style={{ borderColor: 'rgba(110,118,129,0.35)', aspectRatio: '4/3' }}>
+      {errored ? (
+        <div className="w-full h-full flex items-center justify-center" style={{ background: 'rgba(110,118,129,0.1)' }}>
+          <ImageOff size={28} strokeWidth={1.5} style={{ color: '#6E7681' }} />
+        </div>
+      ) : (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src="/images/testimonial-master-gardener.jpg"
+          alt="Jacob with Master Gardener LLC owner"
+          className="w-full h-full object-cover object-center"
+          onError={() => setErrored(true)}
+        />
+      )}
+    </div>
+  )
+}
 
 // ─────────────────────────────────────────────────────────
 // Founder photo with React-state fallback (no document API)
@@ -165,40 +167,59 @@ export default function AboutPage() {
       </section>
 
       {/* ── Testimonials ─────────────────────────────────── */}
-      <section id="testimonials" className="aa-grid-bg">
+      <section id="testimonials" style={{ background: '#F2F0EB', color: '#16181C' }}>
         <div className="mx-auto max-w-7xl px-5 py-16 sm:px-8 lg:py-24">
           <ScrollReveal>
             <div className="mb-12">
               <Eyebrow label="What clients say" />
               <h2 className="text-[clamp(2rem,5vw,3.2rem)] font-black uppercase leading-[0.95] tracking-tight">
                 Results speak<br />
-                <span style={{ color: '#EE6B1A' }}>louder than claims.</span>
+                <span style={{ color: '#1A4A70' }}>louder than claims.</span>
               </h2>
             </div>
           </ScrollReveal>
 
-          <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-            {TESTIMONIALS.map((t, i) => (
-              <ScrollReveal key={i}>
-                <div
-                  className="border-2 p-7 flex flex-col h-full"
-                  style={{ borderColor: 'rgba(110,118,129,0.3)', background: 'rgba(242,240,235,0.03)' }}
-                >
-                  <Quote size={24} strokeWidth={1.5} className="mb-5 shrink-0" style={{ color: '#EE6B1A' }} />
-                  <p
-                    className="text-[15px] leading-relaxed flex-1 mb-6"
-                    style={{ color: t.placeholder ? '#6E7681' : 'rgba(242,240,235,0.88)', fontStyle: t.placeholder ? 'italic' : 'normal' }}
-                  >
-                    {t.placeholder ? '— Testimonial coming soon —' : `"${t.quote}"`}
+          {/* Featured testimonial — Master Gardener LLC */}
+          <ScrollReveal>
+            <div className="grid lg:grid-cols-[1fr_1.2fr] gap-0 border-2" style={{ borderColor: '#16181C' }}>
+
+              {/* Photo */}
+              <TestimonialPhoto />
+
+              {/* Quote */}
+              <div className="p-8 sm:p-10 flex flex-col justify-between" style={{ background: '#16181C' }}>
+                <div>
+                  <Quote size={36} strokeWidth={1.25} className="mb-6" style={{ color: '#EE6B1A' }} />
+                  <p className="text-[17px] sm:text-[20px] leading-relaxed mb-8" style={{ color: 'rgba(242,240,235,0.9)' }}>
+                    "My days are a lot simpler now. I used to get hit with spam constantly — probably 60, 70 percent of my calls were junk. Now those get blocked before they reach me, and when I do pick up I know it&apos;s a real customer. The ones I miss, the AI texts them right back so I&apos;m not losing work while I&apos;m out on a job. The website they built is way better than what I had too — more modern and it actually shows up on Google now."
                   </p>
-                  <div className="border-t-2 pt-5" style={{ borderColor: 'rgba(110,118,129,0.25)' }}>
-                    <div className="font-bold text-[14px]" style={{ color: t.placeholder ? '#6E7681' : '#F2F0EB' }}>{t.name}</div>
-                    <div className="font-mono text-[10px] uppercase tracking-widest mt-1" style={{ color: '#6E7681' }}>{t.business}</div>
+                </div>
+
+                {/* Services used */}
+                <div>
+                  <div className="flex flex-wrap gap-2 mb-6">
+                    {['MissedCall AI', 'Spam Call Screening', 'Custom Website'].map(s => (
+                      <span key={s} className="font-mono text-[10px] font-bold uppercase tracking-widest px-2.5 py-1.5" style={{ background: 'rgba(238,107,26,0.15)', color: '#EE6B1A' }}>
+                        {s}
+                      </span>
+                    ))}
+                  </div>
+                  <div className="border-t-2 pt-6" style={{ borderColor: 'rgba(110,118,129,0.25)' }}>
+                    <div className="font-bold text-[16px]" style={{ color: '#F2F0EB' }}>Master Gardener LLC</div>
+                    <div className="font-mono text-[10px] uppercase tracking-widest mt-1" style={{ color: '#6E7681' }}>Lawn Care &amp; Landscaping · West Michigan</div>
                   </div>
                 </div>
-              </ScrollReveal>
-            ))}
-          </div>
+              </div>
+
+            </div>
+          </ScrollReveal>
+
+          {/* More coming */}
+          <ScrollReveal>
+            <p className="mt-6 font-mono text-[11px] uppercase tracking-[0.2em] text-center" style={{ color: '#6E7681' }}>
+              More client stories coming soon
+            </p>
+          </ScrollReveal>
         </div>
       </section>
 
