@@ -21,10 +21,10 @@ export default function ROICalculator({ hideHeading = false }: { hideHeading?: b
       {!hideHeading && (
         <div className="text-center mb-6">
           <h2 className="text-[26px] md:text-[32px] font-black uppercase tracking-tight mb-2">
-            Calculate Your Revenue Loss
+            Rough Cost of Missed Calls
           </h2>
           <p className="text-[14px]" style={{ color: '#6E7681' }}>
-            See exactly how much revenue you&apos;re leaving on the table
+            A ballpark estimate based on your numbers. Every business is different.
           </p>
         </div>
       )}
@@ -110,28 +110,22 @@ export default function ROICalculator({ hideHeading = false }: { hideHeading?: b
         </div>
       </div>
 
-      {/* ROI highlight */}
+      {/* CTA */}
       <div className="p-5 text-center" style={{ background: '#1A4A70' }}>
-        <div className="font-mono text-[10px] font-bold uppercase tracking-[0.22em] mb-1" style={{ color: 'rgba(242,240,235,0.7)' }}>
-          Return on investment
-        </div>
-        <div className="text-[52px] font-black tabular-nums leading-none mb-1" style={{ color: '#EE6B1A' }}>
-          {roi}%
-        </div>
-        <div className="text-[14px] mb-5" style={{ color: 'rgba(242,240,235,0.7)' }}>
-          Every $1 spent returns ${(Number(roi) / 100 + 1).toFixed(2)}
+        <div className="text-[14px] mb-4" style={{ color: 'rgba(242,240,235,0.7)' }}>
+          These are rough numbers, not a guarantee. But if you want to see what it actually looks like for your business, book a call and we'll walk through it together.
         </div>
         <a
           href="/book"
           className="aa-btn inline-block px-7 py-3.5 text-[14px] font-bold uppercase tracking-wide"
           style={{ background: '#EE6B1A', color: '#16181C' }}
         >
-          Book your free demo →
+          Book a free call →
         </a>
       </div>
 
       <p className="text-center mt-3 text-[11px]" style={{ color: '#6E7681' }}>
-        *Assumes 30% conversion rate on missed calls. Actual results may vary.
+        Based on an estimated 30% conversion rate. Your actual results will depend on your trade, market, and average job value.
       </p>
     </div>
   )

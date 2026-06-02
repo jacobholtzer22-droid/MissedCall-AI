@@ -209,14 +209,14 @@ export default function HomePage() {
             <div className="text-center mb-8">
               <div className="inline-flex items-center gap-2 font-mono text-[11px] font-semibold uppercase tracking-[0.28em] mb-4">
                 <span className="inline-block h-2.5 w-2.5" style={{ background: '#EE6B1A' }} />
-                <span style={{ color: '#EE6B1A' }}>See the math</span>
+                <span style={{ color: '#EE6B1A' }}>Back of the napkin</span>
               </div>
               <h2 className="text-[clamp(2rem,5vw,3rem)] font-black uppercase leading-[0.95] tracking-tight">
-                How much are you<br />
-                <span style={{ color: '#EE6B1A' }}>leaving on the table?</span>
+                Rough idea of what<br />
+                <span style={{ color: '#EE6B1A' }}>missed calls cost you.</span>
               </h2>
               <p className="mt-4 text-[15px] max-w-md mx-auto" style={{ color: 'rgba(242,240,235,0.6)' }}>
-                Adjust the sliders to your business and see what MissedCall AI would recover for you every month.
+                Not an exact number — every business is different. But adjust the sliders to your situation and you'll get a reasonable ballpark.
               </p>
             </div>
             <ROICalculator />
