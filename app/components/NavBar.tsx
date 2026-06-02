@@ -23,9 +23,6 @@ export function NavBar() {
               <span className="text-[15px] font-extrabold tracking-tight" style={{ color: '#F2F0EB' }}>
                 Align and Acquire
               </span>
-              <span className="font-mono text-[9px] uppercase tracking-[0.22em] mt-0.5" style={{ color: '#6E7681' }}>
-                Missed-call lead capture
-              </span>
             </div>
           </Link>
 

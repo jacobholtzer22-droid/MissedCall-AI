@@ -21,8 +21,7 @@ type BookingPayload = {
   businessName: string
   // Pre-qualification answers from /book (marketing flow only)
   tradeType?: string // Step 2: what kind of service business
-  missedCalls?: string // Step 3: how many calls missed per week/month
-  extraNeeds?: string[] // Step 4: "need help with anything else" multi-select
+  extraNeeds?: string[] // Step 3: "what services are you inquiring about" multi-select
   interests?: string[] // legacy field — superseded by extraNeeds
   notes?: string
   smsConsent: boolean
@@ -293,7 +292,7 @@ export async function POST(request: NextRequest) {
   try {
     const body = (await request.json()) as BookingPayload
 
-    const { name, phone, email, businessName, tradeType, missedCalls, extraNeeds, notes, smsConsent, slotStart } = body
+    const { name, phone, email, businessName, tradeType, extraNeeds, notes, smsConsent, slotStart } = body
 
     // Step 4 answers drive the serviceType / calendar event title.
     const serviceType = deriveServiceType(extraNeeds)
@@ -377,7 +376,6 @@ export async function POST(request: NextRequest) {
             servicesInterested: extraList,
             message: [
               tradeType?.trim() ? `Service business type: ${tradeType.trim()}` : null,
-              missedCalls?.trim() ? `Missed calls: ${missedCalls.trim()}` : null,
               notes?.trim() || null,
             ]
               .filter(Boolean)
@@ -406,7 +404,6 @@ export async function POST(request: NextRequest) {
         notes: [
           `Business: ${businessName.trim()}`,
           tradeType?.trim() ? `Service business type: ${tradeType.trim()}` : null,
-          missedCalls?.trim() ? `Missed calls per week/month: ${missedCalls.trim()}` : null,
           extraList.length ? `Also interested in: ${extraList.join(', ')}` : null,
           notes?.trim() ? `Notes: ${notes.trim()}` : null,
         ]
@@ -457,7 +454,6 @@ export async function POST(request: NextRequest) {
               <p><strong>Email:</strong> ${email}</p>
               <p><strong>Business Name:</strong> ${businessName}</p>
               <p><strong>Service business type:</strong> ${tradeType?.trim() || 'Not specified'}</p>
-              <p><strong>Missed calls/week or month:</strong> ${missedCalls?.trim() || 'Not specified'}</p>
               <p><strong>Booking type:</strong> ${serviceType}</p>
               <p><strong>Also interested in:</strong> ${extraList.length ? extraList.join(', ') : 'Not specified'}</p>
               <p><strong>Time:</strong> ${dateLabel} at ${timeLabel} (Eastern Time)</p>
@@ -474,7 +470,7 @@ export async function POST(request: NextRequest) {
     if (telnyxFrom && ownerPhone && process.env.TELNYX_API_KEY) {
       try {
         const telnyx = new Telnyx({ apiKey: process.env.TELNYX_API_KEY })
-        const smsText = `📅 New strategy call booked with Align and Acquire.\nName: ${name}\nPhone: ${phone}\nEmail: ${email}\nBusiness: ${businessName}\nType: ${tradeType?.trim() || 'Not specified'}\nMissed calls: ${missedCalls?.trim() || 'Not specified'}\nBooking: ${serviceType}\nTime: ${dateLabel} at ${timeLabel} (ET).`
+        const smsText = `📅 New strategy call booked with Align and Acquire.\nName: ${name}\nPhone: ${phone}\nEmail: ${email}\nBusiness: ${businessName}\nType: ${tradeType?.trim() || 'Not specified'}\nBooking: ${serviceType}\nTime: ${dateLabel} at ${timeLabel} (ET).`
         await telnyx.messages.send({
           from: telnyxFrom,
           to: ownerPhone,

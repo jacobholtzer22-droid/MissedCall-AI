@@ -21,7 +21,6 @@ type Step =
   | 'qualify-business'
   | 'disqualified'
   | 'qualify-trade'
-  | 'qualify-misses'
   | 'qualify-needs'
   | 'calendar'
   | 'form'
@@ -44,7 +43,7 @@ type SelectedSlot = {
 // ─────────────────────────────────────────────────────────
 // Step progress config
 // ─────────────────────────────────────────────────────────
-const STEPS: Step[] = ['qualify-business', 'qualify-trade', 'qualify-misses', 'qualify-needs', 'calendar', 'form']
+const STEPS: Step[] = ['qualify-business', 'qualify-trade', 'qualify-needs', 'calendar', 'form']
 function stepNumber(s: Step) {
   const idx = STEPS.indexOf(s)
   return idx >= 0 ? idx + 1 : null
@@ -129,7 +128,6 @@ export default function BookPage() {
   const [selectedSlot, setSelectedSlot] = useState<SelectedSlot | null>(null)
 
   const [tradeType, setTradeType] = useState('')
-  const [missedCalls, setMissedCalls] = useState('')
   const [extraNeeds, setExtraNeeds] = useState<string[]>([])
 
   const [formData, setFormData] = useState({
@@ -221,7 +219,6 @@ export default function BookPage() {
           email: formData.email.trim(),
           businessName: formData.businessName.trim(),
           tradeType: tradeType.trim() || undefined,
-          missedCalls: missedCalls.trim() || undefined,
           extraNeeds,
           notes: formData.message.trim() || undefined,
           smsConsent: formData.smsConsent,
@@ -361,7 +358,7 @@ export default function BookPage() {
               />
               <button
                 type="button"
-                onClick={() => setStep('qualify-misses')}
+                onClick={() => setStep('qualify-needs')}
                 disabled={!tradeType.trim()}
                 className="aa-btn mt-6 w-full py-4 text-[15px] font-bold uppercase tracking-wide disabled:opacity-40 disabled:cursor-not-allowed"
                 style={{ background: '#EE6B1A', color: '#16181C' }}
@@ -372,53 +369,14 @@ export default function BookPage() {
           </div>
         )}
 
-        {/* ── Step 3: How many missed calls? ───────────── */}
-        {step === 'qualify-misses' && (
+        {/* ── Step 3: What services? ────────────────────── */}
+        {step === 'qualify-needs' && (
           <div>
             <BackBtn onClick={() => setStep('qualify-trade')} />
             <StepProgress current={step} />
             <div className="mb-8">
               <h1 className="text-[clamp(2rem,6vw,3.2rem)] font-black uppercase leading-[0.92] tracking-tight mb-3">
-                How many calls do<br />you miss a week?
-              </h1>
-            </div>
-            <Card>
-              <label htmlFor="qualify-misses-input" className="block font-mono text-[11px] font-bold uppercase tracking-[0.2em] mb-3" style={{ color: '#6E7681' }}>
-                Rough estimate is fine
-              </label>
-              <input
-                id="qualify-misses-input"
-                type="text"
-                value={missedCalls}
-                onChange={(e) => setMissedCalls(e.target.value)}
-                placeholder="e.g. 10–15 a week, not sure, a ton"
-                autoFocus
-                className={inputCls}
-                style={inputStyle}
-                onFocus={onFocus}
-                onBlur={onBlur}
-              />
-              <button
-                type="button"
-                onClick={() => setStep('qualify-needs')}
-                disabled={!missedCalls.trim()}
-                className="aa-btn mt-6 w-full py-4 text-[15px] font-bold uppercase tracking-wide disabled:opacity-40 disabled:cursor-not-allowed"
-                style={{ background: '#EE6B1A', color: '#16181C' }}
-              >
-                Next
-              </button>
-            </Card>
-          </div>
-        )}
-
-        {/* ── Step 4: Anything else? ────────────────────── */}
-        {step === 'qualify-needs' && (
-          <div>
-            <BackBtn onClick={() => setStep('qualify-misses')} />
-            <StepProgress current={step} />
-            <div className="mb-8">
-              <h1 className="text-[clamp(2rem,6vw,3.2rem)] font-black uppercase leading-[0.92] tracking-tight mb-3">
-                Need help with<br />anything else?
+                What services are<br />you inquiring about?
               </h1>
               <p className="text-[14px]" style={{ color: 'rgba(242,240,235,0.55)' }}>Select all that apply. Skip if not sure.</p>
             </div>

@@ -100,7 +100,7 @@ export default function MissedCallAIPage() {
       {/* ── Pain points ticker ───────────────────────────── */}
       <div className="border-y-2 py-4 overflow-hidden" style={{ borderColor: 'rgba(110,118,129,0.3)', background: 'rgba(242,240,235,0.03)' }}>
         <Marquee
-          items={["62% of callers won't leave a voicemail", "85% of missed calls never call back", "Average lost customer = $1,200", "Your competitors answer on the first ring", "Every missed call is a missed paycheck"]}
+          items={["62% of callers won't leave a voicemail", "85% of missed calls never call back", "78% hire the first business that responds", "Your competitors answer on the first ring", "Every missed call is a missed paycheck"]}
           separator="✦"
           speed="normal"
           className="text-[13px] font-mono uppercase tracking-widest"
@@ -117,11 +117,11 @@ export default function MissedCallAIPage() {
             {[
               { end: 62,   suffix: '%',  label: "of callers won't leave a voicemail" },
               { end: 85,   suffix: '%',  label: "of missed calls never call back" },
-              { end: 1200, prefix: '$',  label: "average value of a lost customer" },
+              { end: 78,   suffix: '%',  label: "hire the first business that responds" },
             ].map((s, i) => (
               <div key={i}>
                 <div style={{ color: '#EE6B1A' }}>
-                  <CountUp end={s.end} prefix={s.prefix} suffix={s.suffix} className="text-[clamp(1.8rem,5vw,3rem)] font-black tabular-nums" />
+                  <CountUp end={s.end} suffix={s.suffix} className="text-[clamp(1.8rem,5vw,3rem)] font-black tabular-nums" />
                 </div>
                 <p className="mt-2 text-[12.5px]" style={{ color: '#6E7681' }}>{s.label}</p>
               </div>

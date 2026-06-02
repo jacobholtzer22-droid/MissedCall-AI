@@ -14,9 +14,9 @@ import BrandFooter from '@/app/components/BrandFooter'
 function TestimonialPhoto() {
   const [errored, setErrored] = useState(false)
   return (
-    <div className="relative w-full overflow-hidden border-2" style={{ borderColor: 'rgba(110,118,129,0.35)', aspectRatio: '4/3' }}>
+    <div className="relative w-full overflow-hidden aspect-[4/5] lg:aspect-auto lg:h-full lg:min-h-[520px]" style={{ background: 'rgba(110,118,129,0.1)' }}>
       {errored ? (
-        <div className="w-full h-full flex items-center justify-center" style={{ background: 'rgba(110,118,129,0.1)' }}>
+        <div className="w-full h-full flex items-center justify-center">
           <ImageOff size={28} strokeWidth={1.5} style={{ color: '#6E7681' }} />
         </div>
       ) : (
@@ -24,7 +24,7 @@ function TestimonialPhoto() {
         <img
           src="/images/testimonial-master-gardener.jpg"
           alt="Jacob with Master Gardener LLC owner"
-          className="w-full h-full object-cover object-center"
+          className="w-full h-full object-cover object-[center_28%]"
           onError={() => setErrored(true)}
         />
       )}
