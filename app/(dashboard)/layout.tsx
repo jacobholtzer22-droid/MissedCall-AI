@@ -19,13 +19,10 @@ function getNavigation(business: {
 
   const items: { name: string; href: string; icon: string }[] = [
     { name: 'Overview', href: '/dashboard', icon: 'LayoutDashboard' },
-    { name: 'Conversations', href: '/dashboard/conversations', icon: 'MessagesSquare' },
+    // Leads = Missed Call (conversations) + Website leads, as two tabs.
+    { name: 'Leads', href: '/dashboard/leads', icon: 'MessagesSquare' },
     { name: 'Outreach', href: '/dashboard/outreach', icon: 'Send' },
   ]
-
-  if (features.hasMissedCallAi) {
-    items.push({ name: 'Website Leads', href: '/dashboard/website-leads', icon: 'Globe' })
-  }
 
   items.push({ name: 'Analytics', href: '/dashboard/analytics', icon: 'BarChart3' })
 

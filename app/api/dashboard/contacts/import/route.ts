@@ -88,6 +88,7 @@ export async function POST(request: Request) {
         zip: c.zip?.trim() || null,
         notes: notes || null,
         skipUpdateIfExists: true,
+        isClientContact: true, // Imported by the client → their own saved contact list
       })
 
       if (!result) {

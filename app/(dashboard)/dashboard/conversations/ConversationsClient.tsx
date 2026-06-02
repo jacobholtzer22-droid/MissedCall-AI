@@ -161,7 +161,7 @@ function EmptyState({ activeTab }: { activeTab: TabKey }) {
   )
 }
 
-export function ConversationsClient() {
+export function ConversationsClient({ embedded = false }: { embedded?: boolean } = {}) {
   const [conversations, setConversations] = useState<Conversation[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -212,7 +212,13 @@ export function ConversationsClient() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-950 text-white -m-6 md:-m-8">
+    <div
+      className={
+        embedded
+          ? 'bg-gray-950 text-white rounded-xl border border-gray-800 overflow-hidden'
+          : 'min-h-screen bg-gray-950 text-white -m-6 md:-m-8'
+      }
+    >
 
       {/* ── Tab bar — horizontally scrollable on mobile, no visible scrollbar ── */}
       <div className="border-b border-gray-800 bg-gray-900/30 px-2 sm:px-6">

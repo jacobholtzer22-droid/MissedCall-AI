@@ -161,7 +161,12 @@ export function ContactsClient() {
       <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Contacts</h1>
-          <p className="text-gray-500 mt-1">Manage your contacts and leads</p>
+          <p className="text-gray-500 mt-1">Your saved customer list</p>
+          <p className="text-sm text-gray-400 mt-1 max-w-2xl">
+            These are your own saved contacts. Once enabled, calls from these numbers will go to
+            voicemail instead of the automated text system. New leads from missed calls and your
+            website live under <span className="font-medium text-gray-500">Leads</span>.
+          </p>
         </div>
         <div className="flex flex-col gap-2 w-full md:w-auto md:flex-row md:items-center">
           <Link

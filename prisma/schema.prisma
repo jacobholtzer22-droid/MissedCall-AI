@@ -150,6 +150,7 @@ model Contact {
   state           String?
   zip             String?
   source          String?   // missed_call, website_form, manual, referral, google_ad
+  isClientContact Boolean   @default(false)  // True = client's own saved contact (their customer list / future voicemail list). Written & displayed only; NOT read during call routing.
   status          String?   @default("new")  // new, contacted, quoted, booked, completed, lost
   notes           String?   @db.Text
   lastContactedAt DateTime?

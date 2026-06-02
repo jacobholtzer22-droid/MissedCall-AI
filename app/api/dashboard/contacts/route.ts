@@ -20,12 +20,14 @@ export async function GET(request: Request) {
 
   const where: {
     businessId: string
-    source: { not: null }
+    isClientContact: boolean
     status?: string
     OR?: Array<{ name?: { contains: string; mode: 'insensitive' }; phoneNumber?: { contains: string }; email?: { contains: string; mode: 'insensitive' } }>
   } = {
     businessId: business.id,
-    source: { not: null },
+    // Contacts page = the client's own saved contacts only (their customer list).
+    // System-generated leads (missed_call / website_form / etc.) live in the Leads area.
+    isClientContact: true,
   }
 
   if (status && status !== 'all') {
@@ -112,6 +114,7 @@ export async function POST(request: Request) {
       state: body.state?.trim() || null,
       zip: body.zip?.trim() || null,
       source,
+      isClientContact: true, // Manually added by the client → their own saved contact
       notes: body.notes?.trim() || null,
       status: 'new',
     },

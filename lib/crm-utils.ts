@@ -20,6 +20,8 @@ export type FindOrCreateContactParams = {
   notes?: string | null
   /** When true, if contact exists by phone/email we skip (do not update) and return with isDuplicate: true */
   skipUpdateIfExists?: boolean
+  /** When true, newly-created contacts are marked as the client's own saved contact. Applied on CREATE only — never downgrades or upgrades an existing row. Defaults to false (DB default), so existing callers are unchanged. */
+  isClientContact?: boolean
 }
 
 /**
@@ -115,6 +117,7 @@ export async function findOrCreateContact(
     zip,
     notes,
     skipUpdateIfExists,
+    isClientContact,
   } = params
 
   const hasPhone = rawPhone?.trim() && normalizePhoneNumber(rawPhone.trim()).length >= 10
@@ -200,6 +203,7 @@ export async function findOrCreateContact(
         zip: zip?.trim() || null,
         notes: notes?.trim() || null,
         source,
+        isClientContact: isClientContact === true, // CREATE-only; defaults to false so existing callers are unchanged
         status: 'new',
         lastContactedAt: new Date(),
       },
