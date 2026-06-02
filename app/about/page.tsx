@@ -237,13 +237,11 @@ export default function AboutPage() {
             </div>
           </ScrollReveal>
 
-          {/* Photos */}
+          {/* Photo */}
           <ScrollReveal>
-            <div className="grid sm:grid-cols-2 gap-5 max-w-3xl mx-auto mb-14">
+            <div className="max-w-sm mx-auto mb-14">
               {/* jacob-headshot.jpg = professional headshot, gray background */}
               <FounderPhoto src="/images/jacob-headshot.jpg" alt="Jacob Holtzer, Founder of Align and Acquire" />
-              {/* jacob-desk.jpg = on-the-phone-at-desk working photo */}
-              <FounderPhoto src="/images/jacob-desk.jpg" alt="Jacob Holtzer on the phone, Align and Acquire" />
             </div>
           </ScrollReveal>
 
