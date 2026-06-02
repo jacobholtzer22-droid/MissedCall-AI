@@ -1,32 +1,63 @@
-import Image from 'next/image'
+'use client'
+
 import Link from 'next/link'
-import { ArrowRight, Quote, Wind, Leaf, Car, Droplets, Wrench } from 'lucide-react'
+import { useState } from 'react'
+import { ArrowRight, Quote, Wind, Leaf, Car, Droplets, Wrench, ImageOff } from 'lucide-react'
 import ScrollReveal from '@/app/components/ScrollReveal'
 import BrandFooter from '@/app/components/BrandFooter'
 
 // ─────────────────────────────────────────────────────────
-// Testimonial placeholder — swap in real ones tomorrow
+// Testimonial photo — client shaking hands with Jacob in
+// front of Master Gardener LLC truck.
+// File: public/images/testimonial-master-gardener.jpg
 // ─────────────────────────────────────────────────────────
-const TESTIMONIALS = [
-  {
-    quote: 'Testimonial coming soon.',
-    name: 'Client Name',
-    business: 'Business · Trade',
-    placeholder: true,
-  },
-  {
-    quote: 'Testimonial coming soon.',
-    name: 'Client Name',
-    business: 'Business · Trade',
-    placeholder: true,
-  },
-  {
-    quote: 'Testimonial coming soon.',
-    name: 'Client Name',
-    business: 'Business · Trade',
-    placeholder: true,
-  },
-]
+function TestimonialPhoto() {
+  const [errored, setErrored] = useState(false)
+  return (
+    <div className="relative w-full overflow-hidden border-2" style={{ borderColor: 'rgba(110,118,129,0.35)', aspectRatio: '4/3' }}>
+      {errored ? (
+        <div className="w-full h-full flex items-center justify-center" style={{ background: 'rgba(110,118,129,0.1)' }}>
+          <ImageOff size={28} strokeWidth={1.5} style={{ color: '#6E7681' }} />
+        </div>
+      ) : (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src="/images/testimonial-master-gardener.jpg"
+          alt="Jacob with Master Gardener LLC owner"
+          className="w-full h-full object-cover object-center"
+          onError={() => setErrored(true)}
+        />
+      )}
+    </div>
+  )
+}
+
+// ─────────────────────────────────────────────────────────
+// Founder photo with React-state fallback (no document API)
+// ─────────────────────────────────────────────────────────
+function FounderPhoto({ src, alt }: { src: string; alt: string }) {
+  const [errored, setErrored] = useState(false)
+  return (
+    <div className="relative border-2 overflow-hidden aspect-[3/4]" style={{ borderColor: '#16181C' }}>
+      {errored ? (
+        <div className="w-full h-full flex flex-col items-center justify-center gap-3" style={{ background: 'rgba(110,118,129,0.12)' }}>
+          <ImageOff size={28} strokeWidth={1.5} style={{ color: '#6E7681' }} />
+          <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-center px-4" style={{ color: '#6E7681' }}>
+            Photo coming soon
+          </span>
+        </div>
+      ) : (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={src}
+          alt={alt}
+          className="w-full h-full object-cover"
+          onError={() => setErrored(true)}
+        />
+      )}
+    </div>
+  )
+}
 
 // ─────────────────────────────────────────────────────────
 // Eyebrow
@@ -136,40 +167,59 @@ export default function AboutPage() {
       </section>
 
       {/* ── Testimonials ─────────────────────────────────── */}
-      <section className="aa-grid-bg">
+      <section id="testimonials" style={{ background: '#F2F0EB', color: '#16181C' }}>
         <div className="mx-auto max-w-7xl px-5 py-16 sm:px-8 lg:py-24">
           <ScrollReveal>
             <div className="mb-12">
               <Eyebrow label="What clients say" />
               <h2 className="text-[clamp(2rem,5vw,3.2rem)] font-black uppercase leading-[0.95] tracking-tight">
                 Results speak<br />
-                <span style={{ color: '#EE6B1A' }}>louder than claims.</span>
+                <span style={{ color: '#1A4A70' }}>louder than claims.</span>
               </h2>
             </div>
           </ScrollReveal>
 
-          <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-            {TESTIMONIALS.map((t, i) => (
-              <ScrollReveal key={i}>
-                <div
-                  className="border-2 p-7 flex flex-col h-full"
-                  style={{ borderColor: 'rgba(110,118,129,0.3)', background: 'rgba(242,240,235,0.03)' }}
-                >
-                  <Quote size={24} strokeWidth={1.5} className="mb-5 shrink-0" style={{ color: '#EE6B1A' }} />
-                  <p
-                    className="text-[15px] leading-relaxed flex-1 mb-6"
-                    style={{ color: t.placeholder ? '#6E7681' : 'rgba(242,240,235,0.88)', fontStyle: t.placeholder ? 'italic' : 'normal' }}
-                  >
-                    {t.placeholder ? '— Testimonial coming soon —' : `"${t.quote}"`}
+          {/* Featured testimonial — Master Gardener LLC */}
+          <ScrollReveal>
+            <div className="grid lg:grid-cols-[1fr_1.2fr] gap-0 border-2" style={{ borderColor: '#16181C' }}>
+
+              {/* Photo */}
+              <TestimonialPhoto />
+
+              {/* Quote */}
+              <div className="p-8 sm:p-10 flex flex-col justify-between" style={{ background: '#16181C' }}>
+                <div>
+                  <Quote size={36} strokeWidth={1.25} className="mb-6" style={{ color: '#EE6B1A' }} />
+                  <p className="text-[17px] sm:text-[20px] leading-relaxed mb-8" style={{ color: 'rgba(242,240,235,0.9)' }}>
+                    "My days are a lot simpler. Before this, probably 60 or 70 percent of my calls were spam. Now those get blocked and when I do pick up I know it&apos;s a real customer. The ones I miss, the AI texts them back right away so I&apos;m not losing work while I&apos;m out on a job. The website they built is way better than what I had before too. More modern, and it actually comes up on Google now."
                   </p>
-                  <div className="border-t-2 pt-5" style={{ borderColor: 'rgba(110,118,129,0.25)' }}>
-                    <div className="font-bold text-[14px]" style={{ color: t.placeholder ? '#6E7681' : '#F2F0EB' }}>{t.name}</div>
-                    <div className="font-mono text-[10px] uppercase tracking-widest mt-1" style={{ color: '#6E7681' }}>{t.business}</div>
+                </div>
+
+                {/* Services used */}
+                <div>
+                  <div className="flex flex-wrap gap-2 mb-6">
+                    {['MissedCall AI', 'Spam Call Screening', 'Custom Website'].map(s => (
+                      <span key={s} className="font-mono text-[10px] font-bold uppercase tracking-widest px-2.5 py-1.5" style={{ background: 'rgba(238,107,26,0.15)', color: '#EE6B1A' }}>
+                        {s}
+                      </span>
+                    ))}
+                  </div>
+                  <div className="border-t-2 pt-6" style={{ borderColor: 'rgba(110,118,129,0.25)' }}>
+                    <div className="font-bold text-[16px]" style={{ color: '#F2F0EB' }}>Master Gardener LLC</div>
+                    <div className="font-mono text-[10px] uppercase tracking-widest mt-1" style={{ color: '#6E7681' }}>Lawn Care &amp; Landscaping · West Michigan</div>
                   </div>
                 </div>
-              </ScrollReveal>
-            ))}
-          </div>
+              </div>
+
+            </div>
+          </ScrollReveal>
+
+          {/* More coming */}
+          <ScrollReveal>
+            <p className="mt-6 font-mono text-[11px] uppercase tracking-[0.2em] text-center" style={{ color: '#6E7681' }}>
+              More client stories coming soon
+            </p>
+          </ScrollReveal>
         </div>
       </section>
 
@@ -190,48 +240,10 @@ export default function AboutPage() {
           {/* Photos */}
           <ScrollReveal>
             <div className="grid sm:grid-cols-2 gap-5 max-w-3xl mx-auto mb-14">
-              {/* Photo 1 */}
-              <div className="relative border-2 overflow-hidden aspect-[3/4]" style={{ borderColor: '#16181C' }}>
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src="/images/jacob-1.jpg"
-                  alt="Jacob Holtzer — Founder, Align and Acquire"
-                  className="w-full h-full object-cover"
-                  onError={(e) => {
-                    const el = e.currentTarget as HTMLImageElement
-                    el.style.display = 'none'
-                    const parent = el.parentElement
-                    if (parent) {
-                      const placeholder = document.createElement('div')
-                      placeholder.className = 'w-full h-full flex items-center justify-center'
-                      placeholder.style.background = 'rgba(110,118,129,0.15)'
-                      placeholder.innerHTML = '<span style="color:#6E7681;font-size:12px;font-family:monospace;text-transform:uppercase;letter-spacing:0.2em">Photo coming soon</span>'
-                      parent.appendChild(placeholder)
-                    }
-                  }}
-                />
-              </div>
-              {/* Photo 2 */}
-              <div className="relative border-2 overflow-hidden aspect-[3/4]" style={{ borderColor: '#16181C' }}>
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src="/images/jacob-2.jpg"
-                  alt="Jacob Holtzer — Founder, Align and Acquire"
-                  className="w-full h-full object-cover"
-                  onError={(e) => {
-                    const el = e.currentTarget as HTMLImageElement
-                    el.style.display = 'none'
-                    const parent = el.parentElement
-                    if (parent) {
-                      const placeholder = document.createElement('div')
-                      placeholder.className = 'w-full h-full flex items-center justify-center'
-                      placeholder.style.background = 'rgba(110,118,129,0.15)'
-                      placeholder.innerHTML = '<span style="color:#6E7681;font-size:12px;font-family:monospace;text-transform:uppercase;letter-spacing:0.2em">Photo coming soon</span>'
-                      parent.appendChild(placeholder)
-                    }
-                  }}
-                />
-              </div>
+              {/* jacob-headshot.jpg = professional headshot, gray background */}
+              <FounderPhoto src="/images/jacob-headshot.jpg" alt="Jacob Holtzer, Founder of Align and Acquire" />
+              {/* jacob-desk.jpg = on-the-phone-at-desk working photo */}
+              <FounderPhoto src="/images/jacob-desk.jpg" alt="Jacob Holtzer on the phone, Align and Acquire" />
             </div>
           </ScrollReveal>
 
@@ -241,10 +253,17 @@ export default function AboutPage() {
               {/* Pull quote */}
               <div className="border-l-4 pl-7 mb-10" style={{ borderColor: '#EE6B1A' }}>
                 <p className="text-[20px] sm:text-[24px] font-black uppercase leading-[1.1] tracking-tight" style={{ color: '#16181C' }}>
-                  "You're getting on the phone directly with the founder who knows the ins and outs of the entire system he created himself."
+                  "I built this whole thing myself. When you call, you&apos;re getting me on the phone. No support team, no one who just pulled up your account. I know how every part of it works because I&apos;m the one who built it."
                 </p>
                 <div className="mt-4 flex items-center gap-3">
-                  <div className="grid h-10 w-10 place-items-center font-black text-[16px]" style={{ background: '#1A4A70', color: '#FFFFFF' }}>J</div>
+                  <div className="h-11 w-11 shrink-0 overflow-hidden border-2" style={{ borderColor: '#1A4A70' }}>
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src="/images/jacob-headshot.jpg"
+                      alt="Jacob Holtzer"
+                      className="h-full w-full object-cover object-top"
+                    />
+                  </div>
                   <div>
                     <div className="font-bold text-[14px]">Jacob Holtzer</div>
                     <div className="font-mono text-[10px] uppercase tracking-widest" style={{ color: '#6E7681' }}>Founder, Align and Acquire</div>
@@ -255,13 +274,13 @@ export default function AboutPage() {
               {/* Bio */}
               <div className="space-y-5 text-[15px] leading-relaxed" style={{ color: 'rgba(22,24,28,0.75)' }}>
                 <p>
-                  Jacob founded Align and Acquire with a straightforward conviction: trade businesses are underserved by the technology and marketing industry, and most of the tools being sold to them were built by people who have never run a service route in their life.
+                  I started Align and Acquire because trade businesses kept getting sold tools by people who had no idea how those businesses actually worked. Most of that software was built for offices, not job sites. I wanted to build something that actually made sense for the people using it.
                 </p>
                 <p>
-                  Every system at Align and Acquire — the AI text-back, the website infrastructure, the ad management workflows, the campaign tools — was designed, built, and is actively managed by Jacob. There is no layer of contractors, no offshore support team, no account manager standing between you and answers.
+                  Everything you're running on, I built. The missed-call AI, the website, the ads setup, the dashboard. It's all mine and I manage all of it. There's no team behind the scenes, no contractors, nothing outsourced. When something needs to be fixed or changed, it gets done the same day.
                 </p>
                 <p>
-                  When you call, Jacob picks up. When something needs to change, it changes the same day. When you're scaling and want to add a service, you talk to the person who will actually build it. That's not a promise made on a website — it's just how the operation works.
+                  When you call, I pick up. If you want to add a service or something isn't working right, you're talking to the person who's actually going to do it. That's just how it works here.
                 </p>
               </div>
 

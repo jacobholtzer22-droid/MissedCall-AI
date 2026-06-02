@@ -10,7 +10,7 @@ const SERVICES = [
   {
     icon: MessageSquare,
     title: 'MissedCall AI',
-    body: 'Every unanswered call is money walking out the door. Our AI texts back in seconds, captures the lead, and books the job — before they call your competitor.',
+    body: 'Every unanswered call is money walking out the door. Our AI texts back in seconds, captures the lead, and books the job before they call your competitor.',
     cta: 'See how it works',
     href: '/services#missedcall-ai',
     tag: 'Our flagship',
@@ -18,7 +18,7 @@ const SERVICES = [
   {
     icon: Globe,
     title: 'Websites + Google Ads',
-    body: "If they can't find you, they'll find someone else. A site that converts and ads that put you first — designed to work together, not as two separate tools.",
+    body: "If they can't find you, they'll find someone else. A site that converts and ads that put you first. Built to work together, not sold as two separate tools.",
     cta: 'Learn more',
     href: '/services#websites',
     tag: null,
@@ -66,7 +66,7 @@ export default function HomePage() {
               </h1>
 
               <p className="text-[16px] sm:text-[18px] leading-relaxed max-w-xl mb-8" style={{ color: 'rgba(242,240,235,0.72)' }}>
-                When you can't answer, our AI texts every missed caller back in seconds, qualifies the lead, and books the job — so you never miss a paycheck.
+                When you can't answer, our AI texts every missed caller back in seconds, qualifies the lead, and books the job. You never miss a paycheck.
               </p>
 
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center mb-8">
@@ -200,6 +200,66 @@ export default function HomePage() {
         </div>
       </section>
 
+      {/* ═══════════════════════════
+          Founder teaser
+          ═══════════════════════════ */}
+      <section style={{ background: '#F2F0EB', color: '#16181C' }}>
+        <div className="mx-auto max-w-5xl px-5 py-16 sm:px-8 lg:py-24">
+          <ScrollReveal>
+            {/* Title */}
+            <div className="max-w-2xl mx-auto mb-10">
+              <div className="inline-flex items-center gap-2 font-mono text-[11px] font-semibold uppercase tracking-[0.28em] mb-4">
+                <span className="inline-block h-2.5 w-2.5" style={{ background: '#EE6B1A' }} />
+                <span style={{ color: '#EE6B1A' }}>Who you&apos;re working with</span>
+              </div>
+              <h2 className="text-[clamp(2rem,5vw,3rem)] font-black uppercase leading-[0.95] tracking-tight">
+                When you call,<br />
+                <span style={{ color: '#1A4A70' }}>you reach the founder.</span>
+              </h2>
+            </div>
+
+            {/* Photos */}
+            <div className="grid sm:grid-cols-2 gap-5 max-w-2xl mx-auto mb-10">
+              <div className="border-2 overflow-hidden aspect-[3/4]" style={{ borderColor: '#16181C' }}>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src="/images/jacob-headshot.jpg" alt="Jacob Holtzer, Founder" className="w-full h-full object-cover object-top" />
+              </div>
+              <div className="border-2 overflow-hidden aspect-[3/4]" style={{ borderColor: '#16181C' }}>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src="/images/jacob-desk.jpg" alt="Jacob Holtzer on the phone" className="w-full h-full object-cover object-top" />
+              </div>
+            </div>
+
+            <div className="max-w-2xl mx-auto">
+              <div className="border-l-4 pl-6 mb-8" style={{ borderColor: '#EE6B1A' }}>
+                <p className="text-[18px] sm:text-[22px] font-black uppercase leading-[1.1] tracking-tight" style={{ color: '#16181C' }}>
+                  "I built this whole thing myself. When you call, you&apos;re getting me on the phone. No support team, no one who just pulled up your account. I know how every part of it works because I&apos;m the one who built it."
+                </p>
+                <div className="mt-4 flex items-center gap-3">
+                  <div className="h-10 w-10 shrink-0 overflow-hidden border-2" style={{ borderColor: '#1A4A70' }}>
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src="/images/jacob-headshot.jpg" alt="Jacob Holtzer" className="h-full w-full object-cover object-top" />
+                  </div>
+                  <div>
+                    <div className="font-bold text-[14px]">Jacob Holtzer</div>
+                    <div className="font-mono text-[10px] uppercase tracking-widest" style={{ color: '#6E7681' }}>Founder, Align and Acquire</div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex flex-col sm:flex-row gap-3">
+                <Link href="/about" className="aa-btn inline-flex items-center gap-2 px-5 py-3.5 text-[14px] font-bold uppercase tracking-wide" style={{ background: '#16181C', color: '#F2F0EB' }}>
+                  About us <ArrowRight size={15} strokeWidth={2.5} />
+                </Link>
+                <Link href="/about#testimonials" className="aa-btn-ghost inline-flex items-center gap-2 border-2 px-5 py-3.5 text-[14px] font-bold uppercase tracking-wide" style={{ borderColor: '#16181C', color: '#16181C' }}>
+                  See testimonials <ArrowRight size={15} strokeWidth={2.5} />
+                </Link>
+              </div>
+            </div>
+          </ScrollReveal>
+        </div>
+      </section>
+
       {/* ════════════════════
           ROI Calculator
           ════════════════════ */}
@@ -209,14 +269,14 @@ export default function HomePage() {
             <div className="text-center mb-8">
               <div className="inline-flex items-center gap-2 font-mono text-[11px] font-semibold uppercase tracking-[0.28em] mb-4">
                 <span className="inline-block h-2.5 w-2.5" style={{ background: '#EE6B1A' }} />
-                <span style={{ color: '#EE6B1A' }}>See the math</span>
+                <span style={{ color: '#EE6B1A' }}>Back of the napkin</span>
               </div>
               <h2 className="text-[clamp(2rem,5vw,3rem)] font-black uppercase leading-[0.95] tracking-tight">
-                How much are you<br />
-                <span style={{ color: '#EE6B1A' }}>leaving on the table?</span>
+                Rough idea of what<br />
+                <span style={{ color: '#EE6B1A' }}>missed calls cost you.</span>
               </h2>
               <p className="mt-4 text-[15px] max-w-md mx-auto" style={{ color: 'rgba(242,240,235,0.6)' }}>
-                Adjust the sliders to your business and see what MissedCall AI would recover for you every month.
+                Not an exact number — every business is different. But adjust the sliders to your situation and you&apos;ll get a reasonable ballpark.
               </p>
             </div>
             <ROICalculator />
@@ -244,10 +304,13 @@ export default function HomePage() {
                 I&apos;m Jacob. I don&apos;t have a team of 50. I don&apos;t have a fancy office. What I do have is a system that works and a phone that I actually answer.
               </p>
               <p className="text-[15px] leading-relaxed mb-8" style={{ color: 'rgba(242,240,235,0.72)' }}>
-                Every line of code is mine. When you call, I pick up. When something breaks, I fix it — no account managers, no ticket systems.
+                Every line of code is mine. When you call, I pick up. When something breaks, I fix it. No account managers, no ticket systems.
               </p>
               <div className="flex items-center gap-4">
-                <div className="grid h-12 w-12 place-items-center font-black text-[20px] shrink-0" style={{ background: '#1A4A70', color: '#FFFFFF' }}>J</div>
+                <div className="h-12 w-12 shrink-0 overflow-hidden border-2" style={{ borderColor: '#1A4A70' }}>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src="/images/jacob-headshot.jpg" alt="Jacob Holtzer" className="h-full w-full object-cover object-top" />
+                </div>
                 <div>
                   <p className="font-bold text-[15px]">Jacob Holtzer</p>
                   <p className="text-[12.5px]" style={{ color: '#6E7681' }}>Founder &amp; the only person you&apos;ll ever talk to</p>
@@ -316,7 +379,7 @@ export default function HomePage() {
               <span style={{ color: '#EE6B1A' }}>Seriously.</span>
             </h2>
             <p className="text-[16px] sm:text-[18px] leading-relaxed max-w-xl mx-auto mb-9" style={{ color: 'rgba(242,240,235,0.72)' }}>
-              Whether you need an AI that never misses a call or a website that actually converts — let&apos;s make it happen.
+              Whether you need an AI that never misses a call or a website that actually converts. Let&apos;s make it happen.
             </p>
             <div className="flex flex-col items-center gap-3 sm:flex-row sm:justify-center">
               <Link

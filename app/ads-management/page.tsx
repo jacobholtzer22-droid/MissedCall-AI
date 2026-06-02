@@ -6,13 +6,13 @@ import BrandFooter from '@/app/components/BrandFooter'
 
 const features = [
   'Google Ads account setup and configuration',
-  'Keyword research — finding what your customers actually search for',
-  'Campaign creation — ad copy, targeting, bid strategy',
-  'Negative keyword management — so you don\'t waste money on junk clicks',
-  'Monthly optimization — pausing what doesn\'t work, scaling what does',
-  'A/B testing — testing different ads to find what gets the most clicks',
-  'Monthly performance reports — you\'ll always know where your money is going',
-  'Ad extensions — sitelinks, callouts, call buttons to make your ads stand out',
+  'Keyword research: finding what your customers actually search for',
+  'Campaign creation: ad copy, targeting, bid strategy',
+  'Negative keyword management so you don\'t waste money on junk clicks',
+  'Monthly optimization: pausing what doesn\'t work, scaling what does',
+  'A/B testing: different ads, real data, find what converts',
+  'Monthly performance reports so you always know where your money is going',
+  'Ad extensions: sitelinks, callouts, call buttons to make your ads stand out',
 ]
 
 const steps = [
@@ -144,7 +144,7 @@ export default function AdsManagementPage() {
               <div>
                 <div className="font-mono text-[11px] font-bold uppercase tracking-[0.2em] mb-2" style={{ color: '#EE6B1A' }}>Important note</div>
                 <p className="text-[14.5px] leading-relaxed" style={{ color: '#F2F0EB' }}>
-                  Your ad budget goes directly to Google — it never touches our hands. Our fee covers the strategy, setup, and ongoing management. You control how much you spend on ads.
+                  Your ad budget goes directly to Google. It never touches our hands. Our fee covers the strategy, setup, and ongoing management. You control how much you spend on ads.
                 </p>
               </div>
             </div>
@@ -180,7 +180,7 @@ export default function AdsManagementPage() {
                 </div>
               </div>
               <p className="text-[12.5px] border-t-2 pt-5 mb-7" style={{ borderColor: 'rgba(110,118,129,0.2)', color: '#6E7681' }}>
-                Ad spend goes directly to Google — you choose the budget.
+                Ad spend goes directly to Google. You choose the budget.
               </p>
               <Link href="/book" className="aa-btn w-full inline-flex items-center justify-center gap-2 py-4 text-[14px] font-bold uppercase tracking-wide" style={{ background: '#16181C', color: '#F2F0EB' }}>
                 Book a free call <ArrowRight size={15} strokeWidth={2.5} />

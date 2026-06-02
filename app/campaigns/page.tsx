@@ -8,7 +8,7 @@ import BrandFooter from '@/app/components/BrandFooter'
 
 const steps = [
   { title: 'Import your clients', description: 'Upload your existing client list or let new leads flow in automatically from MissedCall AI and your website.', icon: Upload },
-  { title: 'Build your campaign', description: 'Write your message, pick email or SMS (or both), choose who gets it — all clients, new leads, past customers, or custom.', icon: Mail },
+  { title: 'Build your campaign', description: 'Write your message, pick email or SMS (or both), choose who gets it: all clients, new leads, past customers, or a custom group.', icon: Mail },
   { title: 'Hit send', description: 'Blast it out to everyone at once. Track opens, clicks, and responses right from your dashboard.', icon: Send },
 ]
 
@@ -16,7 +16,7 @@ const features = [
   { title: 'Mass SMS Blasts', description: 'Text your whole client list at once with promotions, updates, or reminders.', icon: MessageSquare },
   { title: 'Mass Email Campaigns', description: 'Professional emails to stay top of mind with your customers.', icon: Mail },
   { title: 'Client Segmentation', description: 'Send to all clients, just new leads, past customers, or build custom lists.', icon: Users },
-  { title: 'Campaign Analytics', description: 'See who opened, who clicked, who replied — all from your dashboard.', icon: BarChart3 },
+  { title: 'Campaign Analytics', description: 'See who opened, who clicked, who replied. All from your dashboard.', icon: BarChart3 },
   { title: 'Automated Follow-ups', description: 'Set up drip sequences that go out automatically after someone becomes a lead.', icon: RefreshCw },
   { title: 'Client History', description: 'Every message, every interaction, every job tied to each client.', icon: History },
 ]
@@ -48,7 +48,7 @@ export default function CampaignsPage() {
             <span style={{ color: '#EE6B1A' }}>Instant impact.</span>
           </h1>
           <p className="text-[16px] sm:text-[18px] leading-relaxed max-w-3xl mx-auto mb-8" style={{ color: 'rgba(242,240,235,0.65)' }}>
-            Send mass email and SMS campaigns to your entire client list — past customers, new leads, everyone. Built right into your dashboard.
+            Send mass email and SMS campaigns to your entire client list: past customers, new leads, everyone. Built right into your dashboard.
           </p>
           <div className="flex flex-col items-center gap-3 sm:flex-row sm:justify-center">
             <button onClick={() => scrollTo('demo')} className="aa-btn inline-flex items-center gap-2 px-6 py-4 text-[15px] font-bold uppercase tracking-wide" style={{ background: '#EE6B1A', color: '#16181C' }}>
@@ -202,7 +202,7 @@ export default function CampaignsPage() {
                 </div>
               </div>
               <div className="border-t-2 pt-5 text-[13px] mb-7" style={{ borderColor: 'rgba(110,118,129,0.25)', color: '#6E7681' }}>
-                <span style={{ color: '#F2F0EB', fontWeight: 600 }}>Requires CRM dashboard.</span> Available as add-on to any package. On Pro or All In you already have the CRM — just add Campaigns ($75/mo).
+                <span style={{ color: '#F2F0EB', fontWeight: 600 }}>Requires CRM dashboard.</span> Available as add-on to any package. On Pro or All In you already have the CRM. Just add Campaigns ($75/mo).
               </div>
               <Link href="/book" className="aa-btn w-full inline-flex items-center justify-center gap-2 py-4 text-[14px] font-bold uppercase tracking-wide" style={{ background: '#EE6B1A', color: '#16181C' }}>
                 Add campaigns to my plan <ArrowRight size={15} strokeWidth={2.5} />

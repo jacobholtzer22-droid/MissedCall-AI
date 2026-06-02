@@ -3,9 +3,9 @@
 import Link from 'next/link'
 import { useState } from 'react'
 import {
-  Check, X, ArrowRight, ShieldBan, PhoneMissed, Globe,
+  Check, ArrowRight, ShieldBan, PhoneMissed, Globe,
   BarChart3, Megaphone, CalendarCheck, LayoutDashboard,
-  ChevronDown, ChevronUp, Calculator,
+  Calculator,
 } from 'lucide-react'
 import ScrollReveal from '../components/ScrollReveal'
 import BrandFooter from '../components/BrandFooter'
@@ -19,9 +19,10 @@ type Tier = {
   price: number
   setup: number
   popular: boolean
-  description: string
+  description?: string
   includes: string[]
   notIncluded: string[]
+  addOns?: string[]
 }
 
 type AlaCarteService = {
@@ -34,176 +35,85 @@ type AlaCarteService = {
 }
 
 // ─────────────────────────────────────────────────────────
-// Data
+// Data — updated prices + clearer feature descriptions
 // ─────────────────────────────────────────────────────────
 const TIERS: Tier[] = [
   {
-    name: 'Capture',
-    tagline: 'Stop losing leads you\'re already getting',
-    price: 200,
+    name: 'Catch',
+    tagline: 'Stop losing the leads you already get.',
+    price: 349,
     setup: 400,
     popular: false,
-    description: 'Your phone rings and your website gets traffic every day. The question is how much of that you\'re actually converting. MissedCall AI catches every missed call. Your custom website turns visitors into quote requests.',
     includes: [
-      'MissedCall AI — 24/7 AI text-back',
-      'Custom website (built in 3 days)',
-      'Unlimited website changes',
-      'Lead capture + CRM dashboard',
-      'Calendar integration',
+      'MissedCall AI: every missed caller gets an instant text back',
+      'Custom Website: built from scratch, ranks on Google, unlimited same-day updates',
+      'Leads Dashboard: all contacts from missed calls and website leads in one place',
     ],
-    notIncluded: ['Google Ads management', 'Mass email & SMS campaigns'],
+    notIncluded: [],
+    addOns: ['Spam Call Screening available as add-on (+$75/mo)'],
   },
   {
-    name: 'Scale',
-    tagline: 'Capture more and get found by more',
-    price: 290,
-    setup: 400,
-    popular: true,
-    description: 'You\'re not just recovering missed leads anymore — you\'re generating new ones. Google Ads puts you at the top when someone in your area searches for what you do. Everything in Capture, plus a managed ads pipeline that works while you\'re on the job.',
-    includes: [
-      'Everything in Capture',
-      'Google Ads setup & management',
-      'Monthly ad performance reports',
-      'Keyword research & optimization',
-      'A/B ad testing',
-    ],
-    notIncluded: ['Mass email & SMS campaigns'],
-  },
-  {
-    name: 'Full System',
-    tagline: 'The complete growth engine, running together',
-    price: 385,
+    name: 'Grow',
+    tagline: 'Generate new leads and bring old ones back.',
+    price: 549,
     setup: 500,
-    popular: false,
-    description: 'Every lead captured. Every past customer re-engaged. Every search result owned. This is what a fully scaled trade business looks like — all of it managed by one team, built to work together.',
+    popular: true,
     includes: [
-      'Everything in Scale',
-      'Mass email & SMS campaigns',
-      'Campaign analytics & tracking',
-      'Automated follow-up sequences',
-      'Priority setup & support',
+      'Everything in Catch',
+      'Calendar Integration: customers book appointments online',
+      'Google Ads Management: paid search, keyword research, bid optimization, A/B testing and plain-English monthly reports',
+      'Mass Email Sending: reach your whole contact list at once with open and click tracking',
+      'Mass SMS Sending: text your full contact list with response tracking',
+      'Priority setup and support',
+    ],
+    notIncluded: [],
+    addOns: ['Spam Call Screening available as add-on (+$75/mo)'],
+  },
+  {
+    name: 'Automate',
+    tagline: 'Let AI run it while you\'re off the clock.',
+    price: 900,
+    setup: 750,
+    popular: false,
+    includes: [
+      'Everything in Grow',
+      'AI Website Chatbot: answers visitor questions 24/7',
+      'AI Email Responses: reads and replies to incoming email automatically',
+      'AI Google Review Manager: monitors and posts review responses',
+      'Full Leads Dashboard AI Integration: auto-updates contacts, follow-ups and notes',
+      'Spam Call Screening: included',
     ],
     notIncluded: [],
   },
 ]
 
+// À la carte — priced so bundles are clearly the better deal
+// À la carte — standalone pricing. Two or more services together will cost
+// significantly more than a bundle, which is intentional.
 const ALA_CARTE: AlaCarteService[] = [
-  { id: 'missedcall', label: 'MissedCall AI',          icon: PhoneMissed,      monthlyPrice: 225, setupPrice: 250, description: '24/7 AI text-back, lead capture, calendar booking' },
-  { id: 'website',    label: 'Custom Website',          icon: Globe,            monthlyPrice: 75,  setupPrice: 200, description: 'Built from scratch, SEO-ready, unlimited changes' },
-  { id: 'ads',        label: 'Google Ads Management',   icon: BarChart3,        monthlyPrice: 125, setupPrice: 250, description: 'Setup, keyword management, monthly optimization' },
-  { id: 'campaigns',  label: 'Mass Email & SMS',        icon: Megaphone,        monthlyPrice: 75,  setupPrice: 100, description: 'Unlimited campaigns, list segmentation, analytics' },
-  { id: 'crm',        label: 'CRM Dashboard',           icon: LayoutDashboard,  monthlyPrice: 75,  setupPrice: 0,   description: 'Client records, activity timeline, contact management' },
-  { id: 'calendar',   label: 'Calendar Integration',    icon: CalendarCheck,    monthlyPrice: 75,  setupPrice: 0,   description: 'Google Calendar sync, online booking, reminders' },
+  { id: 'missedcall', label: 'MissedCall AI',         icon: PhoneMissed,     monthlyPrice: 349, setupPrice: 299, description: 'Automatic text-back for every missed caller, lead capture, calendar booking' },
+  { id: 'website',    label: 'Custom Website',         icon: Globe,           monthlyPrice: 179, setupPrice: 250, description: 'Built from scratch, shows up on Google, unlimited same-day updates' },
+  { id: 'ads',        label: 'Google Ads Management',  icon: BarChart3,       monthlyPrice: 225, setupPrice: 300, description: '' },
+  { id: 'campaigns',  label: 'Email & SMS Campaigns',  icon: Megaphone,       monthlyPrice: 175, setupPrice: 150, description: 'Blast messages to your full contact list, unlimited campaigns' },
+  { id: 'crm',        label: 'Leads Dashboard',        icon: LayoutDashboard, monthlyPrice: 129, setupPrice: 0,   description: 'All contacts from missed calls and website leads in one place' },
+  { id: 'calendar',   label: 'Calendar Integration',   icon: CalendarCheck,   monthlyPrice: 99,  setupPrice: 0,   description: 'Online booking synced to your Google Calendar' },
+  { id: 'spam',       label: 'Spam Call Screening',    icon: ShieldBan,       monthlyPrice: 89,  setupPrice: 150, description: 'Blocks robocalls before they reach you. Only real customers get through.' },
 ]
 
 // ─────────────────────────────────────────────────────────
-// "See your numbers" preview panel
-// ─────────────────────────────────────────────────────────
-function NumbersPreview({
-  tier,
-  onClose,
-}: {
-  tier: Tier
-  onClose: () => void
-}) {
-  const [missedCalls, setMissedCalls] = useState(20)
-  const [jobValue, setJobValue] = useState(300)
-
-  const convRate = 0.3
-  const recaptured = Math.round(missedCalls * convRate)
-  const monthlyRecovery = recaptured * jobValue
-  const netGain = monthlyRecovery - tier.price
-  const roi = tier.price > 0 ? Math.round((netGain / tier.price) * 100) : 0
-
-  return (
-    <div className="mt-4 border-2 p-6 animate-[aa-slide-down_0.22s_ease-out]" style={{ borderColor: '#EE6B1A', background: 'rgba(238,107,26,0.06)' }}>
-      <div className="flex items-center justify-between mb-5">
-        <div className="flex items-center gap-2">
-          <Calculator size={16} strokeWidth={2.25} style={{ color: '#EE6B1A' }} />
-          <span className="font-mono text-[11px] font-bold uppercase tracking-[0.2em]" style={{ color: '#EE6B1A' }}>
-            Your numbers — {tier.name}
-          </span>
-        </div>
-        <button
-          type="button"
-          onClick={onClose}
-          className="font-mono text-[10px] uppercase tracking-widest transition-colors"
-          style={{ color: '#6E7681' }}
-        >
-          Close ✕
-        </button>
-      </div>
-
-      {/* Inputs */}
-      <div className="grid sm:grid-cols-2 gap-5 mb-5">
-        <div>
-          <div className="flex items-center justify-between mb-2">
-            <label className="font-mono text-[10px] uppercase tracking-[0.18em]" style={{ color: '#6E7681' }}>
-              Missed calls / month
-            </label>
-            <span className="font-black text-[18px] tabular-nums" style={{ color: '#EE6B1A' }}>{missedCalls}</span>
-          </div>
-          <input
-            type="range" min={1} max={100} value={missedCalls}
-            onChange={e => setMissedCalls(Number(e.target.value))}
-            className="aa-slider w-full h-2 appearance-none"
-            style={{ accentColor: '#EE6B1A', background: 'rgba(110,118,129,0.3)' }}
-          />
-        </div>
-        <div>
-          <div className="flex items-center justify-between mb-2">
-            <label className="font-mono text-[10px] uppercase tracking-[0.18em]" style={{ color: '#6E7681' }}>
-              Avg job value
-            </label>
-            <span className="font-black text-[18px] tabular-nums" style={{ color: '#EE6B1A' }}>${jobValue}</span>
-          </div>
-          <input
-            type="range" min={100} max={2000} step={50} value={jobValue}
-            onChange={e => setJobValue(Number(e.target.value))}
-            className="aa-slider w-full h-2 appearance-none"
-            style={{ accentColor: '#EE6B1A', background: 'rgba(110,118,129,0.3)' }}
-          />
-        </div>
-      </div>
-
-      {/* Results */}
-      <div className="grid grid-cols-3 gap-3 mb-4">
-        <div className="border-2 p-3 text-center" style={{ borderColor: 'rgba(110,118,129,0.3)' }}>
-          <div className="text-[22px] font-black tabular-nums" style={{ color: '#F2F0EB' }}>{recaptured}</div>
-          <div className="font-mono text-[9px] uppercase tracking-wider mt-1" style={{ color: '#6E7681' }}>Jobs recovered</div>
-        </div>
-        <div className="border-2 p-3 text-center" style={{ borderColor: '#EE6B1A', background: 'rgba(238,107,26,0.1)' }}>
-          <div className="text-[22px] font-black tabular-nums" style={{ color: '#EE6B1A' }}>${monthlyRecovery.toLocaleString()}</div>
-          <div className="font-mono text-[9px] uppercase tracking-wider mt-1" style={{ color: '#6E7681' }}>Revenue/mo</div>
-        </div>
-        <div className="border-2 p-3 text-center" style={{ borderColor: 'rgba(26,74,112,0.5)', background: 'rgba(26,74,112,0.1)' }}>
-          <div className="text-[22px] font-black tabular-nums" style={{ color: '#F2F0EB' }}>{roi}%</div>
-          <div className="font-mono text-[9px] uppercase tracking-wider mt-1" style={{ color: '#6E7681' }}>ROI</div>
-        </div>
-      </div>
-      <p className="font-mono text-[10px]" style={{ color: '#6E7681' }}>
-        *Estimates assume 30% conversion rate on recovered missed calls. Your actual results may vary.
-      </p>
-    </div>
-  )
-}
-
-// ─────────────────────────────────────────────────────────
-// Tier card
+// Tier card — no "See Your Numbers" button
 // ─────────────────────────────────────────────────────────
 function TierCard({ tier }: { tier: Tier }) {
-  const [showPreview, setShowPreview] = useState(false)
-
   return (
     <div
-      className="relative border-2 p-7 sm:p-8 flex flex-col h-full"
+      className="relative border-2 p-6 sm:p-7 flex flex-col h-full"
       style={tier.popular
         ? { borderColor: '#EE6B1A', background: '#16181C', color: '#F2F0EB' }
         : { borderColor: 'rgba(110,118,129,0.4)', background: '#16181C', color: '#F2F0EB' }
       }
     >
       {tier.popular && (
-        <span className="absolute -top-3.5 left-7 px-3 py-1 font-mono text-[10px] font-bold uppercase tracking-widest" style={{ background: '#EE6B1A', color: '#16181C' }}>
+        <span className="absolute -top-3.5 left-6 px-3 py-1 font-mono text-[10px] font-bold uppercase tracking-widest" style={{ background: '#EE6B1A', color: '#16181C' }}>
           Most popular
         </span>
       )}
@@ -211,68 +121,153 @@ function TierCard({ tier }: { tier: Tier }) {
       <div className="font-mono text-[11px] font-bold uppercase tracking-[0.2em] mb-1" style={{ color: tier.popular ? '#EE6B1A' : '#6E7681' }}>
         {tier.name}
       </div>
-      <div className="text-[14px] mb-5 leading-snug" style={{ color: 'rgba(242,240,235,0.6)' }}>
+      <div className="text-[13px] mb-4 leading-snug" style={{ color: 'rgba(242,240,235,0.55)' }}>
         {tier.tagline}
       </div>
 
-      <div className="text-[12px] mb-1" style={{ color: '#6E7681' }}>${tier.setup} one-time setup</div>
-      <div className="flex items-end gap-1 mb-5">
-        <span className="text-[26px] font-black leading-none">$</span>
-        <span className="text-[54px] font-black leading-none tabular-nums">{tier.price}</span>
-        <span className="mb-1.5 text-[14px]" style={{ color: '#6E7681' }}>/mo</span>
+      <div className="text-[11px] mb-1" style={{ color: '#6E7681' }}>${tier.setup} one-time setup</div>
+      <div className="flex items-end gap-1 mb-4">
+        <span className="text-[22px] font-black leading-none">$</span>
+        <span className="text-[48px] font-black leading-none tabular-nums">{tier.price}</span>
+        <span className="mb-1.5 text-[13px]" style={{ color: '#6E7681' }}>/mo</span>
       </div>
 
-      <p className="text-[13.5px] leading-relaxed mb-6" style={{ color: 'rgba(242,240,235,0.65)' }}>
-        {tier.description}
-      </p>
-
-      <ul className="space-y-2.5 mb-4 flex-1">
+      <ul className="space-y-2 flex-1 mb-5">
         {tier.includes.map((f, i) => (
-          <li key={i} className="flex items-start gap-2.5 text-[13px]">
-            <Check size={15} strokeWidth={3} className="shrink-0 mt-0.5" style={{ color: '#EE6B1A' }} />
-            <span style={{ color: 'rgba(242,240,235,0.88)' }}>{f}</span>
+          <li key={i} className="flex items-start gap-2.5 text-[12.5px]">
+            <Check size={14} strokeWidth={3} className="shrink-0 mt-0.5" style={{ color: '#EE6B1A' }} />
+            <span style={{ color: 'rgba(242,240,235,0.85)' }}>{f}</span>
           </li>
         ))}
-        {tier.notIncluded.map((f, i) => (
-          <li key={i} className="flex items-start gap-2.5 text-[13px]">
-            <X size={15} strokeWidth={2.5} className="shrink-0 mt-0.5" style={{ color: '#6E7681' }} />
-            <span style={{ color: '#6E7681', textDecoration: 'line-through' }}>{f}</span>
+        {tier.addOns?.map((f, i) => (
+          <li key={`addon-${i}`} className="flex items-start gap-2.5 text-[12.5px] mt-1 pt-2 border-t" style={{ borderColor: 'rgba(110,118,129,0.2)' }}>
+            <span className="shrink-0 mt-0.5 font-black text-[13px] leading-none" style={{ color: '#6E7681' }}>+</span>
+            <span style={{ color: '#6E7681' }}>{f}</span>
           </li>
         ))}
       </ul>
 
-      {/* See your numbers */}
-      <button
-        type="button"
-        onClick={() => setShowPreview(v => !v)}
-        className="flex items-center justify-between w-full px-4 py-2.5 mb-4 border-2 font-mono text-[11px] font-bold uppercase tracking-[0.18em] transition-colors"
-        style={{
-          borderColor: showPreview ? '#EE6B1A' : 'rgba(110,118,129,0.35)',
-          color: showPreview ? '#EE6B1A' : '#6E7681',
-          background: 'transparent',
-        }}
-      >
-        See your numbers
-        {showPreview
-          ? <ChevronUp size={14} strokeWidth={2.5} />
-          : <ChevronDown size={14} strokeWidth={2.5} />
-        }
-      </button>
-
-      {showPreview && (
-        <NumbersPreview tier={tier} onClose={() => setShowPreview(false)} />
-      )}
-
       <Link
         href="/book"
-        className="aa-btn mt-4 inline-flex items-center justify-center gap-2 px-5 py-3.5 text-[14px] font-bold uppercase tracking-wide"
+        className="aa-btn inline-flex items-center justify-center gap-2 px-5 py-3.5 text-[13px] font-bold uppercase tracking-wide"
         style={tier.popular
           ? { background: '#EE6B1A', color: '#16181C' }
-          : { background: 'rgba(242,240,235,0.1)', color: '#F2F0EB', border: '2px solid rgba(110,118,129,0.35)' }
+          : { background: 'rgba(242,240,235,0.08)', color: '#F2F0EB', border: '2px solid rgba(110,118,129,0.35)' }
         }
       >
-        Get started <ArrowRight size={15} strokeWidth={2.5} />
+        Get started <ArrowRight size={14} strokeWidth={2.5} />
       </Link>
+    </div>
+  )
+}
+
+// ─────────────────────────────────────────────────────────
+// Standalone "See Your Numbers" section
+// ─────────────────────────────────────────────────────────
+function NumbersSection() {
+  const [selectedTier, setSelectedTier] = useState(0)
+  const [missedCalls, setMissedCalls] = useState(20)
+  const [jobValue, setJobValue] = useState(300)
+
+  const tier = TIERS[selectedTier]
+  const recaptured = Math.round(missedCalls * 0.3)
+  const monthlyRecovery = recaptured * jobValue
+  const netGain = monthlyRecovery - tier.price
+  const roi = tier.price > 0 ? Math.round((netGain / tier.price) * 100) : 0
+
+  return (
+    <div className="border-2" style={{ borderColor: 'rgba(110,118,129,0.35)', background: 'rgba(242,240,235,0.02)' }}>
+      {/* Header */}
+      <div className="border-b-2 px-7 py-5" style={{ borderColor: 'rgba(110,118,129,0.25)' }}>
+        <div className="flex items-center gap-2 mb-1">
+          <Calculator size={15} strokeWidth={2.25} style={{ color: '#EE6B1A' }} />
+          <span className="font-mono text-[11px] font-bold uppercase tracking-[0.22em]" style={{ color: '#EE6B1A' }}>
+            See your numbers
+          </span>
+        </div>
+        <p className="text-[14px]" style={{ color: '#6E7681' }}>
+          Pick a plan and adjust the sliders to your business. See how fast it pays for itself.
+        </p>
+      </div>
+
+      {/* Tier selector tabs */}
+      <div className="grid grid-cols-3 border-b-2" style={{ borderColor: 'rgba(110,118,129,0.25)' }}>
+        {TIERS.map((t, i) => (
+          <button
+            key={i}
+            type="button"
+            onClick={() => setSelectedTier(i)}
+            className="px-4 py-3 text-[12px] font-bold uppercase tracking-wide transition-colors border-b-2 -mb-px"
+            style={{
+              borderColor: selectedTier === i ? '#EE6B1A' : 'transparent',
+              color: selectedTier === i ? '#EE6B1A' : '#6E7681',
+              background: 'transparent',
+            }}
+          >
+            {t.name}
+          </button>
+        ))}
+      </div>
+
+      {/* Inputs */}
+      <div className="grid sm:grid-cols-2 gap-6 px-7 py-6 border-b-2" style={{ borderColor: 'rgba(110,118,129,0.25)' }}>
+        <div>
+          <div className="flex items-center justify-between mb-2">
+            <label className="font-mono text-[10px] uppercase tracking-[0.18em]" style={{ color: '#6E7681' }}>
+              Missed calls / month
+            </label>
+            <span className="font-black text-[20px] tabular-nums" style={{ color: '#EE6B1A' }}>{missedCalls}</span>
+          </div>
+          <input
+            type="range" min={1} max={100} value={missedCalls}
+            onChange={e => setMissedCalls(Number(e.target.value))}
+            className="aa-slider w-full h-2 appearance-none"
+            style={{ accentColor: '#EE6B1A', background: 'rgba(110,118,129,0.3)' }}
+          />
+          <div className="flex justify-between font-mono text-[10px] mt-1" style={{ color: '#6E7681' }}>
+            <span>1</span><span>50</span><span>100</span>
+          </div>
+        </div>
+        <div>
+          <div className="flex items-center justify-between mb-2">
+            <label className="font-mono text-[10px] uppercase tracking-[0.18em]" style={{ color: '#6E7681' }}>
+              Average job value
+            </label>
+            <span className="font-black text-[20px] tabular-nums" style={{ color: '#EE6B1A' }}>${jobValue}</span>
+          </div>
+          <input
+            type="range" min={100} max={2000} step={50} value={jobValue}
+            onChange={e => setJobValue(Number(e.target.value))}
+            className="aa-slider w-full h-2 appearance-none"
+            style={{ accentColor: '#EE6B1A', background: 'rgba(110,118,129,0.3)' }}
+          />
+          <div className="flex justify-between font-mono text-[10px] mt-1" style={{ color: '#6E7681' }}>
+            <span>$100</span><span>$1,000</span><span>$2,000</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Results */}
+      <div className="grid grid-cols-3 gap-px px-7 py-6" style={{ background: 'rgba(110,118,129,0.15)' }}>
+        <div className="px-4 py-5 text-center" style={{ background: '#16181C' }}>
+          <div className="text-[26px] font-black tabular-nums" style={{ color: '#F2F0EB' }}>{recaptured}</div>
+          <div className="font-mono text-[10px] uppercase tracking-wider mt-1" style={{ color: '#6E7681' }}>Jobs recovered / mo</div>
+        </div>
+        <div className="px-4 py-5 text-center" style={{ background: '#16181C' }}>
+          <div className="text-[26px] font-black tabular-nums" style={{ color: '#EE6B1A' }}>${monthlyRecovery.toLocaleString()}</div>
+          <div className="font-mono text-[10px] uppercase tracking-wider mt-1" style={{ color: '#6E7681' }}>Revenue recovered / mo</div>
+        </div>
+        <div className="px-4 py-5 text-center" style={{ background: '#1A4A70' }}>
+          <div className="text-[26px] font-black tabular-nums" style={{ color: '#FFFFFF' }}>{roi}%</div>
+          <div className="font-mono text-[10px] uppercase tracking-wider mt-1" style={{ color: 'rgba(242,240,235,0.65)' }}>Return on investment</div>
+        </div>
+      </div>
+
+      <div className="px-7 pb-5 pt-2">
+        <p className="font-mono text-[10px]" style={{ color: '#6E7681' }}>
+          *Estimates based on 30% conversion rate on recovered missed calls. Your actual results may vary.
+        </p>
+      </div>
     </div>
   )
 }
@@ -291,26 +286,20 @@ function PlanBuilder() {
     })
   }
 
-  const monthly = ALA_CARTE
-    .filter(s => selected.has(s.id))
-    .reduce((sum, s) => sum + s.monthlyPrice, 0)
-  const setup = ALA_CARTE
-    .filter(s => selected.has(s.id))
-    .reduce((sum, s) => sum + s.setupPrice, 0)
+  const monthly = ALA_CARTE.filter(s => selected.has(s.id)).reduce((sum, s) => sum + s.monthlyPrice, 0)
+  const setup   = ALA_CARTE.filter(s => selected.has(s.id)).reduce((sum, s) => sum + s.setupPrice, 0)
 
   return (
     <div className="border-2" style={{ borderColor: 'rgba(110,118,129,0.35)', background: 'rgba(242,240,235,0.02)' }}>
-      {/* Header */}
       <div className="border-b-2 px-7 py-5" style={{ borderColor: 'rgba(110,118,129,0.25)' }}>
         <div className="font-mono text-[11px] font-bold uppercase tracking-[0.22em] mb-1" style={{ color: '#EE6B1A' }}>
           Build your own plan
         </div>
         <p className="text-[14px]" style={{ color: '#6E7681' }}>
-          Not sure which tier fits? Pick exactly what you need. The total updates as you go.
+          Not sure which tier fits? Pick exactly what you need and see the total update in real time.
         </p>
       </div>
 
-      {/* Service toggles */}
       <div className="divide-y-2" style={{ borderColor: 'rgba(110,118,129,0.15)' }}>
         {ALA_CARTE.map(service => {
           const isOn = selected.has(service.id)
@@ -323,29 +312,21 @@ function PlanBuilder() {
               className="w-full flex items-center gap-5 px-7 py-5 text-left transition-colors cursor-pointer"
               style={{ background: isOn ? 'rgba(238,107,26,0.06)' : 'transparent' }}
             >
-              {/* Checkbox */}
               <span
                 className="grid h-6 w-6 shrink-0 place-items-center border-2 transition-colors"
-                style={{
-                  borderColor: isOn ? '#EE6B1A' : 'rgba(110,118,129,0.4)',
-                  background: isOn ? '#EE6B1A' : 'transparent',
-                }}
+                style={{ borderColor: isOn ? '#EE6B1A' : 'rgba(110,118,129,0.4)', background: isOn ? '#EE6B1A' : 'transparent' }}
               >
                 {isOn && <Check size={14} strokeWidth={3} style={{ color: '#16181C' }} />}
               </span>
-
-              {/* Icon */}
               <span className="grid h-10 w-10 shrink-0 place-items-center" style={{ background: isOn ? 'rgba(26,74,112,0.5)' : 'rgba(110,118,129,0.15)' }}>
                 <Icon size={18} strokeWidth={2.25} style={{ color: isOn ? '#EE6B1A' : '#6E7681' }} />
               </span>
-
-              {/* Label + description */}
               <div className="flex-1 min-w-0">
                 <div className="text-[14px] font-semibold" style={{ color: isOn ? '#F2F0EB' : '#6E7681' }}>{service.label}</div>
-                <div className="text-[12px] mt-0.5" style={{ color: '#6E7681' }}>{service.description}</div>
+                {service.description && (
+                  <div className="text-[12px] mt-0.5" style={{ color: '#6E7681' }}>{service.description}</div>
+                )}
               </div>
-
-              {/* Price */}
               <div className="text-right shrink-0">
                 <div className="text-[15px] font-bold tabular-nums" style={{ color: isOn ? '#EE6B1A' : '#6E7681' }}>
                   ${service.monthlyPrice}/mo
@@ -361,7 +342,6 @@ function PlanBuilder() {
         })}
       </div>
 
-      {/* Running total */}
       <div className="border-t-2 px-7 py-5" style={{ borderColor: 'rgba(110,118,129,0.25)', background: selected.size > 0 ? 'rgba(238,107,26,0.06)' : 'transparent' }}>
         {selected.size === 0 ? (
           <p className="text-[13px] text-center" style={{ color: '#6E7681' }}>
@@ -440,9 +420,9 @@ export default function PricingPage() {
               </h2>
             </div>
           </ScrollReveal>
-          <div className="grid lg:grid-cols-3 gap-5 items-start">
+          <div className="grid sm:grid-cols-3 gap-5 items-stretch">
             {TIERS.map((tier, i) => (
-              <ScrollReveal key={i}>
+              <ScrollReveal key={i} className="h-full">
                 <TierCard tier={tier} />
               </ScrollReveal>
             ))}
@@ -460,10 +440,11 @@ export default function PricingPage() {
                 </span>
                 <div>
                   <div className="text-[15px] font-extrabold tracking-tight" style={{ color: '#F2F0EB' }}>
-                    Spam call screening — add to any plan
+                    Spam Call Screening — add to any plan
                   </div>
                   <div className="mt-1 text-[13.5px]" style={{ color: '#6E7681' }}>
-                    Filter the noise. Only real customers reach you. <span className="font-semibold" style={{ color: '#F2F0EB' }}>$75/mo · $150 one-time setup.</span>
+                    Blocks robocalls before they reach you. Only real customers get through.{' '}
+                    <span className="font-semibold" style={{ color: '#F2F0EB' }}>$75/mo · $150 one-time setup.</span>
                   </div>
                 </div>
               </div>
@@ -476,7 +457,7 @@ export default function PricingPage() {
       </section>
 
       {/* ── À la carte builder ───────────────────────────── */}
-      <section className="aa-grid-bg">
+      <section style={{ background: '#F2F0EB', color: '#16181C' }}>
         <div className="mx-auto max-w-4xl px-5 py-16 sm:px-8 lg:py-24">
           <ScrollReveal>
             <div className="mb-8">
@@ -484,9 +465,12 @@ export default function PricingPage() {
                 <span className="inline-block h-2.5 w-2.5" style={{ background: '#EE6B1A' }} />
                 <span style={{ color: '#EE6B1A' }}>À la carte</span>
               </div>
-              <h2 className="text-[clamp(2rem,5vw,3rem)] font-black uppercase leading-[0.95] tracking-tight">
+              <h2 className="text-[clamp(2rem,5vw,3rem)] font-black uppercase leading-[0.95] tracking-tight" style={{ color: '#16181C' }}>
                 Build your own plan.
               </h2>
+              <p className="mt-3 text-[14px]" style={{ color: '#6E7681' }}>
+                These are standalone prices. If you need two or more services, the plans above will almost always cost less and include more. This is here for people who genuinely only need one thing.
+              </p>
             </div>
             <PlanBuilder />
           </ScrollReveal>
@@ -494,19 +478,19 @@ export default function PricingPage() {
       </section>
 
       {/* ── Fine print + trust ───────────────────────────── */}
-      <section style={{ background: '#F2F0EB', color: '#16181C' }}>
+      <section className="aa-grid-bg">
         <div className="mx-auto max-w-3xl px-5 py-12 sm:px-8">
           <ScrollReveal>
             <div className="space-y-4 text-center text-[14px]" style={{ color: '#6E7681' }}>
               <p>
-                <span className="font-semibold" style={{ color: '#16181C' }}>Setup fees</span> are one-time and vary slightly based on complexity — exact costs confirmed on your discovery call.
+                <span className="font-semibold" style={{ color: '#F2F0EB' }}>Setup fees</span> are one-time and vary slightly based on complexity — confirmed on your discovery call.
               </p>
               <p>
                 All ad spend goes directly to Google and is{' '}
-                <span className="font-semibold" style={{ color: '#16181C' }}>separate from these fees</span>. We never touch your ad budget.
+                <span className="font-semibold" style={{ color: '#F2F0EB' }}>separate from these fees</span>. We never touch your ad budget.
               </p>
-              <div className="pt-4 border-t-2" style={{ borderColor: 'rgba(110,118,129,0.3)' }}>
-                <p className="text-[15px] font-semibold mb-2" style={{ color: '#16181C' }}>
+              <div className="pt-4 border-t-2" style={{ borderColor: 'rgba(110,118,129,0.25)' }}>
+                <p className="text-[15px] font-semibold mb-2" style={{ color: '#F2F0EB' }}>
                   No account managers. No outsourced support.
                 </p>
                 <p>

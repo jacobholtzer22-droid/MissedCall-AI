@@ -13,10 +13,10 @@ const steps = [
 
 const benefits = [
   'Zero spam calls reaching your phone',
-  'No missed real customers — legitimate callers press 1 without thinking twice',
-  'Works with your existing phone number — no need to change anything',
+  'No missed real customers. Legitimate callers press 1 without thinking twice.',
+  'Works with your existing phone number. No need to change anything.',
   'Set up in under 24 hours',
-  "Pairs perfectly with MissedCall AI — if a real customer doesn't get through, the AI texts them back",
+  "Pairs perfectly with MissedCall AI. If a real customer doesn't get through, the AI texts them back.",
 ]
 
 export default function SpamScreeningPage() {
@@ -68,7 +68,7 @@ export default function SpamScreeningPage() {
             </h2>
             <div className="border-l-4 pl-6" style={{ borderColor: '#EE6B1A' }}>
               <p className="text-[16px] leading-relaxed" style={{ color: 'rgba(22,24,28,0.75)' }}>
-                Your phone rings. You stop what you&apos;re doing. You answer. It&apos;s a robocall about your car&apos;s extended warranty. That&apos;s 30 seconds of your life you&apos;ll never get back — and it happens 10+ times a day. Meanwhile a real customer calls and you miss them because you thought it was spam.
+                Your phone rings. You stop what you&apos;re doing. You answer. It&apos;s a robocall about your car&apos;s extended warranty. That&apos;s 30 seconds of your life you&apos;ll never get back, and it happens 10+ times a day. Meanwhile a real customer calls and you miss them because you thought it was spam.
               </p>
             </div>
           </ScrollReveal>
@@ -148,7 +148,7 @@ export default function SpamScreeningPage() {
                 Pair it with<br /><span style={{ color: '#EE6B1A' }}>MissedCall AI.</span>
               </h2>
               <p className="text-[15px] leading-relaxed max-w-2xl mx-auto mb-8" style={{ color: '#6E7681' }}>
-                Spam gets blocked. Real customers get through. And if you miss one? The AI handles it — texts back instantly, books the appointment, recovers the sale. 24/7.
+                Spam gets blocked. Real customers get through. And if you miss one? The AI handles it. Texts back instantly, books the appointment, recovers the sale. 24/7.
               </p>
               <Link href="/missedcall-ai" className="aa-btn inline-flex items-center gap-2 px-6 py-4 text-[15px] font-bold uppercase tracking-wide" style={{ background: '#EE6B1A', color: '#16181C' }}>
                 <MessageSquare size={18} strokeWidth={2.5} />

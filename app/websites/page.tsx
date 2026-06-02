@@ -100,7 +100,7 @@ export default function WebsitesPage() {
             actually <span style={{ color: '#EE6B1A' }}>convert.</span>
           </h1>
           <p className="text-[16px] sm:text-[18px] leading-relaxed max-w-3xl mx-auto mb-8" style={{ color: 'rgba(242,240,235,0.65)' }}>
-            Your website shouldn&apos;t just exist — it should work for you. Custom code, mobile-first, blazing fast. The kind of site that makes visitors think &ldquo;okay, these people are legit.&rdquo;
+            Your website should work for you, not just exist. Custom code, mobile-first, blazing fast. The kind of site that makes visitors think &ldquo;okay, these people are legit.&rdquo;
           </p>
           <Link href="/book" className="aa-btn inline-flex items-center gap-2 px-6 py-4 text-[15px] font-bold uppercase tracking-wide" style={{ background: '#EE6B1A', color: '#16181C' }}>
             Start your project <ArrowRight size={18} strokeWidth={2.5} />
