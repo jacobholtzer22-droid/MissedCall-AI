@@ -191,7 +191,7 @@ export default function AboutPage() {
                 <div>
                   <Quote size={36} strokeWidth={1.25} className="mb-6" style={{ color: '#EE6B1A' }} />
                   <p className="text-[17px] sm:text-[20px] leading-relaxed mb-8" style={{ color: 'rgba(242,240,235,0.9)' }}>
-                    "My days are a lot simpler now. I used to get hit with spam constantly — probably 60, 70 percent of my calls were junk. Now those get blocked before they reach me, and when I do pick up I know it&apos;s a real customer. The ones I miss, the AI texts them right back so I&apos;m not losing work while I&apos;m out on a job. The website they built is way better than what I had too — more modern and it actually shows up on Google now."
+                    "My days are a lot simpler. Before this, probably 60 or 70 percent of my calls were spam. Now those get blocked and when I do pick up I know it&apos;s a real customer. The ones I miss, the AI texts them back right away so I&apos;m not losing work while I&apos;m out on a job. The website they built is way better than what I had before too. More modern, and it actually comes up on Google now."
                   </p>
                 </div>
 
