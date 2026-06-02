@@ -200,36 +200,25 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* ════════════════════
-          ROI Calculator
-          ════════════════════ */}
-      <section className="aa-grid-bg">
-        <div className="mx-auto max-w-4xl px-5 py-16 sm:px-8 lg:py-24">
-          <ScrollReveal>
-            <div className="text-center mb-8">
-              <div className="inline-flex items-center gap-2 font-mono text-[11px] font-semibold uppercase tracking-[0.28em] mb-4">
-                <span className="inline-block h-2.5 w-2.5" style={{ background: '#EE6B1A' }} />
-                <span style={{ color: '#EE6B1A' }}>Back of the napkin</span>
-              </div>
-              <h2 className="text-[clamp(2rem,5vw,3rem)] font-black uppercase leading-[0.95] tracking-tight">
-                Rough idea of what<br />
-                <span style={{ color: '#EE6B1A' }}>missed calls cost you.</span>
-              </h2>
-              <p className="mt-4 text-[15px] max-w-md mx-auto" style={{ color: 'rgba(242,240,235,0.6)' }}>
-                Not an exact number — every business is different. But adjust the sliders to your situation and you'll get a reasonable ballpark.
-              </p>
-            </div>
-            <ROICalculator />
-          </ScrollReveal>
-        </div>
-      </section>
-
       {/* ═══════════════════════════
           Founder teaser
           ═══════════════════════════ */}
       <section style={{ background: '#F2F0EB', color: '#16181C' }}>
         <div className="mx-auto max-w-5xl px-5 py-16 sm:px-8 lg:py-24">
           <ScrollReveal>
+            {/* Title */}
+            <div className="max-w-2xl mx-auto mb-10">
+              <div className="inline-flex items-center gap-2 font-mono text-[11px] font-semibold uppercase tracking-[0.28em] mb-4">
+                <span className="inline-block h-2.5 w-2.5" style={{ background: '#EE6B1A' }} />
+                <span style={{ color: '#EE6B1A' }}>Who you&apos;re working with</span>
+              </div>
+              <h2 className="text-[clamp(2rem,5vw,3rem)] font-black uppercase leading-[0.95] tracking-tight">
+                When you call,<br />
+                <span style={{ color: '#1A4A70' }}>you reach the founder.</span>
+              </h2>
+            </div>
+
+            {/* Photos */}
             <div className="grid sm:grid-cols-2 gap-5 max-w-2xl mx-auto mb-10">
               <div className="border-2 overflow-hidden aspect-[3/4]" style={{ borderColor: '#16181C' }}>
                 {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -267,6 +256,30 @@ export default function HomePage() {
                 </Link>
               </div>
             </div>
+          </ScrollReveal>
+        </div>
+      </section>
+
+      {/* ════════════════════
+          ROI Calculator
+          ════════════════════ */}
+      <section className="aa-grid-bg">
+        <div className="mx-auto max-w-4xl px-5 py-16 sm:px-8 lg:py-24">
+          <ScrollReveal>
+            <div className="text-center mb-8">
+              <div className="inline-flex items-center gap-2 font-mono text-[11px] font-semibold uppercase tracking-[0.28em] mb-4">
+                <span className="inline-block h-2.5 w-2.5" style={{ background: '#EE6B1A' }} />
+                <span style={{ color: '#EE6B1A' }}>Back of the napkin</span>
+              </div>
+              <h2 className="text-[clamp(2rem,5vw,3rem)] font-black uppercase leading-[0.95] tracking-tight">
+                Rough idea of what<br />
+                <span style={{ color: '#EE6B1A' }}>missed calls cost you.</span>
+              </h2>
+              <p className="mt-4 text-[15px] max-w-md mx-auto" style={{ color: 'rgba(242,240,235,0.6)' }}>
+                Not an exact number — every business is different. But adjust the sliders to your situation and you&apos;ll get a reasonable ballpark.
+              </p>
+            </div>
+            <ROICalculator />
           </ScrollReveal>
         </div>
       </section>
