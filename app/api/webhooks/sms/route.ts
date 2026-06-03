@@ -106,6 +106,11 @@ function getCallUsPhrase(business: { forwardingNumber?: string | null }): string
   }
   return 'call us directly'
 }
+
+/** Single source of truth for the lead-capture confirmation sent to the customer. */
+function buildLeadConfirmation(business: { name?: string | null }): string {
+  return `Perfect! Someone from ${business.name} will follow up with you shortly to discuss next steps and set up a time that works. Talk soon!`
+}
 const CONVERSATION_TIMEOUT_HOURS = 24
 const SPAM_WINDOW_SECONDS = 30
 
@@ -247,8 +252,8 @@ export async function POST(request: NextRequest) {
         })
         await db.conversation.update({ where: { id: conversation.id }, data: { lastMessageAt: new Date() } })
 
-        // appointment_booked or lead_captured: answer questions from appointment info, then close
-        if (conversation.status === 'appointment_booked' || conversation.status === 'lead_captured') {
+        // appointment_booked: answer questions from appointment info, then close
+        if (conversation.status === 'appointment_booked') {
           const trimmed = (text || '').trim().toLowerCase()
           const isQuestion =
             trimmed.includes('?') ||
@@ -270,6 +275,24 @@ export async function POST(request: NextRequest) {
           } else {
             finalMsg = `You're welcome! If anything comes up, just ${getCallUsPhrase(business)}.`
           }
+          await sendSMSAndLog(business, conversation.id, from, finalMsg)
+          await db.conversation.update({ where: { id: conversation.id }, data: { status: 'closed' } })
+        } else if (conversation.status === 'lead_captured') {
+          // Lead already captured (no appointment). Acknowledge stragglers warmly — never the
+          // "You're welcome" closer — and never re-notify the owner. Then close the thread.
+          const trimmed = (text || '').trim().toLowerCase()
+          // Long/safe phrases match anywhere; short ambiguous tokens ("ty", "thx") must be whole words
+          // so they don't false-match inside "safety", "quality", "twenty", etc.
+          const THANK_YOU_PHRASES = ['thank', 'thanks', 'appreciate', 'much appreciated', 'ok thanks', 'sounds good', 'great thanks']
+          const SHORT_THANK_YOU_TOKENS = ['ty', 'thx']
+          const words = trimmed.split(/[^a-z]+/).filter(Boolean)
+          const isPleasantry =
+            THANK_YOU_PHRASES.some((p) => trimmed.includes(p)) ||
+            SHORT_THANK_YOU_TOKENS.some((t) => words.includes(t))
+          const bizName = business.name || 'our team'
+          const finalMsg = isPleasantry
+            ? 'Anytime! Talk soon.'
+            : `Got it, I'll pass that along. Someone from ${bizName} will be in touch with you soon!`
           await sendSMSAndLog(business, conversation.id, from, finalMsg)
           await db.conversation.update({ where: { id: conversation.id }, data: { status: 'closed' } })
         }
@@ -408,7 +431,7 @@ export async function POST(request: NextRequest) {
       if (!business.calendarEnabled && readyToCapture && conversation.status !== 'lead_captured') {
         const extracted = await extractLeadFromConversation(anthropic, business, conversation)
         if (extracted && extracted.customerName?.trim()) {
-          const thanksMsg = `Perfect! Someone from ${business.name} will follow up with you shortly to discuss next steps and set up a time that works. Talk soon!`
+          const thanksMsg = buildLeadConfirmation(business)
           const conversationTranscript = [
             ...conversation.messages.map((m: any) => ({ direction: m.direction, content: m.content, createdAt: m.createdAt })),
             { direction: 'outbound' as const, content: thanksMsg, createdAt: new Date() },
@@ -693,6 +716,12 @@ export async function POST(request: NextRequest) {
               address: extracted.customerAddress?.trim() || undefined,
               source: 'missed_call',
             }).catch(() => {})
+            // Send the standard confirmation (NOT the raw AI turn, which is often a question)
+            // and return so we don't fall through to the generic send below.
+            await sendSMSAndLog(business, conversation.id, from, buildLeadConfirmation(business), timing)
+            const backstopMs = Date.now() - new Date(timing.webhookReceivedAt).getTime()
+            timing.totalMs = backstopMs
+            return NextResponse.json({ ok: true, timing }, { status: 200 })
           }
         }
       }
@@ -2197,7 +2226,8 @@ LEAD CAPTURE RULES:
 - Do NOT ask the customer for their phone number — we already have it from the SMS thread. The caller's phone number is ${conversation.callerPhone}. To verify it's the right callback number, ask: "Is ${conversation.callerPhone} the best number to reach you at?" Use that EXACT number, formatted as shown. Do NOT substitute any other phone number from BUSINESS INFO or anywhere else.
 - If customer says "book" or "schedule", say "I'd love to help! Let me get your info and someone will call you to set that up."
 - Parse info from ANY message. "I'm John and I need lawn care next week at 123 Main St" = name + service + address + timeframe in one message. Never re-ask for info already given.
-- When you have collected enough info (at minimum: name), tell them someone will follow up, then output [READY_TO_CAPTURE] at the very end of your message.
+- Only wrap up once you have the customer's name AND have asked for the property address AND a general timeframe. It's fine if they decline to give the address or timeframe — ask once, don't push. When you wrap up, your message must be the follow-up confirmation (someone will follow up), NEVER a question.
+- NEVER put [READY_TO_CAPTURE] in the same message as a question. Only emit [READY_TO_CAPTURE] as the very last token, AFTER your final wrap-up/follow-up confirmation message — never alongside a question or a request for more info.
 
 SERVICES & KNOWLEDGE:
 - When asked "what do you guys do", keep it vague and mention 2-3 services then ask what they need.
