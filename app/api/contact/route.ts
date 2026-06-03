@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { findOrCreateContact } from '@/lib/crm-utils'
+import { notifyOwnerOnWebsiteLead } from '@/lib/notify-owner'
 
 // CORS — open for now so client tenant websites (e.g. bernal-landscaping.vercel.app)
 // can POST cross-origin. Lock this down to known origins later.
@@ -106,6 +107,33 @@ export async function POST(request: NextRequest) {
           }
         } catch (err) {
           console.error('Failed to save website lead:', err)
+        }
+      })()
+    }
+
+    // Notify the business owner of the new lead (client tenants only — never the
+    // marketing/YOUR_EMAIL branch). Non-blocking, but log success/failure so a
+    // failed notification surfaces in logs rather than being swallowed.
+    if (bid || slug) {
+      void (async () => {
+        try {
+          const business = bid
+            ? await db.business.findUnique({ where: { id: bid } })
+            : await db.business.findUnique({ where: { slug: slug! } })
+          if (!business) return
+          const result = await notifyOwnerOnWebsiteLead(business, {
+            name: typeof name === 'string' ? name.trim() : 'Unknown',
+            phone: typeof phone === 'string' ? phone.trim() || null : null,
+            email: typeof email === 'string' ? email.trim() || null : null,
+            message: typeof message === 'string' ? message.trim() || null : null,
+          })
+          console.log('Website lead owner notification result:', {
+            businessId: business.id,
+            smsSent: result.smsSent,
+            emailSent: result.emailSent,
+          })
+        } catch (err) {
+          console.error('Failed to notify owner of website lead:', err)
         }
       })()
     }

@@ -514,6 +514,90 @@ export async function notifyOwnerOnAIFailed(
   }
 }
 
+// ── Website lead (contact form) ─────────────────────────────────────
+// When a client tenant's website contact form is submitted — notify the owner.
+
+export async function notifyOwnerOnWebsiteLead(
+  business: BusinessWithPhone,
+  params: {
+    name: string
+    phone?: string | null
+    email?: string | null
+    message?: string | null
+  }
+): Promise<NotifyOwnerResult> {
+  const result: NotifyOwnerResult = { smsSent: false, emailSent: false }
+  const { name, phone, email, message } = params
+
+  // SMS
+  if (business.notifyBySms) {
+    const rawPhone = business.ownerPhone || business.forwardingNumber
+    const toPhone = rawPhone ? normalizeToE164(rawPhone.trim()) : ''
+    if (!toPhone) {
+      console.error('[NOTIFY OWNER] Website lead SMS SKIP: No ownerPhone or forwardingNumber set', { businessId: business.id })
+    } else if (!business.telnyxPhoneNumber) {
+      console.error('[NOTIFY OWNER] Website lead SMS SKIP: No telnyxPhoneNumber set', { businessId: business.id })
+    } else {
+      const parts = [
+        `📩 New website lead! ${name} just submitted your contact form.`,
+        `Phone: ${phone || 'N/A'}.`,
+        `Email: ${email || 'N/A'}.`,
+        'Check your dashboard for details.',
+      ]
+      const smsText = parts.join(' ')
+      try {
+        const telnyx = new Telnyx({ apiKey: process.env.TELNYX_API_KEY! })
+        await telnyx.messages.send({
+          from: business.telnyxPhoneNumber,
+          to: toPhone,
+          text: smsText,
+        })
+        console.error('[NOTIFY OWNER] Website lead SMS sent to', toPhone)
+        result.smsSent = true
+      } catch (err) {
+        console.error('[NOTIFY OWNER] Website lead SMS FAILED:', err instanceof Error ? err.message : String(err))
+      }
+    }
+  } else {
+    console.error('[NOTIFY OWNER] Website lead SMS disabled (notifyBySms=false)')
+  }
+
+  // Email
+  if (business.notifyByEmail && business.ownerEmail) {
+    const subject = `New Website Lead - ${name}`
+    const body = [
+      `A new lead just submitted the contact form on your website for ${business.name}.`,
+      '',
+      'Customer details:',
+      `  Name: ${name}`,
+      `  Phone: ${phone || 'Not provided'}`,
+      `  Email: ${email || 'Not provided'}`,
+      '',
+      message ? `Message:\n${message}` : 'No message provided.',
+      '',
+      'Please reach out to this customer directly.',
+    ]
+      .filter(Boolean)
+      .join('\n')
+
+    try {
+      await sendEmail(business.ownerEmail, subject, body)
+      console.error('[NOTIFY OWNER] Website lead email sent to', business.ownerEmail)
+      result.emailSent = true
+    } catch (err) {
+      console.error('[NOTIFY OWNER] Website lead email FAILED:', err instanceof Error ? err.message : String(err))
+    }
+  } else {
+    if (!business.notifyByEmail) {
+      console.error('[NOTIFY OWNER] Website lead email disabled (notifyByEmail=false)')
+    } else if (!business.ownerEmail) {
+      console.error('[NOTIFY OWNER] Website lead email SKIP: No ownerEmail set', { businessId: business.id })
+    }
+  }
+
+  return result
+}
+
 let transporter: ReturnType<typeof nodemailer.createTransport> | null = null
 
 function getTransporter() {
