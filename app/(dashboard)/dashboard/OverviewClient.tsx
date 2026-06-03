@@ -36,6 +36,7 @@ type Features = {
   showAiCards: boolean
   totalCallsMode: 'screened' | 'calls'
   googleAds: boolean
+  knownContactVoicemailEnabled: boolean
 }
 
 type AnalyticsPeriod = 'today' | 'week' | 'month' | 'all'
@@ -582,13 +583,16 @@ export function OverviewClient({
         </div>
       )}
 
-      {/* ── Recent Voicemails (non-AI businesses) ── */}
-      {!features.hasMissedCallAi && initialVoicemails.length > 0 && (
+      {/* ── Recent Voicemails — non-AI clients (all voicemails) and AI clients with
+            known-contact voicemail routing (labeled "Voicemails from Contacts") ── */}
+      {(!features.hasMissedCallAi || features.knownContactVoicemailEnabled) && initialVoicemails.length > 0 && (
         <div className="bg-white rounded-xl border border-gray-200 w-full">
           <div className="px-4 md:px-6 py-4 border-b border-gray-200 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
             <div className="flex items-center">
               <Mail className="h-5 w-5 text-blue-600 mr-2 shrink-0" />
-              <h2 className="text-lg font-semibold text-gray-900">Recent Voicemails</h2>
+              <h2 className="text-lg font-semibold text-gray-900">
+                {features.hasMissedCallAi ? 'Voicemails from Contacts' : 'Recent Voicemails'}
+              </h2>
             </div>
             <Link href="/dashboard/voicemails" className="text-sm text-blue-600 hover:text-blue-700 min-h-[44px] flex items-center py-2">
               View all voicemails

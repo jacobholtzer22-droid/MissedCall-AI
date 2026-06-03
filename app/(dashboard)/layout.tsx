@@ -6,6 +6,7 @@ import { getBusinessFeatures } from '@/lib/business-features'
 
 function getNavigation(business: {
   missedCallAiEnabled?: boolean | null
+  knownContactVoicemailEnabled?: boolean | null
   callScreenerEnabled?: boolean | null
   spamFilterEnabled?: boolean | null
   forwardingNumber?: string | null
@@ -35,12 +36,18 @@ function getNavigation(business: {
     items.push({ name: 'Scheduled Quotes', href: '/dashboard/appointments', icon: 'Calendar' })
   }
 
-  // Screening-only clients: show Voicemails + Blocked Calls instead
+  // Screening-only (non-AI) clients: show Voicemails
   if (!features.hasMissedCallAi) {
     items.push({ name: 'Voicemails', href: '/dashboard/voicemails', icon: 'Mail' })
-    if (features.hasAnyScreening) {
-      items.push({ name: 'Blocked Calls', href: '/dashboard/blocked-calls', icon: 'PhoneOff' })
-    }
+  } else if (business.knownContactVoicemailEnabled) {
+    // AI clients with known-contact voicemail routing on: their only recorded voicemails
+    // come from known contacts, so label it accordingly.
+    items.push({ name: 'Voicemails from Contacts', href: '/dashboard/voicemails', icon: 'Mail' })
+  }
+
+  // Any client with screening on (spam filter or IVR screener) sees their screened calls
+  if (features.hasAnyScreening) {
+    items.push({ name: 'Screened Calls', href: '/dashboard/blocked-calls', icon: 'PhoneOff' })
   }
 
   items.push(

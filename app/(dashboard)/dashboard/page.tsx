@@ -22,7 +22,12 @@ export default async function DashboardPage() {
   const features = {
     ...bizFeatures,
     googleAds: business.googleAdsEnabled ?? false,
+    knownContactVoicemailEnabled: business.knownContactVoicemailEnabled ?? false,
   }
+
+  // Voicemails are visible to non-AI (screening) clients, and to AI clients that route
+  // known contacts to voicemail. Same recordingUrl data either way.
+  const showVoicemails = !features.hasMissedCallAi || features.knownContactVoicemailEnabled
 
   // Fetch initial voicemails server-side for non-AI businesses (avoids client-side loading flash)
   type VoicemailRow = {
@@ -36,7 +41,7 @@ export default async function DashboardPage() {
 
   let initialVoicemails: VoicemailRow[] = []
 
-  if (!features.hasMissedCallAi) {
+  if (showVoicemails) {
     const vmConversations = await db.conversation.findMany({
       where: {
         businessId: business.id,

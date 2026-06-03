@@ -46,41 +46,26 @@ export function BlockedCallsClient() {
 
   if (loading) {
     return (
-      <div className="space-y-6">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Blocked Calls</h1>
-          <p className="text-gray-500 mt-1">Screened calls from the last 30 days</p>
-        </div>
-        <div className="flex items-center justify-center py-16">
-          <p className="text-gray-500">Loading...</p>
-        </div>
+      <div className="flex items-center justify-center py-16">
+        <p className="text-gray-500">Loading...</p>
       </div>
     )
   }
 
   if (error) {
-    return (
-      <div className="space-y-6">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Blocked Calls</h1>
-          <p className="text-gray-500 mt-1">Screened calls from the last 30 days</p>
-        </div>
-        <div className="rounded-xl border border-red-200 bg-red-50 p-6 text-red-800">{error}</div>
-      </div>
-    )
+    return <div className="rounded-xl border border-red-200 bg-red-50 p-6 text-red-800">{error}</div>
   }
 
   const calls = data?.recentCalls ?? []
   const filtered =
-    filter === 'all' ? calls : filter === 'blocked' ? calls.filter((c) => c.result === 'blocked') : calls.filter((c) => c.result === 'passed')
+    filter === 'all'
+      ? calls
+      : filter === 'blocked'
+      ? calls.filter((c) => c.result === 'blocked')
+      : calls.filter((c) => c.result === 'passed')
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-gray-900">Blocked Calls</h1>
-        <p className="text-gray-500 mt-1">Screened calls from the last 30 days</p>
-      </div>
-
       <div className="flex flex-wrap items-center gap-3">
         <span className="text-sm font-medium text-gray-700">Show:</span>
         <div className="flex rounded-lg border border-gray-200 p-0.5 bg-gray-50">
@@ -97,7 +82,7 @@ export function BlockedCallsClient() {
             className={`px-4 py-2 text-sm font-medium rounded-md transition flex items-center gap-1.5 ${filter === 'blocked' ? 'bg-white text-red-700 shadow-sm' : 'text-gray-600 hover:text-gray-900'}`}
           >
             <PhoneOff className="h-4 w-4" />
-            Blocked Only
+            Blocked
           </button>
           <button
             type="button"
@@ -105,7 +90,7 @@ export function BlockedCallsClient() {
             className={`px-4 py-2 text-sm font-medium rounded-md transition flex items-center gap-1.5 ${filter === 'passed' ? 'bg-white text-green-700 shadow-sm' : 'text-gray-600 hover:text-gray-900'}`}
           >
             <Phone className="h-4 w-4" />
-            Passed Only
+            Passed
           </button>
         </div>
       </div>
@@ -135,10 +120,11 @@ export function BlockedCallsClient() {
                     <td className="px-6 py-3 text-gray-600">{new Date(call.createdAt).toLocaleString()}</td>
                     <td className="px-6 py-3">
                       <span
-                        className={
-                          call.result === 'passed' ? 'text-green-600 font-medium' : 'text-red-600 font-medium'
-                        }
+                        className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium ${
+                          call.result === 'passed' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
+                        }`}
                       >
+                        {call.result === 'passed' ? <Phone className="h-3 w-3" /> : <PhoneOff className="h-3 w-3" />}
                         {call.result === 'passed' ? 'Passed' : 'Blocked'}
                       </span>
                     </td>
