@@ -3,7 +3,7 @@ import { db } from '@/lib/db'
 import { requireDashboardBusiness } from '@/lib/dashboard-auth'
 import { getBusinessFeatures } from '@/lib/business-features'
 
-type Period = 'today' | 'week' | 'month' | 'all'
+type Period = 'today' | 'week' | 'month' | 'year' | 'all'
 
 function getDateRanges(period: Period) {
   const now = new Date()
@@ -44,6 +44,17 @@ function getDateRanges(period: Period) {
     }
   }
 
+  if (period === 'year') {
+    // Calendar year to date; previous = same span of the prior calendar year.
+    const currentStart = new Date(now.getFullYear(), 0, 1)
+    const previousStart = new Date(now.getFullYear() - 1, 0, 1)
+    const previousEnd = currentStart
+    return {
+      current: { since: currentStart, until: now },
+      previous: { since: previousStart, until: previousEnd },
+    }
+  }
+
   // all time
   return {
     current: { since: null as Date | null, until: null as Date | null },
@@ -59,7 +70,7 @@ export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url)
     const periodParam = (searchParams.get('period') || 'month').toLowerCase() as Period
-    const period: Period = ['today', 'week', 'month', 'all'].includes(periodParam)
+    const period: Period = ['today', 'week', 'month', 'year', 'all'].includes(periodParam)
       ? periodParam
       : 'month'
 
@@ -121,6 +132,7 @@ export async function GET(request: Request) {
       messagesSent,
       previousTotalCalls,
       previousLeadsCaptured,
+      voicemailsCount,
       leadSourcesRaw,
       recentActivityRaw,
     ] = await Promise.all([
@@ -175,6 +187,13 @@ export async function GET(request: Request) {
             },
           })
         : Promise.resolve(0),
+      db.conversation.count({
+        where: {
+          businessId,
+          recordingUrl: { not: null },
+          ...(currentDateFilter ? { createdAt: currentDateFilter } : {}),
+        },
+      }),
       db.contact.groupBy({
         by: ['source'],
         where: {
@@ -262,6 +281,7 @@ export async function GET(request: Request) {
       leadsCaptured: leadsCapturedCurrent,
       websiteLeads,
       messagesSent,
+      voicemailsCount,
       previousTotalCalls: period === 'all' ? null : previousTotalCalls,
       previousLeadsCaptured: period === 'all' ? null : previousLeadsCaptured,
       leadSources,

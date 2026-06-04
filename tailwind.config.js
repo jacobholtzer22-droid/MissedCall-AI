@@ -17,6 +17,17 @@ module.exports = {
     },
     extend: {
       colors: {
+        // Align & Acquire brand palette — additive, dashboard-scoped.
+        // Nothing else in the app consumes `brand-*`, so this cannot affect
+        // marketing/admin pages. Accent reserved for primary actions,
+        // active/selected states, and key highlights; surfaces stay neutral.
+        brand: {
+          DEFAULT: "#EE6B1A",
+          orange: "#EE6B1A",
+          "orange-dark": "#D45E12", // hover / pressed
+          "orange-light": "#FEF2E9", // subtle tint surface
+          dark: "#16181C", // primary text
+        },
         border: "hsl(var(--border))",
         input: "hsl(var(--input))",
         ring: "hsl(var(--ring))",

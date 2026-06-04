@@ -29,7 +29,7 @@ export default async function DashboardPage() {
   // known contacts to voicemail. Same recordingUrl data either way.
   const showVoicemails = !features.hasMissedCallAi || features.knownContactVoicemailEnabled
 
-  // Fetch initial voicemails server-side for non-AI businesses (avoids client-side loading flash)
+  // ── Recent voicemails (latest 5, NOT period-scoped) — for the inline player section ──
   type VoicemailRow = {
     conversationId: string
     callerPhone: string
@@ -39,14 +39,35 @@ export default async function DashboardPage() {
     createdAt: string
   }
 
+  type CallLogItem = {
+    id: string
+    kind: 'call' | 'lead'
+    phone: string | null
+    name: string | null
+    result: string | null // 'blocked' | 'passed' for inbound calls
+    description: string | null
+    createdAt: string
+  }
+
+  // Resolve contact names for a set of phone numbers in one query.
+  async function namesForPhones(phones: string[]): Promise<Map<string, string>> {
+    const map = new Map<string, string>()
+    if (phones.length === 0) return map
+    const contacts = await db.contact.findMany({
+      where: { businessId: business!.id, phoneNumber: { in: phones } },
+      select: { phoneNumber: true, name: true },
+    })
+    for (const c of contacts) {
+      if (c.name) map.set(normalizePhoneNumber(c.phoneNumber), c.name)
+    }
+    return map
+  }
+
   let initialVoicemails: VoicemailRow[] = []
 
   if (showVoicemails) {
     const vmConversations = await db.conversation.findMany({
-      where: {
-        businessId: business.id,
-        recordingUrl: { not: null },
-      },
+      where: { businessId: business.id, recordingUrl: { not: null } },
       orderBy: { createdAt: 'desc' },
       take: 5,
       select: {
@@ -58,28 +79,62 @@ export default async function DashboardPage() {
       },
     })
 
-    const phones = vmConversations.map((v) => v.callerPhone)
-    const contacts = phones.length > 0
-      ? await db.contact.findMany({
-          where: { businessId: business.id, phoneNumber: { in: phones } },
-          select: { phoneNumber: true, name: true },
-        })
-      : []
-
-    const contactNameByPhone = new Map<string, string>()
-    for (const c of contacts) {
-      if (c.name) contactNameByPhone.set(normalizePhoneNumber(c.phoneNumber), c.name)
-    }
+    const nameByPhone = await namesForPhones(vmConversations.map((v) => v.callerPhone))
 
     initialVoicemails = vmConversations.map((v) => ({
       conversationId: v.id,
       callerPhone: v.callerPhone,
-      contactName: contactNameByPhone.get(normalizePhoneNumber(v.callerPhone)) ?? null,
+      contactName: nameByPhone.get(normalizePhoneNumber(v.callerPhone)) ?? null,
       recordingUrl: v.recordingUrl,
       voicemailTranscription: v.voicemailTranscription ?? null,
       createdAt: v.createdAt.toISOString(),
     }))
   }
 
-  return <OverviewClient features={features} initialVoicemails={initialVoicemails} />
+  // ── Call log (latest ~15, NOT period-scoped) — inbound screened calls + missed-call leads ──
+  const [screenedForLog, missedCallActivities] = await Promise.all([
+    db.screenedCall.findMany({
+      where: { businessId: business.id },
+      orderBy: { createdAt: 'desc' },
+      take: 15,
+      select: { id: true, callerPhone: true, result: true, createdAt: true },
+    }),
+    db.activity.findMany({
+      where: { businessId: business.id, type: 'missed_call' },
+      orderBy: { createdAt: 'desc' },
+      take: 15,
+      include: { contact: { select: { name: true, phoneNumber: true } } },
+    }),
+  ])
+
+  const callLog: CallLogItem[] = [
+    ...screenedForLog.map((s) => ({
+      id: `call_${s.id}`,
+      kind: 'call' as const,
+      phone: s.callerPhone,
+      name: null,
+      result: s.result,
+      description: null,
+      createdAt: s.createdAt.toISOString(),
+    })),
+    ...missedCallActivities.map((a) => ({
+      id: `lead_${a.id}`,
+      kind: 'lead' as const,
+      phone: a.contact?.phoneNumber ?? null,
+      name: a.contact?.name ?? null,
+      result: null,
+      description: a.description,
+      createdAt: a.createdAt.toISOString(),
+    })),
+  ]
+    .sort((x, y) => new Date(y.createdAt).getTime() - new Date(x.createdAt).getTime())
+    .slice(0, 15)
+
+  return (
+    <OverviewClient
+      features={features}
+      initialVoicemails={initialVoicemails}
+      callLog={callLog}
+    />
+  )
 }
