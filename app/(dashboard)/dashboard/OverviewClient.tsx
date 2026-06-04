@@ -369,21 +369,16 @@ export function OverviewClient({
           </CardHeader>
           <ul className="divide-y divide-gray-100">
             {upcomingAppointments.map((apt) => (
-              <li key={apt.id} className="flex items-center justify-between gap-3 px-5 py-4">
-                <div className="min-w-0">
-                  <p className="truncate font-medium text-brand-dark">{apt.customerName}</p>
-                  <p className="truncate text-sm text-gray-500">
-                    {apt.serviceType} · {formatPhoneNumber(apt.customerPhone)}
-                  </p>
-                </div>
-                <div className="flex-shrink-0 text-right">
-                  <p className="font-medium text-brand-dark">
-                    {new Date(apt.scheduledAt).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
-                  </p>
-                  <p className="text-sm text-gray-500">
-                    {new Date(apt.scheduledAt).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
-                  </p>
-                </div>
+              <li key={apt.id} className="px-4 py-4 sm:px-5">
+                <span className="block font-medium text-brand-dark">{apt.customerName}</span>
+                <p className="mt-0.5 truncate text-sm text-gray-500">
+                  {apt.serviceType} · {formatPhoneNumber(apt.customerPhone)}
+                </p>
+                <p className="mt-1 text-sm font-medium text-brand-dark">
+                  {new Date(apt.scheduledAt).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
+                  {' · '}
+                  {new Date(apt.scheduledAt).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
+                </p>
               </li>
             ))}
           </ul>
@@ -472,7 +467,7 @@ export function OverviewClient({
           </CardHeader>
           <ul className="divide-y divide-gray-100">
             {initialVoicemails.map((vm) => (
-              <li key={vm.conversationId} className="px-5 py-4">
+              <li key={vm.conversationId} className="px-4 py-4 sm:px-5">
                 <div className="mb-2 flex items-start justify-between gap-3">
                   <div className="min-w-0">
                     <p className="truncate font-medium text-brand-dark">
@@ -539,26 +534,30 @@ function CallLogRow({ item }: { item: CallLogItem }) {
     : item.name ?? (item.phone ? formatPhoneNumber(item.phone) : 'New lead')
 
   return (
-    <li className="flex items-center gap-3 px-5 py-3.5">
-      <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-gray-100">
+    <li className="flex items-start gap-3 px-4 py-3.5 sm:px-5">
+      <div className="mt-0.5 flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-gray-100">
         <Icon className="h-4 w-4 text-gray-500" />
       </div>
       <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2">
-          <span className={cn('truncate font-medium text-brand-dark', isCall && 'font-mono')}>{primary}</span>
+        <span className={cn('block font-medium text-brand-dark', isCall && 'font-mono')}>
+          {primary}
+        </span>
+        {!isCall && (
+          <p className="mt-0.5 truncate text-xs text-gray-500">
+            {item.description ?? 'New lead from missed call'}
+          </p>
+        )}
+        <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-gray-400">
           {isCall && item.result ? (
             <StatusBadge status={item.result} />
           ) : (
             <Badge tone="orange">Lead</Badge>
           )}
+          <span className="whitespace-nowrap">
+            {formatRelativeTime(new Date(item.createdAt))}
+          </span>
         </div>
-        {!isCall && (
-          <p className="truncate text-xs text-gray-500">{item.description ?? 'New lead from missed call'}</p>
-        )}
       </div>
-      <span className="flex-shrink-0 whitespace-nowrap text-xs text-gray-400">
-        {formatRelativeTime(new Date(item.createdAt))}
-      </span>
     </li>
   )
 }
