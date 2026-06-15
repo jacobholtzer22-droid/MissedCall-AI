@@ -5,8 +5,10 @@
 
 import Telnyx from 'telnyx'
 import nodemailer from 'nodemailer'
+import { Resend } from 'resend'
 import { TZDate } from '@date-fns/tz'
 import { normalizeToE164 } from '@/lib/phone-utils'
+import { plainTextToEmailHtml } from '@/lib/email-format'
 import type { Business, Appointment } from '@prisma/client'
 
 /** Parse "YYYY-MM-DD HH:mm" as business local time (not UTC). */
@@ -630,18 +632,21 @@ function getTransporter() {
 }
 
 async function sendEmail(to: string, subject: string, text: string): Promise<void> {
-  const from = process.env.SMTP_FROM || process.env.SMTP_USER || 'noreply@alignandacquire.com'
   console.error('[NOTIFY OWNER] sendEmail called', { to, subject: subject.slice(0, 50) + '...' })
   try {
-    const result = await getTransporter().sendMail({
-      from,
+    const resend = new Resend(process.env.RESEND_API_KEY)
+    const result = await resend.emails.send({
+      from: 'notifications@alignandacquire.com',
       to,
       subject,
-      text,
+      html: plainTextToEmailHtml(text),
     })
-    console.error('[NOTIFY OWNER] sendMail result:', { messageId: result.messageId })
+    if (result.error) {
+      throw new Error(`Resend error: ${result.error.message}`)
+    }
+    console.error('[NOTIFY OWNER] sendEmail result:', { id: result.data?.id })
   } catch (err) {
-    console.error('[NOTIFY OWNER] sendMail FAILED - full SMTP error:', err)
+    console.error('[NOTIFY OWNER] sendEmail FAILED - full Resend error:', err)
     throw err
   }
 }
