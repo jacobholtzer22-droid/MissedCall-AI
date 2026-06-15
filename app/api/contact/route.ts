@@ -67,60 +67,42 @@ export async function POST(request: NextRequest) {
       })
     }
 
-    // CRM: link contact for client websites when businessId or businessSlug is provided (background, no effect on response)
+    // CRM + dashboard persistence for client websites (businessId or businessSlug
+    // provided). These MUST be awaited before returning: on Vercel the function
+    // freezes after the response, so unawaited background work is intermittently
+    // dropped. Run sequentially (not parallel IIFEs) to avoid exhausting the
+    // Prisma connection pool.
     if (bid || slug) {
-      void (async () => {
-        const business = bid
-          ? await db.business.findUnique({ where: { id: bid } })
-          : await db.business.findUnique({ where: { slug: slug! } })
-        if (business) {
-          await findOrCreateContact({
+      const business = bid
+        ? await db.business.findUnique({ where: { id: bid } })
+        : await db.business.findUnique({ where: { slug: slug! } })
+
+      if (business) {
+        // Contact (CRM)
+        await findOrCreateContact({
+          businessId: business.id,
+          phoneNumber: typeof phone === 'string' ? phone.trim() || undefined : undefined,
+          email: typeof email === 'string' ? email.trim() || undefined : undefined,
+          name: typeof name === 'string' ? name.trim() : undefined,
+          source: 'website_form',
+          notes: typeof message === 'string' ? message.trim() || undefined : undefined,
+        })
+
+        // WebsiteLead (dashboard visibility)
+        await db.websiteLead.create({
+          data: {
             businessId: business.id,
-            phoneNumber: typeof phone === 'string' ? phone.trim() || undefined : undefined,
-            email: typeof email === 'string' ? email.trim() || undefined : undefined,
-            name: typeof name === 'string' ? name.trim() : undefined,
-            source: 'website_form',
-            notes: typeof message === 'string' ? message.trim() || undefined : undefined,
-          })
-        }
-      })().catch(() => {})
-    }
+            name: typeof name === 'string' ? name.trim() : 'Unknown',
+            phone: typeof phone === 'string' ? phone.trim() || null : null,
+            email: typeof email === 'string' ? email.trim() || null : null,
+            message: typeof message === 'string' ? message.trim() || null : null,
+            status: 'new',
+          },
+        })
 
-    // Save as a website lead for dashboard visibility
-    if (bid || slug) {
-      void (async () => {
+        // Notify the business owner. The lead is already saved above, so a notify
+        // failure must NOT fail the request — log it and continue.
         try {
-          const business = bid
-            ? await db.business.findUnique({ where: { id: bid } })
-            : await db.business.findUnique({ where: { slug: slug! } })
-          if (business) {
-            await db.websiteLead.create({
-              data: {
-                businessId: business.id,
-                name: typeof name === 'string' ? name.trim() : 'Unknown',
-                phone: typeof phone === 'string' ? phone.trim() || null : null,
-                email: typeof email === 'string' ? email.trim() || null : null,
-                message: typeof message === 'string' ? message.trim() || null : null,
-                status: 'new',
-              },
-            })
-          }
-        } catch (err) {
-          console.error('Failed to save website lead:', err)
-        }
-      })()
-    }
-
-    // Notify the business owner of the new lead (client tenants only — never the
-    // marketing/YOUR_EMAIL branch). Non-blocking, but log success/failure so a
-    // failed notification surfaces in logs rather than being swallowed.
-    if (bid || slug) {
-      void (async () => {
-        try {
-          const business = bid
-            ? await db.business.findUnique({ where: { id: bid } })
-            : await db.business.findUnique({ where: { slug: slug! } })
-          if (!business) return
           const result = await notifyOwnerOnWebsiteLead(business, {
             name: typeof name === 'string' ? name.trim() : 'Unknown',
             phone: typeof phone === 'string' ? phone.trim() || null : null,
@@ -135,7 +117,7 @@ export async function POST(request: NextRequest) {
         } catch (err) {
           console.error('Failed to notify owner of website lead:', err)
         }
-      })()
+      }
     }
 
     return NextResponse.json({ success: true }, { headers: CORS_HEADERS })
