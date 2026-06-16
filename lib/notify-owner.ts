@@ -51,6 +51,16 @@ function formatTime(d: Date, timeZone?: string): string {
   })
 }
 
+/** Escape user-supplied strings before embedding them in email HTML. */
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+}
+
 type BusinessWithPhone = Pick<
   Business,
   | 'id'
@@ -564,10 +574,15 @@ export async function notifyOwnerOnWebsiteLead(
     console.error('[NOTIFY OWNER] Website lead SMS disabled (notifyBySms=false)')
   }
 
-  // Email
+  // Email — clean HTML layout (sent as real HTML, not wrapped plain text)
   if (business.notifyByEmail && business.ownerEmail) {
     const subject = `New Website Lead - ${name}`
-    const body = [
+    const tz = business.timezone ?? 'America/New_York'
+    const now = new Date()
+    const receivedAt = `${formatDate(now, tz)} at ${formatTime(now, tz)}`
+
+    // Plain-text fallback for clients that strip HTML.
+    const textBody = [
       `A new lead just submitted the contact form on your website for ${business.name}.`,
       '',
       'Customer details:',
@@ -577,13 +592,57 @@ export async function notifyOwnerOnWebsiteLead(
       '',
       message ? `Message:\n${message}` : 'No message provided.',
       '',
+      `Received: ${receivedAt}`,
+      '',
       'Please reach out to this customer directly.',
     ]
       .filter(Boolean)
       .join('\n')
 
+    const rows: Array<[string, string]> = [
+      ['Name', name],
+      ['Phone', phone || 'Not provided'],
+      ['Email', email || 'Not provided'],
+      ['Message', message || 'No message provided.'],
+      ['Received', receivedAt],
+    ]
+    const rowsHtml = rows
+      .map(([label, value], i) => {
+        const border = i === 0 ? '' : 'border-top:1px solid #e5e9ef;'
+        return `<tr>
+              <td style="${border}padding:12px 0;width:140px;vertical-align:top;font-size:13px;color:#6b7785;font-weight:600;">${escapeHtml(label)}</td>
+              <td style="${border}padding:12px 0;vertical-align:top;font-size:14px;color:#1f2933;white-space:pre-wrap;word-break:break-word;">${escapeHtml(value)}</td>
+            </tr>`
+      })
+      .join('')
+
+    const htmlBody = `<!DOCTYPE html>
+<html>
+  <body style="margin:0;padding:0;background:#f4f6f9;">
+    <div style="max-width:600px;margin:0 auto;padding:24px 16px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
+      <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="border-collapse:collapse;background:#ffffff;border-radius:10px;overflow:hidden;box-shadow:0 1px 3px rgba(16,32,48,0.08);">
+        <tr>
+          <td style="background:#1A4A70;padding:24px 28px;">
+            <div style="font-size:18px;font-weight:700;color:#ffffff;">New lead &mdash; ${escapeHtml(business.name)}</div>
+            <div style="margin-top:4px;font-size:14px;color:#cdddec;">${escapeHtml(name)}</div>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:8px 28px 24px;">
+            <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="border-collapse:collapse;">
+              ${rowsHtml}
+            </table>
+            <p style="margin:24px 0 0;font-size:13px;color:#6b7785;">Please reach out to this customer directly.</p>
+          </td>
+        </tr>
+      </table>
+      <div style="margin-top:16px;text-align:center;font-size:12px;color:#98a4b0;">Powered by MissedCall AI &mdash; Align and Acquire</div>
+    </div>
+  </body>
+</html>`
+
     try {
-      await sendEmail(business.ownerEmail, subject, body)
+      await sendEmail(business.ownerEmail, subject, textBody, htmlBody)
       console.error('[NOTIFY OWNER] Website lead email sent to', business.ownerEmail)
       result.emailSent = true
     } catch (err) {
@@ -631,15 +690,18 @@ function getTransporter() {
   return transporter
 }
 
-async function sendEmail(to: string, subject: string, text: string): Promise<void> {
-  console.error('[NOTIFY OWNER] sendEmail called', { to, subject: subject.slice(0, 50) + '...' })
+// `html`, when provided, is sent as-is (caller already produced full email HTML).
+// When omitted, the plain-text `text` is wrapped via plainTextToEmailHtml — this keeps
+// every existing text-only notifier working unchanged.
+async function sendEmail(to: string, subject: string, text: string, html?: string): Promise<void> {
+  console.error('[NOTIFY OWNER] sendEmail called', { to, subject: subject.slice(0, 50) + '...', html: html ? '(html)' : '(text)' })
   try {
     const resend = new Resend(process.env.RESEND_API_KEY)
     const result = await resend.emails.send({
       from: 'notifications@alignandacquire.com',
       to,
       subject,
-      html: plainTextToEmailHtml(text),
+      html: html ?? plainTextToEmailHtml(text),
     })
     if (result.error) {
       throw new Error(`Resend error: ${result.error.message}`)
