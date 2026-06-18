@@ -1,5 +1,5 @@
 /**
- * Primary logo — uses the AAA logo primary lockup image.
+ * Primary logo — uses the original AA arrow lockup (public/aa-logo.png, 751×507).
  * Native <img> keeps it sharp (no Next.js recompression).
  */
 export function Logo({
@@ -20,7 +20,7 @@ export function Logo({
 
   return (
     <img
-      src="/images/logo-primary.png"
+      src="/aa-logo.png"
       alt="Align and Acquire"
       className={`object-contain ${sizeClass} ${className}`.trim()}
       draggable={false}
