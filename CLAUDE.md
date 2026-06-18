@@ -29,12 +29,13 @@ This document is the single source of truth for understanding, debugging, and mo
 - **Framework:** Next.js 14.2.21 (App Router), React 18.3.1, TypeScript strict mode
 - **Database:** Neon PostgreSQL via Prisma ORM
   - `DATABASE_URL` = pooled connection (runtime)
-  - `DIRECT_URL` = direct connection (migrations only)
+  - `DIRECT_URL` = direct (non-pooled) connection (used by `prisma db push`)
+  - **No `prisma/migrations/` directory.** Schema is synced with `npm run db:push` (`prisma db push`) — do NOT run `prisma migrate`. Recent additive column changes are also kept as raw SQL in `scripts/sql/` (e.g. `2026-06-02_add_isClientContact.sql`, `2026-06-02_add_knownContactVoicemailEnabled.sql`).
 - **Authentication:** Clerk (`@clerk/nextjs`)
 - **Telephony & SMS:** Telnyx (`telnyx` v5.37.1) — Call Control API + Messaging API
 - **AI:** Anthropic Claude (`@anthropic-ai/sdk` v0.52.0)
 - **Calendar:** Google Calendar API (`googleapis`) — OAuth2, service account not used; per-business OAuth tokens stored in DB
-- **Email:** nodemailer (SMTP/Gmail) for owner notifications; Resend (`resend`) for voicemail alerts
+- **Email:** Resend (`resend`) for ALL transactional email — owner notifications, voicemail alerts, and outreach campaigns (all send from `notifications@alignandacquire.com`). nodemailer/SMTP is still imported in `lib/notify-owner.ts` but its `getTransporter()` is dead code (never called).
 - **File Storage:** Vercel Blob (`@vercel/blob`) — voicemail recordings + email campaign images
 - **UI:** Tailwind CSS, Radix UI (`@radix-ui/*`), clsx + tailwind-merge
 - **Date handling:** `date-fns` + `@date-fns/tz` (TZDate) — all business-local timezone conversions use TZDate, never UTC math
@@ -88,8 +89,12 @@ This document is the single source of truth for understanding, debugging, and mo
 │   │       │   └── page.tsx      # VoicemailsClient.tsx
 │   │       ├── blocked-calls/    # Spam-screened call list
 │   │       │   └── page.tsx
-│   │       ├── website-leads/    # Contact form submissions
-│   │       │   └── page.tsx      # FeatureGate(missedCallAiEnabled) → WebsiteLeadsClient
+│   │       ├── leads/            # Unified Leads (missed-call + website) — NEW
+│   │       │   ├── page.tsx      # FeatureGate(missedCallAiEnabled) → LeadsClient
+│   │       │   ├── LeadsClient.tsx
+│   │       │   └── CombinedLeadsList.tsx  # merges /conversations + /website-leads client-side
+│   │       ├── website-leads/    # Legacy → redirect('/dashboard/leads?tab=website')
+│   │       │   └── page.tsx      # redirect only (WebsiteLeadsClient.tsx component still exists, unused by route)
 │   │       ├── ads/              # Google Ads dashboard
 │   │       │   └── page.tsx      # FeatureGate(googleAdsEnabled) → AdsClient.tsx
 │   │       ├── analytics/        # Usage + cost analytics
@@ -242,7 +247,7 @@ Every variable the app uses, what it controls, and what breaks without it.
 | Variable | Required | Purpose |
 |---|---|---|
 | `DATABASE_URL` | Yes | Neon pooled connection URL (used at runtime) |
-| `DIRECT_URL` | Yes | Neon direct (non-pooled) URL (used for `prisma migrate`) |
+| `DIRECT_URL` | Yes | Neon direct (non-pooled) URL (used by `prisma db push` — there are no `prisma migrate` migrations) |
 
 ### AI
 | Variable | Required | Purpose |
@@ -348,6 +353,7 @@ callScreenerEnabled     Boolean   @default(false)       // IVR "press 1" gate be
 callScreenerMessage     String?                         // Override default IVR prompt
 missedCallVoiceMessage  String?   @default("We're sorry we can't get to the phone right now. You should receive a text message shortly.")
 missedCallAiEnabled     Boolean   @default(true)        // When false: no SMS is sent; only spam screen + voicemail (if forwarding fails)
+knownContactVoicemailEnabled Boolean @default(false)    // When true: a missed call from one of the client's own saved contacts (Contact.isClientContact=true) routes to voicemail instead of the AI SMS flow. Added via scripts/sql, not in a Prisma migration.
 
 smsCooldownDays         Int?                            // null = use SMS_COOLDOWN_DAYS env or 7 days
 cooldownBypassNumbers   Json?     @default("[]")        // Phone numbers that skip cooldown (for testing)
@@ -510,6 +516,7 @@ zip         String?
 source      String?               // missed_call, website_form, manual, referral, google_ad
                                   // IMPORTANT: contacts with source=null are treated as "existing contacts"
                                   //            by isExistingContact() — they skip automated SMS
+isClientContact Boolean @default(false)  // The client's OWN saved contacts. Separate from source. Drives known-contact voicemail routing (see knownContactVoicemailEnabled) via isClientVoicemailContact(). Added via scripts/sql, not a Prisma migration.
 status      String?   @default("new")  // new, contacted, quoted, booked, completed, lost
 notes       String?   @db.Text
 lastContactedAt DateTime?
@@ -521,7 +528,11 @@ totalRevenue Float?   @default(0)
 @@unique([businessId, phoneNumber])
 ```
 
-**CRITICAL:** `isExistingContact()` in `lib/contacts-check.ts` queries `Contact` where `source IS NULL`. Only contacts imported without a source (e.g. from a bulk CSV of existing customers) block automated SMS. Contacts created from missed calls (source='missed_call') do NOT block SMS.
+**CRITICAL — two distinct contact gates suppress automated SMS, by different mechanisms:**
+
+1. **`isExistingContact()`** (`lib/contacts-check.ts`) — queries `Contact` where `source IS NULL`. UNCHANGED. Only contacts imported without a source (e.g. a bulk CSV of existing customers) block automated SMS. Contacts created from missed calls (source='missed_call') do NOT block SMS. This is guard step 1 inside `sendMissedCallSMS()`.
+
+2. **`isClientVoicemailContact()` + `knownContactVoicemailEnabled`** (the newer gate) — queries `Contact` where `isClientContact = true`. This runs UPSTREAM in the voice webhook, *before* `sendMissedCallSMS()` is even called: if `business.knownContactVoicemailEnabled` AND the caller is one of the client's own contacts (`isClientContact=true`), the call is routed to voicemail (`startClientContactVoicemail`) and no missed-call SMS is sent. It does NOT modify `isExistingContact` and is keyed on `isClientContact`, not on `source`.
 
 ---
 
@@ -819,9 +830,11 @@ call.bridging.failed (state.isForwardingLeg)
 
 #### `sendMissedCallSMS()` — Checks before sending
 
-Order of checks (all must pass):
+**Upstream gate (before `sendMissedCallSMS` is called):** in the voice webhook, every path first checks `if (business.knownContactVoicemailEnabled && isClientVoicemailContact(caller))` → route to voicemail and skip the SMS entirely. Only if that's false does it reach `sendMissedCallSMS`.
+
+Order of checks inside `sendMissedCallSMS` (all must pass):
 1. Check `BlockedNumber` table → skip if found
-2. `isExistingContact()` → skip if caller is in address book (source IS NULL)
+2. `isExistingContact()` → skip if caller is in address book (`source IS NULL` — NOT `isClientContact`; that's the upstream voicemail gate above)
 3. `isCooldownBypassNumber()` → if bypass list match, skip cooldown
 4. `checkCooldown()` → skip if recent SMS within cooldown window
 5. Find or create `Conversation`
@@ -1206,6 +1219,13 @@ logCooldownSkip(businessId: string, phoneNumber: string, lastMessageSent: Date, 
 isExistingContact(businessId: string, callerPhone: string): Promise<boolean>
 // Returns true if Contact exists with source IS NULL (imported existing customers).
 // source='missed_call' or any other source → NOT treated as existing.
+// Gates automated SMS (guard step 1 in sendMissedCallSMS). UNCHANGED.
+
+isClientVoicemailContact(businessId: string, callerPhone: string): Promise<boolean>
+// Returns true if Contact exists with isClientContact = true (the client's own saved contacts).
+// SEPARATE from isExistingContact. Used by the voice webhook's known-contact voicemail
+// routing: when business.knownContactVoicemailEnabled is true and this returns true,
+// the missed call goes to voicemail and no AI SMS is sent. Uses phonesMatch (last-10).
 
 logContactSkip(businessId: string, phoneNumber: string, messageType?: string): Promise<void>
 // Create CooldownSkipLog(reason='existing_contact') for analytics.
@@ -1302,7 +1322,7 @@ createBooking(params: CreateBookingParams): Promise<CreateBookingResult>
 
 ### `lib/notify-owner.ts`
 
-All four functions send SMS (Telnyx from business.telnyxPhoneNumber to ownerPhone||forwardingNumber) and email (SMTP via nodemailer, `from` = SMTP_FROM or SMTP_USER).
+These functions send SMS (Telnyx from business.telnyxPhoneNumber to ownerPhone||forwardingNumber) and email. **Email now goes through Resend** via the internal `sendEmail()` helper, `from` = `notifications@alignandacquire.com` (NOT SMTP). There is also a website-lead owner email built from a clean HTML template.
 
 ```typescript
 notifyOwnerOnBookingCreated(business, appointment): Promise<{ smsSent, emailSent }>
@@ -1328,7 +1348,7 @@ notifyOwnerOnAIFailed(business, params): Promise<void>
 // Customer received: "Thanks for reaching out! Let me have someone get back to you shortly."
 ```
 
-**SMTP transport:** Singleton `nodemailer.createTransport`. Requires `SMTP_USER` and `SMTP_PASS`. Throws on missing env vars (so email notifications silently fail if misconfigured).
+**Email transport:** `sendEmail(to, subject, text, html?)` uses Resend (`RESEND_API_KEY`). When `html` is omitted it wraps `text` via `plainTextToEmailHtml`. The legacy nodemailer/SMTP `getTransporter()` is still present in the file but is **dead code — nothing calls it** (the SMTP_* env vars are no longer used for sending).
 
 ### `lib/import-contacts.ts`
 ```typescript
@@ -1484,11 +1504,11 @@ plainTextToEmailHtml(text: string): string
 - Messages and Emails nav items were removed; both old URLs redirect to `/dashboard/outreach`
 - Conversations uses icon `MessagesSquare`; Outreach uses icon `Send`
 
-**`app/components/FeatureGate.tsx`** — Server component (no `'use client'`), two modes:
-- `locked` mode: blurs children + overlay card with mailto CTA. Subject line: `Unlock {feature} for {businessName}` (passed through `encodeURIComponent`). Use when a feature requires a paid upgrade.
-- `needs-setup` mode: blurs children + overlay card with a green setup link. Use when a feature is available but needs configuration (e.g. Google Calendar not connected).
-- Props: `mode: 'locked' | 'needs-setup'`, `feature: string`, `businessName?: string`, `setupHref?: string`, `setupLabel?: string`
-- No state/hooks needed — pure server-rendered overlay.
+**`app/components/FeatureGate.tsx`** — Server component (no `'use client'`). Takes a required `enabled: boolean` — when `true` it renders `children` directly; when `false` it blurs them and shows an overlay card. The props are a discriminated union on `mode`:
+- **Shared:** `enabled: boolean`, `children`.
+- **`mode: 'locked'`** (paid upgrade): `feature: string`, `valueProp: string`, `businessName: string`. CTA is a `mailto:jacob@alignandacquire.com` link with subject `Unlock {feature} for {businessName}` (encodeURIComponent'd). `valueProp` is the body copy.
+- **`mode: 'needs-setup'`** (available but unconfigured, e.g. Google Calendar): `feature: string`, `setupDescription: string`, `setupLabel: string`, `setupHref: string`. CTA is a green link to `setupHref` labeled `setupLabel`; `setupDescription` is the body copy.
+- NOTE: the old `setupHref?/setupLabel?/businessName?`-optional shape is gone — `valueProp` (locked) and `setupDescription` (needs-setup) are now required, and `enabled` drives whether the gate passes through.
 
 **`app/(dashboard)/dashboard/page.tsx`** — Overview (server component)
 - Calls `getBusinessFeatures(business)` to build full `features` object (including `googleAds`)
@@ -1578,10 +1598,12 @@ plainTextToEmailHtml(text: string): string
 - ScreenedCall records (spam-filtered calls)
 - Shows caller phone, date, result
 
-**`app/(dashboard)/dashboard/website-leads/page.tsx`** — `WebsiteLeadsClient`
-- FeatureGate `locked` on `business.missedCallAiEnabled !== false`
-- WebsiteLead records from contact forms
-- Name, phone, email, message, status
+**`app/(dashboard)/dashboard/leads/page.tsx`** — `LeadsClient` → `CombinedLeadsList` (the unified Leads page)
+- FeatureGate `locked` (mode='locked', `enabled = business.missedCallAiEnabled !== false`, feature "Leads")
+- `CombinedLeadsList` fetches BOTH `/api/dashboard/conversations` and `/api/dashboard/website-leads` client-side and merges them into one list with a source filter (All / Missed Call / Website). Missed-call rows reuse the conversation buckets/labels; website rows use WebsiteLead status. No dedicated `/api/dashboard/leads` route exists.
+
+**`app/(dashboard)/dashboard/website-leads/page.tsx`** — legacy redirect
+- `redirect('/dashboard/leads?tab=website')` — old Website Leads URL preserved for bookmarks/links. (It is no longer a standalone `WebsiteLeadsClient` page; the `WebsiteLeadsClient.tsx` component still exists but the route only redirects.)
 
 **`app/(dashboard)/dashboard/ads/page.tsx`** — Google Ads (server wrapper)
 - FeatureGate `locked` on `!business.googleAdsEnabled` — shows upgrade overlay
@@ -1723,19 +1745,17 @@ const isPublicApiRoute = createRouteMatcher([
 - Free/busy query + business hours = available slots
 - Events created with customer details in description field
 
-### Resend (Email — voicemail notifications)
+### Resend (Email — ALL transactional email)
 
-- Used in voice webhook `call.recording.saved` handler for voicemail email notifications
-- `new Resend(process.env.RESEND_API_KEY)`
-- Sends from `notifications@alignandacquire.com`
-- Only used when `missedCallAiEnabled == false` (spam-screening-only mode)
+- `new Resend(process.env.RESEND_API_KEY)`, sends from `notifications@alignandacquire.com`
+- Three send paths, all on Resend:
+  - **Owner notifications** — `lib/notify-owner.ts` `sendEmail()` (booking/lead/human-needed/AI-failed + website-lead emails)
+  - **Voicemail notifications** — voice webhook `call.recording.saved` handler (used when `missedCallAiEnabled == false`, spam-screening-only mode)
+  - **Outreach email campaigns** — `app/api/dashboard/emails/route.ts`
 
-### nodemailer / SMTP (Email — owner notifications)
+### nodemailer / SMTP — retained but DEAD
 
-- Used for all booking/lead/human-needed/AI-failed owner notifications
-- `lib/notify-owner.ts` → `sendEmail()` → nodemailer singleton transport
-- SMTP via Gmail (SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS)
-- Singleton transport cached in module scope (not recreated per request)
+- `lib/notify-owner.ts` still imports nodemailer and defines `getTransporter()` (reads SMTP_HOST/PORT/USER/PASS), but **nothing calls it** — email send was moved to Resend. The SMTP_* env vars are effectively unused.
 
 ### Vercel Blob (File Storage)
 
@@ -1767,7 +1787,9 @@ const isPublicApiRoute = createRouteMatcher([
 
 ### SMS / Cooldown
 
-8. **Contact `source IS NULL` = blocks SMS** — `isExistingContact()` queries for contacts where `source IS NULL`. This is intentional: if you import existing customers without a source tag, they won't get automated SMS. If you create contacts from missed calls (source='missed_call'), they WILL receive SMS on future calls. This means: if a business uploads their full customer list via CSV without setting source, all those customers are blocked from automated SMS.
+8. **Two separate "skip SMS" gates — don't conflate them.**
+   - **`source IS NULL`** → `isExistingContact()` queries contacts where `source IS NULL` and skips SMS (guard inside `sendMissedCallSMS`). If you import existing customers without a source tag, they won't get automated SMS; contacts from missed calls (source='missed_call') WILL. Uploading a full customer CSV without a source blocks all of them.
+   - **`isClientContact = true` + `knownContactVoicemailEnabled`** → a *different, newer* gate. It does NOT touch `isExistingContact` or `source`. When the business has `knownContactVoicemailEnabled` on and the caller is one of its own contacts (`isClientContact=true`, matched by `isClientVoicemailContact()`), the voice webhook routes the call to voicemail *before* `sendMissedCallSMS` runs, so no SMS is sent. A contact can have a non-null source and still hit this gate.
 
 9. **SMS cooldown is per-business-phone pair** — The `ContactCooldown` table uses `(businessId, phoneNumber)`. If someone calls two different businesses on the same platform, they get separate cooldowns.
 
@@ -2013,7 +2035,7 @@ The `callScreenerMessage` and `forwardingNumber` have inline edit flows (text in
 
 ---
 
-*This document reflects the codebase as of May 2026. Update after any significant architectural changes.*
+*This document reflects the codebase as of June 16, 2026. Update after any significant architectural changes.*
 
 ---
 
