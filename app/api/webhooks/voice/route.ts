@@ -42,7 +42,9 @@ import Telnyx from 'telnyx'
 import { format } from 'date-fns'
 import { checkCooldown, recordMessageSent, logCooldownSkip, isCooldownBypassNumber } from '@/lib/sms-cooldown'
 import { isExistingContact, logContactSkip, isClientVoicemailContact } from '@/lib/contacts-check'
+import { findExistingContact } from '@/lib/crm-utils'
 import { normalizePhoneNumber, phonesMatch } from '@/lib/phone-utils'
+import { formatPhoneNumber } from '@/lib/utils'
 
 const VOICE = 'AWS.Polly.Joanna'
 const DEFAULT_VOICE_MESSAGE =
@@ -707,10 +709,28 @@ export async function POST(request: NextRequest) {
             const transcriptionText = (convUpdated as { voicemailTranscription?: string | null } | null)?.voicemailTranscription?.trim() || null
             const callerPhone = convUpdated?.callerPhone ?? conv.callerPhone ?? 'Unknown'
 
+            // Resolve the caller's contact name for the notification, falling back to the
+            // formatted number. A lookup failure must never block the notification.
+            let callerDisplay: string
+            if (callerPhone === 'Unknown') {
+              callerDisplay = 'Unknown caller'
+            } else {
+              let resolvedName: string | null = null
+              try {
+                const contact = await findExistingContact(conv.businessId, callerPhone, null)
+                resolvedName = contact?.name ?? null
+              } catch {
+                resolvedName = null
+              }
+              callerDisplay = resolvedName
+                ? `${resolvedName} ${formatPhoneNumber(callerPhone)}`
+                : formatPhoneNumber(callerPhone)
+            }
+
             if (business.notifyBySms && business.ownerPhone && business.telnyxPhoneNumber) {
               try {
                 const smsBody = [
-                  `New voicemail from ${callerPhone}`,
+                  `New voicemail from ${callerDisplay}`,
                   transcriptionText || 'Transcription not available',
                   'View: https://www.alignandacquire.com/dashboard/voicemails',
                 ].join('\n')
@@ -739,7 +759,7 @@ export async function POST(request: NextRequest) {
 <head><meta charset="utf-8"><title>New Voicemail</title></head>
 <body style="font-family: system-ui, sans-serif; max-width: 560px; margin: 0 auto; padding: 24px; color: #111;">
   <h2 style="margin-top: 0;">New Voicemail</h2>
-  <p><strong>From:</strong> ${callerPhone}</p>
+  <p><strong>From:</strong> ${callerDisplay}</p>
   <p><strong>Date &amp; time:</strong> ${dateTime}</p>
   ${transcriptionHtml}
   <p><a href="https://www.alignandacquire.com/dashboard/voicemails" style="color: #2563eb;">View in Dashboard</a></p>
@@ -748,7 +768,7 @@ export async function POST(request: NextRequest) {
                 await resend.emails.send({
                   from: 'notifications@alignandacquire.com',
                   to: business.ownerEmail,
-                  subject: `New Voicemail - ${business.name}`,
+                  subject: `New Voicemail from ${callerDisplay} - ${business.name}`,
                   html: htmlBody,
                 })
                 console.log('📞 Voicemail email notification sent to owner:', business.ownerEmail)
