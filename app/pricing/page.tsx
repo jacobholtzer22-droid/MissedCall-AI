@@ -41,7 +41,7 @@ const TIERS: Tier[] = [
   {
     name: 'Catch',
     tagline: 'Stop losing the leads you already get.',
-    price: 349,
+    price: 300,
     setup: 400,
     popular: false,
     includes: [
@@ -55,7 +55,7 @@ const TIERS: Tier[] = [
   {
     name: 'Grow',
     tagline: 'Generate new leads and bring old ones back.',
-    price: 549,
+    price: 485,
     setup: 500,
     popular: true,
     includes: [
@@ -72,7 +72,7 @@ const TIERS: Tier[] = [
   {
     name: 'Automate',
     tagline: 'Let AI run it while you\'re off the clock.',
-    price: 900,
+    price: 700,
     setup: 750,
     popular: false,
     includes: [
@@ -91,13 +91,13 @@ const TIERS: Tier[] = [
 // À la carte — standalone pricing. Two or more services together will cost
 // significantly more than a bundle, which is intentional.
 const ALA_CARTE: AlaCarteService[] = [
-  { id: 'missedcall', label: 'MissedCall AI',         icon: PhoneMissed,     monthlyPrice: 349, setupPrice: 299, description: 'Automatic text-back for every missed caller, lead capture, calendar booking' },
-  { id: 'website',    label: 'Custom Website',         icon: Globe,           monthlyPrice: 179, setupPrice: 250, description: 'Built from scratch, shows up on Google, unlimited same-day updates' },
-  { id: 'ads',        label: 'Google Ads Management',  icon: BarChart3,       monthlyPrice: 225, setupPrice: 300, description: '' },
-  { id: 'campaigns',  label: 'Email & SMS Campaigns',  icon: Megaphone,       monthlyPrice: 175, setupPrice: 150, description: 'Blast messages to your full contact list, unlimited campaigns' },
-  { id: 'crm',        label: 'Leads Dashboard',        icon: LayoutDashboard, monthlyPrice: 129, setupPrice: 0,   description: 'All contacts from missed calls and website leads in one place' },
-  { id: 'calendar',   label: 'Calendar Integration',   icon: CalendarCheck,   monthlyPrice: 99,  setupPrice: 0,   description: 'Online booking synced to your Google Calendar' },
-  { id: 'spam',       label: 'Spam Call Screening',    icon: ShieldBan,       monthlyPrice: 89,  setupPrice: 150, description: 'Blocks robocalls before they reach you. Only real customers get through.' },
+  { id: 'missedcall', label: 'MissedCall AI',         icon: PhoneMissed,     monthlyPrice: 299, setupPrice: 299, description: 'Automatic text-back for every missed caller, lead capture, calendar booking' },
+  { id: 'website',    label: 'Custom Website',         icon: Globe,           monthlyPrice: 169, setupPrice: 250, description: 'Built from scratch, shows up on Google, unlimited same-day updates' },
+  { id: 'ads',        label: 'Google Ads Management',  icon: BarChart3,       monthlyPrice: 199, setupPrice: 300, description: '' },
+  { id: 'campaigns',  label: 'Email & SMS Campaigns',  icon: Megaphone,       monthlyPrice: 149, setupPrice: 150, description: 'Blast messages to your full contact list, unlimited campaigns' },
+  { id: 'crm',        label: 'Leads Dashboard',        icon: LayoutDashboard, monthlyPrice: 109, setupPrice: 0,   description: 'All contacts from missed calls and website leads in one place' },
+  { id: 'calendar',   label: 'Calendar Integration',   icon: CalendarCheck,   monthlyPrice: 89,  setupPrice: 0,   description: 'Online booking synced to your Google Calendar' },
+  { id: 'spam',       label: 'Spam Call Screening',    icon: ShieldBan,       monthlyPrice: 75,  setupPrice: 150, description: 'Blocks robocalls before they reach you. Only real customers get through.' },
 ]
 
 // ─────────────────────────────────────────────────────────

@@ -189,20 +189,20 @@ export default function CampaignsPage() {
               <div className="grid sm:grid-cols-2 gap-6 mb-6">
                 <div>
                   <div className="font-mono text-[11px] uppercase tracking-widest mb-1" style={{ color: '#6E7681' }}>One-time setup</div>
-                  <div className="text-[32px] font-black tabular-nums" style={{ color: '#EE6B1A' }}>$100</div>
+                  <div className="text-[32px] font-black tabular-nums" style={{ color: '#EE6B1A' }}>$150</div>
                   <div className="text-[12.5px]" style={{ color: '#6E7681' }}>Client list import, template setup</div>
                 </div>
                 <div>
                   <div className="font-mono text-[11px] uppercase tracking-widest mb-1" style={{ color: '#6E7681' }}>Monthly</div>
                   <div className="flex items-end gap-1">
-                    <span className="text-[32px] font-black tabular-nums">$75</span>
+                    <span className="text-[32px] font-black tabular-nums">$149</span>
                     <span className="mb-1 text-[14px]" style={{ color: '#6E7681' }}>/mo</span>
                   </div>
                   <div className="text-[12.5px]" style={{ color: '#6E7681' }}>Unlimited campaigns</div>
                 </div>
               </div>
               <div className="border-t-2 pt-5 text-[13px] mb-7" style={{ borderColor: 'rgba(110,118,129,0.25)', color: '#6E7681' }}>
-                <span style={{ color: '#F2F0EB', fontWeight: 600 }}>Requires CRM dashboard.</span> Available as add-on to any package. On Pro or All In you already have the CRM. Just add Campaigns ($75/mo).
+                <span style={{ color: '#F2F0EB', fontWeight: 600 }}>Requires the Leads Dashboard</span>, which comes with every plan. Campaigns are already included on Grow and Automate — add them to Catch for $149/mo.
               </div>
               <Link href="/book" className="aa-btn w-full inline-flex items-center justify-center gap-2 py-4 text-[14px] font-bold uppercase tracking-wide" style={{ background: '#EE6B1A', color: '#16181C' }}>
                 Add campaigns to my plan <ArrowRight size={15} strokeWidth={2.5} />

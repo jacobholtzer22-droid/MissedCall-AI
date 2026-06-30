@@ -169,12 +169,12 @@ export default function AdsManagementPage() {
               <div className="grid sm:grid-cols-2 gap-6 mb-6">
                 <div>
                   <div className="font-mono text-[11px] uppercase tracking-widest mb-1" style={{ color: '#6E7681' }}>One-time setup</div>
-                  <div className="text-[32px] font-black tabular-nums" style={{ color: '#EE6B1A' }}>$250</div>
+                  <div className="text-[32px] font-black tabular-nums" style={{ color: '#EE6B1A' }}>$300</div>
                 </div>
                 <div>
                   <div className="font-mono text-[11px] uppercase tracking-widest mb-1" style={{ color: '#6E7681' }}>Monthly management</div>
                   <div className="flex items-end gap-1">
-                    <span className="text-[32px] font-black tabular-nums">$125</span>
+                    <span className="text-[32px] font-black tabular-nums">$199</span>
                     <span className="mb-1 text-[14px]" style={{ color: '#6E7681' }}>/mo</span>
                   </div>
                 </div>
