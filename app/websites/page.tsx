@@ -20,6 +20,33 @@ type Project = {
 
 const projects: Project[] = [
   {
+    title: 'Rodas Premier Landscaping',
+    category: 'Landscaping & Snow Removal',
+    description: 'A polished, photo-forward website for a premier lawn care, landscaping, and snow removal crew serving Grand Rapids and West Michigan year-round. Built to showcase real property work and turn visitors into free-quote requests.',
+    image1: '/images/portfolio/rodas-premier-1.png',
+    image2: '/images/portfolio/rodas-premier-2.png',
+    url: 'https://www.rodaspremierlandscaping.com/',
+    features: ['Custom Website Design', 'MissedCall AI Integration', 'SEO Optimization', 'Free Quote Requests'],
+  },
+  {
+    title: 'Bernal Landscape',
+    category: 'Landscape Design & Hardscaping',
+    description: 'A bold, image-driven website for a family-owned landscape design, hardscaping, and property care company serving Grand Rapids and West Michigan for over a decade. Highlights paver patios and real project photos with strong calls to action.',
+    image1: '/images/portfolio/bernal-landscape-1.png',
+    image2: '/images/portfolio/bernal-landscape-2.png',
+    url: 'https://www.bernallandscape.com/',
+    features: ['Custom Website Design', 'Service Showcases & Gallery', 'SEO Optimization', 'Online Quote Requests'],
+  },
+  {
+    title: 'Fresh Cut Lawns',
+    category: 'Lawn Care',
+    description: 'A clean, high-converting website for a locally owned lawn care company keeping Elkhart, Granger, and South Bend yards sharp all season long. Focused on real results photos and easy free-estimate requests.',
+    image1: '/images/portfolio/fresh-cut-lawns-1.png',
+    image2: '/images/portfolio/fresh-cut-lawns-2.png',
+    url: 'https://www.freshcutlawnsllc.com/',
+    features: ['Custom Website Design', 'MissedCall AI Integration', 'SEO Optimization', 'Free Estimate Requests'],
+  },
+  {
     title: 'Fraaza Enterprises',
     category: 'Hydroseeding & Landscaping',
     description: "A bold, photo-driven website for West Michigan's hydroseeding experts, owner-operated since 2004. Showcases hydroseeding, landscaping, soil prep, and retaining wall work with a filterable project gallery and clear calls to action.",
@@ -36,6 +63,15 @@ const projects: Project[] = [
     image2: '/images/portfolio/jack-of-all-blades-2.png',
     url: 'https://jackofallbladeslandscaping.com',
     features: ['Custom Website Design', 'MissedCall AI Integration', 'SEO Optimization', 'Online Quote Booking'],
+  },
+  {
+    title: 'Apex Detail Studio',
+    category: 'Business Website',
+    description: 'Premium auto detailing website. Features service packages, gallery, testimonials, and booking integration.',
+    image1: '/images/portfolio/detailing-1.png',
+    image2: '/images/portfolio/detailing-2.png',
+    url: 'https://detailing-site-seven.vercel.app/',
+    features: ['Service Packages', 'Image Gallery', 'Testimonials', 'Contact Forms'],
   },
   {
     title: 'Aesthetic Gardener',
@@ -56,24 +92,6 @@ const projects: Project[] = [
     features: ['User Authentication', 'Dashboard', 'Progress Tracking', 'Responsive Design'],
     imagesSeparate: true,
     imageCompact: true,
-  },
-  {
-    title: 'Apex Detail Studio',
-    category: 'Business Website',
-    description: 'Premium auto detailing website. Features service packages, gallery, testimonials, and booking integration.',
-    image1: '/images/portfolio/detailing-1.png',
-    image2: '/images/portfolio/detailing-2.png',
-    url: 'https://detailing-site-seven.vercel.app/',
-    features: ['Service Packages', 'Image Gallery', 'Testimonials', 'Contact Forms'],
-  },
-  {
-    title: 'Breeze Tees',
-    category: 'E-Commerce',
-    description: 'Modern t-shirt brand with a clean, stylish design. Built for showcasing products and driving conversions.',
-    image1: '/images/portfolio/breeze-tees-1.png',
-    image2: '/images/portfolio/breeze-tees-2.png',
-    url: null,
-    features: ['Product Showcase', 'Modern Design', 'Mobile Optimized', 'Brand Identity'],
   },
 ]
 
@@ -148,12 +166,12 @@ export default function WebsitesPage() {
                       ))}
                     </div>
                     {project.url ? (
-                      <a href={project.url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 text-[13px] font-bold uppercase tracking-wide" style={{ color: '#1A4A70' }}>
-                        View live site <ExternalLink size={14} strokeWidth={2.25} />
+                      <a href={project.url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2.5 border-2 px-6 py-3.5 text-[15px] font-bold uppercase tracking-wide transition-colors hover:opacity-90" style={{ background: '#1A4A70', borderColor: '#1A4A70', color: '#F2F0EB' }}>
+                        View live site <ExternalLink size={18} strokeWidth={2.5} />
                       </a>
                     ) : (
-                      <span className="inline-flex items-center gap-2 text-[13px] font-bold uppercase tracking-wide cursor-not-allowed" style={{ color: '#6E7681' }}>
-                        View live site <ExternalLink size={14} strokeWidth={2.25} />
+                      <span className="inline-flex items-center gap-2.5 border-2 px-6 py-3.5 text-[15px] font-bold uppercase tracking-wide cursor-not-allowed" style={{ borderColor: '#6E7681', color: '#6E7681' }}>
+                        View live site <ExternalLink size={18} strokeWidth={2.5} />
                       </span>
                     )}
                   </div>
