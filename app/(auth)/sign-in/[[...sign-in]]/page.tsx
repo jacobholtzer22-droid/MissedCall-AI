@@ -4,7 +4,7 @@ import Link from 'next/link'
 export default function SignInPage() {
   return (
     <div
-      className="min-h-dvh flex flex-col items-center justify-center p-6"
+      className="min-h-dvh flex flex-col items-center justify-center px-6 pt-28 pb-16"
       style={{ background: '#16181C' }}
     >
       {/* Brand eyebrow */}

@@ -94,7 +94,7 @@ export function NavMenu() {
             className="aa-btn flex items-center justify-center px-4 py-3 min-h-[44px] text-[14px] font-bold uppercase tracking-wide"
             style={{ background: '#EE6B1A', color: '#16181C' }}
           >
-            Talk to the Owner
+            Book a Free Call
           </Link>
         </div>
       </div>

@@ -56,7 +56,7 @@ export function NavBar() {
               className="aa-btn inline-flex items-center gap-1.5 px-4 py-2.5 text-[13px] font-bold uppercase tracking-wide"
               style={{ background: '#EE6B1A', color: '#16181C' }}
             >
-              Talk to the Owner
+              Book a Free Call
             </Link>
             <NavMenu />
           </div>
