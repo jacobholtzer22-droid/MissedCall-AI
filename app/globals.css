@@ -147,6 +147,30 @@
   );
 }
 
+/* Hero hazard stripe reveal — grows in from the left */
+@keyframes aa-hazard-in {
+  from { transform: scaleX(0); opacity: 0; }
+  to   { transform: scaleX(1); opacity: 1; }
+}
+.aa-hazard-reveal {
+  transform-origin: left center;
+  animation: aa-hazard-in 0.7s cubic-bezier(0.2, 0.7, 0.3, 1) both;
+}
+
+/* Hero content fade-up */
+@keyframes aa-hero-in {
+  from { opacity: 0; transform: translateY(16px); }
+  to   { opacity: 1; transform: none; }
+}
+.aa-hero-reveal {
+  animation: aa-hero-in 0.6s cubic-bezier(0.2, 0.7, 0.3, 1) 0.12s both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .aa-hazard-reveal,
+  .aa-hero-reveal { animation: none; }
+}
+
 /* Phone/SMS thread float animation */
 @keyframes aa-float {
   0%, 100% { transform: translateY(0); }

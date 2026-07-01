@@ -327,8 +327,8 @@ export default function ServicesPage() {
                   </li>
                 ))}
               </ul>
-              <Link href="/websites" className="aa-btn inline-flex items-center gap-2 px-5 py-3.5 text-[14px] font-bold uppercase tracking-wide" style={{ background: '#EE6B1A', color: '#16181C' }}>
-                See our portfolio <ArrowRight size={15} strokeWidth={2.5} />
+              <Link href="/websites" className="aa-btn inline-flex items-center gap-2.5 px-8 py-4 text-[16px] font-bold uppercase tracking-wide" style={{ background: '#EE6B1A', color: '#16181C' }}>
+                Check out our work <ArrowRight size={19} strokeWidth={2.5} />
               </Link>
             </ScrollReveal>
           </div>

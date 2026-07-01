@@ -49,14 +49,14 @@ export function NavBar() {
               className="hidden md:block text-[13px] font-semibold transition-colors"
               style={{ color: '#6E7681' }}
             >
-              Sign in
+              Client Portal
             </Link>
             <Link
               href="/book"
               className="aa-btn inline-flex items-center gap-1.5 px-4 py-2.5 text-[13px] font-bold uppercase tracking-wide"
               style={{ background: '#EE6B1A', color: '#16181C' }}
             >
-              Get started
+              Talk to the Owner
             </Link>
             <NavMenu />
           </div>

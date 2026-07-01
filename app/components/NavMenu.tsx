@@ -86,7 +86,7 @@ export function NavMenu() {
             className="flex items-center justify-center px-4 py-3 min-h-[44px] text-[14px] font-semibold border-2 transition-colors"
             style={{ color: '#F2F0EB', borderColor: 'rgba(110,118,129,0.35)' }}
           >
-            Sign in
+            Client Portal
           </Link>
           <Link
             href="/book"
@@ -94,7 +94,7 @@ export function NavMenu() {
             className="aa-btn flex items-center justify-center px-4 py-3 min-h-[44px] text-[14px] font-bold uppercase tracking-wide"
             style={{ background: '#EE6B1A', color: '#16181C' }}
           >
-            Get started
+            Talk to the Owner
           </Link>
         </div>
       </div>

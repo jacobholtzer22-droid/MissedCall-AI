@@ -48,9 +48,9 @@ export default function HomePage() {
       {/* ════════════════════════════════════════
           HERO — SMS animation is the money shot
           ════════════════════════════════════════ */}
-      <section className="relative aa-grid-bg pt-28 sm:pt-36">
-        <div className="aa-hazard" />
-        <div className="mx-auto max-w-7xl px-5 sm:px-8 pt-10 pb-20">
+      <section className="relative aa-grid-bg pt-20 sm:pt-24">
+        <div className="aa-hazard aa-hazard-reveal" />
+        <div className="mx-auto max-w-7xl px-5 sm:px-8 pt-10 pb-20 aa-hero-reveal">
           <div className="grid lg:grid-cols-[1fr_1fr] gap-12 items-center">
 
             {/* Left: copy */}

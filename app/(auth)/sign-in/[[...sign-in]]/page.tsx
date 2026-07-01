@@ -1,4 +1,5 @@
 import { SignIn } from '@clerk/nextjs'
+import Link from 'next/link'
 
 export default function SignInPage() {
   return (
@@ -14,6 +15,7 @@ export default function SignInPage() {
 
       <SignIn
         afterSignInUrl="/dashboard"
+        signUpUrl="/sign-up"
         appearance={{
           variables: {
             colorPrimary: '#EE6B1A',
@@ -49,6 +51,20 @@ export default function SignInPage() {
           },
         }}
       />
+
+      {/* New client? Prominent sign-up CTA */}
+      <div className="mx-auto w-full max-w-md mt-5 border-2 flex flex-col items-center gap-3 px-6 py-5 text-center" style={{ borderColor: 'rgba(110,118,129,0.35)' }}>
+        <span className="text-[13px] font-semibold" style={{ color: '#6E7681' }}>
+          New here? Don&apos;t have an account yet?
+        </span>
+        <Link
+          href="/sign-up"
+          className="aa-btn inline-flex items-center justify-center w-full px-5 py-3 text-[14px] font-bold uppercase tracking-wide"
+          style={{ background: '#EE6B1A', color: '#16181C' }}
+        >
+          Create your account
+        </Link>
+      </div>
     </div>
   )
 }
