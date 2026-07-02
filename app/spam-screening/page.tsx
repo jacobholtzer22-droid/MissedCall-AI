@@ -7,7 +7,7 @@ import BrandFooter from '@/app/components/BrandFooter'
 import JsonLd from '@/app/components/JsonLd'
 
 const DESCRIPTION =
-  "Every caller presses 1 to connect — robots can't, so spam never reaches you. Works on your existing business number. $75/mo with a $150 one-time setup."
+  "Every caller presses 1 to connect. Robots can't, so spam never reaches you. Works on your existing business number. $75/mo with a $150 one-time setup."
 
 export const metadata: Metadata = {
   title: 'Spam Call Screening for Business Phone Lines',

@@ -72,7 +72,7 @@ export default function BrandFooter() {
         >
           {/* NAP — must match the Google Business Profile exactly (name, phone) */}
           <span className="font-mono text-[11px] uppercase tracking-[0.16em]" style={{ color: '#6E7681' }}>
-            © {new Date().getFullYear()} Align and Acquire · Serving Michigan ·{' '}
+            © {new Date().getFullYear()} Align and Acquire · Serving Michigan & Texas ·{' '}
             <a
               href="tel:+15175809709"
               className="transition-colors"

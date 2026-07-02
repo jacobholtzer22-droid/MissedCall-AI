@@ -55,6 +55,8 @@ const BUSINESS_SCHEMA = {
   areaServed: ['Michigan', 'Texas', 'United States'],
   description: SITE_DESCRIPTION,
   logo: 'https://www.alignandacquire.com/aa-logo.png',
+  // Stable asset URL on purpose — /opengraph-image carries a per-deploy build hash
+  image: 'https://www.alignandacquire.com/aa-logo.png',
 }
 
 export default function RootLayout({

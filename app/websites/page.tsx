@@ -9,7 +9,7 @@ import BrandFooter from '@/app/components/BrandFooter'
 import JsonLd from '@/app/components/JsonLd'
 
 const DESCRIPTION =
-  'Custom-coded, mobile-first websites for landscapers and home service businesses. No templates or page builders — sites that turn visitors into quote requests.'
+  'Custom-coded, mobile-first websites for landscapers and home service businesses. No templates or page builders. Sites that turn visitors into quote requests.'
 
 export const metadata: Metadata = {
   title: 'Website Design for Landscapers & Home Service Businesses',
