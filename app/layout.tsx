@@ -25,20 +25,18 @@ export const metadata: Metadata = {
     template: '%s | Align & Acquire',
   },
   description: 'Helping service businesses capture more leads and grow with AI-powered communication tools.',
+  // og:image comes from the file convention: app/opengraph-image.tsx (1200x630)
   openGraph: {
     title: 'Align & Acquire',
     description: SITE_DESCRIPTION,
     url: 'https://www.alignandacquire.com',
     siteName: 'Align & Acquire',
     type: 'website',
-    // TODO: replace with a dedicated 1200x630 og image (logo is 751x507)
-    images: [{ url: '/aa-logo.png', width: 751, height: 507, alt: 'Align & Acquire' }],
   },
   twitter: {
     card: 'summary_large_image',
     title: 'Align & Acquire',
     description: SITE_DESCRIPTION,
-    images: ['/aa-logo.png'],
   },
 }
 
