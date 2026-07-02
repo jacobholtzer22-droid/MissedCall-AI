@@ -21,6 +21,7 @@ This document is the single source of truth for understanding, debugging, and mo
 13. [Known Gotchas](#13-known-gotchas)
 14. [Google Ads Integration](#14-google-ads-integration)
 15. [Admin Dashboard](#15-admin-dashboard)
+16. [SEO Architecture](#16-seo-architecture)
 
 ---
 
@@ -49,10 +50,28 @@ This document is the single source of truth for understanding, debugging, and mo
 ```
 /
 ├── app/                          # Next.js App Router
-│   ├── layout.tsx                # Root layout: ClerkProvider, ConditionalNavBar, dark bg
-│   ├── page.tsx                  # Marketing homepage
-│   ├── pricing/page.tsx          # Pricing page
-│   ├── spam-screening/page.tsx   # Feature page for spam filtering
+│   ├── layout.tsx                # Root layout: ClerkProvider, ConditionalNavBar, dark bg, sitewide metadata + ProfessionalService JSON-LD
+│   ├── page.tsx                  # Marketing homepage (absolute brand-first title)
+│   ├── sitemap.ts                # Static public marketing routes only (see §16)
+│   ├── robots.ts                 # Crawler rules + sitemap reference (see §16)
+│   ├── opengraph-image.tsx       # Generated 1200x630 og:image, text-only Satori (see §16)
+│   ├── pricing/                  # Pricing page ('use client' — metadata lives in layout.tsx)
+│   │   ├── layout.tsx            # Metadata only
+│   │   └── page.tsx
+│   ├── missedcall-ai/            # MissedCall AI landing page ('use client')
+│   │   ├── layout.tsx            # Metadata + Service + FAQPage JSON-LD (FAQ must mirror page copy — see §16)
+│   │   └── page.tsx              # Hero, stats, ROI calc, how-it-works, features, FAQ, demo form
+│   ├── services/page.tsx         # All-services overview (7 numbered services)
+│   ├── websites/page.tsx         # Website design portfolio/service page (+ Service JSON-LD)
+│   ├── ads-management/page.tsx   # Google Ads management service page (+ Service JSON-LD)
+│   ├── spam-screening/page.tsx   # Spam screening feature page (+ Service JSON-LD)
+│   ├── campaigns/                # Email/SMS campaigns feature page ('use client')
+│   │   ├── layout.tsx            # Metadata only
+│   │   └── page.tsx
+│   ├── about/                    # About page ('use client')
+│   │   ├── layout.tsx            # Metadata only
+│   │   └── page.tsx
+│   ├── demo-requested/page.tsx   # Post-demo-form thank-you page (noindex)
 │   │
 │   ├── (auth)/                   # Clerk auth pages (no nav)
 │   │   ├── sign-in/[[...sign-in]]/page.tsx
@@ -62,9 +81,14 @@ This document is the single source of truth for understanding, debugging, and mo
 │   │   └── page.tsx              # OnboardingForm.tsx client component
 │   │
 │   ├── book/                     # Public booking pages (no auth, iframe-embeddable)
+│   │   ├── layout.tsx            # Metadata for the /book wizard (title "Book a Free Demo")
+│   │   ├── page.tsx              # Marketing qualification + discovery-call wizard ('use client')
 │   │   └── [businessSlug]/
-│   │       ├── page.tsx          # Full booking page
-│   │       └── embed/page.tsx    # Stripped-down iframe version
+│   │       ├── layout.tsx        # generateMetadata: "Book a Quote with {business.name}" + canonical
+│   │       ├── page.tsx          # Full tenant booking page ('use client')
+│   │       └── embed/
+│   │           ├── layout.tsx    # noindex + light-mode wrapper
+│   │           └── page.tsx      # Stripped-down iframe version
 │   │
 │   ├── (dashboard)/              # Authenticated dashboard (Clerk-protected)
 │   │   ├── layout.tsx            # Sidebar + DashboardShellClient
@@ -181,6 +205,8 @@ This document is the single source of truth for understanding, debugging, and mo
 │   └── components/               # Shared UI components
 │       ├── NavBar.tsx
 │       ├── ConditionalNavBar.tsx  # Hides NavBar on /dashboard routes
+│       ├── BrandFooter.tsx       # Shared marketing footer — carries the NAP line (see §16)
+│       ├── JsonLd.tsx            # Safe <script type="application/ld+json"> renderer (see §16)
 │       ├── FeatureGate.tsx       # Server component: locked/needs-setup overlay for paywalled features
 │       ├── Logo.tsx
 │       ├── DemoForm.tsx
@@ -1456,10 +1482,13 @@ plainTextToEmailHtml(text: string): string
 **`app/page.tsx`** — Marketing homepage
 - Hero, features, ROI calculator, demo form, testimonials
 
-**`app/pricing/page.tsx`** — Pricing page
-- Packages: Growth $200/mo, Pro $290/mo, All In $385/mo (setup fees: $400/$400/$500)
-- All three packages show "Spam call screening (+$75/mo add-on)" as an explicit ✗ — it is NOT included in any package
-- Standalone services section: Spam Call Screening $75/mo ($150 setup)
+**`app/pricing/page.tsx`** — Pricing page (`'use client'`; metadata in `app/pricing/layout.tsx`)
+- System tiers: Catch $300/mo ($400 setup), Grow $485/mo ($500 setup, "Most popular"), Automate $700/mo ($750 setup)
+- Spam Call Screening is shown as a "+$75/mo" add-on on Catch and Grow; it is INCLUDED in Automate
+- À la carte "build your own plan" selector: MissedCall AI $299/mo ($299 setup), Custom Website $169/mo ($250 setup), Google Ads Management $199/mo ($300 setup), Email & SMS Campaigns $149/mo ($150 setup), Leads Dashboard $109/mo (no setup), Calendar Integration $89/mo (no setup), Spam Call Screening $75/mo ($150 setup)
+- No contracts / cancel anytime / 30-day money-back guarantee; CTAs push to /book
+- NOTE: the ROI calculators on / and /missedcall-ai hard-code a $299/mo service cost that does not match these tiers (known inconsistency, fix tracked separately)
+- Dead code: a `NumbersSection` ROI component is defined in the file but never rendered (intentionally left alone)
 
 **`app/spam-screening/page.tsx`** — Spam screening feature page
 
@@ -2035,7 +2064,61 @@ The `callScreenerMessage` and `forwardingNumber` have inline edit flows (text in
 
 ---
 
-*This document reflects the codebase as of June 16, 2026. Update after any significant architectural changes.*
+## 16. SEO Architecture
+
+Implemented on the `seo-foundation` branch (July 2026). Everything below applies to the public marketing site only — dashboard/admin/API surfaces are noindexed and excluded.
+
+### Per-page metadata pattern
+
+- **Root layout (`app/layout.tsx`)** sets `metadataBase: new URL('https://www.alignandacquire.com')`, the title template `{ default: 'Align & Acquire', template: '%s | Align & Acquire' }`, and sitewide `openGraph` + `twitter` (`summary_large_image`) blocks. No og image is listed there — it comes from the file convention (below).
+- **Server-component pages** export `const metadata` directly with a unique title (formatted by the template), a 140–160 char description, and `alternates: { canonical: './' }` (self-referencing, resolved against `metadataBase`).
+- **Client-component pages cannot export metadata.** They get a metadata-only segment `layout.tsx` instead: `app/about/layout.tsx`, `app/pricing/layout.tsx`, `app/missedcall-ai/layout.tsx`, `app/campaigns/layout.tsx`, `app/book/layout.tsx`. Keep new marketing pages server-side where possible; if a page must be `'use client'`, follow this layout pattern.
+- **Absolute titles (bypass the template):**
+  - `/` — `Align & Acquire | Missed Call Text Back for Trades Businesses` (brand first on purpose: the homepage owns the branded SERP; `/missedcall-ai` keeps the keyword-first title).
+  - `/book/[businessSlug]` — `generateMetadata` in that segment's **layout** (the page is `'use client'`) queries the DB by slug and returns `Book a Quote with {business.name}` as an absolute title (client-tenant pages must not carry the "| Align & Acquire" suffix), plus a tenant description and an explicit `/book/{slug}` canonical.
+- **Shared `DESCRIPTION` consts:** on pages that also carry Service JSON-LD (`/spam-screening`, `/websites`, `/ads-management`) and in `app/missedcall-ai/layout.tsx`, the meta description and the schema `description` reference one const so they cannot drift. Edit the const, never just one copy.
+
+### sitemap.ts / robots.ts
+
+- `app/sitemap.ts` lists ONLY the static public marketing routes: `/`, `/pricing`, `/services`, `/missedcall-ai`, `/spam-screening`, `/websites`, `/ads-management`, `/campaigns`, `/about`, `/book`, `/privacy`, `/terms`. Tenant `/book/[slug]` pages, `/demo-requested`, and all dashboard/admin/api/auth/onboarding routes are intentionally excluded.
+- `app/robots.ts` allows `/` for all agents, disallows `/dashboard`, `/admin`, `/api`, `/onboarding`, `/sign-in`, `/sign-up`, and references `https://www.alignandacquire.com/sitemap.xml`. **`/demo-requested` must NOT be added to the disallow list** — it is noindexed via meta robots, and robots-blocking it would prevent crawlers from ever reading that directive.
+
+### opengraph-image.tsx
+
+- `app/opengraph-image.tsx` generates the sitewide 1200×630 og:image via `ImageResponse` (`next/og`). Text-only on purpose — Satori is fragile with embedded image assets. Palette mirrors the marketing pages (#16181C / #F2F0EB / #EE6B1A). `twitter:image` inherits it automatically.
+- The route URL carries a per-deploy build hash — never hard-code it anywhere that needs a stable URL (schema uses `/aa-logo.png` instead).
+
+### Structured data (JSON-LD)
+
+- **`app/components/JsonLd.tsx`** — server component that renders `<script type="application/ld+json">` with `<` escaped to `\u003c`. All schema goes through it.
+- **`ProfessionalService`** node in the root layout (every page): `@id` `https://www.alignandacquire.com/#business`, name `Align and Acquire`, telephone `+15175809709`, `areaServed: ["Michigan", "Texas", "United States"]`, logo/image = stable `https://www.alignandacquire.com/aa-logo.png`. **No `address` property anywhere** — the GBP is a service-area business with no displayed address. No `sameAs` (add only real profile URLs).
+- **`Service`** nodes: in `app/missedcall-ai/layout.tsx` and inline in the `/spam-screening`, `/websites`, `/ads-management` pages. Each has name, serviceType, description (the shared const), and `provider: { "@id": ".../#business" }`.
+- **`FAQPage`** node in `app/missedcall-ai/layout.tsx`, mirroring the six `FAQItem` entries in `app/missedcall-ai/page.tsx` VERBATIM. ⚠️ **If the FAQ copy on the page changes, the schema in the layout must be updated in the same commit — there is no shared source, and they silently desync otherwise.**
+- **Never add Review, AggregateRating, or star-rating schema.** Self-serving review markup violates Google guidelines.
+
+### NAP — must match the Google Business Profile exactly
+
+- GBP name: `Align and Acquire` (with "and" — the "&" is wordmark-only). GBP phone: `+15175809709`, displayed as `(517) 580-9709`.
+- The NAP lives in two places that must stay in sync with the GBP character-for-character: the `ProfessionalService` schema (root layout) and the `BrandFooter` bottom bar (`© {year} Align and Acquire · Serving Michigan & Texas · (517) 580-9709`, phone as a `tel:+15175809709` link). `BrandFooter` renders on all marketing pages including `/privacy` and `/terms`.
+- If the GBP name, phone, or service area ever changes, update schema + footer together.
+
+### Noindex list (`robots: { index: false, follow: false }`)
+
+- `app/(dashboard)/layout.tsx` (all dashboard pages)
+- `app/admin/layout.tsx` (all admin pages)
+- `app/onboarding/page.tsx`
+- `app/(auth)/sign-in/[[...sign-in]]/page.tsx`, `app/(auth)/sign-up/[[...sign-up]]/page.tsx`
+- `app/book/[businessSlug]/embed/layout.tsx` (iframe embed; its canonical intentionally points at the parent booking page)
+- `app/demo-requested/page.tsx` (post-form thank-you page)
+
+### On-page rules
+
+- Every public page has exactly ONE `<h1>`. The ROI calculator's internal heading (`app/components/roi-calculator.tsx`) is an `h3` — do not promote it back to `h2` (it used to stack under the page-level H2 on `/` and `/missedcall-ai`).
+- `/missedcall-ai` carries the exact phrase "missed call text back" in its first H2 plus two body mentions (Instant response feature card, demo-form paragraph). Keep those when editing copy.
+
+---
+
+*This document reflects the codebase as of July 2, 2026. Update after any significant architectural changes.*
 
 ---
 
