@@ -10,6 +10,14 @@ import ScrollReveal from '@/app/components/ScrollReveal'
 import Marquee from '@/app/components/Marquee'
 import BrandFooter from '@/app/components/BrandFooter'
 import SmsThread from '@/app/components/SmsThread'
+import type { Metadata } from 'next'
+
+export const metadata: Metadata = {
+  title: 'Lead Capture & Marketing Services for Trades Businesses',
+  description:
+    'One system for trades businesses: missed call text back, custom websites, Google Ads, email and SMS campaigns, spam screening, and calendar booking.',
+  alternates: { canonical: './' },
+}
 
 // ─────────────────────────────────────────────────────────
 // Reusable section eyebrow

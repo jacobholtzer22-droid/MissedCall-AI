@@ -140,7 +140,7 @@ export default function MissedCallAIPage() {
                 <span style={{ color: '#EE6B1A' }}>The math</span>
               </div>
               <h2 className="text-[clamp(2rem,5vw,3.2rem)] font-black uppercase leading-[0.95] tracking-tight">
-                See exactly what<br /><span style={{ color: '#EE6B1A' }}>you&apos;re losing.</span>
+                See exactly what <span style={{ color: '#EE6B1A' }}>you&apos;re losing</span><br />without missed call text back.
               </h2>
             </div>
             <ROICalculator />
@@ -201,7 +201,7 @@ export default function MissedCallAIPage() {
           </ScrollReveal>
           <ScrollReveal stagger>
             <div className="grid gap-px sm:grid-cols-2 lg:grid-cols-3" style={{ background: 'rgba(110,118,129,0.2)' }}>
-              <FeatureCard icon={Zap}            title="Instant response"    description="Texts go out within seconds. No delay, no lost leads. Faster than any human." />
+              <FeatureCard icon={Zap}            title="Instant response"    description="The missed call text back goes out within seconds. No delay, no lost leads. Faster than any human." />
               <FeatureCard icon={MessageSquareText} title="Natural conversations" description="Sounds human, not robotic. Customers have no idea they're talking to an AI." />
               <FeatureCard icon={CalendarCheck}  title="Auto booking"       description="Appointments created and added to your calendar. No back-and-forth." />
               <FeatureCard icon={Clock}          title="24/7 coverage"      description="Nights, weekends, holidays. Your AI never calls in sick." />
@@ -251,7 +251,7 @@ export default function MissedCallAIPage() {
                 15 minutes.<br /><span style={{ color: '#EE6B1A' }}>No pressure.</span>
               </h2>
               <p className="text-[15px]" style={{ color: 'rgba(242,240,235,0.65)' }}>
-                We&apos;ll show you exactly how many calls you&apos;re losing and how to get them back.
+                We&apos;ll show you exactly how many calls you&apos;re losing and how missed call text back recovers them.
               </p>
             </div>
             <DemoForm />

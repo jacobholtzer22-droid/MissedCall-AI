@@ -1,8 +1,13 @@
+import type { Metadata } from 'next'
 import { redirect } from 'next/navigation'
 import { auth } from '@clerk/nextjs/server'
 import { db } from '@/lib/db'
 import { getBusinessForDashboard } from '@/lib/get-business-for-dashboard'
 import { getBusinessFeatures } from '@/lib/business-features'
+
+export const metadata: Metadata = {
+  robots: { index: false, follow: false },
+}
 
 function getNavigation(business: {
   missedCallAiEnabled?: boolean | null

@@ -1,5 +1,12 @@
+import type { Metadata } from 'next'
 import Link from 'next/link'
 import { CircleCheckBig, ArrowRight } from 'lucide-react'
+
+// Post-form confirmation page — not a landing page, so keep it out of the index.
+export const metadata: Metadata = {
+  title: 'Demo Request Received',
+  robots: { index: false, follow: false },
+}
 
 export default function DemoRequestedPage() {
   return (

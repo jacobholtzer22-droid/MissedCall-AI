@@ -70,8 +70,18 @@ export default function BrandFooter() {
           className="mt-10 flex flex-col items-start justify-between gap-3 border-t-2 pt-6 sm:flex-row sm:items-center"
           style={{ borderColor: 'rgba(110,118,129,0.25)' }}
         >
+          {/* NAP — must match the Google Business Profile exactly (name, phone) */}
           <span className="font-mono text-[11px] uppercase tracking-[0.16em]" style={{ color: '#6E7681' }}>
-            © {new Date().getFullYear()} Align and Acquire · Michigan
+            © {new Date().getFullYear()} Align and Acquire · Serving Michigan & Texas ·{' '}
+            <a
+              href="tel:+15175809709"
+              className="transition-colors"
+              style={{ color: '#6E7681' }}
+              onMouseEnter={e => (e.currentTarget.style.color = '#EE6B1A')}
+              onMouseLeave={e => (e.currentTarget.style.color = '#6E7681')}
+            >
+              (517) 580-9709
+            </a>
           </span>
           <span className="font-mono text-[10px] uppercase tracking-[0.14em]" style={{ color: 'rgba(110,118,129,0.55)' }}>
             Never miss a lead

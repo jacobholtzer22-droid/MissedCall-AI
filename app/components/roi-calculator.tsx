@@ -20,9 +20,9 @@ export default function ROICalculator({ hideHeading = false }: { hideHeading?: b
     <div className="border-2 p-6 md:p-8" style={{ background: '#16181C', borderColor: 'rgba(110,118,129,0.35)', color: '#F2F0EB' }}>
       {!hideHeading && (
         <div className="text-center mb-6">
-          <h2 className="text-[26px] md:text-[32px] font-black uppercase tracking-tight mb-2">
+          <h3 className="text-[26px] md:text-[32px] font-black uppercase tracking-tight mb-2">
             Rough Cost of Missed Calls
-          </h2>
+          </h3>
           <p className="text-[14px]" style={{ color: '#6E7681' }}>
             A ballpark estimate based on your numbers. Every business is different.
           </p>

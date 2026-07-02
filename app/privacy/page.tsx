@@ -1,6 +1,15 @@
+import type { Metadata } from 'next'
 import Link from 'next/link'
 import { ArrowLeft } from 'lucide-react'
 import { Logo } from '../components/Logo'
+import BrandFooter from '../components/BrandFooter'
+
+export const metadata: Metadata = {
+  title: 'Privacy Policy',
+  description:
+    'How Align and Acquire collects, uses, and protects your information across the MissedCall AI service, including SMS consent, opt-out, and data sharing terms.',
+  alternates: { canonical: './' },
+}
 
 const LAST_UPDATED = 'February 23, 2026'
 
@@ -161,6 +170,7 @@ export default function PrivacyPage() {
           Back to Home
         </Link>
       </div>
+      <BrandFooter />
     </div>
   )
 }

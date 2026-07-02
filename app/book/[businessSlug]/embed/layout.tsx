@@ -3,6 +3,7 @@ import Script from 'next/script'
 /** Force light mode for embed - overrides root dark body */
 export const metadata = {
   title: 'Schedule a Free In-Person Quote',
+  robots: { index: false, follow: false },
 }
 
 /** Inline script runs before React so we can see JS errors on mobile (no console). */

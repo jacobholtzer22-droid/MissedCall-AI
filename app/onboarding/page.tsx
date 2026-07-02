@@ -1,9 +1,14 @@
+import type { Metadata } from 'next'
 import { auth, currentUser } from '@clerk/nextjs/server'
 import { redirect } from 'next/navigation'
 import { db } from '@/lib/db'
 import { revalidatePath } from 'next/cache'
 import { OnboardingForm } from './OnboardingForm'
 import { getIndustryDefaults } from '@/lib/industry-defaults'
+
+export const metadata: Metadata = {
+  robots: { index: false, follow: false },
+}
 
 export default async function OnboardingPage() {
   const { userId } = await auth()
