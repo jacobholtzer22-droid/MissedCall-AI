@@ -9,6 +9,7 @@ import { Inter } from 'next/font/google'
 import { ClerkProvider } from '@clerk/nextjs'
 import { ConditionalNavBar } from './components/ConditionalNavBar'
 import MetaPixel from './components/MetaPixel'
+import JsonLd from './components/JsonLd'
 import './globals.css'
 
 // Use Inter font (clean, professional)
@@ -40,6 +41,22 @@ export const metadata: Metadata = {
   },
 }
 
+// Sitewide structured data. NAP fields must match the Google Business Profile
+// exactly: name "Align and Acquire", phone +15175809709. The GBP is a
+// service-area business with no displayed address, so `address` is
+// deliberately omitted — geography is carried by areaServed only.
+const BUSINESS_SCHEMA = {
+  '@context': 'https://schema.org',
+  '@type': 'ProfessionalService',
+  '@id': 'https://www.alignandacquire.com/#business',
+  name: 'Align and Acquire',
+  url: 'https://www.alignandacquire.com',
+  telephone: '+15175809709',
+  areaServed: ['Michigan', 'Texas', 'United States'],
+  description: SITE_DESCRIPTION,
+  logo: 'https://www.alignandacquire.com/aa-logo.png',
+}
+
 export default function RootLayout({
   children,
 }: {
@@ -49,6 +66,7 @@ export default function RootLayout({
     <ClerkProvider>
       <html lang="en">
         <body className={`${inter.className} bg-gray-950 text-white antialiased`}>
+          <JsonLd data={BUSINESS_SCHEMA} />
           <MetaPixel />
           <ConditionalNavBar />
           {children}

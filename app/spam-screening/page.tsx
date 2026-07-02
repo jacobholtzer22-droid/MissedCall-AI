@@ -4,12 +4,24 @@ import { Phone, PhoneOff, CheckCircle, ArrowRight, Shield, MessageSquare, Hash }
 import ScrollReveal from '@/app/components/ScrollReveal'
 import Marquee from '@/app/components/Marquee'
 import BrandFooter from '@/app/components/BrandFooter'
+import JsonLd from '@/app/components/JsonLd'
+
+const DESCRIPTION =
+  "Every caller presses 1 to connect — robots can't, so spam never reaches you. Works on your existing business number. $75/mo with a $150 one-time setup."
 
 export const metadata: Metadata = {
   title: 'Spam Call Screening for Business Phone Lines',
-  description:
-    "Every caller presses 1 to connect — robots can't, so spam never reaches you. Works on your existing business number. $75/mo with a $150 one-time setup.",
+  description: DESCRIPTION,
   alternates: { canonical: './' },
+}
+
+const SERVICE_SCHEMA = {
+  '@context': 'https://schema.org',
+  '@type': 'Service',
+  name: 'Spam Call Screening',
+  serviceType: 'Spam call screening',
+  description: DESCRIPTION,
+  provider: { '@id': 'https://www.alignandacquire.com/#business' },
 }
 
 const steps = [
@@ -30,6 +42,7 @@ const benefits = [
 export default function SpamScreeningPage() {
   return (
     <div className="min-h-dvh w-full overflow-x-hidden" style={{ background: '#16181C', color: '#F2F0EB' }}>
+      <JsonLd data={SERVICE_SCHEMA} />
 
       {/* ── Hero ─────────────────────────────────────────── */}
       <section className="aa-grid-bg pt-28 sm:pt-36 pb-16">

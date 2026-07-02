@@ -4,12 +4,24 @@ import { ArrowRight, Check, BarChart3, Search as SearchIcon, Rocket, RefreshCw, 
 import ScrollReveal from '@/app/components/ScrollReveal'
 import Marquee from '@/app/components/Marquee'
 import BrandFooter from '@/app/components/BrandFooter'
+import JsonLd from '@/app/components/JsonLd'
+
+const DESCRIPTION =
+  'Done-for-you Google Ads for local service businesses: keyword research, campaign builds, negative keywords, and monthly optimization. Live in 3–5 days.'
 
 export const metadata: Metadata = {
   title: 'Google Ads Management for Local Service Businesses',
-  description:
-    'Done-for-you Google Ads for local service businesses: keyword research, campaign builds, negative keywords, and monthly optimization. Live in 3–5 days.',
+  description: DESCRIPTION,
   alternates: { canonical: './' },
+}
+
+const SERVICE_SCHEMA = {
+  '@context': 'https://schema.org',
+  '@type': 'Service',
+  name: 'Google Ads Management',
+  serviceType: 'Google Ads management',
+  description: DESCRIPTION,
+  provider: { '@id': 'https://www.alignandacquire.com/#business' },
 }
 
 const features = [
@@ -32,6 +44,7 @@ const steps = [
 export default function AdsManagementPage() {
   return (
     <div className="min-h-dvh w-full overflow-x-hidden" style={{ background: '#16181C', color: '#F2F0EB' }}>
+      <JsonLd data={SERVICE_SCHEMA} />
 
       {/* ── Hero ─────────────────────────────────────────── */}
       <section className="aa-grid-bg pt-28 sm:pt-36 pb-16">

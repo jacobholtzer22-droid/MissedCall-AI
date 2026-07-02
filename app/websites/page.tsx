@@ -6,12 +6,24 @@ import WebsiteQuoteForm from '@/app/components/WebsiteQuoteForm'
 import ScrollReveal from '@/app/components/ScrollReveal'
 import Marquee from '@/app/components/Marquee'
 import BrandFooter from '@/app/components/BrandFooter'
+import JsonLd from '@/app/components/JsonLd'
+
+const DESCRIPTION =
+  'Custom-coded, mobile-first websites for landscapers and home service businesses. No templates or page builders — sites that turn visitors into quote requests.'
 
 export const metadata: Metadata = {
   title: 'Website Design for Landscapers & Home Service Businesses',
-  description:
-    'Custom-coded, mobile-first websites for landscapers and home service businesses. No templates or page builders — sites that turn visitors into quote requests.',
+  description: DESCRIPTION,
   alternates: { canonical: './' },
+}
+
+const SERVICE_SCHEMA = {
+  '@context': 'https://schema.org',
+  '@type': 'Service',
+  name: 'Custom Website Design',
+  serviceType: 'Website design',
+  description: DESCRIPTION,
+  provider: { '@id': 'https://www.alignandacquire.com/#business' },
 }
 
 type Project = {
@@ -112,6 +124,7 @@ const whyUs = [
 export default function WebsitesPage() {
   return (
     <div className="min-h-dvh w-full overflow-x-hidden" style={{ background: '#16181C', color: '#F2F0EB' }}>
+      <JsonLd data={SERVICE_SCHEMA} />
 
       {/* ── Hero ─────────────────────────────────────────── */}
       <section className="aa-grid-bg pt-28 sm:pt-36 pb-16">
