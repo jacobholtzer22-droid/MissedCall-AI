@@ -11,7 +11,7 @@ export default function ROICalculator({ hideHeading = false }: { hideHeading?: b
   const appointmentsPerYear = missedCallsPerMonth * 12 * conversionRate
   const monthlyRevenueLoss = appointmentsPerMonth * appointmentValue
   const yearlyRevenueLoss = appointmentsPerYear * appointmentValue
-  const monthlyServiceCost = 299
+  const monthlyServiceCost = 300
   const monthlyNetGain = monthlyRevenueLoss - monthlyServiceCost
   const yearlyNetGain = (monthlyRevenueLoss * 12) - (monthlyServiceCost * 12)
   const roi = ((monthlyNetGain / monthlyServiceCost) * 100).toFixed(0)
@@ -101,7 +101,7 @@ export default function ROICalculator({ hideHeading = false }: { hideHeading?: b
             ${monthlyNetGain.toLocaleString()}
           </div>
           <div className="text-[12px]" style={{ color: '#6E7681' }}>
-            after $299/mo service cost
+            after $300/mo service cost
           </div>
           <div className="mt-3 pt-3 border-t" style={{ borderColor: 'rgba(110,118,129,0.25)' }}>
             <div className="font-mono text-[10px] uppercase tracking-widest mb-0.5" style={{ color: '#6E7681' }}>Annual net gain</div>
