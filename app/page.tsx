@@ -8,7 +8,8 @@ import SmsThread from './components/SmsThread'
 import ROICalculator from './components/roi-calculator'
 
 export const metadata: Metadata = {
-  title: { absolute: 'Missed Call Text Back & Lead Capture for Trades Businesses' },
+  // Brand first on purpose: the homepage owns the branded SERP; /missedcall-ai is keyword-first.
+  title: { absolute: 'Align & Acquire | Missed Call Text Back for Trades Businesses' },
   description:
     'Every missed call gets an instant text back. Lead capture, spam call screening, Google Ads, and websites for landscaping, HVAC, plumbing, and detailing businesses.',
   alternates: { canonical: './' },

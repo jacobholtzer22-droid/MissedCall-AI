@@ -16,6 +16,11 @@ export async function generateMetadata({
     title: business
       ? { absolute: `Book a Quote with ${business.name}` }
       : { absolute: 'Schedule a Free In-Person Quote' },
+    // Own description so the /book demo-call copy doesn't cascade onto tenant pages
+    description: business
+      ? `Schedule a free in-person quote with ${business.name}.`
+      : 'Schedule a free in-person quote.',
+    alternates: { canonical: `/book/${params.businessSlug}` },
   }
 }
 
