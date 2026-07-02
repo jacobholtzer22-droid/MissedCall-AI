@@ -1487,7 +1487,7 @@ plainTextToEmailHtml(text: string): string
 - Spam Call Screening is shown as a "+$75/mo" add-on on Catch and Grow; it is INCLUDED in Automate
 - À la carte "build your own plan" selector: MissedCall AI $299/mo ($299 setup), Custom Website $169/mo ($250 setup), Google Ads Management $199/mo ($300 setup), Email & SMS Campaigns $149/mo ($150 setup), Leads Dashboard $109/mo (no setup), Calendar Integration $89/mo (no setup), Spam Call Screening $75/mo ($150 setup)
 - No contracts / cancel anytime / 30-day money-back guarantee; CTAs push to /book
-- NOTE: the ROI calculators on / and /missedcall-ai hard-code a $299/mo service cost that does not match these tiers (known inconsistency, fix tracked separately)
+- The shared ROI calculator (`app/components/roi-calculator.tsx`, renders on / and /missedcall-ai) uses a $300/mo service cost matching the Catch tier (aligned on the `fix-roi-pricing` branch) — keep it in sync if tier pricing changes
 - Dead code: a `NumbersSection` ROI component is defined in the file but never rendered (intentionally left alone)
 
 **`app/spam-screening/page.tsx`** — Spam screening feature page
