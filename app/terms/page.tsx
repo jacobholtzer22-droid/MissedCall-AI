@@ -1,6 +1,14 @@
+import type { Metadata } from 'next'
 import Link from 'next/link'
 import { ArrowLeft } from 'lucide-react'
 import { Logo } from '../components/Logo'
+
+export const metadata: Metadata = {
+  title: 'Terms and Conditions',
+  description:
+    'The terms governing the MissedCall AI service: SMS messaging and opt-out keywords, eligibility, fees, client responsibilities, and limitation of liability.',
+  alternates: { canonical: './' },
+}
 
 const LAST_UPDATED = 'February 23, 2026'
 

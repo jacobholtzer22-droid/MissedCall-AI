@@ -1,3 +1,4 @@
+import type { Metadata } from 'next'
 import Link from 'next/link'
 import { MessageSquare, Globe, Megaphone, ArrowRight, ArrowUpRight, Check, Wind, Leaf, Car, Droplets } from 'lucide-react'
 import ContactForm from './components/ContactForm'
@@ -5,6 +6,13 @@ import ScrollReveal from './components/ScrollReveal'
 import BrandFooter from './components/BrandFooter'
 import SmsThread from './components/SmsThread'
 import ROICalculator from './components/roi-calculator'
+
+export const metadata: Metadata = {
+  title: { absolute: 'Missed Call Text Back & Lead Capture for Trades Businesses' },
+  description:
+    'Every missed call gets an instant text back. Lead capture, spam call screening, Google Ads, and websites for landscaping, HVAC, plumbing, and detailing businesses.',
+  alternates: { canonical: './' },
+}
 
 const SERVICES = [
   {

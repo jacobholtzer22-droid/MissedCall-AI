@@ -1,8 +1,16 @@
+import type { Metadata } from 'next'
 import Link from 'next/link'
 import { ArrowRight, Check, BarChart3, Search as SearchIcon, Rocket, RefreshCw, Shield } from 'lucide-react'
 import ScrollReveal from '@/app/components/ScrollReveal'
 import Marquee from '@/app/components/Marquee'
 import BrandFooter from '@/app/components/BrandFooter'
+
+export const metadata: Metadata = {
+  title: 'Google Ads Management for Local Service Businesses',
+  description:
+    'Done-for-you Google Ads for local service businesses: keyword research, campaign builds, negative keywords, and monthly optimization. Live in 3–5 days.',
+  alternates: { canonical: './' },
+}
 
 const features = [
   'Google Ads account setup and configuration',

@@ -1,8 +1,16 @@
+import type { Metadata } from 'next'
 import Link from 'next/link'
 import { Phone, PhoneOff, CheckCircle, ArrowRight, Shield, MessageSquare, Hash } from 'lucide-react'
 import ScrollReveal from '@/app/components/ScrollReveal'
 import Marquee from '@/app/components/Marquee'
 import BrandFooter from '@/app/components/BrandFooter'
+
+export const metadata: Metadata = {
+  title: 'Spam Call Screening for Business Phone Lines',
+  description:
+    "Every caller presses 1 to connect — robots can't, so spam never reaches you. Works on your existing business number. $75/mo with a $150 one-time setup.",
+  alternates: { canonical: './' },
+}
 
 const steps = [
   { n: '01', icon: Phone, title: 'Customer calls your number', description: 'Phone rings as normal. No change for your real customers.' },

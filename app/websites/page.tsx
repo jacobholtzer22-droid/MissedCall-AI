@@ -1,3 +1,4 @@
+import type { Metadata } from 'next'
 import Link from 'next/link'
 import Image from 'next/image'
 import { ArrowRight, ExternalLink, Code, Smartphone, Palette } from 'lucide-react'
@@ -5,6 +6,13 @@ import WebsiteQuoteForm from '@/app/components/WebsiteQuoteForm'
 import ScrollReveal from '@/app/components/ScrollReveal'
 import Marquee from '@/app/components/Marquee'
 import BrandFooter from '@/app/components/BrandFooter'
+
+export const metadata: Metadata = {
+  title: 'Website Design for Landscapers & Home Service Businesses',
+  description:
+    'Custom-coded, mobile-first websites for landscapers and home service businesses. No templates or page builders — sites that turn visitors into quote requests.',
+  alternates: { canonical: './' },
+}
 
 type Project = {
   title: string
