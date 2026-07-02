@@ -2070,12 +2070,12 @@ Implemented on the `seo-foundation` branch (July 2026). Everything below applies
 
 ### Per-page metadata pattern
 
-- **Root layout (`app/layout.tsx`)** sets `metadataBase: new URL('https://www.alignandacquire.com')`, the title template `{ default: 'Align & Acquire', template: '%s | Align & Acquire' }`, and sitewide `openGraph` + `twitter` (`summary_large_image`) blocks. No og image is listed there — it comes from the file convention (below).
+- **Root layout (`app/layout.tsx`)** sets `metadataBase: new URL('https://www.alignandacquire.com')`, the title template `{ default: 'Align and Acquire', template: '%s | Align and Acquire' }`, and sitewide `openGraph` + `twitter` (`summary_large_image`) blocks. No og image is listed there — it comes from the file convention (below).
 - **Server-component pages** export `const metadata` directly with a unique title (formatted by the template), a 140–160 char description, and `alternates: { canonical: './' }` (self-referencing, resolved against `metadataBase`).
 - **Client-component pages cannot export metadata.** They get a metadata-only segment `layout.tsx` instead: `app/about/layout.tsx`, `app/pricing/layout.tsx`, `app/missedcall-ai/layout.tsx`, `app/campaigns/layout.tsx`, `app/book/layout.tsx`. Keep new marketing pages server-side where possible; if a page must be `'use client'`, follow this layout pattern.
 - **Absolute titles (bypass the template):**
-  - `/` — `Align & Acquire | Missed Call Text Back for Trades Businesses` (brand first on purpose: the homepage owns the branded SERP; `/missedcall-ai` keeps the keyword-first title).
-  - `/book/[businessSlug]` — `generateMetadata` in that segment's **layout** (the page is `'use client'`) queries the DB by slug and returns `Book a Quote with {business.name}` as an absolute title (client-tenant pages must not carry the "| Align & Acquire" suffix), plus a tenant description and an explicit `/book/{slug}` canonical.
+  - `/` — `Align and Acquire | Missed Call Text Back Service` (brand first on purpose: the homepage owns the branded SERP; `/missedcall-ai` keeps the keyword-first title; kept under ~60 chars for Google's display cutoff).
+  - `/book/[businessSlug]` — `generateMetadata` in that segment's **layout** (the page is `'use client'`) queries the DB by slug and returns `Book a Quote with {business.name}` as an absolute title (client-tenant pages must not carry the "| Align and Acquire" suffix), plus a tenant description and an explicit `/book/{slug}` canonical.
 - **Shared `DESCRIPTION` consts:** on pages that also carry Service JSON-LD (`/spam-screening`, `/websites`, `/ads-management`) and in `app/missedcall-ai/layout.tsx`, the meta description and the schema `description` reference one const so they cannot drift. Edit the const, never just one copy.
 
 ### sitemap.ts / robots.ts
@@ -2091,7 +2091,7 @@ Implemented on the `seo-foundation` branch (July 2026). Everything below applies
 ### Structured data (JSON-LD)
 
 - **`app/components/JsonLd.tsx`** — server component that renders `<script type="application/ld+json">` with `<` escaped to `\u003c`. All schema goes through it.
-- **`ProfessionalService`** node in the root layout (every page): `@id` `https://www.alignandacquire.com/#business`, name `Align and Acquire`, telephone `+15175809709`, `areaServed: ["Michigan", "Texas", "United States"]`, logo/image = stable `https://www.alignandacquire.com/aa-logo.png`. **No `address` property anywhere** — the GBP is a service-area business with no displayed address. No `sameAs` (add only real profile URLs).
+- **`ProfessionalService`** node in the root layout (every page): `@id` `https://www.alignandacquire.com/#business`, name `Align and Acquire`, telephone `+15175809709`, `areaServed: ["Michigan", "Texas", "Indiana", "New York", "United States"]`, logo/image = stable `https://www.alignandacquire.com/aa-logo.png`. **No `address` property anywhere** — the GBP is a service-area business with no displayed address. No `sameAs` (add only real profile URLs).
 - **`Service`** nodes: in `app/missedcall-ai/layout.tsx` and inline in the `/spam-screening`, `/websites`, `/ads-management` pages. Each has name, serviceType, description (the shared const), and `provider: { "@id": ".../#business" }`.
 - **`FAQPage`** node in `app/missedcall-ai/layout.tsx`, mirroring the six `FAQItem` entries in `app/missedcall-ai/page.tsx` VERBATIM. ⚠️ **If the FAQ copy on the page changes, the schema in the layout must be updated in the same commit — there is no shared source, and they silently desync otherwise.**
 - **Never add Review, AggregateRating, or star-rating schema.** Self-serving review markup violates Google guidelines.
@@ -2099,7 +2099,7 @@ Implemented on the `seo-foundation` branch (July 2026). Everything below applies
 ### NAP — must match the Google Business Profile exactly
 
 - GBP name: `Align and Acquire` (with "and" — the "&" is wordmark-only). GBP phone: `+15175809709`, displayed as `(517) 580-9709`.
-- The NAP lives in two places that must stay in sync with the GBP character-for-character: the `ProfessionalService` schema (root layout) and the `BrandFooter` bottom bar (`© {year} Align and Acquire · Serving Michigan & Texas · (517) 580-9709`, phone as a `tel:+15175809709` link). `BrandFooter` renders on all marketing pages including `/privacy` and `/terms`.
+- The NAP lives in two places that must stay in sync with the GBP character-for-character: the `ProfessionalService` schema (root layout) and the `BrandFooter` bottom bar (`© {year} Align and Acquire · Serving Michigan, Texas, Indiana, and New York · (517) 580-9709`, phone as a `tel:+15175809709` link). `BrandFooter` renders on all marketing pages including `/privacy` and `/terms`.
 - If the GBP name, phone, or service area ever changes, update schema + footer together.
 
 ### Noindex list (`robots: { index: false, follow: false }`)

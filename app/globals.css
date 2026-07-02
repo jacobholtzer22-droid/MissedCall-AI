@@ -17,7 +17,7 @@
     --card-foreground: 222.2 84% 4.9%;
     --popover: 0 0% 100%;
     --popover-foreground: 222.2 84% 4.9%;
-    /* Primary retargeted to Align & Acquire brand orange (#EE6B1A → 23 86% 52%).
+    /* Primary retargeted to Align and Acquire brand orange (#EE6B1A → 23 86% 52%).
        Confirmed no marketing/admin code consumes the shadcn `primary`/`ring`
        tokens, so this only affects components that opt into them. */
     --primary: 23 86% 52%;

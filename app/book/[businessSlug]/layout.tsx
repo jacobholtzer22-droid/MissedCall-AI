@@ -12,7 +12,7 @@ export async function generateMetadata({
     select: { name: true },
   })
   return {
-    // Absolute: client-tenant booking pages shouldn't carry the Align & Acquire title suffix
+    // Absolute: client-tenant booking pages shouldn't carry the Align and Acquire title suffix
     title: business
       ? { absolute: `Book a Quote with ${business.name}` }
       : { absolute: 'Schedule a Free In-Person Quote' },

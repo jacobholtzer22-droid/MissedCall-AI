@@ -22,21 +22,21 @@ const SITE_DESCRIPTION =
 export const metadata: Metadata = {
   metadataBase: new URL('https://www.alignandacquire.com'),
   title: {
-    default: 'Align & Acquire',
-    template: '%s | Align & Acquire',
+    default: 'Align and Acquire',
+    template: '%s | Align and Acquire',
   },
   description: 'Helping service businesses capture more leads and grow with AI-powered communication tools.',
   // og:image comes from the file convention: app/opengraph-image.tsx (1200x630)
   openGraph: {
-    title: 'Align & Acquire',
+    title: 'Align and Acquire',
     description: SITE_DESCRIPTION,
     url: 'https://www.alignandacquire.com',
-    siteName: 'Align & Acquire',
+    siteName: 'Align and Acquire',
     type: 'website',
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'Align & Acquire',
+    title: 'Align and Acquire',
     description: SITE_DESCRIPTION,
   },
 }
@@ -52,7 +52,7 @@ const BUSINESS_SCHEMA = {
   name: 'Align and Acquire',
   url: 'https://www.alignandacquire.com',
   telephone: '+15175809709',
-  areaServed: ['Michigan', 'Texas', 'United States'],
+  areaServed: ['Michigan', 'Texas', 'Indiana', 'New York', 'United States'],
   description: SITE_DESCRIPTION,
   logo: 'https://www.alignandacquire.com/aa-logo.png',
   // Stable asset URL on purpose — /opengraph-image carries a per-deploy build hash

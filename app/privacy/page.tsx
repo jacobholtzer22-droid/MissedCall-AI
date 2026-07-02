@@ -36,7 +36,7 @@ export default function PrivacyPage() {
           <section>
             <h2 className="text-xl font-semibold text-white mb-3">Introduction</h2>
             <p>
-              Align &amp; Acquire LLC (&quot;we,&quot; &quot;us,&quot; or &quot;our&quot;) operates the MissedCall AI service. This Privacy Policy explains how we collect, use, disclose, and safeguard your information when you use our services, including our SMS messaging programs. Please read this Privacy Policy carefully. By using our services, you agree to the collection and use of information in accordance with this policy.
+              Align and Acquire LLC (&quot;we,&quot; &quot;us,&quot; or &quot;our&quot;) operates the MissedCall AI service. This Privacy Policy explains how we collect, use, disclose, and safeguard your information when you use our services, including our SMS messaging programs. Please read this Privacy Policy carefully. By using our services, you agree to the collection and use of information in accordance with this policy.
             </p>
           </section>
 
@@ -155,7 +155,7 @@ export default function PrivacyPage() {
               If you have questions or concerns about this Privacy Policy, please contact us at:
             </p>
             <p>
-              <strong>Align &amp; Acquire LLC</strong>
+              <strong>Align and Acquire LLC</strong>
               <br />
               Email: <a href="mailto:jacob@alignandacquire.com" className="text-blue-400 hover:text-blue-300 underline">jacob@alignandacquire.com</a>
             </p>

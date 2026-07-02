@@ -36,14 +36,14 @@ export default function TermsPage() {
           <section>
             <h2 className="text-xl font-semibold text-white mb-3">Agreement to Terms</h2>
             <p>
-              These Terms and Conditions (&quot;Terms&quot;) govern your use of the MissedCall AI service and related services provided by Align &amp; Acquire LLC (&quot;Company,&quot; &quot;we,&quot; &quot;us,&quot; or &quot;our&quot;). By accessing or using our services, you agree to be bound by these Terms. If you do not agree with any part of these Terms, you may not use our services.
+              These Terms and Conditions (&quot;Terms&quot;) govern your use of the MissedCall AI service and related services provided by Align and Acquire LLC (&quot;Company,&quot; &quot;we,&quot; &quot;us,&quot; or &quot;our&quot;). By accessing or using our services, you agree to be bound by these Terms. If you do not agree with any part of these Terms, you may not use our services.
             </p>
           </section>
 
           <section>
             <h2 className="text-xl font-semibold text-white mb-3">Description of Services</h2>
             <p>
-              Align &amp; Acquire LLC provides the MissedCall AI service, which includes automated missed call detection, call screening, call forwarding, and SMS follow-up messaging for businesses. Our services are designed to help businesses capture and respond to missed phone calls through AI-powered SMS communication.
+              Align and Acquire LLC provides the MissedCall AI service, which includes automated missed call detection, call screening, call forwarding, and SMS follow-up messaging for businesses. Our services are designed to help businesses capture and respond to missed phone calls through AI-powered SMS communication.
             </p>
           </section>
 
@@ -97,21 +97,21 @@ export default function TermsPage() {
           <section>
             <h2 className="text-xl font-semibold text-white mb-3">Fees and Payment</h2>
             <p>
-              Service fees are as outlined in your service agreement with Align &amp; Acquire LLC. We reserve the right to modify our pricing with 30 days&apos; notice. Failure to pay fees may result in suspension or termination of services.
+              Service fees are as outlined in your service agreement with Align and Acquire LLC. We reserve the right to modify our pricing with 30 days&apos; notice. Failure to pay fees may result in suspension or termination of services.
             </p>
           </section>
 
           <section>
             <h2 className="text-xl font-semibold text-white mb-3">Intellectual Property</h2>
             <p>
-              All content, features, and functionality of our services, including but not limited to software, text, graphics, logos, and designs, are the exclusive property of Align &amp; Acquire LLC and are protected by copyright, trademark, and other intellectual property laws.
+              All content, features, and functionality of our services, including but not limited to software, text, graphics, logos, and designs, are the exclusive property of Align and Acquire LLC and are protected by copyright, trademark, and other intellectual property laws.
             </p>
           </section>
 
           <section>
             <h2 className="text-xl font-semibold text-white mb-3">Limitation of Liability</h2>
             <p className="mb-4">
-              To the fullest extent permitted by applicable law, Align &amp; Acquire LLC shall not be liable for any indirect, incidental, special, consequential, or punitive damages, or any loss of profits or revenues, whether incurred directly or indirectly, or any loss of data, use, goodwill, or other intangible losses resulting from:
+              To the fullest extent permitted by applicable law, Align and Acquire LLC shall not be liable for any indirect, incidental, special, consequential, or punitive damages, or any loss of profits or revenues, whether incurred directly or indirectly, or any loss of data, use, goodwill, or other intangible losses resulting from:
             </p>
             <ul className="list-disc pl-6 space-y-2">
               <li>Your access to, use of, or inability to access or use our services</li>
@@ -124,14 +124,14 @@ export default function TermsPage() {
           <section>
             <h2 className="text-xl font-semibold text-white mb-3">Disclaimer of Warranties</h2>
             <p>
-              Our services are provided on an &quot;AS IS&quot; and &quot;AS AVAILABLE&quot; basis. Align &amp; Acquire LLC expressly disclaims all warranties of any kind, whether express or implied, including but not limited to implied warranties of merchantability, fitness for a particular purpose, and non-infringement. We do not warrant that the services will be uninterrupted, timely, secure, or error-free, or that any messages will be delivered successfully.
+              Our services are provided on an &quot;AS IS&quot; and &quot;AS AVAILABLE&quot; basis. Align and Acquire LLC expressly disclaims all warranties of any kind, whether express or implied, including but not limited to implied warranties of merchantability, fitness for a particular purpose, and non-infringement. We do not warrant that the services will be uninterrupted, timely, secure, or error-free, or that any messages will be delivered successfully.
             </p>
           </section>
 
           <section>
             <h2 className="text-xl font-semibold text-white mb-3">Indemnification</h2>
             <p>
-              You agree to defend, indemnify, and hold harmless Align &amp; Acquire LLC and its officers, directors, employees, and agents from and against any claims, liabilities, damages, losses, and expenses, including reasonable attorneys&apos; fees, arising out of or in any way connected with your access to or use of the services, your violation of these Terms, or your violation of any third-party rights.
+              You agree to defend, indemnify, and hold harmless Align and Acquire LLC and its officers, directors, employees, and agents from and against any claims, liabilities, damages, losses, and expenses, including reasonable attorneys&apos; fees, arising out of or in any way connected with your access to or use of the services, your violation of these Terms, or your violation of any third-party rights.
             </p>
           </section>
 
@@ -169,7 +169,7 @@ export default function TermsPage() {
               If you have questions about these Terms, please contact us at:
             </p>
             <p>
-              <strong>Align &amp; Acquire LLC</strong>
+              <strong>Align and Acquire LLC</strong>
               <br />
               Email: <a href="mailto:jacob@alignandacquire.com" className="text-blue-400 hover:text-blue-300 underline">jacob@alignandacquire.com</a>
             </p>

@@ -17,7 +17,7 @@ module.exports = {
     },
     extend: {
       colors: {
-        // Align & Acquire brand palette — additive, dashboard-scoped.
+        // Align and Acquire brand palette — additive, dashboard-scoped.
         // Nothing else in the app consumes `brand-*`, so this cannot affect
         // marketing/admin pages. Accent reserved for primary actions,
         // active/selected states, and key highlights; surfaces stay neutral.

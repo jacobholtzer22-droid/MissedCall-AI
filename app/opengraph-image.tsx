@@ -3,7 +3,7 @@ import { ImageResponse } from 'next/og'
 // Sitewide og:image (file convention — single source, replaces the old /aa-logo.png entry).
 // Text-only on purpose: Satori is fragile with embedded image assets.
 // Palette mirrors the marketing pages: #16181C bg, #F2F0EB text, #EE6B1A accent.
-export const alt = 'Align & Acquire — Missed call text back for trades businesses'
+export const alt = 'Align and Acquire — Missed call text back for trades businesses'
 export const size = { width: 1200, height: 630 }
 export const contentType = 'image/png'
 
@@ -53,7 +53,7 @@ export default function Image() {
             lineHeight: 1,
           }}
         >
-          Align &amp; Acquire
+          Align and Acquire
         </div>
         <div
           style={{
