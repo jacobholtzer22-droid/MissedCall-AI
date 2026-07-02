@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import Link from 'next/link'
 import { ArrowLeft } from 'lucide-react'
 import { Logo } from '../components/Logo'
+import BrandFooter from '../components/BrandFooter'
 
 export const metadata: Metadata = {
   title: 'Terms and Conditions',
@@ -183,6 +184,7 @@ export default function TermsPage() {
           Back to Home
         </Link>
       </div>
+      <BrandFooter />
     </div>
   )
 }
