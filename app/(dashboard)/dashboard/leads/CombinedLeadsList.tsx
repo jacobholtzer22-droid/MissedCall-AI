@@ -31,6 +31,7 @@ type WebsiteLeadRow = {
   message: string | null
   status: string
   createdAt: string
+  businessName?: string // only present when the business is in an owner group
 }
 
 // ── Unified row for the merged list ─────────────────────────────────────────
@@ -48,6 +49,7 @@ type UnifiedLead = {
   message: string | null
   sortTs: number
   dateStr: string
+  businessName?: string // website leads only, and only when in an owner group
 }
 
 type SourceFilter = 'all' | 'missed_call' | 'website'
@@ -86,6 +88,7 @@ export function CombinedLeadsList({
 }) {
   const [conversations, setConversations] = useState<ConversationRow[]>([])
   const [websiteLeads, setWebsiteLeads] = useState<WebsiteLeadRow[]>([])
+  const [isGroup, setIsGroup] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [filter, setFilter] = useState<SourceFilter>('all')
@@ -107,6 +110,7 @@ export function CombinedLeadsList({
         if (cancelled) return
         setConversations(cData.conversations || [])
         setWebsiteLeads(wData.leads || [])
+        setIsGroup(wData.isGroup === true)
       } catch {
         if (!cancelled) setError('Failed to load leads.')
       } finally {
@@ -155,6 +159,7 @@ export function CombinedLeadsList({
         message: w.message,
         sortTs: new Date(w.createdAt).getTime(),
         dateStr: formatRelativeTime(w.createdAt),
+        businessName: w.businessName,
       }
     })
     return [...fromConvos, ...fromWeb].sort((a, b) => b.sortTs - a.sortTs)
@@ -253,6 +258,11 @@ export function CombinedLeadsList({
                         <span className={cn('px-2 py-0.5 rounded-full text-xs font-medium', lead.statusClass)}>
                           {lead.statusLabel}
                         </span>
+                        {isGroup && lead.businessName && (
+                          <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600">
+                            {lead.businessName}
+                          </span>
+                        )}
                       </div>
                       {lead.summary && (
                         <p className="text-sm text-gray-600 mt-1 line-clamp-1">{lead.summary}</p>

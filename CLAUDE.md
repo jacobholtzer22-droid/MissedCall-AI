@@ -166,7 +166,7 @@ This document is the single source of truth for understanding, debugging, and mo
 │   │   │   ├── contacts/import/           # POST: bulk import from Excel/CSV
 │   │   │   ├── voicemails/                # GET: list voicemails
 │   │   │   ├── screened-calls/            # GET: list blocked spam calls
-│   │   │   ├── website-leads/             # GET: list website leads (403 if !missedCallAiEnabled)
+│   │   │   ├── website-leads/             # GET: website leads, owner-group-aware (403 if !missedCallAiEnabled)
 │   │   │   ├── analytics/                 # GET: usage analytics data
 │   │   │   ├── tags/                      # GET/POST: contact tags
 │   │   │   ├── jobs/route.ts              # GET/POST: jobs for contacts
@@ -187,7 +187,7 @@ This document is the single source of truth for understanding, debugging, and mo
 │   │       ├── usage/export/              # GET: export usage to Excel
 │   │       ├── usage/sheets-sync/         # POST: sync usage to Google Sheets
 │   │       ├── telnyx-test/               # GET: debug Telnyx MDR/CDR fetch
-│   │       └── view-as/                   # POST: set adminViewAs cookie
+│   │       └── view-as/                   # GET: set adminViewAs cookie (24h maxAge)
 │   │
 │   ├── admin/                    # Super-admin panel (Jacob only)
 │   │   ├── page.tsx              # Lean shell — renders AdminClient
@@ -238,6 +238,7 @@ This document is the single source of truth for understanding, debugging, and mo
 │   ├── sms-cooldown.ts           # Cooldown check/record/bypass/log
 │   ├── contacts-check.ts         # isExistingContact, logContactSkip
 │   ├── crm-utils.ts              # findExistingContact, findOrCreateContact
+│   ├── owner-group.ts            # getOwnerGroupBusinesses() — resolve ownerGroupId group (aggregated Website Leads + Google Ads)
 │   ├── import-contacts.ts        # parseContactFile (Excel/CSV → contacts array)
 │   ├── conversation-buckets.ts   # getConversationBucket() — cold/active/stalled/closed classification
 │   ├── telnyx-usage-sync.ts      # syncTelnyxUsage (MDR + CDR → TelnyxUsageRecord)
@@ -285,7 +286,7 @@ Every variable the app uses, what it controls, and what breaks without it.
 |---|---|---|
 | `TELNYX_API_KEY` | Yes | Telnyx API key for all voice/SMS operations |
 | `TELNYX_PUBLIC_KEY` | No | Webhook signature verification (not currently enforced) |
-| `TELNYX_PHONE_NUMBER` | Fallback | Default Telnyx number if business has none provisioned |
+| `TELNYX_PHONE_NUMBER` | No (unused) | Referenced nowhere in code — safe to remove from env |
 | `TELNYX_CONNECTION_ID` | Yes (forwarding) | Used when dialing B-leg for call forwarding. Falls back to `connectionId` from call payload |
 
 ### Google Calendar
@@ -346,6 +347,7 @@ id                      String    @id @default(cuid())
 name                    String                          // "Smith Landscaping"
 slug                    String    @unique               // "smith-landscaping" — used in booking URLs
 businessType            String?                         // "Landscaping" | "Car Detailing" | "HVAC" | "Other"
+ownerGroupId            String?                         // @@indexed. Businesses sharing a non-null value form an "owner group" (one client owning several businesses). null = no group, zero behavior change
 
 telnyxPhoneNumber       String?   @unique               // The number Telnyx routes calls/SMS through
 forwardingNumber        String?                         // Owner's real phone — used as "from" in notifications, "to" in forwarding dial
@@ -424,6 +426,7 @@ websiteLeads            WebsiteLead[]
 - `callScreenerEnabled` without `forwardingNumber` = IVR gate → speak → hangup (no actual forwarding)
 - `callScreenerEnabled` with `forwardingNumber` = IVR gate → "please hold" → dial B-leg → bridge
 - `massMessagingEnabled = false` → Outreach tab (email + SMS campaigns) shows a locked FeatureGate overlay; all campaign API routes return 403
+- `ownerGroupId = null` (default) → every route and component behaves exactly as before. Non-null and shared across businesses → exactly two dashboard surfaces aggregate across the group: **Website Leads** and **Google Ads** (see §14 and gotcha #34). Everything else (conversations, contacts, settings, appointments) stays scoped to the single business. Resolution goes through `getOwnerGroupBusinesses()` in `lib/owner-group.ts`.
 
 ---
 
@@ -1086,7 +1089,7 @@ async function sendSMS(business, to, text)
 | `/api/dashboard/voicemails` | GET | Conversations with `recordingUrl != null` |
 | `/api/dashboard/voicemails/[id]` | DELETE | Clear `recordingUrl` + `voicemailTranscription` on conversation (soft-delete voicemail). Returns `{ success: true }`. 404 if not found or no recording. |
 | `/api/dashboard/screened-calls` | GET | ScreenedCall records |
-| `/api/dashboard/website-leads` | GET | WebsiteLead records. 403 if `!missedCallAiEnabled`. |
+| `/api/dashboard/website-leads` | GET | WebsiteLead records, newest first. 403 if primary's `!missedCallAiEnabled` (sibling flags never gate). Owner groups: leads for ALL group businesses, each lead carries `businessName`, response adds `isGroup: true`. Ungrouped: today's exact `{ leads }` shape, no new fields. The PATCH (lead status) lookup is also group-scoped. |
 | `/api/dashboard/analytics` | GET | Feature-aware analytics. Period: today/week/month/all. Response includes `features` (BusinessFeatures) and `totalCallsMode` ('screened' or 'calls') so the client can show/hide cards. `totalCalls` source depends on `totalCallsMode`: 'screened' → ScreenedCall count; 'calls' → Conversation WHERE callSid IS NOT NULL. |
 | `/api/dashboard/tags` | GET/POST | List / create tags |
 | `/api/dashboard/jobs` | GET/POST | List / create jobs |
@@ -1116,21 +1119,21 @@ async function sendSMS(business, to, text)
 | `/api/admin/usage/export` | GET | Export usage to Excel. Query: `preset?`, `startDate?`, `endDate?` |
 | `/api/admin/usage/sheets-sync` | POST | Sync usage data to Google Sheets |
 | `/api/admin/telnyx-test` | GET | Debug: test Telnyx MDR/CDR API fetch |
-| `/api/admin/view-as` | POST | Set `adminViewAs` cookie to view dashboard as a client |
+| `/api/admin/view-as` | GET | Set `adminViewAs` cookie (24-hour maxAge) to view dashboard as a client |
 | `/api/admin/google-ads/sync` | POST | Sync Google Ads data. Body: `{ businessId? }`. Syncs one or all enabled businesses. Returns `{ synced, errors }` |
 
 ### Dashboard Google Ads
 
 | Route | Method | Purpose |
 |---|---|---|
-| `/api/dashboard/google-ads` | GET | Google Ads data for business. 403 if `!googleAdsEnabled`. Query: `startDate`, `endDate`, `groupBy` (day\|campaign). Returns `{ totals, daily, campaigns, lastSyncedAt }`. Default last 30 days. |
-| `/api/dashboard/google-ads/sync` | POST | Trigger Google Ads sync for the user's business. 403 if `!googleAdsEnabled` or no `googleAdsCustomerId`. Returns `{ success, rowsSynced, errors, lastSyncedAt }`. |
+| `/api/dashboard/google-ads` | GET | Google Ads data. 403 if primary's `!googleAdsEnabled`. Query: `startDate`, `endDate`, `groupBy` (day\|campaign). Returns `{ totals, daily, campaigns, lastSyncedAt }`; owner groups add `isGroup: true` + `perSite` and tag campaign rows with `businessName`. Default last 30 days. |
+| `/api/dashboard/google-ads/sync` | POST | Trigger Google Ads sync. 403 if primary's `!googleAdsEnabled`. Ungrouped: 400 if no `googleAdsCustomerId`. Owner groups: loops members with `googleAdsEnabled && googleAdsCustomerId` (others skipped, not errors), aggregates `rowsSynced`/`errors` (errors prefixed with business name). Returns `{ success, rowsSynced, errors, lastSyncedAt }`. |
 
 ### Contact / Book Demo
 
 | Route | Method | Purpose |
 |---|---|---|
-| `/api/contact` | POST | Website contact form. Body: `{ name, phone?, message?, smsConsent, businessId?, businessSlug?, email? }`. When **no** `businessId`/`businessSlug` is present (marketing page): sends Resend email to `YOUR_EMAIL`. When either is present (client tenant site): skips the email entirely and only writes to the DB. In both cases creates Contact (`source='website_form'`) + WebsiteLead in background fire-and-forget. All user input in the email body is HTML-escaped via a local `escapeHtml()` helper. No auth, no rate limiting — open endpoint. |
+| `/api/contact` | POST | Website contact form. Body: `{ name, phone?, message?, smsConsent, businessId?, businessSlug?, email? }`. When **no** `businessId`/`businessSlug` is present (marketing page): sends Resend email to `YOUR_EMAIL`. When either is present (client tenant site): calls `notifyOwnerOnWebsiteLead()` — owner SMS + email per the business's notify preferences (NOT silent). In both cases creates Contact (`source='website_form'`) + WebsiteLead in background fire-and-forget. All user input in the email body is HTML-escaped via a local `escapeHtml()` helper. No auth, no rate limiting — open endpoint. |
 | `/api/book-demo` | POST | Demo request form submission |
 
 ---
@@ -1279,6 +1282,17 @@ findOrCreateContact(params: {
 // Use this for all contact creation — never create Contact directly in route handlers.
 ```
 
+### `lib/owner-group.ts`
+```typescript
+getOwnerGroupBusinesses(business: Business): Promise<Business[]>
+// Resolve the calling business's owner group.
+// ownerGroupId null → returns [business] with NO db query (the null path cannot change behavior or latency).
+// Non-null → findMany({ where: { ownerGroupId } }); calling business guaranteed in the result.
+// No caching. Used by /api/dashboard/website-leads (GET + PATCH), /api/dashboard/google-ads (GET),
+// and /api/dashboard/google-ads/sync (POST). Do not wire it into other surfaces without a spec —
+// conversations, contacts, settings, and appointments intentionally stay single-business.
+```
+
 ### `lib/google-calendar.ts`
 ```typescript
 getAuthUrl(businessId: string): string
@@ -1350,28 +1364,36 @@ createBooking(params: CreateBookingParams): Promise<CreateBookingResult>
 
 These functions send SMS (Telnyx from business.telnyxPhoneNumber to ownerPhone||forwardingNumber) and email. **Email now goes through Resend** via the internal `sendEmail()` helper, `from` = `notifications@alignandacquire.com` (NOT SMTP). There is also a website-lead owner email built from a clean HTML template.
 
+**All six email subjects are prefixed with `[Business Name]`** so an owner receiving multiple businesses' alerts in one inbox can tell them apart. This is global — NOT gated on `ownerGroupId` — and applies to single-business clients too. SMS bodies and recipients are unchanged.
+
 ```typescript
 notifyOwnerOnBookingCreated(business, appointment): Promise<{ smsSent, emailSent }>
 // SMS: "📅 New Quote Request! [Name] wants [service] on [date] at [time]."
-// Email: Subject "New Quote Visit - [Name] - [service] - [date]"
+// Email: Subject "[Business] New Quote Visit - [Name] - [service] - [date]"
 // Includes customer details, address, notes, link to dashboard/appointments
 
 notifyOwnerOnBookingRequestNoCalendar(business, params): Promise<void>
 // When AI detected booking intent but calendar is off. Owner must confirm manually.
-// Email includes full conversation transcript.
+// Email: Subject "[Business] New Quote Request - [Name] - [service]"; includes full conversation transcript.
 
 notifyOwnerOnLeadCaptured(business, params): Promise<void>
 // When [READY_TO_CAPTURE] tag received in lead flow.
-// Email includes full conversation transcript.
+// Email: Subject "[Business] New Lead - [Name] - [service]"; includes full conversation transcript.
 
 notifyOwnerOnHumanNeeded(business, params): Promise<void>
 // When AI returns [HUMAN_NEEDED]. 
 // SMS: "⚠️ A customer needs your help! [Name] needs a personal follow-up."
-// Email includes reason + full conversation transcript.
+// Email: Subject "[Business] Follow-Up Needed - [Name]"; includes reason + full conversation transcript.
 
 notifyOwnerOnAIFailed(business, params): Promise<void>
 // When Claude API is unavailable (503 etc.).
+// Email: Subject "[Business] AI Unavailable - [Name] - Please Follow Up"
 // Customer received: "Thanks for reaching out! Let me have someone get back to you shortly."
+
+notifyOwnerOnWebsiteLead(business, params): Promise<{ smsSent, emailSent }>
+// When a client tenant's website contact form is submitted (/api/contact with businessId/businessSlug).
+// SMS: "📩 New website lead! [Name] just submitted your contact form..."
+// Email: Subject "[Business] New Website Lead - [Name]"; clean HTML layout + plain-text fallback.
 ```
 
 **Email transport:** `sendEmail(to, subject, text, html?)` uses Resend (`RESEND_API_KEY`). When `html` is omitted it wraps `text` via `plainTextToEmailHtml`. The legacy nodemailer/SMTP `getTransporter()` is still present in the file but is **dead code — nothing calls it** (the SMTP_* env vars are no longer used for sending).
@@ -1630,9 +1652,10 @@ plainTextToEmailHtml(text: string): string
 **`app/(dashboard)/dashboard/leads/page.tsx`** — `LeadsClient` → `CombinedLeadsList` (the unified Leads page)
 - FeatureGate `locked` (mode='locked', `enabled = business.missedCallAiEnabled !== false`, feature "Leads")
 - `CombinedLeadsList` fetches BOTH `/api/dashboard/conversations` and `/api/dashboard/website-leads` client-side and merges them into one list with a source filter (All / Missed Call / Website). Missed-call rows reuse the conversation buckets/labels; website rows use WebsiteLead status. No dedicated `/api/dashboard/leads` route exists.
+- **Owner groups:** when the website-leads response has `isGroup: true`, website rows show a gray site pill (`lead.businessName`) next to the status badge. Missed-call rows never get a pill — `/api/dashboard/conversations` stays primary-scoped, so on a grouped dashboard the All tab deliberately mixes group-wide website leads with primary-only missed-call leads (accepted as spec).
 
 **`app/(dashboard)/dashboard/website-leads/page.tsx`** — legacy redirect
-- `redirect('/dashboard/leads?tab=website')` — old Website Leads URL preserved for bookmarks/links. (It is no longer a standalone `WebsiteLeadsClient` page; the `WebsiteLeadsClient.tsx` component still exists but the route only redirects.)
+- `redirect('/dashboard/leads?tab=website')` — old Website Leads URL preserved for bookmarks/links. (It is no longer a standalone `WebsiteLeadsClient` page; the `WebsiteLeadsClient.tsx` component still exists but the route only redirects. The component is owner-group-aware too — same `isGroup` site-pill pattern as `CombinedLeadsList`.)
 
 **`app/(dashboard)/dashboard/ads/page.tsx`** — Google Ads (server wrapper)
 - FeatureGate `locked` on `!business.googleAdsEnabled` — shows upgrade overlay
@@ -1688,7 +1711,8 @@ plainTextToEmailHtml(text: string): string
 Every database table has `businessId` as a foreign key (except `User`, `PhoneNumber`). All data is scoped:
 
 - **API auth:** `requireDashboardBusiness()` resolves `business.id` from Clerk userId → User → Business. All DB queries in dashboard routes use this `businessId` in `where` clauses.
-- **Admin "view as":** Admin sets `adminViewAs` cookie (via `/api/admin/view-as`). `getBusinessForDashboard()` checks this cookie if `userId == ADMIN_USER_ID`. Allows Jacob to view any client's dashboard without separate login.
+- **Admin "view as":** Admin sets `adminViewAs` cookie (via GET `/api/admin/view-as`, 24-hour maxAge). `getBusinessForDashboard()` checks this cookie if `userId == ADMIN_USER_ID`. Allows Jacob to view any client's dashboard without separate login.
+- **Owner groups (deliberate cross-tenant exception):** businesses sharing a non-null `Business.ownerGroupId` form a group — one client owning several businesses with one dashboard login. Exactly three API routes aggregate across the group: `/api/dashboard/website-leads` (GET + PATCH), `/api/dashboard/google-ads` (GET), and `/api/dashboard/google-ads/sync` (POST). Resolution goes through `getOwnerGroupBusinesses()` (`lib/owner-group.ts`). Everything else — conversations, contacts, settings, appointments — stays scoped to the login's own business.
 - **Webhook isolation:** Voice and SMS webhooks find business by `telnyxPhoneNumber`. Each business has a unique Telnyx number → no cross-contamination.
 - **Phone number pool:** `PhoneNumber` table tracks available/assigned numbers. Assigning to a business sets `assignedToBusinessId` and `status='assigned'`.
 - **Data deletion:** All models use `onDelete: Cascade` from Business, so deleting a business cleans up all related data.
@@ -1845,7 +1869,7 @@ const isPublicApiRoute = createRouteMatcher([
 
 ### Auth & Multi-tenant
 
-16. **Admin "view as" via cookie** — When Jacob is logged in and sets `adminViewAs` cookie (via POST `/api/admin/view-as`), `getBusinessForDashboard()` returns that business instead of Jacob's own business. This means all dashboard API calls use the client's `businessId`. The cookie is session-scoped — it expires when the browser closes. If Jacob sees unexpected data, check for a stale `adminViewAs` cookie.
+16. **Admin "view as" via cookie** — When Jacob is logged in and sets `adminViewAs` cookie (via GET `/api/admin/view-as`), `getBusinessForDashboard()` returns that business instead of Jacob's own business. This means all dashboard API calls use the client's `businessId`. The cookie has a 24-hour maxAge — it persists across browser restarts within that window. If Jacob sees unexpected data, check for a stale `adminViewAs` cookie.
 
 17. **No webhook signature verification** — The Telnyx webhooks at `/api/webhooks/voice` and `/api/webhooks/sms` do NOT verify the `TELNYX_PUBLIC_KEY` signature. They are currently open to any POST request. This is a security risk — anyone who knows the URL can trigger conversation creation or SMS sends. The `TELNYX_PUBLIC_KEY` env var is defined but not used in verification code. Do not add verification without testing that the signature format matches Telnyx's current implementation.
 
@@ -1894,6 +1918,12 @@ const isPublicApiRoute = createRouteMatcher([
 32. **Client site configs must use the www URL for `/api/contact`** — Client sites POST cross-origin to `/api/contact`. A `site.config.ts` pointing at the bare domain fails the CORS preflight against the 308 → silent website-lead loss. Always use `https://www.alignandacquire.com` in client site configs.
 
 33. **No alerting on webhook delivery failure** — The July 2026 outage was discovered by a client complaint, not monitoring. A dead-man's-switch check (daily "was any Conversation created in the last 24h?" → alert Jacob if not) is planned but not built.
+
+### Owner Groups
+
+34. **The grouped Google Ads GET displays snapshots by group membership, NOT by member flags** — `/api/dashboard/google-ads` queries `GoogleAdsSnapshot` for every business in the owner group regardless of each sibling's `googleAdsEnabled` flag (only the primary's flag gates the 403). Toggling a sibling's `googleAdsEnabled` off stops the *sync loop* from refreshing its data but does NOT remove its existing snapshots from the group view. To remove a site from a group view, clear its `ownerGroupId` (or delete its snapshots) — do not expect the flag toggle to do it.
+
+35. **Ungrouped responses are byte-for-byte unchanged** — For a business with `ownerGroupId = null` (or a singleton group), the website-leads and google-ads responses contain NO new fields (`isGroup`, `perSite`, `businessName` are all absent, campaign map keys unchanged) and the clients render today's exact JSX. The new fields appear only when group size > 1. Preserve this when touching these routes: it's the compatibility guarantee for every existing client.
 
 ---
 
@@ -1967,8 +1997,8 @@ syncAllBusinessAds(): Promise<{ synced, errors }>
 | Route | Method | Auth | Purpose |
 |---|---|---|---|
 | `/api/admin/google-ads/sync` | POST | Admin only | Sync Google Ads data. Body: `{ businessId?: string }`. If businessId provided, syncs one; otherwise syncs all enabled businesses. Returns `{ synced, errors }`. |
-| `/api/dashboard/google-ads` | GET | `requireDashboardBusiness()` | Returns aggregated ad data. Query: `startDate`, `endDate`, `groupBy` (day\|campaign). Returns `{ totals, daily, campaigns, lastSyncedAt }`. Default: last 30 days. `lastSyncedAt` is the most recent `createdAt` across all snapshots in range. |
-| `/api/dashboard/google-ads/sync` | POST | `requireDashboardBusiness()` | Triggers Google Ads sync for the user's business. Requires `googleAdsEnabled=true` and `googleAdsCustomerId` set (400 otherwise). Returns `{ success, rowsSynced, errors, lastSyncedAt }`. |
+| `/api/dashboard/google-ads` | GET | `requireDashboardBusiness()` | Returns aggregated ad data. Query: `startDate`, `endDate`, `groupBy` (day\|campaign). Returns `{ totals, daily, campaigns, lastSyncedAt }`. Default: last 30 days. `lastSyncedAt` is the most recent `createdAt` across all snapshots in range. **Owner groups:** snapshots for ALL group businesses; `totals`/`daily` summed across the group; campaign rows keyed `businessId:campaignId` (so equal campaign ids from different Ads accounts can't merge) and tagged `businessName`; response adds `isGroup: true` + `perSite: [{ businessId, name, spend, clicks, conversions }]` (zero-data members included, sorted by spend). Ungrouped: today's exact shape, no new fields. |
+| `/api/dashboard/google-ads/sync` | POST | `requireDashboardBusiness()` | Triggers Google Ads sync. 403 if primary's `!googleAdsEnabled`. Ungrouped: requires `googleAdsCustomerId` (400 otherwise), syncs that business. **Owner groups:** loops members with `googleAdsEnabled && googleAdsCustomerId`; members missing a customer ID (including the primary) are skipped, not errors; 400 only if NO member is syncable; per-member try/catch so one failed account doesn't abort the rest; aggregates `rowsSynced`, errors prefixed with business name. Returns `{ success, rowsSynced, errors, lastSyncedAt }`. |
 
 ### Dashboard Page: `/dashboard/ads`
 
@@ -1983,6 +2013,7 @@ syncAllBusinessAds(): Promise<{ synced, errors }>
 - 6 summary cards: Total Spend, Total Clicks, Impressions, Avg CTR, Conversions, Cost/Conversion
 - Daily trend line chart (recharts): dual-axis with Spend (left, $) and Clicks (right)
 - Campaign breakdown table: campaign name, impressions, clicks, CTR, spend, conversions, cost/conversion
+- **Owner groups only** (`isGroup` in response): a compact "By Site" summary strip (name, spend, clicks, conversions per site) above the campaign table, and a gray site pill next to the campaign name in each row. Both are behind `data.isGroup && ...` conditionals — ungrouped businesses render exactly as before.
 - Empty state: "No ad data available yet. Data syncs daily."
 
 **Sidebar nav item:**
@@ -2021,7 +2052,7 @@ Super-admin panel at `/admin` — only accessible when `userId == ADMIN_USER_ID`
 | `app/admin/AdminTools.tsx` | Admin-level tools (Telnyx usage sync, Excel export) |
 | `app/admin/types.ts` | `AdminBusiness` interface — includes all Business fields plus `_count` (conversations, appointments, users, screenedCalls, blockedCalls30d) and computed `conversationsThisMonth`, `conversationsLastMonth`, `leadsThisMonth`, `conversationsAllTime`, `leadsAllTime` |
 | `app/admin/ClientDetailPanel/TogglesTab.tsx` | Toggle rows for all feature flags: MissedCall AI, Call Screener, Spam Filter, Online Booking, Google Calendar (read-only status), Google Ads, Notify by SMS/Email, Mass Outreach (massMessagingEnabled). `px-4 sm:px-6` padding. |
-| `app/admin/ClientDetailPanel/SettingsTab.tsx` | Editable fields: fees, Telnyx number, forwarding number, AI config, timezone. All `grid-cols-2` form rows are `grid-cols-1 sm:grid-cols-2`. `px-4 sm:px-6` padding. |
+| `app/admin/ClientDetailPanel/SettingsTab.tsx` | Editable fields: fees, Telnyx number, forwarding number, AI config, timezone, `ownerGroupId` (Admin Only section — blank clears the group). All `grid-cols-2` form rows are `grid-cols-1 sm:grid-cols-2`. `px-4 sm:px-6` padding. |
 | `app/admin/ClientDetailPanel/ToolsTab.tsx` | Per-business tools: bulk import contacts, view conversations, etc. `px-4 sm:px-6` padding. |
 
 ### `app/api/admin/businesses/route.ts` — enriched list
@@ -2039,11 +2070,13 @@ Stats are computed via Prisma `_count` with date filters (current calendar month
 - `massMessagingEnabled` — unlock outreach features
 - `smsCooldownDays` — per-business SMS cooldown override
 - `googleAdsEnabled`, `googleAdsCustomerId`, `googleAdsTabLabel`
+- `ownerGroupId` — owner-group membership (see §4/§10)
 - All toggles, fees, phone numbers, AI config
 
 Special processing:
 - `telnyxPhoneNumber` → normalized to E.164 via `normalizeToE164()`
 - `cooldownBypassNumbers` → parsed from comma-separated string or array → normalized E.164 array
+- `ownerGroupId` → trimmed; empty/whitespace-only (or non-string) saves as `null` (clears the group). The text input lives in SettingsTab's "Admin Only" section — to group N businesses, type the same value into each business's panel (no bulk-apply tool).
 
 ### `AdminBusiness` type (`app/admin/types.ts`)
 
@@ -2129,7 +2162,7 @@ Implemented on the `seo-foundation` branch (July 2026). Everything below applies
 
 ---
 
-*This document reflects the codebase as of July 7, 2026. Update after any significant architectural changes.*
+*This document reflects the codebase as of July 9, 2026. Update after any significant architectural changes.*
 
 ---
 

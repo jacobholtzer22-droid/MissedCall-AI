@@ -11,10 +11,12 @@ type WebsiteLeadRow = {
   message: string | null
   status: string
   createdAt: string
+  businessName?: string // only present when the business is in an owner group
 }
 
 type LeadsResponse = {
   leads: WebsiteLeadRow[]
+  isGroup?: boolean // true when leads span an owner group (adds the Site badge)
 }
 
 const STATUS_CONFIG: Record<string, { label: string; bg: string; text: string }> = {
@@ -41,6 +43,7 @@ function timeAgo(dateStr: string): string {
 
 export function WebsiteLeadsClient() {
   const [leads, setLeads] = useState<WebsiteLeadRow[]>([])
+  const [isGroup, setIsGroup] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [updatingId, setUpdatingId] = useState<string | null>(null)
@@ -52,7 +55,10 @@ export function WebsiteLeadsClient() {
     fetch('/api/dashboard/website-leads')
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error('Failed to load leads'))))
       .then((d: LeadsResponse) => {
-        if (!cancelled) setLeads(d.leads ?? [])
+        if (!cancelled) {
+          setLeads(d.leads ?? [])
+          setIsGroup(d.isGroup === true)
+        }
       })
       .catch((e) => {
         if (!cancelled) setError(e?.message ?? 'Failed to load leads')
@@ -122,6 +128,11 @@ export function WebsiteLeadsClient() {
                 >
                   {cfg.label}
                 </span>
+                {isGroup && lead.businessName && (
+                  <span className="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium bg-gray-100 text-gray-600">
+                    {lead.businessName}
+                  </span>
+                )}
               </div>
               <p className="text-sm text-gray-500">{timeAgo(lead.createdAt)}</p>
             </div>

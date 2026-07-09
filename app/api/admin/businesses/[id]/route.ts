@@ -57,11 +57,18 @@ export async function PATCH(
       'googleAdsTabLabel',
       'smsCooldownDays',
       'massMessagingEnabled',
+      'ownerGroupId',
     ]
 
     const data: Record<string, unknown> = {}
     for (const field of allowedFields) {
       if (body[field] !== undefined) data[field] = body[field]
+    }
+
+    // ownerGroupId: trim whitespace; empty/blank clears the group (saves as null)
+    if (data.ownerGroupId !== undefined) {
+      const raw = data.ownerGroupId
+      data.ownerGroupId = typeof raw === 'string' && raw.trim() ? raw.trim() : null
     }
 
     // Normalize telnyxPhoneNumber to E.164 (+1XXXXXXXXXX) for Telnyx API matching

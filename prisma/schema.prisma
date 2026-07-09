@@ -24,6 +24,7 @@ model Business {
   name                  String                          // "Smith Dental"
   slug                  String    @unique               // "smith-dental" (for URLs)
   businessType          String?                         // Landscaping, Car Detailing, HVAC, Other
+  ownerGroupId          String?                         // Businesses sharing a non-null value form an owner group (aggregated Website Leads + Google Ads). null = no group, behavior unchanged
 
   // Telnyx phone number provisioned for this business
   telnyxPhoneNumber     String?   @unique
@@ -107,6 +108,7 @@ model Business {
   googleAdsSnapshots    GoogleAdsSnapshot[]
 
   @@index([stripeCustomerId])
+  @@index([ownerGroupId])
 }
 
 // ===========================================

@@ -5,6 +5,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { requireDashboardBusiness } from '@/lib/dashboard-auth'
+import { getOwnerGroupBusinesses } from '@/lib/owner-group'
 
 export async function GET() {
   const authResult = await requireDashboardBusiness()
@@ -15,12 +16,26 @@ export async function GET() {
     return NextResponse.json({ error: 'Feature not available' }, { status: 403 })
   }
 
+  const group = await getOwnerGroupBusinesses(business)
+
   const leads = await db.websiteLead.findMany({
-    where: { businessId: business.id },
+    where: { businessId: { in: group.map((b) => b.id) } },
     orderBy: { createdAt: 'desc' },
   })
 
-  return NextResponse.json({ leads })
+  // Ungrouped businesses get today's exact response shape — no new fields
+  if (group.length === 1) {
+    return NextResponse.json({ leads })
+  }
+
+  const nameById = new Map(group.map((b) => [b.id, b.name]))
+  return NextResponse.json({
+    leads: leads.map((lead) => ({
+      ...lead,
+      businessName: nameById.get(lead.businessId) ?? '',
+    })),
+    isGroup: true,
+  })
 }
 
 const VALID_STATUSES = ['new', 'contacted', 'converted', 'closed'] as const
@@ -43,8 +58,11 @@ export async function PATCH(req: NextRequest) {
     )
   }
 
+  // Scope to the owner group so grouped dashboards can update sibling-business
+  // leads shown by GET. Ungrouped: group = [business], identical to before.
+  const group = await getOwnerGroupBusinesses(business)
   const lead = await db.websiteLead.findFirst({
-    where: { id: leadId, businessId: business.id },
+    where: { id: leadId, businessId: { in: group.map((b) => b.id) } },
   })
 
   if (!lead) {

@@ -51,6 +51,7 @@ export interface AdminBusiness {
   adminNotes: string | null
   smsCooldownDays: number | null
   cooldownBypassNumbers: unknown
+  ownerGroupId: string | null
 
   // Complex JSON fields
   businessHours: unknown
