@@ -31,7 +31,7 @@ function parseDatetimeInTimezone(datetimeStr: string, tz: string): Date {
 
 const baseUrl =
   process.env.NEXT_PUBLIC_APP_URL ??
-  (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'https://alignandacquire.com')
+  (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'https://www.alignandacquire.com')
 
 function formatDate(d: Date, timeZone?: string): string {
   return d.toLocaleDateString('en-US', {
@@ -90,7 +90,7 @@ export async function notifyOwnerOnBookingCreated(
   const tz = business.timezone ?? 'America/New_York'
   const dateStr = formatDate(scheduledAt, tz)
   const timeStr = formatTime(scheduledAt, tz)
-  const dashboardUrl = 'https://alignandacquire.com/dashboard/appointments'
+  const dashboardUrl = `${baseUrl}/dashboard/appointments`
   const sourceLabel = appointment.source === 'sms' ? 'Missed Call' : 'Website'
   const notesTruncated = appointment.notes
     ? (appointment.notes.length > 100 ? appointment.notes.slice(0, 100) + '...' : appointment.notes)

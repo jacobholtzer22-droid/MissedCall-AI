@@ -1746,6 +1746,7 @@ const isPublicApiRoute = createRouteMatcher([
 - SDK: `new Telnyx({ apiKey: process.env.TELNYX_API_KEY })`
 - **Inbound calls:** Telnyx sends webhooks to `/api/webhooks/voice`. You respond 200 immediately, then make separate API calls to `telnyx.calls.actions.*`
 - **Inbound SMS:** Telnyx sends webhooks to `/api/webhooks/sms`
+- **Webhook URLs configured in the Telnyx portal (Call Control app + Messaging Profile) MUST use `https://www.alignandacquire.com` — the bare apex 308-redirects and Telnyx drops the delivery (see gotcha #30)**
 - **Outbound SMS:** `telnyx.messages.send({ from: business.telnyxPhoneNumber, to, text })`
 - **Outbound calls (forwarding):** `telnyx.calls.dial({ connection_id, to, from, timeout_secs, client_state, ringback_tone })`
 - **Call control actions used:**
@@ -1883,6 +1884,16 @@ const isPublicApiRoute = createRouteMatcher([
 26. **`X-Frame-Options: ALLOWALL` on ALL routes** — `next.config.js` sets this globally. This means every page, including the dashboard, can be iframed by any website. This is intentional (for the `/book` embed feature) but is a security trade-off. Do not accidentally tighten this — it would break the embed feature.
 
 27. **Server Actions body size limit is 2MB** — Set in `next.config.js` under `experimental.serverActions.bodySizeLimit`. This affects file upload actions. Campaign image uploads are route handlers (not Server Actions) and use Vercel Blob directly, so they're not affected.
+
+### Webhooks & Domains
+
+30. **Every externally configured webhook or callback URL MUST use `https://www.alignandacquire.com` (with www)** — Vercel's primary domain is www; the bare apex returns a 308 permanent redirect at Vercel's edge, and webhook senders do NOT follow redirects — the POST gets a 308 back, is marked failed, retried, and dropped. Applies to the Telnyx Call Control voice webhook, the Telnyx Messaging Profile inbound webhook, failover URLs, and any third party that POSTs to this app. Bare-apex webhook URLs in the Telnyx portal caused a full platform outage (all clients simultaneously — one shared Call Control app serves every client number) that ran silently from late June until discovered July 7, 2026.
+
+31. **Calls ring forever + empty Vercel logs = failure is upstream of the function** — The 308 happens at the edge before any function is invoked, so Vercel function logs show NOTHING (`answer()` never fires because `call.initiated` never reaches the app). When you see this signature, suspect an edge redirect, deployment protection, or DNS — not app code. Check the Telnyx Debugging tab first: it logs every delivery attempt with the exact response code (the July 2026 outage showed failed deliveries with response code 308).
+
+32. **Client site configs must use the www URL for `/api/contact`** — Client sites POST cross-origin to `/api/contact`. A `site.config.ts` pointing at the bare domain fails the CORS preflight against the 308 → silent website-lead loss. Always use `https://www.alignandacquire.com` in client site configs.
+
+33. **No alerting on webhook delivery failure** — The July 2026 outage was discovered by a client complaint, not monitoring. A dead-man's-switch check (daily "was any Conversation created in the last 24h?" → alert Jacob if not) is planned but not built.
 
 ---
 
@@ -2118,7 +2129,7 @@ Implemented on the `seo-foundation` branch (July 2026). Everything below applies
 
 ---
 
-*This document reflects the codebase as of July 2, 2026. Update after any significant architectural changes.*
+*This document reflects the codebase as of July 7, 2026. Update after any significant architectural changes.*
 
 ---
 
