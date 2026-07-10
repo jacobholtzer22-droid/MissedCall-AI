@@ -8,6 +8,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireDashboardBusiness } from '@/lib/dashboard-auth'
 import { db } from '@/lib/db'
+import { getOwnerGroupBusinesses } from '@/lib/owner-group'
 
 export async function GET(request: NextRequest) {
   const authResult = await requireDashboardBusiness()
@@ -33,9 +34,13 @@ export async function GET(request: NextRequest) {
     ? new Date(searchParams.get('endDate')! + 'T23:59:59.999Z')
     : now
 
+  const group = await getOwnerGroupBusinesses(business)
+  const isGroup = group.length > 1
+  const nameById = new Map(group.map((b) => [b.id, b.name]))
+
   const snapshots = await db.googleAdsSnapshot.findMany({
     where: {
-      businessId: business.id,
+      businessId: { in: group.map((b) => b.id) },
       date: { gte: startDate, lte: endDate },
     },
     orderBy: { date: 'asc' },
@@ -70,12 +75,15 @@ export async function GET(request: NextRequest) {
   }
   const daily = Array.from(dailyMap.values()).sort((a, b) => a.date.localeCompare(b.date))
 
-  // Campaign aggregation
-  const campaignMap = new Map<string, { campaignId: string; campaignName: string; impressions: number; clicks: number; cost: number; conversions: number }>()
+  // Campaign aggregation. Grouped dashboards key per business so equal campaign
+  // ids from different Ads accounts can't merge, and each row carries its site name.
+  const campaignMap = new Map<string, { campaignId: string; campaignName: string; businessName?: string; impressions: number; clicks: number; cost: number; conversions: number }>()
   for (const s of snapshots) {
-    const existing = campaignMap.get(s.campaignId) || {
+    const key = isGroup ? `${s.businessId}:${s.campaignId}` : s.campaignId
+    const existing = campaignMap.get(key) || {
       campaignId: s.campaignId,
       campaignName: s.campaignName,
+      ...(isGroup ? { businessName: nameById.get(s.businessId) ?? '' } : {}),
       impressions: 0,
       clicks: 0,
       cost: 0,
@@ -87,7 +95,7 @@ export async function GET(request: NextRequest) {
     existing.conversions += s.conversions
     // Always use latest campaign name
     existing.campaignName = s.campaignName
-    campaignMap.set(s.campaignId, existing)
+    campaignMap.set(key, existing)
   }
   const campaigns = Array.from(campaignMap.values())
     .map((c) => ({
@@ -102,6 +110,34 @@ export async function GET(request: NextRequest) {
     ? snapshots.reduce((latest, s) => s.createdAt > latest ? s.createdAt : latest, snapshots[0]!.createdAt).toISOString()
     : null
 
+  // Ungrouped businesses get today's exact response shape — no new fields
+  if (!isGroup) {
+    return NextResponse.json({
+      totals: {
+        ...totals,
+        avgCtr,
+        avgCostPerConversion,
+      },
+      daily,
+      campaigns,
+      lastSyncedAt,
+    })
+  }
+
+  // Per-site rollup for the group summary strip (zero-data members included)
+  const siteMap = new Map(
+    group.map((b) => [b.id, { businessId: b.id, name: b.name, spend: 0, clicks: 0, conversions: 0 }])
+  )
+  for (const s of snapshots) {
+    const site = siteMap.get(s.businessId)
+    if (site) {
+      site.spend += s.cost
+      site.clicks += s.clicks
+      site.conversions += s.conversions
+    }
+  }
+  const perSite = Array.from(siteMap.values()).sort((a, b) => b.spend - a.spend)
+
   return NextResponse.json({
     totals: {
       ...totals,
@@ -111,5 +147,7 @@ export async function GET(request: NextRequest) {
     daily,
     campaigns,
     lastSyncedAt,
+    isGroup: true,
+    perSite,
   })
 }

@@ -64,6 +64,7 @@ function initForm(b: AdminBusiness) {
     googleAdsTabLabel: b.googleAdsTabLabel ?? '',
     // Admin
     adminNotes: b.adminNotes ?? '',
+    ownerGroupId: b.ownerGroupId ?? '',
     smsCooldownDays: b.smsCooldownDays != null ? String(b.smsCooldownDays) : '',
     cooldownBypassNumbers: Array.isArray(b.cooldownBypassNumbers)
       ? (b.cooldownBypassNumbers as string[]).join(', ')
@@ -139,6 +140,7 @@ export function SettingsTab({ business, onUpdateBusiness, onToast }: Props) {
           googleAdsCustomerId: form.googleAdsCustomerId.trim() || null,
           googleAdsTabLabel: form.googleAdsTabLabel.trim() || null,
           adminNotes: form.adminNotes || null,
+          ownerGroupId: form.ownerGroupId,
           smsCooldownDays: form.smsCooldownDays !== '' ? parseInt(form.smsCooldownDays, 10) : null,
           cooldownBypassNumbers: form.cooldownBypassNumbers || '',
           servicesOffered,
@@ -334,6 +336,9 @@ export function SettingsTab({ business, onUpdateBusiness, onToast }: Props) {
         <div className="space-y-3">
           <Field label="Admin Notes" hint="Private, not visible to client">
             <textarea className={TEXTAREA} rows={3} value={form.adminNotes} onChange={e => set('adminNotes', e.target.value)} placeholder="Private notes..." />
+          </Field>
+          <Field label="Owner Group ID" hint="Same value on multiple businesses = combined Website Leads + Google Ads. Blank = no group">
+            <input className={INPUT} value={form.ownerGroupId} onChange={e => set('ownerGroupId', e.target.value)} placeholder="joey-jaws" />
           </Field>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <Field label="SMS Cooldown (days)" hint="Blank = use env default">

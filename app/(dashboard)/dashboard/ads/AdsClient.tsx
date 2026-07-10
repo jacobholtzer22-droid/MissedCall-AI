@@ -35,6 +35,7 @@ type DailyRow = {
 type CampaignRow = {
   campaignId: string
   campaignName: string
+  businessName?: string // only present when the business is in an owner group
   impressions: number
   clicks: number
   cost: number
@@ -43,11 +44,21 @@ type CampaignRow = {
   costPerConversion: number | null
 }
 
+type PerSiteRow = {
+  businessId: string
+  name: string
+  spend: number
+  clicks: number
+  conversions: number
+}
+
 type AdsResponse = {
   totals: Totals
   daily: DailyRow[]
   campaigns: CampaignRow[]
   lastSyncedAt: string | null
+  isGroup?: boolean // true when data spans an owner group
+  perSite?: PerSiteRow[]
 }
 
 const RANGE_OPTIONS: { label: string; value: RangePreset }[] = [
@@ -367,6 +378,27 @@ export function AdsClient() {
             </div>
           </div>
 
+          {/* Per-site summary strip (owner groups only) */}
+          {data.isGroup && data.perSite && data.perSite.length > 0 && (
+            <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+              <div className="px-6 py-4 border-b border-gray-100">
+                <h2 className="text-lg font-semibold text-gray-900">By Site</h2>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 divide-y sm:divide-y-0 divide-gray-100">
+                {data.perSite.map((site) => (
+                  <div key={site.businessId} className="px-6 py-4">
+                    <p className="font-medium text-gray-900 truncate">{site.name}</p>
+                    <div className="flex flex-wrap gap-x-4 gap-y-1 mt-1 text-sm text-gray-600 tabular-nums">
+                      <span>{formatCurrency(site.spend)} spend</span>
+                      <span>{formatNumber(site.clicks)} clicks</span>
+                      <span>{formatNumber(site.conversions)} conv.</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* Campaign breakdown table */}
           <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
             <div className="px-6 py-4 border-b border-gray-100">
@@ -387,9 +419,17 @@ export function AdsClient() {
                 </thead>
                 <tbody className="divide-y divide-gray-100">
                   {data.campaigns.map((c) => (
-                    <tr key={c.campaignId} className="hover:bg-gray-50 transition">
+                    <tr
+                      key={c.businessName ? `${c.businessName}:${c.campaignId}` : c.campaignId}
+                      className="hover:bg-gray-50 transition"
+                    >
                       <td className="px-6 py-3 font-medium text-gray-900 max-w-xs truncate">
                         {c.campaignName}
+                        {data.isGroup && c.businessName && (
+                          <span className="ml-2 inline-flex px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600">
+                            {c.businessName}
+                          </span>
+                        )}
                       </td>
                       <td className="px-4 py-3 text-right text-gray-700 tabular-nums">
                         {formatNumber(c.impressions)}

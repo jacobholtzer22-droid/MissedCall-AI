@@ -31,7 +31,7 @@ function parseDatetimeInTimezone(datetimeStr: string, tz: string): Date {
 
 const baseUrl =
   process.env.NEXT_PUBLIC_APP_URL ??
-  (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'https://alignandacquire.com')
+  (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'https://www.alignandacquire.com')
 
 function formatDate(d: Date, timeZone?: string): string {
   return d.toLocaleDateString('en-US', {
@@ -90,7 +90,7 @@ export async function notifyOwnerOnBookingCreated(
   const tz = business.timezone ?? 'America/New_York'
   const dateStr = formatDate(scheduledAt, tz)
   const timeStr = formatTime(scheduledAt, tz)
-  const dashboardUrl = 'https://alignandacquire.com/dashboard/appointments'
+  const dashboardUrl = `${baseUrl}/dashboard/appointments`
   const sourceLabel = appointment.source === 'sms' ? 'Missed Call' : 'Website'
   const notesTruncated = appointment.notes
     ? (appointment.notes.length > 100 ? appointment.notes.slice(0, 100) + '...' : appointment.notes)
@@ -134,7 +134,7 @@ export async function notifyOwnerOnBookingCreated(
   // Email
   if (business.notifyByEmail && business.ownerEmail) {
     console.error('[NOTIFY OWNER] Email enabled, sending to', business.ownerEmail)
-    const subject = `New Quote Visit - ${appointment.customerName} - ${appointment.serviceType} - ${dateStr}`
+    const subject = `[${business.name}] New Quote Visit - ${appointment.customerName} - ${appointment.serviceType} - ${dateStr}`
     const body = [
       `A new quote visit has been scheduled for ${business.name}.`,
       '',
@@ -227,7 +227,7 @@ export async function notifyOwnerOnBookingRequestNoCalendar(
 
   // Email
   if (business.notifyByEmail && business.ownerEmail) {
-    const subject = `New Quote Request - ${customerName} - ${service}`
+    const subject = `[${business.name}] New Quote Request - ${customerName} - ${service}`
     const transcriptText = conversationTranscript
       .map((m) => {
         const label = m.direction === 'inbound' ? 'Customer' : business.name
@@ -326,9 +326,9 @@ export async function notifyOwnerOnLeadCaptured(
     }
   }
 
-  // Email: Subject "New Lead - [Name] - [Service]", all customer info + full transcript
+  // Email: Subject "[Business] New Lead - [Name] - [Service]", all customer info + full transcript
   if (business.notifyByEmail && business.ownerEmail) {
-    const subject = `New Lead - ${customerName} - ${service}`
+    const subject = `[${business.name}] New Lead - ${customerName} - ${service}`
     const transcriptText = conversationTranscript
       .map((m) => {
         const label = m.direction === 'inbound' ? 'Customer' : business.name
@@ -413,7 +413,7 @@ export async function notifyOwnerOnHumanNeeded(
 
   // Email
   if (business.notifyByEmail && business.ownerEmail) {
-    const subject = `Follow-Up Needed - ${customerName}`
+    const subject = `[${business.name}] Follow-Up Needed - ${customerName}`
     const transcriptText = conversationTranscript
       .map((m) => {
         const label = m.direction === 'inbound' ? 'Customer' : business.name
@@ -488,7 +488,7 @@ export async function notifyOwnerOnAIFailed(
   }
 
   if (business.notifyByEmail && business.ownerEmail) {
-    const subject = `AI Unavailable - ${customerName} - Please Follow Up`
+    const subject = `[${business.name}] AI Unavailable - ${customerName} - Please Follow Up`
     const transcriptText = conversationTranscript
       .map((m) => {
         const label = m.direction === 'inbound' ? 'Customer' : business.name
@@ -576,7 +576,7 @@ export async function notifyOwnerOnWebsiteLead(
 
   // Email — clean HTML layout (sent as real HTML, not wrapped plain text)
   if (business.notifyByEmail && business.ownerEmail) {
-    const subject = `New Website Lead - ${name}`
+    const subject = `[${business.name}] New Website Lead - ${name}`
     const tz = business.timezone ?? 'America/New_York'
     const now = new Date()
     const receivedAt = `${formatDate(now, tz)} at ${formatTime(now, tz)}`
