@@ -39,12 +39,13 @@ export function EmailsClient({ hideHeader = false }: { hideHeader?: boolean }) {
 
   return (
     <div className="space-y-6 w-full">
-      {!hideHeader && (
       <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Email Campaigns</h1>
-          <p className="text-gray-500 mt-1">Send bulk emails to your contacts</p>
-        </div>
+        {!hideHeader && (
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900">Email Campaigns</h1>
+            <p className="text-gray-500 mt-1">Send bulk emails to your contacts</p>
+          </div>
+        )}
         <Link
           href="/dashboard/emails/new"
           className="inline-flex items-center justify-center gap-2 px-4 py-3 min-h-[44px] w-full md:w-auto bg-gray-900 text-white rounded-lg hover:bg-gray-800 transition font-medium"
@@ -53,7 +54,6 @@ export function EmailsClient({ hideHeader = false }: { hideHeader?: boolean }) {
           New Campaign
         </Link>
       </div>
-      )}
 
       <div className="space-y-2">
         <h2 className="text-lg font-semibold text-gray-900">Sent Campaigns</h2>
