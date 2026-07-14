@@ -12,7 +12,7 @@ import Telnyx from 'telnyx'
 import Anthropic from '@anthropic-ai/sdk'
 import { addDays, addMonths, addYears } from 'date-fns'
 import { TZDate } from '@date-fns/tz'
-import { getAvailableSlots, getTwoClosestSlotsOnDay, isSpecificSlotAvailable, parseBusinessHours } from '@/lib/google-calendar'
+import { getTwoClosestSlotsOnDay, isSpecificSlotAvailable, parseBusinessHours } from '@/lib/google-calendar'
 import { createBooking, cleanServiceForOwner } from '@/lib/create-booking'
 import { notifyOwnerOnHumanNeeded, notifyOwnerOnLeadCaptured, notifyOwnerOnAIFailed } from '@/lib/notify-owner'
 import { recordMessageSent } from '@/lib/sms-cooldown'
@@ -110,6 +110,43 @@ function getCallUsPhrase(business: { forwardingNumber?: string | null }): string
 /** Single source of truth for the lead-capture confirmation sent to the customer. */
 function buildLeadConfirmation(business: { name?: string | null }): string {
   return `Perfect! Someone from ${business.name} will follow up with you shortly to discuss next steps and set up a time that works. Talk soon!`
+}
+
+/** Build the public /book/[slug] URL, or null when NEXT_PUBLIC_APP_URL or the slug is missing. */
+function buildBookingLink(business: { slug?: string | null }): string | null {
+  const baseUrl = process.env.NEXT_PUBLIC_APP_URL?.trim()
+  const slug = business.slug?.trim()
+  if (!baseUrl || !slug) return null
+  return `${baseUrl.replace(/\/+$/, '')}/book/${slug}`
+}
+
+/**
+ * Link handoff: send the public booking page and mark the conversation.
+ * Never writes bookingFlowState — the in-text time-negotiation state machine is retired.
+ * When the link can't be built (missing env/slug), sends a safe fallback and warns.
+ */
+async function sendBookingLinkHandoff(
+  business: any,
+  conversationId: string,
+  to: string,
+  timing?: WebhookTiming & { now: () => string }
+): Promise<void> {
+  const link = buildBookingLink(business)
+  if (!link) {
+    console.warn('[SMS BOOKING] Booking link unavailable — sending fallback instead of a broken URL', {
+      hasAppUrl: Boolean(process.env.NEXT_PUBLIC_APP_URL?.trim()),
+      hasSlug: Boolean(business.slug?.trim()),
+      businessId: business.id,
+    })
+  }
+  const msg = link
+    ? `Happy to get you scheduled. Grab a time that works for you here and you're all set: ${link}`
+    : `Thanks! Someone from the team will reach out to get you scheduled.`
+  await sendSMSAndLog(business, conversationId, to, msg, timing)
+  await db.conversation.update({
+    where: { id: conversationId },
+    data: { status: 'booking_link_sent' },
+  })
 }
 const CONVERSATION_TIMEOUT_HOURS = 24
 const SPAM_WINDOW_SECONDS = 30
@@ -390,10 +427,10 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ ok: true, timing: { ...timing, totalMs } }, { status: 200 })
       }
 
-      // AI response (pass bookingFlowState so AI can guide back when customer goes off-topic)
+      // AI response (general conversation; booking requests are pointed at the /book link)
       timing.aiStartAt = timing.now()
       console.log('⏱️ [SMS] AI processing started at:', timing.aiStartAt)
-      const aiResult = await generateAIResponse(business, conversation, text, conversation.bookingFlowState, business.calendarEnabled && business.smsBookingEnabled !== false)
+      const aiResult = await generateAIResponse(business, conversation, text, business.calendarEnabled && business.smsBookingEnabled !== false)
       timing.aiEndAt = timing.now()
       console.log('⏱️ [SMS] AI processing finished at:', timing.aiEndAt)
 
@@ -478,11 +515,12 @@ export async function POST(request: NextRequest) {
         }
       }
 
-      // ── AI-triggered booking flow engagement (calendar-enabled safety net) ──
-      // If the AI generated a response for a calendar-enabled business but the structured
-      // booking flow never engaged, detect two critical scenarios:
-      // 1. AI fake-confirmed a booking ("you're all set!") → intercept and redirect to real flow
-      // 2. AI is guiding toward booking (asking for name/time) → set bookingFlowState for next message
+      // ── AI booking-talk safety net (calendar-enabled) ──
+      // The AI must never negotiate or confirm bookings in text — all scheduling goes
+      // through the /book link. Detect two scenarios and send the booking link instead:
+      // 1. AI fake-confirmed a booking ("you're all set!") → suppress it, send the link
+      // 2. AI is asking for name + day/time (old in-text scheduling habit) → send the link
+      // Neither path writes bookingFlowState — the old state machine stays unreachable.
       if (
         business.calendarEnabled &&
         business.googleCalendarConnected &&
@@ -497,58 +535,27 @@ export async function POST(request: NextRequest) {
             !/would you like|want to|shall we|should we|let me/i.test(cleanResponse)
 
           if (isFakeConfirmation) {
-            console.log('[SMS BOOKING] ⚠️ AI fake-confirmed booking without createBooking — intercepting')
+            console.log('[SMS BOOKING] ⚠️ AI fake-confirmed booking without createBooking — sending booking link instead')
             console.log('[SMS BOOKING] Suppressed AI response:', cleanResponse.slice(0, 120))
-            const hoursSummary = formatBusinessHoursSummary(business.businessHours)
-            const callerName = conversation.callerName
-            const redirectMsg = callerName
-              ? `Almost there, ${callerName}! Let me check our calendar and lock in that time for you. What day and time works best? We're available ${hoursSummary}.`
-              : `Almost there! Let me check our calendar and get you on the schedule. What's your name, and what day/time works best? We're available ${hoursSummary}.`
-            await sendSMSAndLog(business, conversation.id, from, redirectMsg, timing)
-            await db.conversation.update({
-              where: { id: conversation.id },
-              data: {
-                status: 'booking_in_progress',
-                bookingFlowState: JSON.parse(JSON.stringify({
-                  step: 'awaiting_name_and_preference',
-                  customerName: callerName || undefined,
-                  serviceType: conversation.serviceRequested || extractServiceFromConversation(conversation.messages) || undefined,
-                  sentAt: new Date().toISOString(),
-                })),
-              },
-            })
+            await sendBookingLinkHandoff(business, conversation.id, from, timing)
             const totalMs = Date.now() - new Date(timing.webhookReceivedAt).getTime()
-            console.log('[SMS BOOKING] Redirected to structured flow after fake confirmation. Total:', totalMs, 'ms')
+            console.log('[SMS BOOKING] Booking link sent after fake confirmation. Total:', totalMs, 'ms')
             return NextResponse.json({ ok: true, timing: { ...timing, totalMs } }, { status: 200 })
           }
 
-          // SCENARIO 2: AI is asking for name AND time/day together — set flow state
-          // so the NEXT customer message enters the structured booking state machine.
-          // Be conservative: only trigger when the AI asks for BOTH name and scheduling
+          // SCENARIO 2: AI is asking for name AND time/day together — old in-text
+          // scheduling habit. Suppress it and send the booking link instead. Be
+          // conservative: only trigger when the AI asks for BOTH name and scheduling
           // info, not just yes/no offers like "Would you like a quote?"
           const asksForName = /what[''\u2019]?s your name|\byour name\b/i.test(cleanResponse)
           const asksForTime = /when works|what day|what time|day.?\/?.?time|when.* best/i.test(cleanResponse)
           const isGuidingToBooking = asksForName && asksForTime
 
           if (isGuidingToBooking) {
-            console.log('[SMS BOOKING] AI is guiding toward booking — engaging structured flow for next message')
-            const svcType = conversation.serviceRequested || extractServiceFromConversation(conversation.messages) || undefined
-            await db.conversation.update({
-              where: { id: conversation.id },
-              data: {
-                status: 'booking_in_progress',
-                bookingFlowState: JSON.parse(JSON.stringify({
-                  step: 'awaiting_name_and_preference',
-                  customerName: conversation.callerName || undefined,
-                  serviceType: svcType,
-                  sentAt: new Date().toISOString(),
-                })),
-              },
-            })
-            // Send the AI's response — it already asked for name/time naturally
-            await sendSMSAndLog(business, conversation.id, from, cleanResponse, timing)
+            console.log('[SMS BOOKING] AI is guiding toward in-text scheduling — sending booking link instead')
+            await sendBookingLinkHandoff(business, conversation.id, from, timing)
             const totalMs = Date.now() - new Date(timing.webhookReceivedAt).getTime()
-            console.log('[SMS BOOKING] Structured flow engaged via AI guidance. Total:', totalMs, 'ms')
+            console.log('[SMS BOOKING] Booking link sent via AI-guidance intercept. Total:', totalMs, 'ms')
             return NextResponse.json({ ok: true, timing: { ...timing, totalMs } }, { status: 200 })
           }
         }
@@ -1090,10 +1097,28 @@ async function handleSmsBookingFlow(
     console.log('[SMS BOOKING] Already booked — skipping')
     return true
   }
+  // Link already sent: don't re-fire the handoff on every message (booking-intent words
+  // linger in conversation history). The general AI handles follow-up questions and
+  // re-shares the link if asked — the link is embedded in its system prompt.
+  if (conversation.status === 'booking_link_sent') {
+    console.log('[SMS BOOKING] Booking link already sent — deferring to general AI')
+    return false
+  }
   const rawFlowState = (conversation.bookingFlowState as Record<string, unknown> | null) ?? {}
   if (rawFlowState.step === 'confirmed') {
     console.log('[SMS BOOKING] Already confirmed — skipping')
     return true
+  }
+  // Link-handoff mode: the in-text time-negotiation state machine below is retired and
+  // nothing writes bookingFlowState anymore. Clear any state lingering from a pre-handoff
+  // in-flight conversation so the old step handlers can never run again.
+  if (rawFlowState.step) {
+    console.log('[SMS BOOKING] Clearing lingering bookingFlowState (link-handoff mode):', rawFlowState.step)
+    await db.conversation.update({
+      where: { id: conversation.id },
+      data: { bookingFlowState: Prisma.DbNull },
+    })
+    rawFlowState.step = undefined
   }
 
   const rawText = text?.trim() || ''
@@ -1736,27 +1761,10 @@ async function handleSmsBookingFlow(
     text: trimmed.slice(0, 60),
   })
 
-  // Extract any info already provided in conversation before starting flow
-  const svcType = conversation.serviceRequested || extractServiceFromConversation(conversation.messages) || undefined
-  const existingName = conversation.callerName || undefined
-  const hoursSummary = formatBusinessHoursSummary(business.businessHours)
-  const msg = existingName
-    ? `I'd love to set that up, ${existingName}! What day and time work best for you? We're available ${hoursSummary}.`
-    : `I'd love to set that up! What day and time work best for you? We're available ${hoursSummary}.`
-  await sendSMSAndLog(business, conversation.id, from, msg)
-  await db.conversation.update({
-    where: { id: conversation.id },
-    data: {
-      status: 'booking_in_progress',
-      bookingFlowState: JSON.parse(JSON.stringify({
-        step: existingName ? 'awaiting_time' : 'awaiting_name_and_preference',
-        customerName: existingName,
-        serviceType: svcType,
-        sentAt: new Date().toISOString(),
-      })),
-    },
-  })
-  console.log('[SMS BOOKING] Booking flow started', { step: existingName ? 'awaiting_time' : 'awaiting_name_and_preference', customerName: existingName, serviceType: svcType })
+  // Link handoff: send the public booking page instead of negotiating times in text.
+  // Never writes bookingFlowState — the old state machine above stays unreachable.
+  await sendBookingLinkHandoff(business, conversation.id, from)
+  console.log('[SMS BOOKING] Booking link sent (link handoff — no in-text time negotiation)')
   return true
 }
 
@@ -2146,7 +2154,6 @@ async function generateAIResponse(
   business: any,
   conversation: any,
   latestMessage: string,
-  bookingFlowState?: unknown,
   calendarEnabled?: boolean
 ): Promise<{ response: string; aiFailed?: boolean }> {
   // Drop empty/whitespace-only messages: Anthropic rejects empty content blocks
@@ -2165,30 +2172,6 @@ async function generateAIResponse(
   const nowInTz = new TZDate(new Date(), tz)
   const weekday = nowInTz.toLocaleDateString('en-US', { weekday: 'long', timeZone: tz })
 
-  let availableDatesForPrompt = ''
-  if (business.calendarEnabled && business.googleCalendarConnected) {
-    try {
-      const endDate = addDays(nowInTz, 14)
-      const endStr = endDate.toLocaleDateString('en-CA', { timeZone: tz })
-      const slots = await getAvailableSlots(business.id, todayStr, endStr)
-      const uniqueDates = Array.from(new Set(slots.map(s => new Date(s.start).toLocaleDateString('en-CA', { timeZone: tz }))))
-        .sort()
-        .slice(0, 14)
-      if (uniqueDates.length > 0) {
-        // Limit to 7 dates to avoid token limits on Haiku (keep prompt lean)
-        const dates = uniqueDates.slice(0, 7).map(d => formatDateFull(d + 'T12:00:00', tz)).join(', ')
-        availableDatesForPrompt = `\n- Available dates for quotes (next 2 weeks): ${dates}`
-      }
-    } catch {
-      // Ignore — prompt will work without this
-    }
-  }
-
-  const flowState = bookingFlowState as BookingFlowState | null | undefined
-  const rawLeadState = bookingFlowState as { leadFlow?: boolean; step?: string } | null | undefined
-  const inLeadFlow = rawLeadState?.leadFlow === true
-  const inBookingFlow = flowState?.step && !inLeadFlow
-  const bookingRequiresAddress = business.bookingRequiresAddress ?? true
   const hoursSummary = formatBusinessHoursSummary(business.businessHours)
 
   // ── LEAD-ONLY MODE (no calendar) ──────────────────────────────────
@@ -2308,30 +2291,16 @@ THINGS YOU MUST NEVER DO:
     }
   }
 
-  const flowGuidance = inBookingFlow
-    ? `
-BOOKING FLOW CONTEXT: The customer is in a booking flow for a FREE IN-PERSON QUOTE. Current step: ${flowState!.step}.
-
-STEP GUIDANCE — NEVER combine questions; ask ONE thing per message:
-- awaiting_name_and_preference: Customer may give name + time together (e.g. "John, Friday at 2pm"). The system checks the exact time — never show slot lists.
-- awaiting_time: Customer gives date/time (e.g. "Friday at 2pm"). System checks exact slot and confirms or suggests alternatives. No numbered slot lists.
-- awaiting_name_after_slot / awaiting_name_and_address: Ask for NAME ONLY — "What's your name?" Never ask for name and address in the same message.
-- awaiting_address_after_slot: Ask for ADDRESS ONLY — "What's the property address where we should meet you?"
-- awaiting_confirmation: The system repeated back ALL details (date, time, name, address). Wait for "yes". Don't repeat the confirmation question.
-- TIME CHANGE: If customer says "lets do 5pm", "how about 3", "5pm works" etc. when a time was suggested, that is a TIME CHANGE request — the system handles it. Do NOT treat it as their name or address.
-- NEVER output [APPOINTMENT_BOOKED]. The structured booking flow handles all booking. You must NOT create appointments.
-- If they ask a question mid-flow: answer briefly (1 sentence), then guide back to the current step.
-- Use their exact words for services (e.g. "hydro seeding" not "landscaping").`
-    : ''
+  // Link-handoff mode: embed the booking link so the model can share (and re-share) it.
+  const bookingLink = buildBookingLink(business)
 
   const systemPrompt = `You are the SMS assistant for ${business.name}. You text like a real person — casual, friendly, and professional.
 
 TODAY: ${weekday}, ${todayFormatted} (${tz})
-${availableDatesForPrompt}
 
 CRITICAL: The customer's callback number is ${conversation.callerPhone}. When verifying a phone number, ALWAYS use this exact number. NEVER use any phone number from BUSINESS INFO, About, or Special Instructions as the customer's callback number.
 
-YOUR GOAL: Help the customer book a free in-person quote appointment. The booking flow state machine handles slot verification, calendar checks, and appointment creation. You guide the conversation naturally.
+YOUR GOAL: Help the customer and point them to our online booking page to schedule a free in-person quote. ALL scheduling happens on the booking page — never over text.
 
 PERSONALITY:
 - Casual and friendly. Sound like a real person texting, not a robot.
@@ -2339,7 +2308,7 @@ PERSONALITY:
 - Max 1-2 emojis per entire conversation. Nothing inappropriate.
 - Keep every message under 160 characters when possible. Never more than 3 sentences.
 - NEVER use markdown formatting (no **bold**, no bullet points, no dashes for lists). Plain text only.
-- NEVER show numbered slot lists. The system checks the customer's requested date/time directly and confirms or suggests 1-2 alternatives.
+- NEVER list available dates or times in text. Scheduling happens on the booking page.
 - After the first greeting, never mention being automated or an AI again.
 
 GREETING:
@@ -2347,36 +2316,24 @@ GREETING:
 - When the customer replies, respond naturally based on what they said. If they just said "hey" or "hi", say something like "Hey! What can I help you with today?"
 - NEVER jump into booking from a greeting. Wait until the customer describes what they need.
 
-IDEAL CONVERSATION — ask ONE thing per message, never combined:
-1. Customer describes need -> You: "We'd love to help with that! Would you like to set up a free in-person quote so ${business.name} can take a look and give you an exact price?"
-2. Customer: "Yes" -> You: "Great! What day and time work best for you? We're available ${hoursSummary}."
-3. Customer: "Friday at 2pm" -> System checks that exact time, confirms if open or suggests alternatives (e.g. "2:30pm or 3pm")
-4. If they say "lets do 5pm" or "how about 3" -> That is a TIME CHANGE; system checks and confirms the new time. Never treat time changes as name or address.
-5. Once time confirmed -> System asks for name ONLY: "What's your name?"
-6. After name -> System asks for address ONLY: "What's the property address where we should meet you?"
-7. Before booking -> System repeats back ALL details (date, time, name, address) and asks for confirmation. Customer replies yes -> Booking created.
-
-BOOKING RULES:
-- Ask for date and time together. Customer picks a specific time (e.g. "Friday at 2pm"); system checks it.
-- NEVER combine questions: name, address, and time must be asked in SEPARATE messages.
-- "lets do 5pm", "how about 3", "5pm works" = TIME CHANGE, not name or address. The system handles it.
-- NEVER show numbered slot lists. The system confirms or denies the exact time they asked for.
-- If their time is taken, system suggests 1-2 alternatives on the same day or asks for another day.
-- ALWAYS repeat back ALL details (date, time, name, address) before final confirmation. Never auto-book.
-- Ask for name first, then address — never "What's your name and address?" in one message.
-- After booking, tell them "The owner will give you a call beforehand to confirm."
-- The confirmation must include the ACTUAL booked date/time, not the customer's original words.
-- Verify callback number: The caller's phone number is ${conversation.callerPhone}. Ask: "Is ${conversation.callerPhone} the best number to reach you at?" Use that EXACT number. Do NOT substitute any other phone number from BUSINESS INFO or anywhere else.
+BOOKING — STRICT LINK-HANDOFF RULES:
+${bookingLink
+  ? `- Our online booking page: ${bookingLink}
+- When a customer wants to book, or asks about scheduling, availability, or specific dates/times, send them the booking link so they can pick a time that works. Example: "Happy to get you scheduled. Grab a time that works for you here and you're all set: ${bookingLink}"`
+  : `- The booking page link is unavailable right now. When a customer wants to book, tell them someone from the team will reach out to get them scheduled. Do NOT invent or guess a link.`}
+- NEVER propose, suggest, confirm, or discuss specific dates or times in text. Not "Friday at 2pm", not "we have mornings open" — nothing. The booking page shows live availability.
+- NEVER say or imply an appointment is booked, confirmed, or scheduled. Only the booking page creates bookings — customers get an automatic confirmation text when they book there.
+- If they ask "are you free Tuesday?" or similar, don't answer with availability — point them to the booking page to see open times.
+- If they say they already booked on the page, thank them and let them know the owner will give them a call beforehand to confirm.
+- If they can't or won't use the link, say someone from the team will reach out to get them scheduled and add [HUMAN_NEEDED: reason="Customer needs help booking"] at the end.
+- Don't spam the link: if you already sent it in your previous message and they haven't asked for it again, just answer their question.
+- Verify callback number: The caller's phone number is ${conversation.callerPhone}. If verifying, ask: "Is ${conversation.callerPhone} the best number to reach you at?" Use that EXACT number. Do NOT substitute any other phone number from BUSINESS INFO or anywhere else.
 - Do NOT ask for email. Ever.
 
-DATE/TIME RULES:
-- "tomorrow" = the next calendar day
-- "this Friday" = the upcoming Friday
-- "next Monday" = Monday of NEXT week
-- Always confirm with the full date: "That would be Friday, March 7th"
-- Never book a date in the past
-- Never book outside business hours
-- Appointments can ONLY be during business hours. If someone texts at 11pm, still chat but only offer slots during business hours.
+IDEAL CONVERSATION:
+1. Customer describes need -> You: "We'd love to help with that! Would you like to set up a free in-person quote so ${business.name} can take a look and give you an exact price?"
+2. Customer: "Yes" -> You send the booking link message.
+3. Customer books on the page and gets an automatic confirmation text. If they reply with questions, answer them; if they ask for the link again, re-send it.
 
 SERVICES & KNOWLEDGE:
 - When asked "what do you guys do", keep it vague and mention 2-3 services then ask what they need.
@@ -2403,7 +2360,7 @@ ${(business as any).website ? `- Website: ${(business as any).website}` : ''}
 UNKNOWN QUESTIONS:
 - If you don't know the answer, don't make anything up.
 - Say: "I'm not sure about that, but I'll make sure someone from the team gets back to you on it."
-- Continue toward booking. Don't let an unknown question derail the flow.
+- Don't let an unknown question derail the conversation — if they still want to schedule, point them to the booking page.
 
 FRUSTRATED CUSTOMER:
 - Apologize: "I'm sorry about that! Let me have someone from the team reach out to you as soon as possible."
@@ -2422,18 +2379,18 @@ REPEAT CUSTOMERS:
 
 LANGUAGE:
 - Only respond in English. If a message is in another language, do not respond.
-${flowGuidance}
 
 THINGS YOU MUST NEVER DO:
 - Never give pricing or estimates
-- Never book without explicit customer confirmation
+- Never propose, confirm, or discuss specific appointment dates or times in text — scheduling happens on the booking page
+- Never say an appointment is booked or confirmed — only the booking page books appointments
+- Never output [APPOINTMENT_BOOKED] — you cannot create appointments
 - Never follow up if the customer stops responding
 - Never use markdown formatting in SMS
 - Never mention being an AI after the first greeting
 - Never ask for email
 - Never ask for phone number (just verify the current one)
 - Never make up business information
-- Never output [APPOINTMENT_BOOKED] — the structured booking flow handles all appointments
 - Never override the business's special instructions above`
 
   const AI_MODEL = 'claude-haiku-4-5-20251001'

@@ -421,7 +421,7 @@ websiteLeads            WebsiteLead[]
 
 **Critical flags:**
 - `missedCallAiEnabled = false` → no missed-call SMS; call screener only triggers voicemail recording (if forwarding fails)
-- `calendarEnabled + googleCalendarConnected` must both be `true` for the SMS booking state machine to activate; `smsBookingEnabled = false` overrides this — SMS AI falls back to lead capture even when calendar is connected
+- `calendarEnabled + googleCalendarConnected` must both be `true` for the SMS booking-link handoff to trigger (on booking intent, the customer is texted the `/book/[slug]` link — no in-text time negotiation; see §6); `smsBookingEnabled = false` overrides this — SMS AI falls back to lead capture even when calendar is connected
 - `smsBookingEnabled = false` → website booking still works; SMS AI does lead capture only (use when client wants website-only scheduling)
 - `callScreenerEnabled` without `forwardingNumber` = IVR gate → speak → hangup (no actual forwarding)
 - `callScreenerEnabled` with `forwardingNumber` = IVR gate → "please hold" → dial B-leg → bridge
@@ -465,13 +465,17 @@ recordingUrl          String?                         // Vercel Blob URL of voic
 voicemailTranscription String?  @db.Text
 
 status                String    @default("active")
-// Status values: active, booking_in_progress, appointment_booked, lead_captured,
+// Status values: active, booking_link_sent, appointment_booked, lead_captured,
 //                closed, human_needed, needs_review, completed, no_response,
 //                screening, screening_blocked, forwarding
+//                (booking_in_progress is legacy — no longer written since the July 2026
+//                 link-handoff change; may exist on old rows)
 
 manualMode            Boolean   @default(false)       // When true: inbound SMS saves to DB but AI does NOT respond
 summary               String?   @db.Text              // AI-generated summary (not auto-generated; set by flow logic)
-bookingFlowState      Json?                           // { step, slotsSent?, selectedSlot?, proposedDate?, ... }
+bookingFlowState      Json?                           // LEGACY (July 2026): no longer written anywhere. The old in-text
+                                                      // booking state machine persisted { step, selectedSlot, ... } here.
+                                                      // The SMS webhook now clears any lingering value to DbNull.
 intent                String?                         // "book_appointment", "question", "emergency", etc.
 serviceRequested      String?
 
@@ -949,9 +953,11 @@ Handles two event types:
 7. Save inbound Message to DB, update Conversation.lastMessageAt
 8. Re-check status: if appointment_booked or has appointment → return (no AI)
 9. Route to flow:
-   a. if !calendarEnabled → handleSmsLeadFlow()
-   b. handleSmsBookingFlow()
-   c. if booking flow returned false → generateAIResponse() (general AI)
+   a. if !calendarEnabled OR !smsBookingEnabled → handleSmsLeadFlow()
+   b. handleSmsBookingFlow() — LINK HANDOFF: on booking intent, texts the /book/[slug]
+      link and stops (never negotiates times in text)
+   c. if booking flow returned false → generateAIResponse() (general AI; booking-mode
+      prompt embeds the booking link and forbids discussing specific times)
 ```
 
 ### `handleSmsLeadFlow()` — No calendar mode
@@ -969,29 +975,23 @@ When Claude returns `[HUMAN_NEEDED]`:
 → update Conversation(status='human_needed')
 → `notifyOwnerOnHumanNeeded()` (SMS + email)
 
-### `handleSmsBookingFlow()` — Calendar booking state machine
+### `handleSmsBookingFlow()` — Booking-link handoff (July 2026; replaced the in-text state machine)
 
-Only runs when `business.calendarEnabled == true` AND `business.smsBookingEnabled == true`. When `smsBookingEnabled=false`, the routing block skips this function and falls through to `handleSmsLeadFlow` (lead capture mode) even if the calendar is connected. Uses `Conversation.bookingFlowState` (JSON) to persist state between SMS messages.
+Only runs when `business.calendarEnabled == true` AND `business.smsBookingEnabled == true`. When `smsBookingEnabled=false`, the routing block skips this function and falls through to `handleSmsLeadFlow` (lead capture mode) even if the calendar is connected.
 
-**Booking state machine steps:**
+**Current behavior — no in-text time negotiation:**
 
-| `bookingFlowState.step` | What happens |
-|---|---|
-| (no state / detect intent) | Detect booking keywords in message. If intent detected, ask for preferred date. |
-| `'ask_service'` | Ask what service they need |
-| `'ask_date'` | Ask for preferred date/time |
-| `'show_slots'` | Fetch available slots from Google Calendar, send 2-3 options |
-| `'confirm_slot'` | User picked a slot, send confirmation message with "reply yes to confirm" |
-| `'confirmed'` | User replied "yes" → call `createBooking()` |
+1. Skip if the conversation already has an appointment or status `appointment_booked`.
+2. If status is `booking_link_sent` → return false (general AI handles follow-ups; the booking link is embedded in its system prompt so it can re-share it when asked).
+3. If a lingering `bookingFlowState.step` exists from a pre-handoff in-flight conversation → clear it to `Prisma.DbNull` and continue. **Nothing writes `bookingFlowState` anymore**, so the old step handlers can never run.
+4. Booking intent detection (unchanged mechanism): `BOOKING_INTENT_WORDS` keyword match in the current message OR anywhere in inbound history, OR implicit agreement ("yes"/"sure"/"ok" after the AI offered a quote). Keyword-only — there is NO Claude call for intent detection. Flow start also requires `googleCalendarConnected`.
+5. On intent: `sendBookingLinkHandoff()` texts "Happy to get you scheduled. Grab a time that works for you here and you're all set: {NEXT_PUBLIC_APP_URL}/book/{slug}" and sets `status='booking_link_sent'`. If `NEXT_PUBLIC_APP_URL` or `business.slug` is missing, it sends a safe fallback ("someone from the team will reach out to get you scheduled") and logs a console warning instead of a broken URL — status is still set so the handoff doesn't re-fire on every message.
 
-**Booking intent detection:** Uses `BOOKING_INTENT_WORDS` array (book, appointment, schedule, quote, estimate, come out, come by, available, etc.) OR Claude AI for ambiguous cases.
+`booking_link_sent` is deliberately NOT in `NO_AI_RESPONSE_STATUSES` — after the link is sent, the AI keeps answering follow-up questions normally. The actual booking happens on the public `/book/[slug]` page → `POST /api/bookings/create` → `createBooking()` (full slot verification, confirmation SMS, owner notification — all unchanged).
 
-**Slot fetching:** Calls `getAvailableSlots(businessId, todayStr, 14-days-ahead)`, formats slots as "Friday March 6th at 10:00 AM, 2:00 PM, or 4:00 PM".
+**AI safety nets (in the POST handler, for calendar-enabled businesses):** if the model's response fake-confirms a booking ("you're all set!") or asks for name + day/time together (old in-text scheduling habit), the response is suppressed and the booking-link message is sent instead. Neither path writes `bookingFlowState`.
 
-**After `createBooking()` succeeds:**
-- Send confirmation SMS to customer
-- Update Conversation(status='appointment_booked')
-- Notify owner via `notifyOwnerOnBookingCreated()`
+**DEAD CODE — kept in `app/api/webhooks/sms/route.ts` for a reviewable diff, slated for removal in a follow-up:** the `bookingFlowState` step handlers inside `handleSmsBookingFlow` (`awaiting_time`, `awaiting_name_after_slot`, `awaiting_address_after_slot`, `awaiting_confirmation`, `awaiting_name_and_preference`, and the legacy `awaiting_name`/`awaiting_service`/`awaiting_notes`/`awaiting_address`/`awaiting_name_and_address` steps), `handleAwaitingNameAndPreference()`, `handleTimeChangeFromSlotChoice()`, `parseTimePreference()` (the natural-language date parser that caused the wrong-day/wrong-time bookings), `getNext3BusinessDays()`, and the `BookingFlowState` type. `isSpecificSlotAvailable`/`getTwoClosestSlotsOnDay` imports are only referenced by this dead code. `createBooking` itself is still live (website flow + legacy AI-tag path).
 
 ### `generateAIResponse()` — Claude API call
 
@@ -1000,13 +1000,12 @@ Only runs when `business.calendarEnabled == true` AND `business.smsBookingEnable
 - Custom `aiContext` (business background)
 - Custom `aiInstructions` (personality/rules)
 - Current date/time in business timezone
-- Calendar availability note (if calendar enabled)
+- Booking-mode (calendar-enabled) prompt: the `/book/[slug]` booking link (via `buildBookingLink()`) plus STRICT link-handoff rules — never propose/suggest/confirm/discuss specific dates or times in text, never claim anything is booked, never output `[APPOINTMENT_BOOKED]`; all scheduling is directed to the booking page. When the link can't be built, the prompt tells the model to say someone will reach out (never invent a link). The old available-dates injection (getAvailableSlots into the prompt) was removed with the link-handoff change.
 - `conversation.callerPhone` injected twice: once in a `CRITICAL` block at the top of the prompt, and again inline in the phone-verification rule. This is intentional — it prevents the AI from quoting `business.forwardingNumber` (the owner's number) when asking the customer to confirm their callback number. The `business.forwardingNumber` field in BUSINESS INFO is labeled "Owner's business line (mention only when redirecting customers to call, never as their callback number)" specifically to reinforce this distinction.
-- Instructions for special tags:
-  - `[APPOINTMENT_BOOKED: datetime="YYYY-MM-DD HH:mm" service="..." name="..." address="..."]` — legacy AI-side booking
-  - `[LEAD_CAPTURED: name="..." service="..." email="..." address="..." timeframe="..."]`
+- Instructions for special tags (lead-mode prompt):
   - `[READY_TO_CAPTURE]` — signals lead info collected
-  - `[HUMAN_NEEDED: reason="..."]` — flags need for human follow-up
+  - `[HUMAN_NEEDED: reason="..."]` — flags need for human follow-up (both prompts)
+  - `[APPOINTMENT_BOOKED: name="..." service="..." datetime="..."]` — legacy tag; NOT taught by either prompt anymore, but the webhook still honors it IF the model emits it AND calendar is off/not connected (`canAiBook`)
 
 **Conversation history:** All previous messages in the conversation are passed as `user`/`assistant` turns.
 
@@ -1018,11 +1017,12 @@ Only runs when `business.calendarEnabled == true` AND `business.smsBookingEnable
 
 After `generateAIResponse()`:
 1. Strip all special tags from response before sending SMS
-2. Check for `[READY_TO_CAPTURE]` → lead capture flow
-3. Check for `[HUMAN_NEEDED]` → flag conversation, notify owner
-4. Check for `[APPOINTMENT_BOOKED:]` → legacy path: parse datetime, call `createBooking(allowWithoutCalendar=true)`
-5. Send cleaned SMS to customer via `sendSMSAndLog()`
-6. Update conversation status
+2. AI safety nets (calendar-enabled only): if the response fake-confirms a booking or asks for name + day/time, suppress it and send the booking link instead (status → `booking_link_sent`)
+3. Check for `[READY_TO_CAPTURE]` → lead capture flow
+4. Check for `[HUMAN_NEEDED]` → flag conversation, notify owner
+5. Check for `[APPOINTMENT_BOOKED:]` → legacy path, only honored when calendar off/not connected (`canAiBook`): parse datetime, call `createBooking(allowWithoutCalendar=true)`
+6. Send cleaned SMS to customer via `sendSMSAndLog()`
+7. Update conversation status
 
 ### `sendSMSAndLog()` helper
 
@@ -1875,7 +1875,7 @@ const isPublicApiRoute = createRouteMatcher([
 
 ### Data Model
 
-18. **`maxMessagesPerConversation` is NOT enforced during active booking flow** — The message limit guard checks `inBookingFlow = Boolean(conversation.bookingFlowState?.step)`. If the customer is mid-booking-flow (has a step in progress), the limit is skipped. This prevents cutting off a booking at the worst moment.
+18. **`maxMessagesPerConversation` in-booking-flow exemption is now inert** — The message limit guard still checks `inBookingFlow = Boolean(conversation.bookingFlowState?.step)`, but since the July 2026 link-handoff change nothing writes `bookingFlowState` (and lingering values are cleared), so the exemption can no longer trigger and the limit effectively always applies. The check can be removed together with the dead state-machine code.
 
 19. **Conversation status `appointment_booked` vs `lead_captured`** — After booking, status is `appointment_booked`. In lead flow (no calendar), status is `lead_captured`. Both statuses receive limited AI responses: only appointment-related questions get answered; other messages get "You're welcome! Call us if you need anything."
 
@@ -2162,7 +2162,7 @@ Implemented on the `seo-foundation` branch (July 2026). Everything below applies
 
 ---
 
-*This document reflects the codebase as of July 9, 2026. Update after any significant architectural changes.*
+*This document reflects the codebase as of July 14, 2026 (SMS booking-link handoff). Update after any significant architectural changes.*
 
 ---
 
