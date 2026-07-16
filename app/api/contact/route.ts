@@ -77,46 +77,62 @@ export async function POST(request: NextRequest) {
         ? await db.business.findUnique({ where: { id: bid } })
         : await db.business.findUnique({ where: { slug: slug! } })
 
-      if (business) {
-        // Contact (CRM)
-        await findOrCreateContact({
-          businessId: business.id,
-          phoneNumber: typeof phone === 'string' ? phone.trim() || undefined : undefined,
-          email: typeof email === 'string' ? email.trim() || undefined : undefined,
-          name: typeof name === 'string' ? name.trim() : undefined,
-          source: 'website_form',
-          notes: typeof message === 'string' ? message.trim() || undefined : undefined,
+      if (!business) {
+        // A client site is forwarding leads with an id/slug that matches no
+        // business. Returning 200 here would silently drop the lead — fail
+        // loudly instead, and log the full payload so it's recoverable from logs.
+        console.error('[/api/contact] LEAD DROPPED — no business matched', {
+          businessId: bid,
+          businessSlug: slug,
+          lead: { name, phone, email, message },
         })
-
-        // WebsiteLead (dashboard visibility)
-        await db.websiteLead.create({
-          data: {
-            businessId: business.id,
-            name: typeof name === 'string' ? name.trim() : 'Unknown',
-            phone: typeof phone === 'string' ? phone.trim() || null : null,
-            email: typeof email === 'string' ? email.trim() || null : null,
-            message: typeof message === 'string' ? message.trim() || null : null,
-            status: 'new',
+        return NextResponse.json(
+          {
+            success: false,
+            error: `No business found for ${bid ? `businessId "${bid}"` : `businessSlug "${slug}"`}`,
           },
-        })
+          { status: 404, headers: CORS_HEADERS }
+        )
+      }
 
-        // Notify the business owner. The lead is already saved above, so a notify
-        // failure must NOT fail the request — log it and continue.
-        try {
-          const result = await notifyOwnerOnWebsiteLead(business, {
-            name: typeof name === 'string' ? name.trim() : 'Unknown',
-            phone: typeof phone === 'string' ? phone.trim() || null : null,
-            email: typeof email === 'string' ? email.trim() || null : null,
-            message: typeof message === 'string' ? message.trim() || null : null,
-          })
-          console.log('Website lead owner notification result:', {
-            businessId: business.id,
-            smsSent: result.smsSent,
-            emailSent: result.emailSent,
-          })
-        } catch (err) {
-          console.error('Failed to notify owner of website lead:', err)
-        }
+      // Contact (CRM)
+      await findOrCreateContact({
+        businessId: business.id,
+        phoneNumber: typeof phone === 'string' ? phone.trim() || undefined : undefined,
+        email: typeof email === 'string' ? email.trim() || undefined : undefined,
+        name: typeof name === 'string' ? name.trim() : undefined,
+        source: 'website_form',
+        notes: typeof message === 'string' ? message.trim() || undefined : undefined,
+      })
+
+      // WebsiteLead (dashboard visibility)
+      await db.websiteLead.create({
+        data: {
+          businessId: business.id,
+          name: typeof name === 'string' ? name.trim() : 'Unknown',
+          phone: typeof phone === 'string' ? phone.trim() || null : null,
+          email: typeof email === 'string' ? email.trim() || null : null,
+          message: typeof message === 'string' ? message.trim() || null : null,
+          status: 'new',
+        },
+      })
+
+      // Notify the business owner. The lead is already saved above, so a notify
+      // failure must NOT fail the request — log it and continue.
+      try {
+        const result = await notifyOwnerOnWebsiteLead(business, {
+          name: typeof name === 'string' ? name.trim() : 'Unknown',
+          phone: typeof phone === 'string' ? phone.trim() || null : null,
+          email: typeof email === 'string' ? email.trim() || null : null,
+          message: typeof message === 'string' ? message.trim() || null : null,
+        })
+        console.log('Website lead owner notification result:', {
+          businessId: business.id,
+          smsSent: result.smsSent,
+          emailSent: result.emailSent,
+        })
+      } catch (err) {
+        console.error('Failed to notify owner of website lead:', err)
       }
     }
 
