@@ -19,7 +19,7 @@ export async function GET() {
   const group = await getOwnerGroupBusinesses(business)
 
   const leads = await db.websiteLead.findMany({
-    where: { businessId: { in: group.map((b) => b.id) } },
+    where: { businessId: { in: group.map((b) => b.id) }, status: { not: 'spam' } },
     orderBy: { createdAt: 'desc' },
   })
 

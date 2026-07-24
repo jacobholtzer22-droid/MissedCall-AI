@@ -319,6 +319,12 @@ Every variable the app uses, what it controls, and what breaks without it.
 | `CRON_SECRET` | No | Bearer token for cron job endpoints (not currently enforced in code) |
 | `SMS_COOLDOWN_DAYS` | No | Global SMS cooldown in days (default: 7). Per-business `smsCooldownDays` overrides this |
 
+### Spam Hardening (Contact Form)
+| Variable | Required | Purpose |
+|---|---|---|
+| `TURNSTILE_SECRET_KEY` | No | Cloudflare Turnstile secret key for `/api/contact` verification. Without it, Turnstile checks are skipped |
+| `TURNSTILE_ENFORCE` | No | `'true'` to reject submissions with missing or failed Turnstile tokens. Default: `false` (log only, process normally). Roll out by setting to `'true'` after confirming Turnstile widget is live on all forms |
+
 ### Google Ads
 | Variable | Required | Purpose |
 |---|---|---|
@@ -1133,7 +1139,7 @@ async function sendSMS(business, to, text)
 
 | Route | Method | Purpose |
 |---|---|---|
-| `/api/contact` | POST | Website contact form. Body: `{ name, phone?, message?, smsConsent, businessId?, businessSlug?, email? }`. When **no** `businessId`/`businessSlug` is present (marketing page): sends Resend email to `YOUR_EMAIL`. When either is present (client tenant site): calls `notifyOwnerOnWebsiteLead()` — owner SMS + email per the business's notify preferences (NOT silent). In both cases creates Contact (`source='website_form'`) + WebsiteLead in background fire-and-forget. All user input in the email body is HTML-escaped via a local `escapeHtml()` helper. No auth, no rate limiting — open endpoint. |
+| `/api/contact` | POST | Website contact form. Body: `{ name, phone?, message?, smsConsent, businessId?, businessSlug?, email?, website?, turnstileToken? }`. **Spam hardening:** `website` is a honeypot (non-empty = spam); `turnstileToken` is verified against Cloudflare Turnstile siteverify (4s timeout, fails open on network error). `TURNSTILE_ENFORCE=true` rejects missing/failed tokens; default false (log only). Spam path: marketing submissions are logged with `[SPAM]` prefix and return 200 (no email, no DB write); tenant submissions create a `WebsiteLead(status='spam')` and return 200 (no Contact, no owner notification). Bots see an identical success response. **Normal path:** when no `businessId`/`businessSlug` (marketing page): sends Resend email to `YOUR_EMAIL`. When either is present (client tenant site): awaits `findOrCreateContact(source='website_form')` + `db.websiteLead.create(status='new')` sequentially in-path, then calls `notifyOwnerOnWebsiteLead()` (owner SMS + email). All DB writes are fully awaited before responding. All user input in the email body is HTML-escaped via a local `escapeHtml()` helper. No auth, no rate limiting — open endpoint. |
 | `/api/book-demo` | POST | Demo request form submission |
 
 ---
@@ -1924,6 +1930,12 @@ const isPublicApiRoute = createRouteMatcher([
 34. **The grouped Google Ads GET displays snapshots by group membership, NOT by member flags** — `/api/dashboard/google-ads` queries `GoogleAdsSnapshot` for every business in the owner group regardless of each sibling's `googleAdsEnabled` flag (only the primary's flag gates the 403). Toggling a sibling's `googleAdsEnabled` off stops the *sync loop* from refreshing its data but does NOT remove its existing snapshots from the group view. To remove a site from a group view, clear its `ownerGroupId` (or delete its snapshots) — do not expect the flag toggle to do it.
 
 35. **Ungrouped responses are byte-for-byte unchanged** — For a business with `ownerGroupId = null` (or a singleton group), the website-leads and google-ads responses contain NO new fields (`isGroup`, `perSite`, `businessName` are all absent, campaign map keys unchanged) and the clients render today's exact JSX. The new fields appear only when group size > 1. Preserve this when touching these routes: it's the compatibility guarantee for every existing client.
+
+### Spam Hardening
+
+36. **`WebsiteLead(status='spam')` is excluded from all dashboard queries** — `/api/dashboard/website-leads` and `/api/dashboard/analytics` both filter `status: { not: 'spam' }`. Admin/Neon access is intentionally unfiltered so Jacob can audit spam volume. If you add a new query on `WebsiteLead` for client-facing surfaces, add the same filter.
+
+37. **Turnstile enforcement is opt-in via `TURNSTILE_ENFORCE`** — Default `false` means missing or failed Turnstile tokens are logged but the lead is processed normally. Set to `'true'` only after confirming the Turnstile widget is live on all forms that POST to `/api/contact`. Siteverify network failures always fail open (lead allowed) regardless of enforce mode — never lose a real lead to a Cloudflare outage.
 
 ---
 
