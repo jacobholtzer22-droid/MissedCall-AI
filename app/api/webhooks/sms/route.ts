@@ -210,10 +210,49 @@ export async function POST(request: NextRequest) {
         return new NextResponse('OK', { status: 200 })
       }
 
+      // START / resubscribe — undo a prior STOP opt-out
+      const startWords = ['start', 'unstop']
+      if (startWords.includes(text?.toLowerCase().trim())) {
+        console.log('🔄 User requested START (resubscribe)')
+        const deleted = await db.blockedNumber.deleteMany({
+          where: { businessId: business.id, phoneNumber: from, label: 'sms-opt-out' },
+        })
+        if (deleted.count > 0) {
+          console.log('✅ Removed sms-opt-out block for', from)
+        }
+        await sendSMS(business, from, "You're resubscribed. You'll receive messages from us again.")
+        return new NextResponse('OK', { status: 200 })
+      }
+
       // STOP / unsubscribe — legally required immediate stop
       const stopWords = ['stop', 'unsubscribe', 'cancel', 'quit']
       if (stopWords.includes(text?.toLowerCase().trim())) {
         console.log('🛑 User requested STOP')
+        // Persist the STOP message into the existing conversation (if any) so the
+        // no-reply cron sees an inbound message and doesn't alert the owner to call
+        // back someone who opted out.
+        const stopConv = await db.conversation.findFirst({
+          where: { businessId: business.id, callerPhone: from },
+          orderBy: { lastMessageAt: 'desc' },
+        })
+        if (stopConv) {
+          await db.message.create({
+            data: { conversationId: stopConv.id, direction: 'inbound', content: text, telnyxSid: messageSid },
+          })
+          await db.conversation.update({
+            where: { id: stopConv.id },
+            data: { status: 'closed', lastMessageAt: new Date() },
+          })
+        }
+        // Block future automated SMS from missed calls (sendMissedCallSMS checks BlockedNumber).
+        // The update branch is intentionally empty: if an admin already blocked this number
+        // with their own label, we must not overwrite it — otherwise STOP then START would
+        // delete the admin's block (START only removes label='sms-opt-out').
+        await db.blockedNumber.upsert({
+          where: { businessId_phoneNumber: { businessId: business.id, phoneNumber: from } },
+          create: { businessId: business.id, phoneNumber: from, label: 'sms-opt-out' },
+          update: {},
+        })
         await sendSMS(business, from, "You've been unsubscribed. Reply START to resubscribe.")
         return new NextResponse('OK', { status: 200 })
       }
@@ -406,11 +445,19 @@ export async function POST(request: NextRequest) {
         return new NextResponse('OK', { status: 200 })
       }
 
-      // ── SMS LEAD FLOW (calendar disabled, or SMS booking disabled) ────────────────
+      // Single source of truth for SMS booking mode: link-handoff booking only works when
+      // the calendar feature is on, SMS booking isn't disabled, AND Google is actually
+      // connected. A disconnected calendar (revoked token) must fall back to lead capture —
+      // otherwise customers get pointed at a /book page that says booking is unavailable.
+      const inSmsBookingMode = Boolean(
+        business.calendarEnabled && business.smsBookingEnabled !== false && business.googleCalendarConnected
+      )
+
+      // ── SMS LEAD FLOW (no working booking page: calendar off, SMS booking off, or Google disconnected) ──
       // smsBookingEnabled=false means website-only booking — SMS AI captures leads instead
       // of running the booking state machine, even when the calendar is connected.
       // handleSmsLeadFlow only returns true when already lead_captured (skip processing).
-      if (!business.calendarEnabled || !business.smsBookingEnabled) {
+      if (!inSmsBookingMode) {
         const leadHandled = await handleSmsLeadFlow(business, conversation, text, from)
         if (leadHandled) {
           const totalMs = Date.now() - new Date(timing.webhookReceivedAt).getTime()
@@ -430,7 +477,7 @@ export async function POST(request: NextRequest) {
       // AI response (general conversation; booking requests are pointed at the /book link)
       timing.aiStartAt = timing.now()
       console.log('⏱️ [SMS] AI processing started at:', timing.aiStartAt)
-      const aiResult = await generateAIResponse(business, conversation, text, business.calendarEnabled && business.smsBookingEnabled !== false)
+      const aiResult = await generateAIResponse(business, conversation, text, inSmsBookingMode)
       timing.aiEndAt = timing.now()
       console.log('⏱️ [SMS] AI processing finished at:', timing.aiEndAt)
 
@@ -463,9 +510,11 @@ export async function POST(request: NextRequest) {
         .replace(/\[HUMAN_NEEDED(?:: reason="[^"]*")?\]/g, '')
         .trim()
 
-      // Lead capture via AI (non-calendar): extract structured data and create lead
+      // Lead capture via AI (lead mode): extract structured data and create lead.
+      // Gated on !inSmsBookingMode (not just !calendarEnabled) so smsBookingEnabled=false
+      // and disconnected-calendar businesses — which get the lead-mode prompt — are captured too.
       const readyToCapture = aiResponse.includes('[READY_TO_CAPTURE]')
-      if (!business.calendarEnabled && readyToCapture && conversation.status !== 'lead_captured') {
+      if (!inSmsBookingMode && readyToCapture && conversation.status !== 'lead_captured') {
         const extracted = await extractLeadFromConversation(anthropic, business, conversation)
         if (extracted && extracted.customerName?.trim()) {
           const thanksMsg = buildLeadConfirmation(business)
@@ -522,8 +571,7 @@ export async function POST(request: NextRequest) {
       // 2. AI is asking for name + day/time (old in-text scheduling habit) → send the link
       // Neither path writes bookingFlowState — the old state machine stays unreachable.
       if (
-        business.calendarEnabled &&
-        business.googleCalendarConnected &&
+        inSmsBookingMode &&
         conversation.status !== 'appointment_booked' &&
         !conversation.appointment
       ) {
@@ -662,7 +710,7 @@ export async function POST(request: NextRequest) {
       // failed notify leaves the conversation 'active' and the next inbound retries.
       const inboundCount = conversation.messages.filter((m: any) => m.direction === 'inbound').length
       const shouldRunBackstop =
-        !business.calendarEnabled &&
+        !inSmsBookingMode &&
         !readyToCapture &&
         !humanNeededMatch &&
         conversation.status !== 'lead_captured' &&
@@ -1061,14 +1109,14 @@ async function extractLeadFromConversation(
   }
 }
 
-/** Non-calendar: AI handles lead capture conversationally. This only skips when already lead_captured. */
+/** Lead mode: AI handles lead capture conversationally. This only skips when already lead_captured. */
 async function handleSmsLeadFlow(
   business: any,
   conversation: any,
   _text: string,
   _from: string
 ): Promise<boolean> {
-  if (business.calendarEnabled && business.smsBookingEnabled !== false) return false
+  if (business.calendarEnabled && business.smsBookingEnabled !== false && business.googleCalendarConnected) return false
   if (conversation.status === 'lead_captured') return true // Skip — handled in NO_AI_RESPONSE block
   // All other messages go to AI for conversational lead capture
   return false
@@ -1088,8 +1136,8 @@ async function handleSmsBookingFlow(
     bookingFlowState: conversation.bookingFlowState,
     customerMessage: text?.slice(0, 80),
   })
-  if (!business.calendarEnabled || !business.smsBookingEnabled) {
-    console.log('[SMS BOOKING] Calendar not enabled or SMS booking disabled — skipping booking flow')
+  if (!business.calendarEnabled || !business.smsBookingEnabled || !business.googleCalendarConnected) {
+    console.log('[SMS BOOKING] Calendar not enabled, SMS booking disabled, or Google disconnected — skipping booking flow')
     return false
   }
   // Do not restart or continue flow if already confirmed or has booking
