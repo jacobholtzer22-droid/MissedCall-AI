@@ -6,7 +6,7 @@ import { NextResponse } from 'next/server'
 import { Resend } from 'resend'
 import { db } from '@/lib/db'
 import { requireDashboardBusiness } from '@/lib/dashboard-auth'
-import { plainTextToEmailHtml } from '@/lib/email-format'
+import { hasPersonalizationTokens, personalizeText, plainTextToEmailHtml } from '@/lib/email-format'
 
 const BATCH_SIZE = 50
 
@@ -120,7 +120,7 @@ export async function POST(request: Request) {
 
   const contactsWithEmail = await db.contact.findMany({
     where: { id: { in: contactIds }, email: { not: null } },
-    select: { id: true, email: true },
+    select: { id: true, email: true, name: true },
   })
   const recipientCount = contactsWithEmail.length
 
@@ -151,51 +151,69 @@ export async function POST(request: Request) {
     })
   }
 
-  // Build final HTML — if the user sent a full HTML template, use it as-is.
-  // Otherwise wrap plain text so newlines/spaces survive in email clients.
-  let fullHtml: string
-  if (body.bodyIsHtml) {
-    fullHtml = htmlBody
-  } else {
-    const plainSource = body.body?.trim() ?? ''
-    const renderedBody = plainSource ? plainTextToEmailHtml(plainSource) : '<p>No content.</p>'
-    const imagesHtml = sortedImages.length > 0
-      ? sortedImages
-          .map(
-            (img: { url: string; filename: string }) =>
-              `<div style="text-align:center;margin-bottom:16px;"><img src="${img.url}" alt="${img.filename}" style="max-width:600px;width:100%;height:auto;display:block;margin:0 auto;border-radius:4px;" /></div>`
-          )
-          .join('')
-      : ''
-    fullHtml = imagesHtml ? `${imagesHtml}${renderedBody}` : renderedBody
+  // Build final HTML for a contact — if the user sent a full HTML template, use it as-is
+  // (with personalization tokens swapped in); otherwise wrap plain text so newlines/spaces
+  // survive in email clients. Tokens like [first name] resolve per recipient.
+  const plainSource = body.body?.trim() ?? ''
+  const imagesHtml = sortedImages.length > 0
+    ? sortedImages
+        .map(
+          (img: { url: string; filename: string }) =>
+            `<div style="text-align:center;margin-bottom:16px;"><img src="${img.url}" alt="${img.filename}" style="max-width:600px;width:100%;height:auto;display:block;margin:0 auto;border-radius:4px;" /></div>`
+        )
+        .join('')
+    : ''
+  function renderForContact(contact: { name: string | null }): { subject: string; html: string } {
+    const personalizedSubject = personalizeText(subject!, contact)
+    let html: string
+    if (body.bodyIsHtml) {
+      html = personalizeText(htmlBody, contact, { html: true })
+    } else {
+      const personalizedSource = personalizeText(plainSource, contact)
+      const renderedBody = personalizedSource ? plainTextToEmailHtml(personalizedSource) : '<p>No content.</p>'
+      html = imagesHtml ? `${imagesHtml}${renderedBody}` : renderedBody
+    }
+    return { subject: personalizedSubject, html }
   }
+  // No tokens anywhere → render once and reuse for every recipient
+  const isPersonalized = hasPersonalizationTokens(subject) || hasPersonalizationTokens(htmlBody)
+  const sharedRender = isPersonalized ? null : renderForContact({ name: null })
 
-  // Send in batches via Resend
+  // Send in batches via Resend — per-recipient try/catch so one failure doesn't kill the batch
   const resend = new Resend(process.env.RESEND_API_KEY)
   const from = `${campaign.senderName} <notifications@alignandacquire.com>`
-  const recipients = contactsWithEmail.map((r) => r.email!)
   let sent = 0
-  for (let i = 0; i < recipients.length; i += BATCH_SIZE) {
-    const batch = recipients.slice(i, i + BATCH_SIZE)
-    try {
-      for (const to of batch) {
-        await resend.emails.send({
+  const failedContactIds: string[] = []
+  for (let i = 0; i < contactsWithEmail.length; i += BATCH_SIZE) {
+    const batch = contactsWithEmail.slice(i, i + BATCH_SIZE)
+    for (const contact of batch) {
+      const rendered = sharedRender ?? renderForContact(contact)
+      try {
+        const result = await resend.emails.send({
           from,
-          to,
-          subject,
-          html: fullHtml,
+          to: contact.email!,
+          subject: rendered.subject,
+          html: rendered.html,
         })
+        if (result.error) throw new Error(result.error.message)
         sent++
+      } catch (err) {
+        failedContactIds.push(contact.id)
+        console.error('Dashboard email campaign send error:', contact.email, err)
       }
-    } catch (err) {
-      console.error('Dashboard email campaign batch error:', err)
     }
   }
 
   await db.emailRecipient.updateMany({
-    where: { campaignId: campaign.id },
+    where: { campaignId: campaign.id, contactId: { notIn: failedContactIds } },
     data: { status: 'sent', sentAt: new Date() },
   })
+  if (failedContactIds.length > 0) {
+    await db.emailRecipient.updateMany({
+      where: { campaignId: campaign.id, contactId: { in: failedContactIds } },
+      data: { status: 'failed' },
+    })
+  }
   await db.emailCampaign.update({
     where: { id: campaign.id },
     data: { status: 'sent', sentAt: new Date() },

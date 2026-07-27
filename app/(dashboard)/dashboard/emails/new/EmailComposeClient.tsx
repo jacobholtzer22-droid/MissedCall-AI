@@ -4,7 +4,10 @@ import { useEffect, useState, useRef, useCallback } from 'react'
 import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
 import { ArrowLeft, Upload, X, ChevronUp, ChevronDown, Copy, Check, Code, Eye } from 'lucide-react'
-import { bodyContainsHtml, plainTextToEmailHtml } from '@/lib/email-format'
+import { bodyContainsHtml, hasPersonalizationTokens, personalizeText, plainTextToEmailHtml } from '@/lib/email-format'
+
+// Sample contact used to demo personalization tokens in the preview
+const PREVIEW_CONTACT = { name: 'John Smith' }
 
 type Tag = { id: string; name: string; color: string | null }
 type Contact = { id: string; name: string | null; email: string | null; status: string }
@@ -220,7 +223,11 @@ export function EmailComposeClient() {
   function renderBodyForPreview(raw: string): string {
     const trimmed = raw.trim()
     if (!trimmed) return ''
-    return bodyContainsHtml(trimmed) ? trimmed : plainTextToEmailHtml(trimmed)
+    // Mirror the send route: swap personalization tokens (sample contact), then render
+    if (bodyContainsHtml(trimmed)) {
+      return personalizeText(trimmed, PREVIEW_CONTACT, { html: true })
+    }
+    return plainTextToEmailHtml(personalizeText(trimmed, PREVIEW_CONTACT))
   }
 
   useEffect(() => {
@@ -283,6 +290,11 @@ export function EmailComposeClient() {
             placeholder="Email subject"
             className="w-full px-3 py-3 min-h-[44px] border border-gray-200 rounded-lg text-gray-900 placeholder-gray-400 focus:ring-2 focus:ring-gray-900"
           />
+          <p className="text-xs text-gray-500 mt-1">
+            Personalize with <code className="bg-gray-100 px-1 rounded">[first name]</code> in the subject or body — e.g.
+            &quot;Hi [first name]!&quot; becomes &quot;Hi John!&quot; for each contact. Contacts without a name get &quot;there&quot;.
+            Also supported: <code className="bg-gray-100 px-1 rounded">[name]</code> and <code className="bg-gray-100 px-1 rounded">[last name]</code>.
+          </p>
         </div>
 
         <div className="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3">
@@ -521,7 +533,14 @@ export function EmailComposeClient() {
       {showPreview && (
         <div className="bg-white rounded-xl border border-gray-200 p-6">
           <h3 className="font-semibold text-gray-900 mb-2">Preview</h3>
-          <p className="text-sm text-gray-500 mb-3">Subject: {subject || '(empty)'}</p>
+          <p className="text-sm text-gray-500 mb-3">
+            Subject: {subject ? personalizeText(subject, PREVIEW_CONTACT) : '(empty)'}
+          </p>
+          {(hasPersonalizationTokens(subject) || hasPersonalizationTokens(body)) && (
+            <p className="text-xs text-gray-400 mb-3">
+              Personalization tokens shown with sample contact &quot;John Smith&quot; — each recipient sees their own name.
+            </p>
+          )}
           <div className="border border-gray-200 rounded-lg bg-gray-100 p-4 overflow-x-auto">
             <div className="mx-auto" style={{ width: 600, maxWidth: '100%' }}>
               <iframe
