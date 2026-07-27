@@ -2194,3 +2194,16 @@ The following dashboards are fully mobile-optimized (tested at < 640px):
 | `/dashboard/jobs` | Mobile card list + desktop table (already done) |
 
 Remaining pages not yet audited for mobile: `appointments`, `analytics`, `voicemails`, `website-leads`, `ads`.
+
+---
+
+## Changelog — `spam-hardening-contact-endpoint` branch (July 2026)
+
+1. **Schema:** booking page override columns (`bookingPageHeaderTagline`, `bookingPageSubtitle`, `bookingPageDateLabel`, `bookingPageNotesLabel`, `bookingPageNotesPlaceholder`, `bookingHideAddress`, `bookingConfirmationSmsText`) + no-reply alert columns (`noReplyAlertEnabled`, `noReplyAlertMinutes`, `Conversation.noReplyAlertSentAt`)
+2. **SMS webhook:** STOP/START opt-out enforcement via `BlockedNumber(label='sms-opt-out')`, lead-flow fallback when calendar is disconnected
+3. **SMS sends:** exclude blocked numbers from campaigns, block manual sends to `sms-opt-out` recipients
+4. **Booking:** calendar fail-closed (`getBusyTimesWithRange` throws instead of returning empty), `pg_advisory_xact_lock` on appointment creation, per-business booking page copy overrides
+5. **No-reply alerts:** cron route (`/api/cron/no-reply-alerts`, every 10 min), `notifyOwnerOnNoReply()`, admin toggle + minutes input, booking override fields in admin allowedFields and types
+6. **Email campaigns:** `[first name]`/`[last name]`/`[name]`/`[full name]` personalization tokens, per-recipient failure handling
+7. **Admin:** E.164 normalization on blocked-number save, `scripts/check-calendar-tokens.ts`, `scripts/normalize-blocked-numbers.ts`, `scripts/sql/2026-07-20_add_noReplyAlert.sql`
+8. **Admin panel + docs:** booking override fields in SettingsTab, `docs/system-layout.md` updates
