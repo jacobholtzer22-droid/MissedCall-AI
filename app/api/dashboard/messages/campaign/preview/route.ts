@@ -5,6 +5,7 @@
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { requireDashboardBusiness } from '@/lib/dashboard-auth'
+import { normalizeToE164 } from '@/lib/phone-utils'
 import type { Prisma } from '@prisma/client'
 
 type RecipientFilter =
@@ -80,7 +81,25 @@ export async function POST(request: Request) {
     take: 50,
   })
 
-  const recipientCount = await db.contact.count({ where })
+  const totalCount = await db.contact.count({ where })
+
+  // Exclude blocked recipients (same logic as campaign send) so preview count matches
+  const blockedRows = await db.blockedNumber.findMany({
+    where: { businessId: business.id },
+    select: { phoneNumber: true },
+  })
+  const blockedE164Set = new Set(blockedRows.map(b => normalizeToE164(b.phoneNumber)).filter(Boolean))
+
+  // For the full count: fetch all phone numbers and filter
+  const allPhones = await db.contact.findMany({
+    where,
+    select: { phoneNumber: true },
+  })
+  const excludedCount = allPhones.filter(c => {
+    const e164 = normalizeToE164(c.phoneNumber)
+    return e164 !== '' && blockedE164Set.has(e164)
+  }).length
+  const recipientCount = totalCount - excludedCount
 
   const sampleContact = contacts[0]
   const sampleMessage =
@@ -91,6 +110,7 @@ export async function POST(request: Request) {
   return NextResponse.json({
     recipientCount,
     sampleMessage,
+    excluded: excludedCount,
   })
 }
 

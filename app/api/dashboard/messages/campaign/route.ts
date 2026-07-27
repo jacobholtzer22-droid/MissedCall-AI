@@ -94,6 +94,20 @@ export async function POST(request: Request) {
     select: { id: true, name: true, phoneNumber: true },
   })
 
+  // Exclude recipients that have a BlockedNumber row for this business (any label —
+  // admin blocks and sms-opt-out alike). Contact.phoneNumber is 10-digit normalized
+  // while BlockedNumber stores E.164, so we normalize both sides before comparing.
+  const blockedRows = await db.blockedNumber.findMany({
+    where: { businessId: business.id },
+    select: { phoneNumber: true },
+  })
+  const blockedE164Set = new Set(blockedRows.map(b => normalizeToE164(b.phoneNumber)).filter(Boolean))
+  const eligibleContacts = contacts.filter(c => {
+    const e164 = normalizeToE164(c.phoneNumber)
+    return e164 !== '' && !blockedE164Set.has(e164)
+  })
+  const excludedCount = contacts.length - eligibleContacts.length
+
   const telnyxClient = new Telnyx({ apiKey: process.env.TELNYX_API_KEY! })
   const businessName = business.name || 'our team'
 
@@ -101,8 +115,8 @@ export async function POST(request: Request) {
   let failed = 0
   let skipped = 0
 
-  for (let i = 0; i < contacts.length; i += BATCH_SIZE) {
-    const batch = contacts.slice(i, i + BATCH_SIZE)
+  for (let i = 0; i < eligibleContacts.length; i += BATCH_SIZE) {
+    const batch = eligibleContacts.slice(i, i + BATCH_SIZE)
 
     await Promise.all(
       batch.map(async (contact) => {
@@ -173,11 +187,11 @@ export async function POST(request: Request) {
       })
     )
 
-    if (i + BATCH_SIZE < contacts.length) {
+    if (i + BATCH_SIZE < eligibleContacts.length) {
       await sleep(BATCH_DELAY_MS)
     }
   }
 
-  return NextResponse.json({ sent, failed, skipped })
+  return NextResponse.json({ sent, failed, skipped, excluded: excludedCount })
 }
 

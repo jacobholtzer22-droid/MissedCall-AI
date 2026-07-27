@@ -72,6 +72,22 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Conversation not found' }, { status: 404 })
   }
 
+  // Block manual sends to customers who opted out via STOP (label='sms-opt-out' only;
+  // admin blocks do not prevent manual outreach — the owner can override those).
+  const optOut = await db.blockedNumber.findFirst({
+    where: {
+      businessId: business.id,
+      phoneNumber: normalizeToE164(conversation.callerPhone),
+      label: 'sms-opt-out',
+    },
+  })
+  if (optOut) {
+    return NextResponse.json(
+      { error: 'This customer opted out by texting STOP. They must text START before you can message them again.' },
+      { status: 400 }
+    )
+  }
+
   const telnyxClient = new Telnyx({ apiKey: process.env.TELNYX_API_KEY! })
 
   try {
