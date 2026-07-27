@@ -58,6 +58,13 @@ function initForm(b: AdminBusiness) {
     bookingPageTitle: b.bookingPageTitle ?? '',
     bookingPageServiceLabel: b.bookingPageServiceLabel ?? '',
     bookingPageConfirmation: b.bookingPageConfirmation ?? '',
+    bookingPageHeaderTagline: b.bookingPageHeaderTagline ?? '',
+    bookingPageSubtitle: b.bookingPageSubtitle ?? '',
+    bookingPageDateLabel: b.bookingPageDateLabel ?? '',
+    bookingPageNotesLabel: b.bookingPageNotesLabel ?? '',
+    bookingPageNotesPlaceholder: b.bookingPageNotesPlaceholder ?? '',
+    bookingHideAddress: b.bookingHideAddress ?? false,
+    bookingConfirmationSmsText: b.bookingConfirmationSmsText ?? '',
     maxMessagesPerConversation: String(b.maxMessagesPerConversation ?? 23),
     // Google Ads
     googleAdsCustomerId: b.googleAdsCustomerId ?? '',
@@ -134,6 +141,13 @@ export function SettingsTab({ business, onUpdateBusiness, onToast }: Props) {
           bookingPageTitle: form.bookingPageTitle || null,
           bookingPageServiceLabel: form.bookingPageServiceLabel || null,
           bookingPageConfirmation: form.bookingPageConfirmation || null,
+          bookingPageHeaderTagline: form.bookingPageHeaderTagline || null,
+          bookingPageSubtitle: form.bookingPageSubtitle || null,
+          bookingPageDateLabel: form.bookingPageDateLabel || null,
+          bookingPageNotesLabel: form.bookingPageNotesLabel || null,
+          bookingPageNotesPlaceholder: form.bookingPageNotesPlaceholder || null,
+          bookingHideAddress: form.bookingHideAddress,
+          bookingConfirmationSmsText: form.bookingConfirmationSmsText || null,
           maxMessagesPerConversation: form.maxMessagesPerConversation !== ''
             ? parseInt(form.maxMessagesPerConversation, 10)
             : undefined,
@@ -286,9 +300,37 @@ export function SettingsTab({ business, onUpdateBusiness, onToast }: Props) {
           <Field label="Service Label">
             <input className={INPUT} value={form.bookingPageServiceLabel} onChange={e => set('bookingPageServiceLabel', e.target.value)} placeholder="What do you need a quote for?" />
           </Field>
-          <Field label="Confirmation Message">
+          <Field label="Confirmation Message" hint="Web page. Placeholders: {businessName}, {date}, {time}, {service}">
             <textarea className={TEXTAREA} rows={2} value={form.bookingPageConfirmation} onChange={e => set('bookingPageConfirmation', e.target.value)} placeholder="You're all set! ..." />
           </Field>
+          <Field label="Header Tagline" hint="Header bar text (blank = same as Title)">
+            <input className={INPUT} value={form.bookingPageHeaderTagline} onChange={e => set('bookingPageHeaderTagline', e.target.value)} placeholder="Schedule a Free In-Person Quote" />
+          </Field>
+          <Field label="Subtitle" hint="Below the H1">
+            <input className={INPUT} value={form.bookingPageSubtitle} onChange={e => set('bookingPageSubtitle', e.target.value)} placeholder="Select a date and time for your in-person quote visit" />
+          </Field>
+          <Field label="Date Label" hint="Above the calendar">
+            <input className={INPUT} value={form.bookingPageDateLabel} onChange={e => set('bookingPageDateLabel', e.target.value)} placeholder="Select a date for your quote visit" />
+          </Field>
+          <Field label="Notes Label">
+            <input className={INPUT} value={form.bookingPageNotesLabel} onChange={e => set('bookingPageNotesLabel', e.target.value)} placeholder="Tell us about the job so we can prepare" />
+          </Field>
+          <Field label="Notes Placeholder">
+            <input className={INPUT} value={form.bookingPageNotesPlaceholder} onChange={e => set('bookingPageNotesPlaceholder', e.target.value)} placeholder="Yard size, specific areas, access details, etc." />
+          </Field>
+          <Field label="Confirmation SMS" hint="Website bookings. Placeholders: {businessName}, {date}, {time}, {service}">
+            <textarea className={TEXTAREA} rows={2} value={form.bookingConfirmationSmsText} onChange={e => set('bookingConfirmationSmsText', e.target.value)} placeholder="Confirmed! Your quote visit with {businessName} is scheduled for {date} at {time}..." />
+          </Field>
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={() => setForm(f => ({ ...f, bookingHideAddress: !f.bookingHideAddress }))}
+              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${form.bookingHideAddress ? 'bg-green-600' : 'bg-gray-700'}`}
+            >
+              <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${form.bookingHideAddress ? 'translate-x-6' : 'translate-x-1'}`} />
+            </button>
+            <span className="text-sm text-gray-300">Hide Address Field</span>
+          </div>
           <Field label="Max Messages Per Conversation">
             <input type="number" min={5} max={50} className={`${INPUT} w-24`} value={form.maxMessagesPerConversation} onChange={e => set('maxMessagesPerConversation', e.target.value)} />
           </Field>

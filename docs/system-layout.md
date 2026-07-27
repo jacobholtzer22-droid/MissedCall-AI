@@ -174,7 +174,7 @@ Google Ads: `googleAdsCustomerId` (no dashes), `googleAdsTabLabel`
 
 Admin-only: `adminNotes`, `setupFee`, `monthlyFee`
 
-Booking page: `bookingPageTitle`, `bookingPageServiceLabel`, `bookingPageConfirmation`, `bookingRequiresAddress`, `servicesOffered` (JSON array)
+Booking page: `bookingPageTitle`, `bookingPageServiceLabel`, `bookingPageConfirmation`, `bookingPageHeaderTagline`, `bookingPageSubtitle`, `bookingPageDateLabel`, `bookingPageNotesLabel`, `bookingPageNotesPlaceholder`, `bookingHideAddress` (Boolean, default false), `bookingConfirmationSmsText` (Text), `bookingRequiresAddress`, `servicesOffered` (JSON array). All copy fields are nullable with hardcoded fallbacks in the booking pages — null = exact original string. `bookingConfirmationSmsText` supports `{businessName}`, `{date}`, `{time}`, `{service}` placeholders.
 
 Call screener: `callScreenerMessage`, `missedCallVoiceMessage`
 
@@ -222,7 +222,13 @@ Timestamps: `createdAt`, `updatedAt`, `lastMessageAt`
 
 ### BlockedNumber — hard block list
 
-`id`, `businessId`, `phoneNumber`. Unique `[businessId, phoneNumber]`. Checked before cooldown in SMS guard chain.
+`id`, `businessId`, `phoneNumber`, `label?`. Unique `[businessId, phoneNumber]`. Phone stored in E.164 format (+1XXXXXXXXXX) at write time (STOP handler, admin route). `label` distinguishes origin: `null` or custom string = admin block; `'sms-opt-out'` = customer texted STOP.
+
+Enforcement points:
+- **Missed-call SMS** (`sendMissedCallSMS` guard step 1): any row blocks, regardless of label
+- **SMS campaign send** (`/api/dashboard/messages/campaign`): any row blocks (E.164-normalized comparison)
+- **SMS campaign preview** (`/api/dashboard/messages/campaign/preview`): same filter, so preview count matches send
+- **Manual single SMS** (`/api/dashboard/messages/send`): only `label='sms-opt-out'` blocks (admin blocks don't prevent manual outreach)
 
 ### ContactCooldown — SMS rate limiting
 
@@ -394,7 +400,7 @@ Constants: `FORWARDING_TIMEOUT_SECS=25` (`voice/route.ts:52`), `FORWARDING_TIMEO
 
 Each check short-circuits. Skips are logged to `CooldownSkipLog`:
 
-1. `BlockedNumber` lookup → skip (reason='blocked')
+1. `BlockedNumber` lookup (any label) → skip (reason='blocked')
 2. `isExistingContact()`: `Contact WHERE source IS NULL` → skip (reason='existing_contact') — `contacts-check.ts:~15`
 3. `isCooldownBypassNumber()`: if match, skip remaining cooldown check
 4. `checkCooldown()`: `ContactCooldown.lastMessageSent` within window → skip (reason='cooldown')
@@ -409,7 +415,7 @@ Each check short-circuits. Skips are logged to `CooldownSkipLog`:
 Entry: `POST /api/webhooks/sms` (`app/api/webhooks/sms/route.ts:~1`)
 
 1. Find Business by `telnyxPhoneNumber == payload.to`
-2. STOP/UNSUBSCRIBE/CANCEL/QUIT → send opt-out acknowledgment, return (TCPA required)
+2. STOP/UNSUBSCRIBE/CANCEL/QUIT → upsert `BlockedNumber(label='sms-opt-out')` (empty update preserves admin blocks) + send opt-out acknowledgment, return (TCPA required). START/UNSTOP → `deleteMany` only where `label='sms-opt-out'` (admin blocks survive) + send re-subscribe acknowledgment.
 3. "never mind"/"not interested" → goodbye SMS + `notifyOwnerOnHumanNeeded()`
 4. Find Conversation: last 90 days, newest by `lastMessageAt`. Create if not found + background `findOrCreateContact(source='missed_call')`
 5. Duplicate guard: same text within 30s → ignore
