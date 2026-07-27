@@ -56,7 +56,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Missing required field: notes' }, { status: 400 })
     }
 
-    const requiresAddress = business.bookingRequiresAddress ?? true
+    const hideAddress = business.bookingHideAddress === true
+    const requiresAddress = !hideAddress && (business.bookingRequiresAddress ?? true)
     if (isWebsite && requiresAddress && !customerAddress?.trim()) {
       return NextResponse.json({ error: 'Missing required field: customerAddress' }, { status: 400 })
     }

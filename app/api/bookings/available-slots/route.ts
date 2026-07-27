@@ -65,7 +65,7 @@ export async function GET(request: NextRequest) {
 
     console.log('[available-slots]', { businessSlug: business.slug, timezone: tz, todayStr, effectiveStart, effectiveEnd, timeMin: 'see getAvailableSlotsWithMeta' })
 
-    const { slots, noMoreAvailabilityToday } = await getAvailableSlotsWithMeta(business.id, effectiveStart, effectiveEnd)
+    const { slots, noMoreAvailabilityToday, calendarError } = await getAvailableSlotsWithMeta(business.id, effectiveStart, effectiveEnd)
 
     // Parse services for booking dropdown: supports { name, price? } or plain strings (duration not shown to customers)
     const rawServices = business.servicesOffered
@@ -95,9 +95,16 @@ export async function GET(request: NextRequest) {
       calendarEnabled: true,
       servicesOffered,
       noMoreAvailabilityToday: noMoreAvailabilityToday ?? false,
+      calendarUnavailable: calendarError === true,
       bookingPageTitle,
       bookingPageServiceLabel,
       bookingPageConfirmation,
+      bookingPageHeaderTagline: business.bookingPageHeaderTagline ?? null,
+      bookingPageSubtitle: business.bookingPageSubtitle ?? null,
+      bookingPageDateLabel: business.bookingPageDateLabel ?? null,
+      bookingPageNotesLabel: business.bookingPageNotesLabel ?? null,
+      bookingPageNotesPlaceholder: business.bookingPageNotesPlaceholder ?? null,
+      bookingHideAddress: business.bookingHideAddress === true,
       bookingRequiresAddress: business.bookingRequiresAddress ?? true,
       today: todayStr,
       timezone: tz,

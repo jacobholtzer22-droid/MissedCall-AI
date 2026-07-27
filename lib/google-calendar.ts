@@ -36,9 +36,18 @@ export async function exchangeCodeForTokens(code: string, businessId: string) {
   const oauth2 = getOAuth2Client()
   const { tokens } = await oauth2.getToken(code)
 
+  // Only mark connected when a refresh token is actually usable: either Google returned
+  // one now, or we still hold one from a previous consent. Without this, a consent that
+  // returns only an access token flags the business connected but every later call fails.
+  const existing = await db.business.findUnique({
+    where: { id: businessId },
+    select: { googleRefreshToken: true },
+  })
+  const hasRefreshToken = Boolean(tokens.refresh_token || existing?.googleRefreshToken)
+
   const updateData: { googleAccessToken: string | null; googleRefreshToken?: string; googleCalendarConnected: boolean } = {
     googleAccessToken: tokens.access_token ?? null,
-    googleCalendarConnected: !!(tokens.access_token && (tokens.refresh_token ?? true)),
+    googleCalendarConnected: Boolean(tokens.access_token && hasRefreshToken),
   }
   if (tokens.refresh_token) {
     updateData.googleRefreshToken = tokens.refresh_token
@@ -48,6 +57,10 @@ export async function exchangeCodeForTokens(code: string, businessId: string) {
     where: { id: businessId },
     data: updateData,
   })
+
+  if (!updateData.googleCalendarConnected) {
+    throw new Error('Google did not return a usable refresh token. Please try connecting again.')
+  }
 
   return tokens
 }
@@ -187,9 +200,13 @@ export async function getAvailableSlotsWithMeta(
   businessId: string,
   startStr: string,
   endStr: string
-): Promise<{ slots: TimeSlot[]; noMoreAvailabilityToday?: boolean }> {
+): Promise<{ slots: TimeSlot[]; noMoreAvailabilityToday?: boolean; calendarError?: boolean }> {
   const result = await getAvailableSlotsInternal(businessId, startStr, endStr, false)
-  return { slots: result.slots, noMoreAvailabilityToday: result.noMoreAvailabilityToday }
+  return {
+    slots: result.slots,
+    noMoreAvailabilityToday: result.noMoreAvailabilityToday,
+    calendarError: result.calendarError,
+  }
 }
 
 export interface AvailableSlotsDebug {
@@ -227,7 +244,7 @@ async function getAvailableSlotsInternal(
   endStr: string,
   withDebug: boolean,
   businessSlug?: string
-): Promise<{ slots: TimeSlot[]; debug?: AvailableSlotsDebug; noMoreAvailabilityToday?: boolean }> {
+): Promise<{ slots: TimeSlot[]; debug?: AvailableSlotsDebug; noMoreAvailabilityToday?: boolean; calendarError?: boolean }> {
   const business = await db.business.findUnique({
     where: { id: businessId },
     select: {
@@ -297,8 +314,18 @@ async function getAvailableSlotsInternal(
     debug.googleCalendarError = googleCalendarError
   }
 
-  // DB safety net: merge confirmed DB appointments into busy times so already-booked slots
-  // are blocked even when Google Calendar is unreachable or the OAuth token is revoked.
+  // FAIL CLOSED: if we couldn't read the owner's Google Calendar, offer NO slots rather
+  // than offering every business-hours slot as free — that would let customers book on
+  // top of the owner's existing calendar events. Callers surface this via calendarError.
+  if (googleCalendarError !== undefined) {
+    console.error('[google-calendar] freebusy unavailable — failing closed (no slots offered):', googleCalendarError)
+    return withDebug
+      ? { slots: [], debug, calendarError: true }
+      : { slots: [], calendarError: true }
+  }
+
+  // DB safety net: merge confirmed DB appointments into busy times. Covers appointments
+  // that never made it into Google Calendar (calendarSyncFailed rows).
   try {
     const dbAppointments = await db.appointment.findMany({
       where: {
@@ -445,14 +472,18 @@ export async function getTwoClosestSlotsOnDay(
   return withDist.slice(0, 2).map((x) => x.slot)
 }
 
-/** Get busy times from Google Calendar freebusy API - used by getAvailableSlots */
+/** Get busy times from Google Calendar freebusy API - used by getAvailableSlots.
+ * Throws when the calendar client can't be built (no usable token) so callers fail
+ * closed instead of treating an unreadable calendar as a fully free calendar. */
 async function getBusyTimesWithRange(
   businessId: string,
   timeMin: string,
   timeMax: string
 ): Promise<{ start: string; end: string }[]> {
   const calendar = await getCalendarClient(businessId)
-  if (!calendar) return []
+  if (!calendar) {
+    throw new Error('Google Calendar client unavailable (no usable OAuth token)')
+  }
 
   const freeBusy = await calendar.freebusy.query({
     requestBody: {

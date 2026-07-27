@@ -7,10 +7,13 @@
 import { TZDate } from '@date-fns/tz'
 import { db } from '@/lib/db'
 import Telnyx from 'telnyx'
-import { createCalendarEvent, getAvailableSlots } from '@/lib/google-calendar'
+import { createCalendarEvent, getAvailableSlotsWithMeta } from '@/lib/google-calendar'
 import { notifyOwnerOnBookingCreated } from '@/lib/notify-owner'
 import { recordMessageSent } from '@/lib/sms-cooldown'
 import type { Business } from '@prisma/client'
+
+/** Thrown inside the booking transaction to signal a 409 conflict (not a server error). */
+class BookingConflictError extends Error {}
 
 /** Format date as "Friday, March 6th" for clear SMS confirmation. */
 function formatDateFullForConfirm(d: Date, tz: string): string {
@@ -131,62 +134,15 @@ export async function createBooking(params: CreateBookingParams): Promise<Create
     return { ok: false, error: 'This time slot is no longer available', status: 409 }
   }
 
-  if (conversationId) {
-    const existing = await db.appointment.findFirst({
-      where: { conversationId, status: 'confirmed' },
-    })
-    if (existing) {
-      return { ok: false, error: 'This conversation already has a confirmed appointment', status: 409 }
-    }
-  }
-
-  const slotDuration = business.slotDurationMinutes ?? 30
-  const marginMs = slotDuration * 60 * 1000
-  const existingDup = await db.appointment.findFirst({
-    where: {
-      businessId: business.id,
-      customerPhone: phone,
-      status: 'confirmed',
-      serviceType: ownerFacingService,
-      scheduledAt: {
-        gte: new Date(startDate.getTime() - marginMs),
-        lte: new Date(startDate.getTime() + marginMs),
-      },
-    },
-  })
-  if (existingDup) {
-    return { ok: false, error: 'You already have a quote visit scheduled for this service at this time', status: 409 }
-  }
-
-  // DB-level time-overlap check: runs regardless of skipSlotVerification so SMS and website
-  // flows can't race each other into the same slot.
-  const slotEnd = new Date(startDate.getTime() + slotDuration * 60 * 1000)
-  const overlapWindowMs = 4 * 60 * 60 * 1000 // 4h upper bound on appointment duration
-  const candidateAppts = await db.appointment.findMany({
-    where: {
-      businessId: business.id,
-      status: { not: 'cancelled' },
-      scheduledAt: {
-        gte: new Date(startDate.getTime() - overlapWindowMs),
-        lt: slotEnd,
-      },
-    },
-    select: { scheduledAt: true, duration: true, customerPhone: true, serviceType: true },
-  })
-  const conflictingAppt = candidateAppts.find((appt) => {
-    const apptEnd = new Date(appt.scheduledAt.getTime() + appt.duration * 60 * 1000)
-    const overlaps = appt.scheduledAt.getTime() < slotEnd.getTime() && apptEnd.getTime() > startDate.getTime()
-    if (!overlaps) return false
-    // Skip: same customer+service is already caught by the duplicate-booking check above
-    return !(appt.customerPhone === phone && appt.serviceType === ownerFacingService)
-  })
-  if (conflictingAppt) {
-    return { ok: false, error: 'This time slot was just booked. Please pick a different time.', status: 409 }
-  }
-
   if (!skipSlotVerification && business.googleCalendarConnected) {
     const dateStr = startDate.toLocaleDateString('en-CA', { timeZone: tz })
-    const availableSlots = await getAvailableSlots(business.id, dateStr, dateStr)
+    const { slots: availableSlots, calendarError } = await getAvailableSlotsWithMeta(business.id, dateStr, dateStr)
+    if (calendarError) {
+      // Google Calendar unreachable — availability can't be verified, so fail closed
+      // with a retryable message rather than booking blind over the owner's calendar.
+      console.error(`${logPrefix} Slot verification unavailable: Google Calendar unreachable`)
+      return { ok: false, error: "We couldn't check availability just now. Please try again in a minute.", status: 503 }
+    }
     const slotStartMs = startDate.getTime()
     // Use 60s tolerance to handle timezone/parsing edge cases (e.g. 12:00 PM Eastern vs UTC)
     const TOLERANCE_MS = 60_000
@@ -209,9 +165,100 @@ export async function createBooking(params: CreateBookingParams): Promise<Create
     console.log(`${logPrefix} Slot verification OK:`, { slotStart: startDate.toISOString(), dateStr })
   }
 
-  const endDate = new Date(startDate.getTime() + slotDuration * 60 * 1000)
+  const slotDuration = business.slotDurationMinutes ?? 30
+  const marginMs = slotDuration * 60 * 1000
+  const slotEnd = new Date(startDate.getTime() + slotDuration * 60 * 1000)
+  const endDate = slotEnd
   const source = conversationId ? ('sms' as const) : ('website' as const)
 
+  // Conflict checks + create run atomically under a per-business advisory lock, so two
+  // simultaneous requests (website + website, or website + SMS) can't take the same slot.
+  // The lock is released automatically when the transaction commits or rolls back.
+  let appointment: { id: string; scheduledAt: Date; serviceType: string }
+  try {
+    appointment = await db.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${business.id}))`
+
+      if (conversationId) {
+        const existing = await tx.appointment.findFirst({
+          where: { conversationId, status: 'confirmed' },
+        })
+        if (existing) {
+          throw new BookingConflictError('This conversation already has a confirmed appointment')
+        }
+      }
+
+      const existingDup = await tx.appointment.findFirst({
+        where: {
+          businessId: business.id,
+          customerPhone: phone,
+          status: 'confirmed',
+          serviceType: ownerFacingService,
+          scheduledAt: {
+            gte: new Date(startDate.getTime() - marginMs),
+            lte: new Date(startDate.getTime() + marginMs),
+          },
+        },
+      })
+      if (existingDup) {
+        throw new BookingConflictError('You already have a quote visit scheduled for this service at this time')
+      }
+
+      // DB-level time-overlap check: runs regardless of skipSlotVerification so SMS and
+      // website flows can't race each other into the same slot.
+      const overlapWindowMs = 4 * 60 * 60 * 1000 // 4h upper bound on appointment duration
+      const candidateAppts = await tx.appointment.findMany({
+        where: {
+          businessId: business.id,
+          status: { not: 'cancelled' },
+          scheduledAt: {
+            gte: new Date(startDate.getTime() - overlapWindowMs),
+            lt: slotEnd,
+          },
+        },
+        select: { scheduledAt: true, duration: true, customerPhone: true, serviceType: true },
+      })
+      const conflictingAppt = candidateAppts.find((appt) => {
+        const apptEnd = new Date(appt.scheduledAt.getTime() + appt.duration * 60 * 1000)
+        const overlaps = appt.scheduledAt.getTime() < slotEnd.getTime() && apptEnd.getTime() > startDate.getTime()
+        if (!overlaps) return false
+        // Skip: same customer+service is already caught by the duplicate-booking check above
+        return !(appt.customerPhone === phone && appt.serviceType === ownerFacingService)
+      })
+      if (conflictingAppt) {
+        throw new BookingConflictError('This time slot was just booked. Please pick a different time.')
+      }
+
+      return tx.appointment.create({
+        data: {
+          businessId: business.id,
+          conversationId: conversationId || null,
+          customerName: name,
+          customerPhone: phone,
+          customerEmail: customerEmail?.trim() || null,
+          serviceType: ownerFacingService,
+          scheduledAt: startDate,
+          duration: slotDuration,
+          notes: notes?.trim() || null,
+          customerAddress: customerAddress?.trim() || null,
+          googleCalendarEventId: null,
+          calendarSyncFailed: false,
+          status: 'confirmed',
+          source,
+        },
+      })
+    })
+  } catch (err) {
+    if (err instanceof BookingConflictError) {
+      return { ok: false, error: err.message, status: 409 }
+    }
+    throw err
+  }
+
+  console.log(`${logPrefix} Appointment created:`, appointment.id)
+
+  // Google Calendar event is created AFTER the DB row so the advisory-lock transaction
+  // stays short and a conflict never leaves an orphaned calendar event behind.
   let googleEventId: string | null = null
   let calendarSyncFailed = false
   const shouldCreateCalendar = business.calendarEnabled && business.googleCalendarConnected
@@ -236,30 +283,17 @@ export async function createBooking(params: CreateBookingParams): Promise<Create
     } catch (calErr) {
       calendarSyncFailed = true
       console.error(`${logPrefix} Calendar FAILED:`, calErr instanceof Error ? calErr.message : String(calErr))
-      // Continue to create appointment - don't fail the whole booking
+      // Booking stands either way — appointment is already saved
+    }
+    try {
+      await db.appointment.update({
+        where: { id: appointment.id },
+        data: { googleCalendarEventId: googleEventId, calendarSyncFailed },
+      })
+    } catch (updateErr) {
+      console.error(`${logPrefix} Failed to record calendar sync result on appointment:`, updateErr)
     }
   }
-
-  const appointment = await db.appointment.create({
-    data: {
-      businessId: business.id,
-      conversationId: conversationId || null,
-      customerName: name,
-      customerPhone: phone,
-      customerEmail: customerEmail?.trim() || null,
-      serviceType: ownerFacingService,
-      scheduledAt: startDate,
-      duration: slotDuration,
-      notes: notes?.trim() || null,
-      customerAddress: customerAddress?.trim() || null,
-      googleCalendarEventId: googleEventId,
-      calendarSyncFailed,
-      status: 'confirmed',
-      source,
-    },
-  })
-
-  console.log(`${logPrefix} Appointment created:`, appointment.id)
 
   // Send confirmation SMS — ALWAYS use actual booked date/time from slotStart, never customer's words
   if (business.telnyxPhoneNumber) {
@@ -273,9 +307,16 @@ export async function createBooking(params: CreateBookingParams): Promise<Create
     })
     const cleanService = cleanServiceForConfirmation(service)
     const addressPart = customerAddress?.trim() ? ` at ${customerAddress.trim()}` : ''
+    const defaultWebsiteMsg = `Confirmed! Your quote visit with ${business.name} is scheduled for ${dateStr} at ${timeStr}. They'll come out, take a look, and give you a quote for ${cleanService}. Reply to this number if you need to reschedule.`
     let msg = conversationId
       ? `You're all set ${name}! ${business.name} will meet you on ${dateStr} at ${timeStr}${addressPart} for ${cleanService}. See you then!`
-      : `Confirmed! Your quote visit with ${business.name} is scheduled for ${dateStr} at ${timeStr}. They'll come out, take a look, and give you a quote for ${cleanService}. Reply to this number if you need to reschedule.`
+      : business.bookingConfirmationSmsText
+        ? business.bookingConfirmationSmsText
+            .replace(/{businessName}/g, business.name)
+            .replace(/{date}/g, dateStr)
+            .replace(/{time}/g, timeStr)
+            .replace(/{service}/g, cleanService)
+        : defaultWebsiteMsg
 
     if (calendarSyncFailed) {
       msg += ` Note: We had a small technical issue syncing to our calendar, but you're definitely booked. We'll reach out if anything changes.`

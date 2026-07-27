@@ -33,8 +33,14 @@ export default function EmbedBookingPage() {
 
   const [businessName, setBusinessName] = useState<string | null>(null)
   const [bookingPageTitle, setBookingPageTitle] = useState('Schedule a Free In-Person Quote')
+  const [bookingPageHeaderTagline, setBookingPageHeaderTagline] = useState<string | null>(null)
+  const [bookingPageSubtitle, setBookingPageSubtitle] = useState<string | null>(null)
+  const [bookingPageDateLabel, setBookingPageDateLabel] = useState<string | null>(null)
+  const [bookingPageNotesLabel, setBookingPageNotesLabel] = useState<string | null>(null)
+  const [bookingPageNotesPlaceholder, setBookingPageNotesPlaceholder] = useState<string | null>(null)
   const [bookingPageServiceLabel, setBookingPageServiceLabel] = useState('What do you need a quote for?')
   const [bookingRequiresAddress, setBookingRequiresAddress] = useState(true)
+  const [bookingHideAddress, setBookingHideAddress] = useState(false)
   const [bookingPageConfirmation, setBookingPageConfirmation] = useState(
     "You're all set! Someone from {businessName} will meet you at your scheduled time for a free in-person quote."
   )
@@ -44,6 +50,7 @@ export default function EmbedBookingPage() {
   const [slots, setSlots] = useState<TimeSlot[]>([])
   const [slotsLoading, setSlotsLoading] = useState(false)
   const [noMoreAvailabilityToday, setNoMoreAvailabilityToday] = useState(false)
+  const [calendarUnavailable, setCalendarUnavailable] = useState(false)
   const [selectedSlot, setSelectedSlot] = useState<TimeSlot | null>(null)
 
   const [name, setName] = useState('')
@@ -98,12 +105,18 @@ export default function EmbedBookingPage() {
         if (cancelled) return
         setBusinessName(data.businessName ?? null)
         setBookingPageTitle(data.bookingPageTitle ?? 'Schedule a Free In-Person Quote')
+        setBookingPageHeaderTagline(data.bookingPageHeaderTagline ?? null)
+        setBookingPageSubtitle(data.bookingPageSubtitle ?? null)
+        setBookingPageDateLabel(data.bookingPageDateLabel ?? null)
+        setBookingPageNotesLabel(data.bookingPageNotesLabel ?? null)
+        setBookingPageNotesPlaceholder(data.bookingPageNotesPlaceholder ?? null)
         setBookingPageServiceLabel(data.bookingPageServiceLabel ?? 'What do you need a quote for?')
         setBookingPageConfirmation(
           data.bookingPageConfirmation ??
             "You're all set! Someone from {businessName} will meet you at your scheduled time for a free in-person quote."
         )
         setBookingRequiresAddress(data.bookingRequiresAddress !== false)
+        setBookingHideAddress(data.bookingHideAddress === true)
         setCalendarConnected(data.calendarEnabled === true && !data.error?.includes('not connected') && !!data.businessName)
         setServicesOffered(Array.isArray(data.servicesOffered) ? data.servicesOffered : [])
         if (data.today) setServerToday(data.today)
@@ -137,11 +150,13 @@ export default function EmbedBookingPage() {
       .then(data => {
         setSlots(data.slots ?? [])
         setNoMoreAvailabilityToday(data.noMoreAvailabilityToday === true)
+        setCalendarUnavailable(data.calendarUnavailable === true)
         setSlotsLoading(false)
       })
       .catch(() => {
         setSlots([])
         setNoMoreAvailabilityToday(false)
+        setCalendarUnavailable(false)
         setSlotsLoading(false)
       })
   }, [slug, selectedDate, serverToday])
@@ -153,7 +168,7 @@ export default function EmbedBookingPage() {
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    const addressRequired = bookingRequiresAddress
+    const addressRequired = !bookingHideAddress && bookingRequiresAddress
     if (!selectedSlot || !name.trim() || !phone.trim() || !service.trim() || !notes.trim()) return
     if (addressRequired && !address.trim()) return
     setSubmitting(true)
@@ -263,18 +278,18 @@ export default function EmbedBookingPage() {
 
   return (
     <div ref={containerRef} style={{ backgroundColor: '#ffffff' }}>
-      <BookingPageHeader businessName={businessName} bookingPageTitle={bookingPageTitle} embed />
+      <BookingPageHeader businessName={businessName} bookingPageTitle={bookingPageHeaderTagline ?? bookingPageTitle} embed />
       <div className="p-4 sm:p-6 md:p-8">
         <div className="max-w-2xl mx-auto">
           <div className="text-center mb-6">
             <h2 className="text-xl font-bold" style={{ color: '#111827' }}>{bookingPageTitle}</h2>
-            <p className="text-sm mt-1" style={{ color: '#6b7280' }}>Select a date and time for your in-person quote visit</p>
+            <p className="text-sm mt-1" style={{ color: '#6b7280' }}>{bookingPageSubtitle ?? 'Select a date and time for your in-person quote visit'}</p>
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-6">
             <div>
               <label className="block text-sm font-medium mb-2" style={labelStyle}>
-                Select a date for your quote visit
+                {bookingPageDateLabel ?? 'Select a date for your quote visit'}
               </label>
               <BookingCalendar
                 today={today}
@@ -297,9 +312,11 @@ export default function EmbedBookingPage() {
                 <p className="text-sm" style={{ color: '#6b7280' }}>Loading...</p>
               ) : slots.length === 0 ? (
                 <p className="text-sm" style={{ color: '#6b7280' }}>
-                  {noMoreAvailabilityToday
-                    ? 'No more availability today — pick another date'
-                    : 'No availability on this date'}
+                  {calendarUnavailable
+                    ? "We're having trouble loading availability right now — please try again in a few minutes."
+                    : noMoreAvailabilityToday
+                      ? 'No more availability today — pick another date'
+                      : 'No availability on this date'}
                 </p>
               ) : (
                 <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
@@ -368,6 +385,7 @@ export default function EmbedBookingPage() {
                 style={inputStyle}
               />
             </div>
+            {!bookingHideAddress && (
             <div>
               <label className="flex items-center gap-2 text-sm font-medium mb-2" style={labelStyle}>
                 <MapPin className="h-4 w-4" />
@@ -383,6 +401,7 @@ export default function EmbedBookingPage() {
                 style={inputStyle}
               />
             </div>
+            )}
             {servicesOffered.length > 0 ? (
               <div>
                 <label className="flex items-center gap-2 text-sm font-medium mb-2" style={labelStyle}>
@@ -424,14 +443,14 @@ export default function EmbedBookingPage() {
             <div>
               <label className="flex items-center gap-2 text-sm font-medium mb-2" style={labelStyle}>
                 <FileText className="h-4 w-4" />
-                Tell us about the job so we can prepare *
+                {bookingPageNotesLabel ?? 'Tell us about the job so we can prepare'} *
               </label>
               <textarea
                 value={notes}
                 onChange={e => setNotes(e.target.value)}
                 required
                 rows={3}
-                placeholder="Yard size, specific areas, access details, etc."
+                placeholder={bookingPageNotesPlaceholder ?? 'Yard size, specific areas, access details, etc.'}
                 className="w-full px-4 py-3 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-none"
                 style={inputStyle}
               />
@@ -446,7 +465,7 @@ export default function EmbedBookingPage() {
 
           <button
             type="submit"
-            disabled={!selectedSlot || !name.trim() || !phone.trim() || !service.trim() || !notes.trim() || (bookingRequiresAddress && !address.trim()) || submitting}
+            disabled={!selectedSlot || !name.trim() || !phone.trim() || !service.trim() || !notes.trim() || (!bookingHideAddress && bookingRequiresAddress && !address.trim()) || submitting}
             className="w-full py-4 text-white font-semibold rounded-xl text-base shadow-lg hover:shadow-xl hover:brightness-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:brightness-100 transition"
             style={{ backgroundColor: '#2563eb' }}
           >
