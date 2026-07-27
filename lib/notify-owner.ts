@@ -526,6 +526,90 @@ export async function notifyOwnerOnAIFailed(
   }
 }
 
+// ── No reply after missed-call text-back ────────────────────────────
+// Cron-driven: the customer missed the call, got the automated text-back, and
+// never replied within the business's configured window — nudge the owner to
+// call them back personally while the lead is still warm.
+
+function formatMinutesLabel(minutes: number): string {
+  if (minutes === 60) return 'an hour'
+  if (minutes > 60 && minutes % 60 === 0) return `${minutes / 60} hours`
+  return `${minutes} minutes`
+}
+
+export async function notifyOwnerOnNoReply(
+  business: BusinessWithPhone,
+  params: {
+    customerPhone: string
+    customerName?: string | null
+    minutes: number
+    missedCallAt: Date
+    conversationId: string
+  }
+): Promise<NotifyOwnerResult> {
+  const result: NotifyOwnerResult = { smsSent: false, emailSent: false }
+  const { customerPhone, customerName, minutes, missedCallAt, conversationId } = params
+  const tz = business.timezone ?? 'America/New_York'
+  const windowLabel = formatMinutesLabel(minutes)
+  const customerLabel = customerName?.trim() || customerPhone
+  const missedAtLabel = `${formatDate(missedCallAt, tz)} at ${formatTime(missedCallAt, tz)}`
+  const conversationsUrl = `${baseUrl}/dashboard/conversations`
+
+  // SMS
+  if (business.notifyBySms) {
+    const rawPhone = business.ownerPhone || business.forwardingNumber
+    const toPhone = rawPhone ? normalizeToE164(rawPhone.trim()) : ''
+    if (!toPhone) {
+      console.error('[NOTIFY OWNER] No-reply SMS SKIP: No ownerPhone or forwardingNumber set', { businessId: business.id })
+    } else if (!business.telnyxPhoneNumber) {
+      console.error('[NOTIFY OWNER] No-reply SMS SKIP: No telnyxPhoneNumber set', { businessId: business.id })
+    } else {
+      const smsText = `⏰ Heads up: ${customerLabel} missed you (${missedAtLabel}), got the automatic text-back, and hasn't replied in ${windowLabel}. A quick call back could save this lead: ${customerPhone}`
+      try {
+        const telnyx = new Telnyx({ apiKey: process.env.TELNYX_API_KEY! })
+        await telnyx.messages.send({
+          from: business.telnyxPhoneNumber,
+          to: toPhone,
+          text: smsText,
+        })
+        console.error('[NOTIFY OWNER] No-reply SMS sent to', toPhone)
+        result.smsSent = true
+      } catch (err) {
+        console.error('[NOTIFY OWNER] No-reply SMS FAILED:', err instanceof Error ? err.message : String(err))
+      }
+    }
+  }
+
+  // Email
+  if (business.notifyByEmail && business.ownerEmail) {
+    const subject = `[${business.name}] No Reply Yet - ${customerLabel} - Please Call Back`
+    const body = [
+      `A caller missed you, received the automated text-back, and hasn't replied to the assistant in ${windowLabel}.`,
+      '',
+      'Caller details:',
+      `  ${customerName?.trim() ? `Name: ${customerName.trim()}` : 'Name: Unknown (never replied)'}`,
+      `  Phone: ${customerPhone}`,
+      `  Missed call: ${missedAtLabel}`,
+      '',
+      'Texts often get ignored — a quick personal call back is the best way to save this lead.',
+      '',
+      `View conversations: ${conversationsUrl}`,
+      '',
+      'Powered by MissedCall AI - Align and Acquire',
+    ].join('\n')
+
+    try {
+      await sendEmail(business.ownerEmail, subject, body)
+      console.error('[NOTIFY OWNER] No-reply email sent to', business.ownerEmail, { conversationId })
+      result.emailSent = true
+    } catch (err) {
+      console.error('[NOTIFY OWNER] No-reply email FAILED:', err instanceof Error ? err.message : String(err))
+    }
+  }
+
+  return result
+}
+
 // ── Website lead (contact form) ─────────────────────────────────────
 // When a client tenant's website contact form is submitted — notify the owner.
 

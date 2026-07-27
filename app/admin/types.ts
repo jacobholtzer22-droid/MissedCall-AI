@@ -13,6 +13,8 @@ export interface AdminBusiness {
   // Feature flags
   missedCallAiEnabled: boolean
   knownContactVoicemailEnabled: boolean
+  noReplyAlertEnabled: boolean
+  noReplyAlertMinutes: number
   callScreenerEnabled: boolean
   callScreenerMessage: string | null
   spamFilterEnabled: boolean
@@ -41,6 +43,13 @@ export interface AdminBusiness {
   bookingPageTitle: string | null
   bookingPageServiceLabel: string | null
   bookingPageConfirmation: string | null
+  bookingPageHeaderTagline: string | null
+  bookingPageSubtitle: string | null
+  bookingPageDateLabel: string | null
+  bookingPageNotesLabel: string | null
+  bookingPageNotesPlaceholder: string | null
+  bookingHideAddress: boolean
+  bookingConfirmationSmsText: string | null
   maxMessagesPerConversation: number
 
   // Google Ads

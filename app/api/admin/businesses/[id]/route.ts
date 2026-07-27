@@ -40,6 +40,8 @@ export async function PATCH(
       'missedCallVoiceMessage',
       'missedCallAiEnabled',
       'knownContactVoicemailEnabled',
+      'noReplyAlertEnabled',
+      'noReplyAlertMinutes',
       'slotDurationMinutes',
       'bufferMinutes',
       'smsBookingEnabled',
@@ -47,6 +49,13 @@ export async function PATCH(
       'bookingPageTitle',
       'bookingPageServiceLabel',
       'bookingPageConfirmation',
+      'bookingPageHeaderTagline',
+      'bookingPageSubtitle',
+      'bookingPageDateLabel',
+      'bookingPageNotesLabel',
+      'bookingPageNotesPlaceholder',
+      'bookingHideAddress',
+      'bookingConfirmationSmsText',
       'bookingRequiresAddress',
       'businessType',
       'maxMessagesPerConversation',
@@ -63,6 +72,12 @@ export async function PATCH(
     const data: Record<string, unknown> = {}
     for (const field of allowedFields) {
       if (body[field] !== undefined) data[field] = body[field]
+    }
+
+    // noReplyAlertMinutes: coerce to a sane integer (min 5 minutes, default 60)
+    if (data.noReplyAlertMinutes !== undefined) {
+      const parsed = parseInt(String(data.noReplyAlertMinutes), 10)
+      data.noReplyAlertMinutes = Number.isFinite(parsed) && parsed >= 5 ? parsed : 60
     }
 
     // ownerGroupId: trim whitespace; empty/blank clears the group (saves as null)

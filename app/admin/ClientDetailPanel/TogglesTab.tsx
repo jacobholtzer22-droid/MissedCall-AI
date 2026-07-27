@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { MessageCircle, Shield, ShieldCheck, Phone, Calendar, Megaphone, Globe, Mail, MessageSquare, CheckCircle, XCircle, Mailbox, Voicemail } from 'lucide-react'
+import { MessageCircle, Shield, ShieldCheck, Phone, Calendar, Megaphone, Globe, Mail, MessageSquare, CheckCircle, XCircle, Mailbox, Voicemail, AlarmClock } from 'lucide-react'
 import type { AdminBusiness } from '../types'
 
 interface Props {
@@ -66,6 +66,7 @@ export function TogglesTab({ business, onUpdateBusiness, onToast }: Props) {
   const [editingMsg, setEditingMsg] = useState(false)
   const [forwardingNum, setForwardingNum] = useState(business.forwardingNumber ?? '')
   const [editingFwd, setEditingFwd] = useState(false)
+  const [noReplyMinutes, setNoReplyMinutes] = useState(String(business.noReplyAlertMinutes ?? 60))
 
   async function patch(field: string, value: unknown, label: string) {
     const original = { ...business }
@@ -200,6 +201,41 @@ export function TogglesTab({ business, onUpdateBusiness, onToast }: Props) {
         onToggle={() => patch('knownContactVoicemailEnabled', !business.knownContactVoicemailEnabled, 'known-contact voicemail')}
         disabled={saving === 'knownContactVoicemailEnabled'}
       />
+
+      <ToggleRow
+        icon={AlarmClock}
+        label="No-Reply Alerts"
+        description="Text/email the owner when a missed caller never replies to the text-back within the window below"
+        checked={business.noReplyAlertEnabled}
+        onToggle={() => patch('noReplyAlertEnabled', !business.noReplyAlertEnabled, 'no-reply alerts')}
+        disabled={saving === 'noReplyAlertEnabled'}
+      >
+        <div className="flex items-center gap-2">
+          <p className="text-xs text-gray-500 font-medium">Alert after</p>
+          <input
+            type="number"
+            min={5}
+            step={5}
+            value={noReplyMinutes}
+            onChange={e => setNoReplyMinutes(e.target.value)}
+            className="w-20 bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-sm text-white focus:outline-none focus:border-gray-500"
+          />
+          <p className="text-xs text-gray-500 font-medium">minutes</p>
+          {parseInt(noReplyMinutes, 10) !== (business.noReplyAlertMinutes ?? 60) && (
+            <button
+              onClick={() => {
+                const parsed = parseInt(noReplyMinutes, 10)
+                const value = Number.isFinite(parsed) && parsed >= 5 ? parsed : 60
+                setNoReplyMinutes(String(value))
+                patch('noReplyAlertMinutes', value, 'no-reply alert window')
+              }}
+              className="text-xs px-3 py-1.5 bg-blue-600 hover:bg-blue-700 rounded-lg"
+            >
+              Save
+            </button>
+          )}
+        </div>
+      </ToggleRow>
 
       <ToggleRow
         icon={Shield}
