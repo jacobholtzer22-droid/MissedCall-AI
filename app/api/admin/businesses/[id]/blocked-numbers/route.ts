@@ -1,6 +1,7 @@
 import { auth } from '@clerk/nextjs/server'
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { normalizeToE164 } from '@/lib/phone-utils'
 
 const ADMIN_USER_ID = process.env.ADMIN_USER_ID
 
@@ -41,15 +42,17 @@ export async function POST(
   const businessId = context.params.id
   try {
     const body = await request.json()
-    const phoneNumber = typeof body.phoneNumber === 'string' ? body.phoneNumber.trim() : ''
+    const rawPhone = typeof body.phoneNumber === 'string' ? body.phoneNumber.trim() : ''
     const label = typeof body.label === 'string' ? body.label.trim() || null : null
 
-    if (!phoneNumber) {
+    if (!rawPhone) {
       return NextResponse.json(
         { error: 'phoneNumber is required' },
         { status: 400 }
       )
     }
+
+    const phoneNumber = normalizeToE164(rawPhone) || rawPhone
 
     const business = await db.business.findUnique({ where: { id: businessId } })
     if (!business) {
