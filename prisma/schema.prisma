@@ -18,94 +18,103 @@ datasource db {
 // BUSINESS - Your customers (dentists, salons, etc.)
 // ===========================================
 model Business {
-  id                    String    @id @default(cuid())
+  id String @id @default(cuid())
 
   // Basic info
-  name                  String                          // "Smith Dental"
-  slug                  String    @unique               // "smith-dental" (for URLs)
-  businessType          String?                         // Landscaping, Car Detailing, HVAC, Other
-  ownerGroupId          String?                         // Businesses sharing a non-null value form an owner group (aggregated Website Leads + Google Ads). null = no group, behavior unchanged
+  name         String // "Smith Dental"
+  slug         String  @unique // "smith-dental" (for URLs)
+  businessType String? // Landscaping, Car Detailing, HVAC, Other
+  ownerGroupId String? // Businesses sharing a non-null value form an owner group (aggregated Website Leads + Google Ads). null = no group, behavior unchanged
 
   // Telnyx phone number provisioned for this business
-  telnyxPhoneNumber     String?   @unique
-  forwardingNumber      String?                         // Owner's real phone number to ring first
+  telnyxPhoneNumber String? @unique
+  forwardingNumber  String? // Owner's real phone number to ring first
 
   // Business details
-  timezone              String    @default("America/New_York")
-  businessHours         Json?                           // { monday: { open: "09:00", close: "17:00" }, ... }
-  servicesOffered       Json?                           // ["cleaning", "filling", "crown", ...]
+  timezone        String @default("America/New_York")
+  businessHours   Json? // { monday: { open: "09:00", close: "17:00" }, ... }
+  servicesOffered Json? // ["cleaning", "filling", "crown", ...]
 
   // AI customization
-  aiGreeting            String?                         // Custom first message
-  aiInstructions        String?   @db.Text              // Custom personality/rules for the AI
-  aiContext             String?   @db.Text              // Business context (what they do, policies, etc.)
+  aiGreeting     String? // Custom first message
+  aiInstructions String? @db.Text // Custom personality/rules for the AI
+  aiContext      String? @db.Text // Business context (what they do, policies, etc.)
 
   // Calendar integration (optional per business)
-  calendarEnabled         Boolean   @default(false)
-  googleAccessToken       String?   @db.Text
-  googleRefreshToken      String?   @db.Text
-  googleCalendarConnected Boolean   @default(false)
-  slotDurationMinutes     Int       @default(30)   // Booking slot length (15, 30, 45, etc.)
-  bufferMinutes           Int       @default(0)    // Buffer between back-to-back appointments
-  smsBookingEnabled       Boolean   @default(true) // When false, SMS AI captures leads instead of booking even if calendar is connected
+  calendarEnabled         Boolean @default(false)
+  googleAccessToken       String? @db.Text
+  googleRefreshToken      String? @db.Text
+  googleCalendarConnected Boolean @default(false)
+  slotDurationMinutes     Int     @default(30) // Booking slot length (15, 30, 45, etc.)
+  bufferMinutes           Int     @default(0) // Buffer between back-to-back appointments
+  smsBookingEnabled       Boolean @default(true) // When false, SMS AI captures leads instead of booking even if calendar is connected
 
   // Billing
-  stripeCustomerId      String?   @unique
-  stripeSubscriptionId  String?
-  subscriptionStatus    String    @default("trialing")  // trialing, active, past_due, canceled
+  stripeCustomerId     String? @unique
+  stripeSubscriptionId String?
+  subscriptionStatus   String  @default("trialing") // trialing, active, past_due, canceled
 
   // Google Ads integration
-  googleAdsCustomerId   String?                         // Google Ads customer ID (no dashes, e.g. "1234567890")
-  googleAdsEnabled      Boolean   @default(false)       // Show Google Ads tab in dashboard
-  googleAdsTabLabel     String?   @default("Google Ads") // Custom label for the ads nav item
+  googleAdsCustomerId String? // Google Ads customer ID (no dashes, e.g. "1234567890")
+  googleAdsEnabled    Boolean @default(false) // Show Google Ads tab in dashboard
+  googleAdsTabLabel   String? @default("Google Ads") // Custom label for the ads nav item
 
   // Admin tracking
-  adminNotes            String?   @db.Text              // Private notes only Jacob sees
-  setupFee              Float?                           // What they paid upfront
-  monthlyFee            Float?                           // What they pay monthly
-  spamFilterEnabled     Boolean   @default(false)       // Premium feature - spam call filtering
-  callScreenerEnabled   Boolean   @default(false)
-  callScreenerMessage   String?
-  missedCallVoiceMessage String?  @default("We're sorry we can't get to the phone right now. You should receive a text message shortly.")
-  missedCallAiEnabled   Boolean   @default(true)        // Send AI SMS after missed call
-  knownContactVoicemailEnabled Boolean @default(false)  // When on, missed calls from the client's own contacts (isClientContact) go to voicemail instead of AI SMS
-  smsCooldownDays       Int?                            // Cooldown period in days (null = use env SMS_COOLDOWN_DAYS or default 7)
-  cooldownBypassNumbers Json?     @default("[]")        // Admin: phone numbers that skip cooldown (for testing)
+  adminNotes                   String? @db.Text // Private notes only Jacob sees
+  setupFee                     Float? // What they paid upfront
+  monthlyFee                   Float? // What they pay monthly
+  spamFilterEnabled            Boolean @default(false) // Premium feature - spam call filtering
+  callScreenerEnabled          Boolean @default(false)
+  callScreenerMessage          String?
+  missedCallVoiceMessage       String? @default("We're sorry we can't get to the phone right now. You should receive a text message shortly.")
+  missedCallAiEnabled          Boolean @default(true) // Send AI SMS after missed call
+  knownContactVoicemailEnabled Boolean @default(false) // When on, missed calls from the client's own contacts (isClientContact) go to voicemail instead of AI SMS
+  noReplyAlertEnabled          Boolean @default(false) // Alert owner when a missed-call text-back gets no reply within noReplyAlertMinutes
+  noReplyAlertMinutes          Int     @default(60) // Minutes to wait for a customer reply before alerting the owner
+  smsCooldownDays              Int? // Cooldown period in days (null = use env SMS_COOLDOWN_DAYS or default 7)
+  cooldownBypassNumbers        Json?   @default("[]") // Admin: phone numbers that skip cooldown (for testing)
 
   // Booking page customization (per-business labels)
-  bookingPageTitle      String?                         // e.g. "Schedule a Free In-Person Quote"
-  bookingPageServiceLabel String?                       // e.g. "What do you need a quote for?"
-  bookingPageConfirmation String?   @db.Text            // e.g. "You're all set! Someone from {businessName} will meet you at your scheduled time."
-  bookingRequiresAddress Boolean   @default(true)       // Require property address when booking (turn off for businesses that don't need it)
-  maxMessagesPerConversation Int   @default(23)         // Stop responding after this many messages (configurable per business)
+  bookingPageTitle            String? // e.g. "Schedule a Free In-Person Quote"
+  bookingPageServiceLabel     String? // e.g. "What do you need a quote for?"
+  bookingPageConfirmation     String? @db.Text // e.g. "You're all set! Someone from {businessName} will meet you at your scheduled time."
+  bookingPageHeaderTagline    String? // Override header bar text (default: bookingPageTitle or "Schedule a Free In-Person Quote")
+  bookingPageSubtitle         String? // Override subtitle under the H1 (default: "Select a date and time for your in-person quote visit")
+  bookingPageDateLabel        String? // Override label above calendar (default: "Select a date for your quote visit")
+  bookingPageNotesLabel       String? // Override notes field label (default: "Tell us about the job so we can prepare")
+  bookingPageNotesPlaceholder String? // Override notes placeholder (default: "Yard size, specific areas, access details, etc.")
+  bookingHideAddress          Boolean @default(false) // true = do not render the address field at all (bookingRequiresAddress only controls required-ness)
+  bookingConfirmationSmsText  String? @db.Text // Override website-booking confirmation SMS. Placeholders: {businessName}, {date}, {time}, {service}
+  bookingRequiresAddress      Boolean @default(true) // Require property address when booking (turn off for businesses that don't need it)
+  maxMessagesPerConversation  Int     @default(23) // Stop responding after this many messages (configurable per business)
 
   // Owner notification preferences (booking created/cancelled)
-  ownerEmail            String?                         // Business owner email for notifications
-  ownerPhone            String?                         // Owner's phone for SMS (falls back to forwardingNumber)
-  notifyBySms           Boolean   @default(true)        // Send SMS to owner on booking events
-  notifyByEmail         Boolean   @default(true)        // Send email to owner on booking events
-  massMessagingEnabled  Boolean   @default(false)       // Unlock email + SMS campaign outreach features
+  ownerEmail           String? // Business owner email for notifications
+  ownerPhone           String? // Owner's phone for SMS (falls back to forwardingNumber)
+  notifyBySms          Boolean @default(true) // Send SMS to owner on booking events
+  notifyByEmail        Boolean @default(true) // Send email to owner on booking events
+  massMessagingEnabled Boolean @default(false) // Unlock email + SMS campaign outreach features
 
   // Timestamps
-  createdAt             DateTime  @default(now())
-  updatedAt             DateTime  @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   // Relationships
-  users                 User[]
-  conversations         Conversation[]
-  appointments          Appointment[]
-  screenedCalls         ScreenedCall[]
-  blockedNumbers        BlockedNumber[]
-  contacts              Contact[]
-  contactCooldowns      ContactCooldown[]
-  cooldownSkipLogs      CooldownSkipLog[]
-  telnyxUsageRecords    TelnyxUsageRecord[]
-  tags                  Tag[]
-  jobs                  Job[]
-  emailCampaigns        EmailCampaign[]
-  activities            Activity[]
-  websiteLeads          WebsiteLead[]
-  googleAdsSnapshots    GoogleAdsSnapshot[]
+  users              User[]
+  conversations      Conversation[]
+  appointments       Appointment[]
+  screenedCalls      ScreenedCall[]
+  blockedNumbers     BlockedNumber[]
+  contacts           Contact[]
+  contactCooldowns   ContactCooldown[]
+  cooldownSkipLogs   CooldownSkipLog[]
+  telnyxUsageRecords TelnyxUsageRecord[]
+  tags               Tag[]
+  jobs               Job[]
+  emailCampaigns     EmailCampaign[]
+  activities         Activity[]
+  websiteLeads       WebsiteLead[]
+  googleAdsSnapshots GoogleAdsSnapshot[]
 
   @@index([stripeCustomerId])
   @@index([ownerGroupId])
@@ -116,18 +125,18 @@ model Business {
 // Stores actual Telnyx charges from Detail Record Search API
 // ===========================================
 model TelnyxUsageRecord {
-  id              String   @id @default(cuid())
-  businessId      String
-  business        Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  id         String   @id @default(cuid())
+  businessId String
+  business   Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
 
-  recordType      String   // "sms" | "call"
-  telnyxRecordId  String   @unique               // Telnyx MDR uuid or CDR id
-  cost            Float    @default(0)           // USD amount charged by Telnyx
+  recordType     String // "sms" | "call"
+  telnyxRecordId String @unique // Telnyx MDR uuid or CDR id
+  cost           Float  @default(0) // USD amount charged by Telnyx
 
-  occurredAt      DateTime
-  metadata        Json?    // { durationSeconds?, from?, to?, direction?, ... }
+  occurredAt DateTime
+  metadata   Json? // { durationSeconds?, from?, to?, direction?, ... }
 
-  createdAt       DateTime @default(now())
+  createdAt DateTime @default(now())
 
   @@index([businessId])
   @@index([businessId, recordType])
@@ -142,7 +151,7 @@ model Contact {
   id          String   @id @default(cuid())
   businessId  String
   business    Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  phoneNumber String   // Stored in normalized form for matching
+  phoneNumber String // Stored in normalized form for matching
   name        String?
   createdAt   DateTime @default(now())
 
@@ -152,12 +161,12 @@ model Contact {
   city            String?
   state           String?
   zip             String?
-  source          String?   // missed_call, website_form, manual, referral, google_ad
-  isClientContact Boolean   @default(false)  // True = client's own saved contact (their customer list / future voicemail list). Written & displayed only; NOT read during call routing.
-  status          String?   @default("new")  // new, contacted, quoted, booked, completed, lost
+  source          String? // missed_call, website_form, manual, referral, google_ad
+  isClientContact Boolean   @default(false) // True = client's own saved contact (their customer list / future voicemail list). Written & displayed only; NOT read during call routing.
+  status          String?   @default("new") // new, contacted, quoted, booked, completed, lost
   notes           String?   @db.Text
   lastContactedAt DateTime?
-  updatedAt       DateTime @default(now()) @updatedAt
+  updatedAt       DateTime  @default(now()) @updatedAt
   totalRevenue    Float?    @default(0)
 
   // Reverse relations for new models
@@ -189,27 +198,27 @@ model BlockedNumber {
 // USER - People who log into the dashboard
 // ===========================================
 model User {
-  id                    String    @id @default(cuid())
+  id String @id @default(cuid())
 
   // Clerk integration
-  clerkId               String    @unique               // Clerk's user ID
+  clerkId String @unique // Clerk's user ID
 
   // User info (synced from Clerk)
-  email                 String
-  firstName             String?
-  lastName              String?
-  imageUrl              String?
+  email     String
+  firstName String?
+  lastName  String?
+  imageUrl  String?
 
   // Role within the business
-  role                  String    @default("owner")     // owner, admin, staff
+  role String @default("owner") // owner, admin, staff
 
   // Which business they belong to
-  businessId            String
-  business              Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  businessId String
+  business   Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
 
   // Timestamps
-  createdAt             DateTime  @default(now())
-  updatedAt             DateTime  @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([clerkId])
   @@index([businessId])
@@ -219,56 +228,60 @@ model User {
 // CONVERSATION - Each missed call = one conversation
 // ===========================================
 model Conversation {
-  id                    String    @id @default(cuid())
+  id String @id @default(cuid())
 
   // Which business this belongs to
-  businessId            String
-  business              Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  businessId String
+  business   Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
 
   // Caller info
-  callerPhone           String                          // +1234567890
-  callerName            String?                         // Gathered during conversation
-  callSid               String?   @unique               // Call control ID (parent voice call)
-  aLegCallControlId     String?                           // A-leg call_control_id stored when forwarding
-  callConnected         Boolean   @default(false)         // True when B-leg (owner) answered — prevents missed-call SMS
+  callerPhone       String // +1234567890
+  callerName        String? // Gathered during conversation
+  callSid           String? @unique // Call control ID (parent voice call)
+  aLegCallControlId String? // A-leg call_control_id stored when forwarding
+  callConnected     Boolean @default(false) // True when B-leg (owner) answered — prevents missed-call SMS
 
   // Dial outcome (from voice-dial-status callback)
-  dialCallStatus        String?                         // completed, no-answer, busy, failed, canceled
-  answeredBy            String?                         // human, machine, fax, unknown
-  durationSeconds       Int?                            // Dial leg duration in seconds
-  callEndedAt           DateTime?                       // When the dial attempt ended
+  dialCallStatus  String? // completed, no-answer, busy, failed, canceled
+  answeredBy      String? // human, machine, fax, unknown
+  durationSeconds Int? // Dial leg duration in seconds
+  callEndedAt     DateTime? // When the dial attempt ended
 
   // Voicemail (spam-screening-only flow when missedCallAiEnabled is false)
-  recordingUrl          String?                         // URL of voicemail recording (mp3)
-  voicemailTranscription String?   @db.Text             // Transcription of voicemail (from Telnyx)
+  recordingUrl           String? // URL of voicemail recording (mp3)
+  voicemailTranscription String? @db.Text // Transcription of voicemail (from Telnyx)
 
   // Conversation state
-  status                String    @default("active")    // active, booking_in_progress, appointment_booked, closed, human_needed, completed, no_response, screening
-  manualMode            Boolean   @default(false)       // When true, inbound messages do NOT trigger AI; owner handles manually via dashboard
+  status     String  @default("active") // active, booking_in_progress, appointment_booked, closed, human_needed, completed, no_response, screening
+  manualMode Boolean @default(false) // When true, inbound messages do NOT trigger AI; owner handles manually via dashboard
 
   // AI-generated summary of the conversation
-  summary               String?   @db.Text
+  summary String? @db.Text
 
   // SMS booking flow state: { step, slotsSent?, selectedSlot?, ... }
-  bookingFlowState      Json?
+  bookingFlowState Json?
 
   // What the caller needed (extracted by AI)
-  intent                String?                         // "book_appointment", "question", "emergency", etc.
-  serviceRequested      String?                         // "teeth cleaning", "oil change", etc.
+  intent           String? // "book_appointment", "question", "emergency", etc.
+  serviceRequested String? // "teeth cleaning", "oil change", etc.
 
   // Lead capture fields (calendar-disabled flow)
-  customerEmail         String?
-  customerAddress       String?   @db.Text
-  customerTimeframe     String?                         // "this week", "next week", "no rush", etc.
+  customerEmail     String?
+  customerAddress   String? @db.Text
+  customerTimeframe String? // "this week", "next week", "no rush", etc.
+
+  // No-reply owner alert (cron): set once when the owner has been alerted that the
+  // customer never replied to the missed-call text-back. Null = not alerted.
+  noReplyAlertSentAt DateTime?
 
   // Timestamps
-  createdAt             DateTime  @default(now())
-  updatedAt             DateTime  @updatedAt
-  lastMessageAt         DateTime  @default(now())
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  lastMessageAt DateTime @default(now())
 
   // Relationships
-  messages              Message[]
-  appointment           Appointment?
+  messages    Message[]
+  appointment Appointment?
 
   @@index([businessId])
   @@index([callerPhone])
@@ -280,23 +293,23 @@ model Conversation {
 // MESSAGE - Individual texts in a conversation
 // ===========================================
 model Message {
-  id                    String    @id @default(cuid())
+  id String @id @default(cuid())
 
   // Which conversation this belongs to
-  conversationId        String
-  conversation          Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
 
   // Message details
-  direction             String                          // "inbound" (from caller) or "outbound" (from AI)
-  content               String    @db.Text              // The actual message text
+  direction String // "inbound" (from caller) or "outbound" (from AI)
+  content   String @db.Text // The actual message text
 
   // Telnyx tracking
-  telnyxSid             String?                         // Telnyx message ID for tracking
-  telnyxStatus          String?                         // sent, delivered, failed, etc.
-  cost                  Float?                          // Actual cost from Telnyx MDR (USD)
+  telnyxSid    String? // Telnyx message ID for tracking
+  telnyxStatus String? // sent, delivered, failed, etc.
+  cost         Float? // Actual cost from Telnyx MDR (USD)
 
   // Timestamps
-  createdAt             DateTime  @default(now())
+  createdAt DateTime @default(now())
 
   @@index([conversationId])
   @@index([createdAt])
@@ -306,43 +319,43 @@ model Message {
 // APPOINTMENT - When AI successfully books
 // ===========================================
 model Appointment {
-  id                    String    @id @default(cuid())
+  id String @id @default(cuid())
 
   // Relationships
-  businessId            String
-  business              Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  businessId String
+  business   Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
 
-  conversationId        String?   @unique               // Null for web bookings
-  conversation          Conversation? @relation(fields: [conversationId], references: [id], onDelete: SetNull)
+  conversationId String?       @unique // Null for web bookings
+  conversation   Conversation? @relation(fields: [conversationId], references: [id], onDelete: SetNull)
 
   // Customer info
-  customerName          String
-  customerPhone         String
-  customerEmail         String?
+  customerName  String
+  customerPhone String
+  customerEmail String?
 
   // Appointment details
-  serviceType           String                          // "teeth cleaning", "haircut", etc.
-  scheduledAt           DateTime                        // When the appointment is
-  duration              Int       @default(60)          // Duration in minutes
-  notes                 String?   @db.Text              // Any special notes/requests
-  customerAddress       String?   @db.Text              // Address for the quote visit
+  serviceType     String // "teeth cleaning", "haircut", etc.
+  scheduledAt     DateTime // When the appointment is
+  duration        Int      @default(60) // Duration in minutes
+  notes           String?  @db.Text // Any special notes/requests
+  customerAddress String?  @db.Text // Address for the quote visit
 
   // Source tracking (website vs sms)
-  source                String    @default("website")  // "website" | "sms"
+  source String @default("website") // "website" | "sms"
 
   // Calendar integration
   googleCalendarEventId String?
-  calendarSyncFailed    Boolean   @default(false)   // True when we saved to DB but calendar sync failed
+  calendarSyncFailed    Boolean @default(false) // True when we saved to DB but calendar sync failed
 
   // Status tracking
-  status                String    @default("confirmed") // confirmed, cancelled, completed, no_show
+  status String @default("confirmed") // confirmed, cancelled, completed, no_show
 
   // Reminders
-  reminderSentAt        DateTime?
+  reminderSentAt DateTime?
 
   // Timestamps
-  createdAt             DateTime  @default(now())
-  updatedAt             DateTime  @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([businessId])
   @@index([scheduledAt])
@@ -353,20 +366,20 @@ model Appointment {
 // PHONE NUMBER POOL - Available Telnyx numbers
 // ===========================================
 model PhoneNumber {
-  id                    String    @id @default(cuid())
+  id String @id @default(cuid())
 
-  phoneNumber           String    @unique               // +1234567890
-  telnyxSid             String    @unique               // Telnyx phone number SID
+  phoneNumber String @unique // +1234567890
+  telnyxSid   String @unique // Telnyx phone number SID
 
   // Assignment
-  assignedToBusinessId  String?                         // Which business is using this (null = available)
+  assignedToBusinessId String? // Which business is using this (null = available)
 
   // Status
-  status                String    @default("available") // available, assigned, released
+  status String @default("available") // available, assigned, released
 
   // Timestamps
-  createdAt             DateTime  @default(now())
-  updatedAt             DateTime  @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([status])
 }
@@ -401,7 +414,7 @@ model CooldownSkipLog {
   reason          String   @default("cooldown")
   attemptedAt     DateTime @default(now())
   lastMessageSent DateTime
-  messageType     String?                          // "missed_call", "ai_followup", etc.
+  messageType     String? // "missed_call", "ai_followup", etc.
 
   @@index([businessId])
   @@index([attemptedAt])
@@ -411,13 +424,13 @@ model CooldownSkipLog {
 // SCREENED CALL - Call screening / spam filter
 // ===========================================
 model ScreenedCall {
-  id            String    @id @default(cuid())
-  businessId    String
-  business      Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  callerPhone   String
-  callSid       String?
-  result        String    @default("blocked")
-  createdAt     DateTime  @default(now())
+  id          String   @id @default(cuid())
+  businessId  String
+  business    Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  callerPhone String
+  callSid     String?
+  result      String   @default("blocked")
+  createdAt   DateTime @default(now())
 
   @@index([businessId])
   @@index([businessId, result])
@@ -428,11 +441,11 @@ model ScreenedCall {
 // TAG - Labels for contacts (many-to-many via ContactTag)
 // ===========================================
 model Tag {
-  id         String   @id @default(cuid())
+  id         String       @id @default(cuid())
   businessId String
   name       String
-  color      String?  @default("#6B7280")
-  business   Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  color      String?      @default("#6B7280")
+  business   Business     @relation(fields: [businessId], references: [id], onDelete: Cascade)
   contacts   ContactTag[]
 
   @@unique([businessId, name])
@@ -457,20 +470,20 @@ model ContactTag {
 // JOB - Services performed / to be performed for a contact
 // ===========================================
 model Job {
-  id             String    @id @default(cuid())
-  businessId     String
-  contactId      String
-  serviceName    String
-  description    String?   @db.Text
-  scheduledDate  DateTime?
-  completedDate  DateTime?
-  amount         Float?
-  status         String    @default("scheduled")  // scheduled, in_progress, completed, cancelled, invoiced
-  notes          String?   @db.Text
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
-  business       Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  contact        Contact   @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  id            String    @id @default(cuid())
+  businessId    String
+  contactId     String
+  serviceName   String
+  description   String?   @db.Text
+  scheduledDate DateTime?
+  completedDate DateTime?
+  amount        Float?
+  status        String    @default("scheduled") // scheduled, in_progress, completed, cancelled, invoiced
+  notes         String?   @db.Text
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  business      Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  contact       Contact   @relation(fields: [contactId], references: [id], onDelete: Cascade)
 
   @@index([businessId])
   @@index([contactId])
@@ -481,18 +494,18 @@ model Job {
 // EMAIL CAMPAIGN - Bulk email sends to contacts
 // ===========================================
 model EmailCampaign {
-  id              String    @id @default(cuid())
-  businessId      String
-  senderName      String    @default("Align and Acquire")
-  subject         String
-  body            String    @db.Text
-  images          Json?     // [{ url: "https://...", filename: "logo.png", order: 0 }]
-  status          String    @default("draft")  // draft, sending, sent, failed
-  recipientCount  Int       @default(0)
-  sentAt          DateTime?
-  createdAt       DateTime  @default(now())
-  business        Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  recipients      EmailRecipient[]
+  id             String           @id @default(cuid())
+  businessId     String
+  senderName     String           @default("Align and Acquire")
+  subject        String
+  body           String           @db.Text
+  images         Json? // [{ url: "https://...", filename: "logo.png", order: 0 }]
+  status         String           @default("draft") // draft, sending, sent, failed
+  recipientCount Int              @default(0)
+  sentAt         DateTime?
+  createdAt      DateTime         @default(now())
+  business       Business         @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  recipients     EmailRecipient[]
 
   @@index([businessId])
   @@index([status])
@@ -502,11 +515,11 @@ model EmailCampaign {
 // EMAIL RECIPIENT - Per-contact delivery status for a campaign
 // ===========================================
 model EmailRecipient {
-  id         String    @id @default(cuid())
+  id         String        @id @default(cuid())
   campaignId String
   contactId  String
   email      String
-  status     String    @default("pending")  // pending, sent, delivered, bounced, failed
+  status     String        @default("pending") // pending, sent, delivered, bounced, failed
   sentAt     DateTime?
   campaign   EmailCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
   contact    Contact       @relation(fields: [contactId], references: [id], onDelete: Cascade)
@@ -522,7 +535,7 @@ model Activity {
   id          String   @id @default(cuid())
   businessId  String
   contactId   String
-  type        String   // missed_call, sms_conversation, voicemail, website_form, email_sent, job_created, job_completed, note_added, status_changed
+  type        String // missed_call, sms_conversation, voicemail, website_form, email_sent, job_created, job_completed, note_added, status_changed
   description String
   metadata    Json?
   createdAt   DateTime @default(now())
@@ -538,19 +551,19 @@ model Activity {
 // WEBSITE LEAD - Contact form submissions from business websites
 // ===========================================
 model WebsiteLead {
-  id          String   @id @default(cuid())
-  businessId  String
-  business    Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  id         String   @id @default(cuid())
+  businessId String
+  business   Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
 
-  name        String
-  phone       String?
-  email       String?
-  message     String?  @db.Text
+  name    String
+  phone   String?
+  email   String?
+  message String? @db.Text
 
-  status      String   @default("new")  // new, contacted, converted, closed
+  status String @default("new") // new, contacted, converted, closed
 
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([businessId])
   @@index([status])
@@ -561,21 +574,21 @@ model WebsiteLead {
 // GOOGLE ADS SNAPSHOT - Daily campaign metrics from Google Ads
 // ===========================================
 model GoogleAdsSnapshot {
-  id                String   @id @default(cuid())
-  businessId        String
-  business          Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  id         String   @id @default(cuid())
+  businessId String
+  business   Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
 
-  date              DateTime                // The reporting date (start of day)
-  campaignId        String                  // Google Ads campaign ID
-  campaignName      String                  // Campaign name at time of sync
+  date              DateTime // The reporting date (start of day)
+  campaignId        String // Google Ads campaign ID
+  campaignName      String // Campaign name at time of sync
   impressions       Int      @default(0)
   clicks            Int      @default(0)
-  cost              Float    @default(0)    // USD (converted from cost_micros / 1_000_000)
+  cost              Float    @default(0) // USD (converted from cost_micros / 1_000_000)
   conversions       Float    @default(0)
-  ctr               Float    @default(0)    // Click-through rate (0.0–1.0)
-  costPerConversion Float?                  // cost / conversions (null if 0 conversions)
+  ctr               Float    @default(0) // Click-through rate (0.0–1.0)
+  costPerConversion Float? // cost / conversions (null if 0 conversions)
 
-  createdAt         DateTime @default(now())
+  createdAt DateTime @default(now())
 
   @@unique([businessId, campaignId, date])
   @@index([businessId, date])
