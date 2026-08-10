@@ -5,6 +5,7 @@ import { useState } from 'react'
 import { ArrowRight, Quote, Wind, Leaf, Car, Droplets, Wrench, ImageOff } from 'lucide-react'
 import ScrollReveal from '@/app/components/ScrollReveal'
 import BrandFooter from '@/app/components/BrandFooter'
+import GoogleReviews from '@/app/components/GoogleReviews'
 
 // ─────────────────────────────────────────────────────────
 // Testimonial photo — client shaking hands with Jacob in
@@ -211,6 +212,13 @@ export default function AboutPage() {
                 </div>
               </div>
 
+            </div>
+          </ScrollReveal>
+
+          {/* Google reviews */}
+          <ScrollReveal>
+            <div className="mt-8">
+              <GoogleReviews />
             </div>
           </ScrollReveal>
 
