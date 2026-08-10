@@ -10,6 +10,7 @@ const NAV_LINKS = [
   { label: 'MissedCall AI', href: '/missedcall-ai' },
   { label: 'Services',      href: '/services' },
   { label: 'Pricing',       href: '/pricing' },
+  { label: 'Reviews',       href: '/reviews' },
   { label: 'About',         href: '/about' },
   { label: 'Book a call',   href: '/book' },
 ]
@@ -107,7 +108,7 @@ export function NavMenu() {
       <button
         type="button"
         onClick={() => setOpen(o => !o)}
-        className="grid h-10 w-10 place-items-center md:hidden"
+        className="grid h-10 w-10 place-items-center lg:hidden"
         style={{ color: '#6E7681' }}
         aria-label={open ? 'Close menu' : 'Open menu'}
         aria-expanded={open}

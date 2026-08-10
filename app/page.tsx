@@ -260,8 +260,8 @@ export default function HomePage() {
                 <Link href="/about" className="aa-btn inline-flex items-center gap-2 px-5 py-3.5 text-[14px] font-bold uppercase tracking-wide" style={{ background: '#16181C', color: '#F2F0EB' }}>
                   About us <ArrowRight size={15} strokeWidth={2.5} />
                 </Link>
-                <Link href="/about#testimonials" className="aa-btn-ghost inline-flex items-center gap-2 border-2 px-5 py-3.5 text-[14px] font-bold uppercase tracking-wide" style={{ borderColor: '#16181C', color: '#16181C' }}>
-                  See testimonials <ArrowRight size={15} strokeWidth={2.5} />
+                <Link href="/reviews" className="aa-btn-ghost inline-flex items-center gap-2 border-2 px-5 py-3.5 text-[14px] font-bold uppercase tracking-wide" style={{ borderColor: '#16181C', color: '#16181C' }}>
+                  See reviews <ArrowRight size={15} strokeWidth={2.5} />
                 </Link>
               </div>
             </div>

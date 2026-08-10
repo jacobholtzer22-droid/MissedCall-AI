@@ -27,7 +27,7 @@ export function NavBar() {
           </Link>
 
           {/* ── Center: 3 primary nav items (desktop only) ── */}
-          <nav className="hidden md:flex items-center gap-7 absolute left-1/2 -translate-x-1/2">
+          <nav className="hidden lg:flex items-center gap-7 absolute left-1/2 -translate-x-1/2">
             <Link href="/missedcall-ai" className="aa-nav-link text-[13px] font-semibold" style={{ color: '#F2F0EB' }}>
               MissedCall AI
             </Link>
@@ -36,6 +36,9 @@ export function NavBar() {
             </Link>
             <Link href="/pricing" className="aa-nav-link text-[13px] font-semibold" style={{ color: '#F2F0EB' }}>
               Pricing
+            </Link>
+            <Link href="/reviews" className="aa-nav-link text-[13px] font-semibold" style={{ color: '#F2F0EB' }}>
+              Reviews
             </Link>
             <Link href="/about" className="aa-nav-link text-[13px] font-semibold" style={{ color: '#F2F0EB' }}>
               About
@@ -46,7 +49,7 @@ export function NavBar() {
           <div className="flex items-center gap-3 shrink-0">
             <Link
               href="/sign-in"
-              className="hidden md:block text-[13px] font-semibold transition-colors"
+              className="hidden lg:block text-[13px] font-semibold transition-colors"
               style={{ color: '#6E7681' }}
             >
               Client Portal

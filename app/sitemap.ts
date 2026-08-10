@@ -13,6 +13,7 @@ const PUBLIC_ROUTES = [
   '/websites',
   '/ads-management',
   '/campaigns',
+  '/reviews',
   '/about',
   '/book',
   '/privacy',
