@@ -6,6 +6,7 @@ import ScrollReveal from './components/ScrollReveal'
 import BrandFooter from './components/BrandFooter'
 import SmsThread from './components/SmsThread'
 import ROICalculator from './components/roi-calculator'
+import GoogleReviews from './components/GoogleReviews'
 
 export const metadata: Metadata = {
   // Brand first on purpose: the homepage owns the branded SERP; /missedcall-ai is keyword-first.
@@ -161,6 +162,39 @@ export default function HomePage() {
       </section>
 
       {/* ════════════════
+          Testimonials strip
+          ════════════════ */}
+      <section style={{ background: '#F2F0EB', color: '#16181C' }}>
+        <div className="mx-auto max-w-7xl px-5 py-16 sm:px-8 lg:py-20">
+          <ScrollReveal>
+            <div className="mb-8 flex flex-wrap items-end justify-between gap-4">
+              <div>
+                <div className="inline-flex items-center gap-2 font-mono text-[11px] font-semibold uppercase tracking-[0.28em] mb-4">
+                  <span className="inline-block h-2.5 w-2.5" style={{ background: '#EE6B1A' }} />
+                  <span style={{ color: '#EE6B1A' }}>Testimonials</span>
+                </div>
+                <h2 className="text-[clamp(1.75rem,4.5vw,2.75rem)] font-black uppercase leading-[0.95] tracking-tight">
+                  Rated 5.0 by the<br />
+                  <span style={{ color: '#1A4A70' }}>businesses we work with.</span>
+                </h2>
+              </div>
+              <Link
+                href="/reviews"
+                className="aa-btn-ghost inline-flex items-center gap-2 border-2 px-5 py-3.5 text-[14px] font-bold uppercase tracking-wide"
+                style={{ borderColor: '#16181C', color: '#16181C' }}
+              >
+                All testimonials <ArrowRight size={15} strokeWidth={2.5} />
+              </Link>
+            </div>
+          </ScrollReveal>
+
+          <ScrollReveal>
+            <GoogleReviews />
+          </ScrollReveal>
+        </div>
+      </section>
+
+      {/* ════════════════
           Services grid
           ════════════════ */}
       <section style={{ background: '#F2F0EB', color: '#16181C' }}>
@@ -261,7 +295,7 @@ export default function HomePage() {
                   About us <ArrowRight size={15} strokeWidth={2.5} />
                 </Link>
                 <Link href="/reviews" className="aa-btn-ghost inline-flex items-center gap-2 border-2 px-5 py-3.5 text-[14px] font-bold uppercase tracking-wide" style={{ borderColor: '#16181C', color: '#16181C' }}>
-                  See reviews <ArrowRight size={15} strokeWidth={2.5} />
+                  See testimonials <ArrowRight size={15} strokeWidth={2.5} />
                 </Link>
               </div>
             </div>

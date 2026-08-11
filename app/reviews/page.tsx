@@ -10,7 +10,7 @@ const DESCRIPTION =
   'Real reviews from the trade businesses we work with — lawn care, landscaping, detailing and more. Rated 5.0 on Google across every review left to date.'
 
 export const metadata: Metadata = {
-  title: 'Client Reviews & Testimonials',
+  title: 'Client Testimonials & Reviews',
   description: DESCRIPTION,
   alternates: { canonical: './' },
 }
@@ -36,7 +36,7 @@ export default function ReviewsPage() {
       <section style={{ background: '#16181C' }}>
         <div className="mx-auto max-w-7xl px-5 pt-28 pb-16 sm:px-8 sm:pt-32 lg:pt-36 lg:pb-20">
           <ScrollReveal>
-            <Eyebrow label="Reviews" />
+            <Eyebrow label="Testimonials" />
             <h1 className="text-[clamp(2.25rem,6vw,4rem)] font-black uppercase leading-[0.95] tracking-tight">
               Results speak<br />
               <span style={{ color: '#EE6B1A' }}>louder than claims.</span>
@@ -104,7 +104,7 @@ export default function ReviewsPage() {
         <div className="mx-auto max-w-7xl px-5 pb-16 sm:px-8 lg:pb-24">
           <ScrollReveal>
             <div className="mb-10">
-              <Eyebrow label="From Google" />
+              <Eyebrow label="Google reviews" />
               <h2 className="text-[clamp(1.75rem,4.5vw,2.75rem)] font-black uppercase leading-[0.95] tracking-tight">
                 What clients<br />
                 <span style={{ color: '#1A4A70' }}>left on Google.</span>

@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
-import { Star, Quote, ChevronLeft, ChevronRight } from 'lucide-react'
+import { Star, Quote, ChevronLeft, ChevronRight, ExternalLink } from 'lucide-react'
 
 // ─────────────────────────────────────────────────────────
 // Google reviews — Align and Acquire (Google Business Profile).
@@ -65,6 +65,34 @@ const REVIEWS: Review[] = [
 
 const ROTATE_MS = 7000
 
+// Stable public link to the Google Business Profile listing (cid form —
+// survives name/address edits, unlike the long /maps/place URLs).
+const GOOGLE_LISTING_URL = 'https://maps.google.com/?cid=11437658075713946562'
+
+// Reviewer initials avatar. Deliberately NOT the Google-hosted profile
+// photos: those URLs (lh3.googleusercontent.com/...) rotate and would
+// become broken images, and hotlinking them means a runtime call to
+// Google on every page view. Initials render instantly and never break.
+function Avatar({ name }: { name: string }) {
+  const initials = name
+    .split(' ')
+    .filter(Boolean)
+    .slice(0, 2)
+    .map(w => w[0])
+    .join('')
+    .toUpperCase()
+
+  return (
+    <span
+      aria-hidden="true"
+      className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[13px] font-bold"
+      style={{ background: '#16181C', color: '#F2F0EB' }}
+    >
+      {initials}
+    </span>
+  )
+}
+
 function Stars({ rating }: { rating: number }) {
   return (
     <div className="flex items-center gap-0.5" aria-label={`${rating} out of 5 stars`}>
@@ -81,9 +109,63 @@ function Stars({ rating }: { rating: number }) {
   )
 }
 
+function ReviewCard({
+  review,
+  slot,
+  className = '',
+}: {
+  review: Review
+  slot: number
+  className?: string
+}) {
+  return (
+    <div
+      // Remounting on slot change keeps each card's content in sync with its
+      // position rather than reusing the previous review's DOM.
+      key={slot}
+      className={`flex flex-col px-6 py-10 sm:px-8 sm:py-12 ${className}`}
+      style={{ borderColor: '#16181C' }}
+    >
+      <Quote size={32} strokeWidth={1.25} className="mb-6" style={{ color: '#EE6B1A' }} />
+
+      <p className="text-[17px] leading-relaxed sm:text-[18px]" style={{ color: '#16181C' }}>
+        {review.text}
+      </p>
+
+      <div className="mt-auto flex items-center gap-3 pt-6">
+        <Avatar name={review.name} />
+        <div className="min-w-0">
+          <div className="text-[15px] font-bold" style={{ color: '#16181C' }}>
+            {review.name}
+          </div>
+          <div className="mt-1 flex flex-wrap items-center gap-x-2.5 gap-y-1">
+            <Stars rating={review.rating} />
+            <span className="font-mono text-[10px] uppercase tracking-[0.2em]" style={{ color: '#6E7681' }}>
+              via Google
+            </span>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export default function GoogleReviews() {
   const [index, setIndex] = useState(0)
   const [paused, setPaused] = useState(false)
+
+  // Layout is CSS-driven (the second card is simply hidden below md), so
+  // there is no hydration mismatch. perView only drives how far a step
+  // advances and which dots read as active.
+  const [perView, setPerView] = useState(1)
+
+  useEffect(() => {
+    const mq = window.matchMedia('(min-width: 768px)')
+    const sync = () => setPerView(mq.matches ? 2 : 1)
+    sync()
+    mq.addEventListener('change', sync)
+    return () => mq.removeEventListener('change', sync)
+  }, [])
 
   const go = useCallback((next: number) => {
     setIndex(((next % REVIEWS.length) + REVIEWS.length) % REVIEWS.length)
@@ -91,16 +173,21 @@ export default function GoogleReviews() {
 
   useEffect(() => {
     if (paused) return
-    if (typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
 
     const timer = window.setInterval(() => {
-      setIndex(i => (i + 1) % REVIEWS.length)
+      setIndex(i => (i + perView) % REVIEWS.length)
     }, ROTATE_MS)
 
     return () => window.clearInterval(timer)
-  }, [paused])
+  }, [paused, perView])
 
-  const review = REVIEWS[index]
+  const first = REVIEWS[index]
+  const second = REVIEWS[(index + 1) % REVIEWS.length]
+
+  // A dot is active if its review is one of the currently visible ones.
+  const isActive = (i: number) =>
+    Array.from({ length: perView }, (_, k) => (index + k) % REVIEWS.length).includes(i)
 
   return (
     <div
@@ -122,34 +209,28 @@ export default function GoogleReviews() {
             5.0 · {REVIEWS.length} reviews
           </span>
         </div>
-        <span className="font-mono text-[10px] uppercase tracking-[0.2em]" style={{ color: '#6E7681' }}>
-          via Google
-        </span>
+        <a
+          href={GOOGLE_LISTING_URL}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center gap-1.5 font-mono text-[10px] font-bold uppercase tracking-[0.2em] underline underline-offset-4"
+          style={{ color: '#16181C' }}
+        >
+          Read them on Google <ExternalLink size={12} strokeWidth={2.5} />
+        </a>
       </div>
 
-      {/* Rotating review */}
-      <div className="px-6 py-10 sm:px-8 sm:py-12">
-        <Quote size={32} strokeWidth={1.25} className="mb-6" style={{ color: '#EE6B1A' }} />
-
-        <div className="min-h-[168px] sm:min-h-[140px]" aria-live="polite">
-          <p
-            key={index}
-            className="text-[17px] leading-relaxed sm:text-[19px]"
-            style={{ color: '#16181C' }}
-          >
-            {review.text}
-          </p>
-
-          <div className="mt-6 flex flex-wrap items-center gap-x-3 gap-y-2">
-            <span className="text-[15px] font-bold" style={{ color: '#16181C' }}>
-              {review.name}
-            </span>
-            <Stars rating={review.rating} />
-            <span className="font-mono text-[10px] uppercase tracking-[0.2em]" style={{ color: '#6E7681' }}>
-              via Google
-            </span>
-          </div>
-        </div>
+      {/* Rotating reviews — one card on mobile, two side by side on desktop */}
+      <div
+        className="grid min-h-[300px] md:min-h-[260px] md:grid-cols-2"
+        aria-live="polite"
+      >
+        <ReviewCard review={first} slot={index} />
+        <ReviewCard
+          review={second}
+          slot={index + 1}
+          className="hidden md:flex md:border-l-2"
+        />
       </div>
 
       {/* Controls */}
@@ -159,7 +240,7 @@ export default function GoogleReviews() {
       >
         <button
           type="button"
-          onClick={() => go(index - 1)}
+          onClick={() => go(index - perView)}
           aria-label="Previous review"
           className="inline-flex h-11 w-11 items-center justify-center border-2 transition-colors"
           style={{ borderColor: '#16181C', color: '#16181C' }}
@@ -174,10 +255,10 @@ export default function GoogleReviews() {
               type="button"
               onClick={() => go(i)}
               aria-label={`Show review from ${r.name}`}
-              aria-current={i === index}
+              aria-current={isActive(i)}
               className="h-2.5 w-2.5 transition-opacity"
               style={{
-                background: i === index ? '#EE6B1A' : 'rgba(110,118,129,0.35)',
+                background: isActive(i) ? '#EE6B1A' : 'rgba(110,118,129,0.35)',
               }}
             />
           ))}
@@ -185,7 +266,7 @@ export default function GoogleReviews() {
 
         <button
           type="button"
-          onClick={() => go(index + 1)}
+          onClick={() => go(index + perView)}
           aria-label="Next review"
           className="inline-flex h-11 w-11 items-center justify-center border-2 transition-colors"
           style={{ borderColor: '#16181C', color: '#16181C' }}

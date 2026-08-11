@@ -38,7 +38,7 @@ export function NavBar() {
               Pricing
             </Link>
             <Link href="/reviews" className="aa-nav-link text-[13px] font-semibold" style={{ color: '#F2F0EB' }}>
-              Reviews
+              Testimonials
             </Link>
             <Link href="/about" className="aa-nav-link text-[13px] font-semibold" style={{ color: '#F2F0EB' }}>
               About

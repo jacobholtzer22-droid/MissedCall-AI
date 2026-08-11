@@ -158,7 +158,7 @@ export default function AboutPage() {
                 className="aa-btn-ghost mt-8 inline-flex items-center gap-2 border-2 px-5 py-3.5 text-[14px] font-bold uppercase tracking-wide"
                 style={{ borderColor: '#16181C', color: '#16181C' }}
               >
-                Read the reviews <ArrowRight size={15} strokeWidth={2.5} />
+                Read the testimonials <ArrowRight size={15} strokeWidth={2.5} />
               </Link>
             </div>
           </ScrollReveal>
