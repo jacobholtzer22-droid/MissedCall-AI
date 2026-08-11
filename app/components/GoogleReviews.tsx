@@ -10,7 +10,7 @@ import { Star, Quote, ChevronLeft, ChevronRight } from 'lucide-react'
 // or "improve" any review text. Static content — no runtime call
 // to Google.
 //
-// Listing at time of capture (Aug 2026): 5.0 average, 7 reviews,
+// Listing at time of capture (Aug 2026): 5.0 average, 8 reviews,
 // all 5-star.
 // ─────────────────────────────────────────────────────────
 interface Review {
@@ -40,6 +40,11 @@ const REVIEWS: Review[] = [
     name: 'Ryan',
     rating: 5,
     text: 'Helped me stay focused on the job and not lose any leads. Works even better than expected. 100% recommend',
+  },
+  {
+    name: 'Klederson Rodas',
+    rating: 5,
+    text: 'Great communication, affordable pricing, and quality work. I’ve definitely seen results from the work he does. Highly recommend!',
   },
   {
     name: 'Will Schnelk',
