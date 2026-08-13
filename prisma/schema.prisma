@@ -27,8 +27,9 @@ model Business {
   ownerGroupId String? // Businesses sharing a non-null value form an owner group (aggregated Website Leads + Google Ads). null = no group, behavior unchanged
 
   // Telnyx phone number provisioned for this business
-  telnyxPhoneNumber String? @unique
-  forwardingNumber  String? // Owner's real phone number to ring first
+  telnyxPhoneNumber        String? @unique
+  forwardingNumber         String? // Owner's real phone number to ring first
+  notificationSenderNumber String? // Shared fallback FROM for owner notification SMS. No @unique on purpose: many businesses may share one number.
 
   // Business details
   timezone        String @default("America/New_York")

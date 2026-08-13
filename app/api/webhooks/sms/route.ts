@@ -17,6 +17,7 @@ import { createBooking, cleanServiceForOwner } from '@/lib/create-booking'
 import { notifyOwnerOnHumanNeeded, notifyOwnerOnLeadCaptured, notifyOwnerOnAIFailed } from '@/lib/notify-owner'
 import { recordMessageSent } from '@/lib/sms-cooldown'
 import { formatPhoneNumber } from '@/lib/utils'
+import { phonesMatch } from '@/lib/phone-utils'
 import { findOrCreateContact } from '@/lib/crm-utils'
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY ?? '' })
@@ -204,14 +205,87 @@ export async function POST(request: NextRequest) {
 
       console.log('💬 Incoming SMS:', { messageSid, from, to, text })
 
+      // Declared here rather than at each use below so the shared-sender branch and the
+      // tenant branch below match on exactly the same keyword lists. Values unchanged.
+      const startWords = ['start', 'unstop']
+      const stopWords = ['stop', 'unsubscribe', 'cancel', 'quit']
+
       const business = await db.business.findFirst({ where: { telnyxPhoneNumber: to } })
       if (!business) {
-        console.log('⚠️ No business found for phone number:', to)
+        // No tenant owns this number. It may still be the shared owner-notification
+        // sender, which owners reply STOP/START to. Tenant routing above always wins:
+        // this branch is only reachable once the lookup has already failed.
+        const envSender = process.env.NOTIFICATIONS_TELNYX_NUMBER
+        const isSharedSender =
+          // env var is typed by a human, so formatting can drift → last-10 compare
+          (Boolean(envSender) && phonesMatch(to, envSender!)) ||
+          // DB column is E.164 at write and the payload is E.164 → exact match
+          Boolean(await db.business.findFirst({ where: { notificationSenderNumber: to } }))
+
+        if (!isSharedSender) {
+          console.log('⚠️ No business found for phone number:', to)
+          return new NextResponse('OK', { status: 200 })
+        }
+
+        const keyword = text?.toLowerCase().trim()
+        const isStop = stopWords.includes(keyword)
+        const isStart = startWords.includes(keyword)
+
+        // No auto-responder on the shared number: anything that isn't STOP/START is
+        // logged and dropped.
+        if (!isStop && !isStart) {
+          console.log('[SHARED-NUMBER] Ignored non-STOP/START text', { from, to, snippet: text?.slice(0, 60) })
+          return new NextResponse('OK', { status: 200 })
+        }
+
+        // ownerPhone / forwardingNumber are not normalized at write time, so match on
+        // last-10 digits rather than querying for an exact string.
+        const candidates = await db.business.findMany({
+          where: { OR: [{ ownerPhone: { not: null } }, { forwardingNumber: { not: null } }] },
+          select: { id: true, ownerPhone: true, forwardingNumber: true },
+        })
+        const matches = candidates.filter(
+          b =>
+            (b.ownerPhone && phonesMatch(from, b.ownerPhone)) ||
+            (b.forwardingNumber && phonesMatch(from, b.forwardingNumber))
+        )
+
+        if (matches.length === 0) {
+          console.log('[SHARED-NUMBER] no-match: sender is not an owner on any business', {
+            from,
+            to,
+            keyword: isStop ? 'STOP' : 'START',
+          })
+          return new NextResponse('OK', { status: 200 })
+        }
+
+        await db.business.updateMany({
+          where: { id: { in: matches.map(b => b.id) } },
+          data: { notifyBySms: !isStop },
+        })
+        console.log(`[SHARED-NUMBER] ${isStop ? 'STOP' : 'START'} applied — notifyBySms=${!isStop}`, {
+          from,
+          to,
+          businessIds: matches.map(b => b.id),
+        })
+
+        // Ack sends FROM the shared number the owner actually texted, not from any
+        // business's own Telnyx number. Deliberately a local send: sendSMS() is scoped
+        // to tenant conversations and must stay untouched.
+        const ackText = isStop
+          ? "You've been opted out of Align & Acquire lead alerts by text. Reply START to turn them back on."
+          : 'Lead alerts by text are back on.'
+        try {
+          const telnyxClient = new Telnyx({ apiKey: process.env.TELNYX_API_KEY! })
+          await telnyxClient.messages.send({ from: to, to: from, text: ackText })
+        } catch (err) {
+          console.error('[SHARED-NUMBER] Ack send FAILED:', err instanceof Error ? err.message : String(err))
+        }
+
         return new NextResponse('OK', { status: 200 })
       }
 
       // START / resubscribe — undo a prior STOP opt-out
-      const startWords = ['start', 'unstop']
       if (startWords.includes(text?.toLowerCase().trim())) {
         console.log('🔄 User requested START (resubscribe)')
         const deleted = await db.blockedNumber.deleteMany({
@@ -225,7 +299,6 @@ export async function POST(request: NextRequest) {
       }
 
       // STOP / unsubscribe — legally required immediate stop
-      const stopWords = ['stop', 'unsubscribe', 'cancel', 'quit']
       if (stopWords.includes(text?.toLowerCase().trim())) {
         console.log('🛑 User requested STOP')
         // Persist the STOP message into the existing conversation (if any) so the

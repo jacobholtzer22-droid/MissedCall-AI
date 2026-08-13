@@ -78,9 +78,11 @@ export async function POST(request: NextRequest) {
     const body = await request.json()
     const { name, phone, message, smsConsent, businessId, businessSlug, email, turnstileToken } = body
 
-    if (!name || !smsConsent) {
+    // smsConsent is recorded, not required. Gating on it silently discarded real
+    // leads from external client sites that don't send the field.
+    if (!name) {
       return NextResponse.json(
-        { error: 'Name and consent are required' },
+        { error: 'Name is required' },
         { status: 400, headers: CORS_HEADERS }
       )
     }
@@ -213,6 +215,7 @@ export async function POST(request: NextRequest) {
         phone: typeof phone === 'string' ? phone.trim() || null : null,
         email: typeof email === 'string' ? email.trim() || null : null,
         message: typeof message === 'string' ? message.trim() || null : null,
+        smsConsent: Boolean(smsConsent),
       })
       console.log('Website lead owner notification result:', {
         businessId: business.id,

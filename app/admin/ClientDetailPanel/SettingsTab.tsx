@@ -37,6 +37,7 @@ function initForm(b: AdminBusiness) {
   return {
     name: b.name,
     telnyxPhoneNumber: b.telnyxPhoneNumber ?? '',
+    notificationSenderNumber: b.notificationSenderNumber ?? '',
     forwardingNumber: b.forwardingNumber ?? '',
     timezone: b.timezone,
     businessType: b.businessType ?? '',
@@ -124,6 +125,7 @@ export function SettingsTab({ business, onUpdateBusiness, onToast }: Props) {
         body: JSON.stringify({
           name: form.name,
           telnyxPhoneNumber: form.telnyxPhoneNumber || null,
+          notificationSenderNumber: form.notificationSenderNumber || null,
           forwardingNumber: form.forwardingNumber || null,
           timezone: form.timezone,
           businessType: form.businessType || null,
@@ -196,6 +198,9 @@ export function SettingsTab({ business, onUpdateBusiness, onToast }: Props) {
           </Field>
           <Field label="Telnyx Phone" hint="Format: +1XXXXXXXXXX">
             <input className={INPUT} value={form.telnyxPhoneNumber} onChange={e => set('telnyxPhoneNumber', e.target.value)} placeholder="+18335551234" />
+          </Field>
+          <Field label="Notification Sender (fallback)" hint="FROM number for owner alerts when no Telnyx number is set. Sharing one number across clients is fine.">
+            <input className={INPUT} value={form.notificationSenderNumber} onChange={e => set('notificationSenderNumber', e.target.value)} placeholder="+18335551234" />
           </Field>
           <Field label="Forwarding Number" hint="Owner's real phone — rings before AI">
             <input className={INPUT} value={form.forwardingNumber} onChange={e => set('forwardingNumber', e.target.value)} placeholder="+13095551234" />

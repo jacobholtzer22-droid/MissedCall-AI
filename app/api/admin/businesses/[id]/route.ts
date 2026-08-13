@@ -23,6 +23,7 @@ export async function PATCH(
       'name',
       'calendarEnabled',
       'telnyxPhoneNumber',
+      'notificationSenderNumber',
       'forwardingNumber',
       'timezone',
       'businessHours',
@@ -92,6 +93,33 @@ export async function PATCH(
       data.telnyxPhoneNumber = raw && typeof raw === 'string' && raw.trim()
         ? normalizeToE164(raw.trim()) || null
         : null
+    }
+
+    // Normalize notificationSenderNumber to E.164 (shared fallback FROM for owner alerts)
+    if (data.notificationSenderNumber !== undefined) {
+      const raw = data.notificationSenderNumber
+      data.notificationSenderNumber = raw && typeof raw === 'string' && raw.trim()
+        ? normalizeToE164(raw.trim()) || null
+        : null
+    }
+
+    // A notification sender must never be a client's own Telnyx number: the owner's
+    // STOP/reply would land in that client's inbound SMS webhook and be handled as a
+    // lead conversation. Sharing one dedicated number across businesses is fine and
+    // expected, so only the collision with telnyxPhoneNumber is rejected.
+    if (typeof data.notificationSenderNumber === 'string' && data.notificationSenderNumber) {
+      const clash = await db.business.findFirst({
+        where: { telnyxPhoneNumber: data.notificationSenderNumber },
+        select: { name: true },
+      })
+      if (clash) {
+        return NextResponse.json(
+          {
+            error: `That number is a client Telnyx number (${clash.name}). Owner replies would route into their AI flow. Pick a dedicated number.`,
+          },
+          { status: 400 }
+        )
+      }
     }
 
     // Parse cooldownBypassNumbers: comma-separated string → JSON array of E.164 numbers
