@@ -620,10 +620,12 @@ export async function notifyOwnerOnWebsiteLead(
     phone?: string | null
     email?: string | null
     message?: string | null
+    /** Optional — when provided, surfaced as a row in the owner email. Omitted callers render no row. */
+    smsConsent?: boolean
   }
 ): Promise<NotifyOwnerResult> {
   const result: NotifyOwnerResult = { smsSent: false, emailSent: false }
-  const { name, phone, email, message } = params
+  const { name, phone, email, message, smsConsent } = params
 
   // SMS
   if (business.notifyBySms) {
@@ -687,6 +689,9 @@ export async function notifyOwnerOnWebsiteLead(
       ['Name', name],
       ['Phone', phone || 'Not provided'],
       ['Email', email || 'Not provided'],
+      ...(smsConsent === undefined
+        ? []
+        : ([['SMS Consent', smsConsent ? 'Yes' : 'No']] as Array<[string, string]>)),
       ['Message', message || 'No message provided.'],
       ['Received', receivedAt],
     ]
