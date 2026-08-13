@@ -288,6 +288,7 @@ Every variable the app uses, what it controls, and what breaks without it.
 | `TELNYX_PUBLIC_KEY` | No | Webhook signature verification (not currently enforced) |
 | `TELNYX_PHONE_NUMBER` | No (unused) | Referenced nowhere in code — safe to remove from env |
 | `TELNYX_CONNECTION_ID` | Yes (forwarding) | Used when dialing B-leg for call forwarding. Falls back to `connectionId` from call payload |
+| `NOTIFICATIONS_TELNYX_NUMBER` | No | Shared fallback `from` for **owner-facing** notification SMS only. Last step of the chain `business.telnyxPhoneNumber → business.notificationSenderNumber → this var` (see §8 `resolveOwnerSmsFrom`). Must NOT equal any client's `telnyxPhoneNumber`, and its messaging profile must POST to `https://www.alignandacquire.com/api/webhooks/sms` or owner STOP/START replies are dropped. Not validated at runtime. Unrelated to the dead `TELNYX_PHONE_NUMBER` |
 
 ### Google Calendar
 | Variable | Required | Purpose |
@@ -356,6 +357,7 @@ businessType            String?                         // "Landscaping" | "Car 
 ownerGroupId            String?                         // @@indexed. Businesses sharing a non-null value form an "owner group" (one client owning several businesses). null = no group, zero behavior change
 
 telnyxPhoneNumber       String?   @unique               // The number Telnyx routes calls/SMS through
+notificationSenderNumber String?                        // Shared fallback "from" for OWNER notification SMS only. Deliberately NOT @unique — many businesses may share one number. See §8 resolveOwnerSmsFrom
 forwardingNumber        String?                         // Owner's real phone — used as "from" in notifications, "to" in forwarding dial
 
 timezone                String    @default("America/New_York")
@@ -946,6 +948,15 @@ Handles two event types:
 ### Inbound SMS processing pipeline
 
 ```
+0. Find business by telnyxPhoneNumber == payload.to (exact match). **If no tenant matches**, the request falls into the shared-notification-sender branch before the silent drop:
+   - `to` is a shared sender when `NOTIFICATIONS_TELNYX_NUMBER` is set and `phonesMatch(to, env)` (env is hand-typed, so last-10 compare), OR a `Business.notificationSenderNumber` row equals `to` exactly (E.164 at write, E.164 in payload).
+   - Not a shared sender → unchanged behavior: log `⚠️ No business found`, return 200, no DB writes.
+   - Shared sender + STOP word → match `from` against every business's `ownerPhone`/`forwardingNumber` with `phonesMatch` (those columns are NOT normalized at write), set `notifyBySms=false` on **every** match via `updateMany` (an owner of several businesses mutes all of them at once — the shared number can't tell which alert it was about), send ONE ack `from: to`, return 200.
+   - Shared sender + START word → same matching, `notifyBySms=true`, ack "Lead alerts by text are back on.", return 200.
+   - Shared sender + any other text → `[SHARED-NUMBER]` log only, return 200, no reply (no auto-responder).
+   - Shared sender + STOP/START from a number matching no business → `[SHARED-NUMBER] no-match` log, return 200, no ack.
+   - The branch writes **only** `Business.notifyBySms` — no `BlockedNumber` rows (that table is per-tenant; a shared number has no tenant). Its ack uses a local `telnyx.messages.send({ from: to, ... })`, NOT `sendSMS()`.
+   - Both keyword lists are declared once above the lookup so the shared branch and the tenant branch below match on identical words.
 1. Find business by telnyxPhoneNumber == payload.to
 2. STOP/unsubscribe check → acknowledge, return
 3. "never mind"/"not interested" check → goodbye + notify owner as partial lead
@@ -1368,7 +1379,19 @@ createBooking(params: CreateBookingParams): Promise<CreateBookingResult>
 
 ### `lib/notify-owner.ts`
 
-These functions send SMS (Telnyx from business.telnyxPhoneNumber to ownerPhone||forwardingNumber) and email. **Email now goes through Resend** via the internal `sendEmail()` helper, `from` = `notifications@alignandacquire.com` (NOT SMTP). There is also a website-lead owner email built from a clean HTML template.
+These functions send SMS (Telnyx, `from` resolved by `resolveOwnerSmsFrom` — see below — `to` = ownerPhone||forwardingNumber) and email.
+
+**`resolveOwnerSmsFrom(business): string` (exported).** Single source of truth for the owner-SMS `from` number:
+
+```
+business.telnyxPhoneNumber  →  business.notificationSenderNumber  →  process.env.NOTIFICATIONS_TELNYX_NUMBER  →  '' (skip + log)
+```
+
+Purpose: website/ads-only clients have no Telnyx number of their own, so before this existed every owner notification for them was silently skipped. All 7 notifiers compute `const fromNumber = resolveOwnerSmsFrom(business)` and use it in both the guard and the `from:` field; when it returns `''` the SMS is skipped with `SMS SKIP: no sender resolved (no telnyxPhoneNumber, no notificationSenderNumber, no NOTIFICATIONS_TELNYX_NUMBER)`.
+
+⚠️ **OWNER-FACING SENDS ONLY.** Every lead-facing send still requires the business's own `telnyxPhoneNumber` and must never use this helper: missed-call greetings (`webhooks/voice`, `voice-gather`, `voice-dial-status`), all AI replies (`sendSMS` / `sendSMSAndLog` in `webhooks/sms`), SMS campaigns, manual dashboard sends, booking confirmations (`lib/create-booking.ts`) and cancellations. A lead must never receive a text from a number shared across clients.
+
+All 7 notifiers also normalize the recipient with `normalizeToE164(...)` before sending (the four that previously sent a raw `toPhone.trim()` were fixed alongside this change). **Email now goes through Resend** via the internal `sendEmail()` helper, `from` = `notifications@alignandacquire.com` (NOT SMTP). There is also a website-lead owner email built from a clean HTML template.
 
 **All six email subjects are prefixed with `[Business Name]`** so an owner receiving multiple businesses' alerts in one inbox can tell them apart. This is global — NOT gated on `ownerGroupId` — and applies to single-business clients too. SMS bodies and recipients are unchanged.
 
@@ -2087,6 +2110,7 @@ Stats are computed via Prisma `_count` with date filters (current calendar month
 
 Special processing:
 - `telnyxPhoneNumber` → normalized to E.164 via `normalizeToE164()`
+- `notificationSenderNumber` → normalized to E.164 via `normalizeToE164()` (blank saves as `null`), then **the only cross-business validation in this route**: if the normalized value matches ANY business's `telnyxPhoneNumber`, the request is rejected `400 { error: 'That number is a client Telnyx number (<name>). Owner replies would route into their AI flow. Pick a dedicated number.' }` — returned BEFORE `db.business.update`, so nothing is written. Two businesses sharing the same `notificationSenderNumber` is expected and NOT rejected. Self-collision (setting a business's own Telnyx number) is also rejected, harmlessly — `resolveOwnerSmsFrom` already prefers `telnyxPhoneNumber`. The `NOTIFICATIONS_TELNYX_NUMBER` env var bypasses this check entirely (no runtime validation — verify by hand). Edited in SettingsTab as "Notification Sender (fallback)", directly under Telnyx Phone
 - `cooldownBypassNumbers` → parsed from comma-separated string or array → normalized E.164 array
 - `ownerGroupId` → trimmed; empty/whitespace-only (or non-string) saves as `null` (clears the group). The text input lives in SettingsTab's "Admin Only" section — to group N businesses, type the same value into each business's panel (no bulk-apply tool).
 
