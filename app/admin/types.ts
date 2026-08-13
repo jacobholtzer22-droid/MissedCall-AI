@@ -4,6 +4,7 @@ export interface AdminBusiness {
   slug: string
   businessType: string | null
   telnyxPhoneNumber: string | null
+  notificationSenderNumber: string | null
   forwardingNumber: string | null
   timezone: string
   subscriptionStatus: string
