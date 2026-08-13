@@ -225,19 +225,24 @@ export async function notifyOwnerOnBookingRequestNoCalendar(
 
   // SMS
   if (business.notifyBySms) {
-    const toPhone = business.ownerPhone || business.forwardingNumber
+    const rawPhone = business.ownerPhone || business.forwardingNumber
+    const toPhone = rawPhone ? normalizeToE164(rawPhone.trim()) : ''
     const fromNumber = resolveOwnerSmsFrom(business)
-    if (toPhone && fromNumber) {
+    if (!toPhone) {
+      console.error('[NOTIFY OWNER] Booking request SMS SKIP: No ownerPhone or forwardingNumber set (or invalid format)', { businessId: business.id })
+    } else if (!fromNumber) {
+      console.error('[NOTIFY OWNER] Booking request SMS SKIP: no sender resolved (no telnyxPhoneNumber, no notificationSenderNumber, no NOTIFICATIONS_TELNYX_NUMBER)', { businessId: business.id })
+    } else {
       const addressLine = customerAddress ? `\n📍 Address: ${customerAddress}` : ''
       const smsText = `📅 New Quote Request! ${customerName} wants a quote for ${service} around ${dateTimeLabel}. Phone: ${customerPhone}${addressLine}. Check your dashboard for details.`
       try {
         const telnyx = new Telnyx({ apiKey: process.env.TELNYX_API_KEY! })
         await telnyx.messages.send({
           from: fromNumber,
-          to: toPhone.trim(),
+          to: toPhone,
           text: smsText,
         })
-        console.error('[NOTIFY OWNER] Booking request (no calendar) SMS sent to', toPhone.trim())
+        console.error('[NOTIFY OWNER] Booking request (no calendar) SMS sent to', toPhone)
       } catch (err) {
         console.error('[NOTIFY OWNER] Booking request SMS FAILED:', err instanceof Error ? err.message : String(err))
       }
@@ -320,9 +325,14 @@ export async function notifyOwnerOnLeadCaptured(
 
   // SMS: "New lead! [Name] wants [service] around [timeframe]. Address: [address]. Phone: [phone]. Email: [email]. Check your email for the full conversation."
   if (business.notifyBySms) {
-    const toPhone = business.ownerPhone || business.forwardingNumber
+    const rawPhone = business.ownerPhone || business.forwardingNumber
+    const toPhone = rawPhone ? normalizeToE164(rawPhone.trim()) : ''
     const fromNumber = resolveOwnerSmsFrom(business)
-    if (toPhone && fromNumber) {
+    if (!toPhone) {
+      console.error('[NOTIFY OWNER] Lead captured SMS SKIP: No ownerPhone or forwardingNumber set (or invalid format)', { businessId: business.id })
+    } else if (!fromNumber) {
+      console.error('[NOTIFY OWNER] Lead captured SMS SKIP: no sender resolved (no telnyxPhoneNumber, no notificationSenderNumber, no NOTIFICATIONS_TELNYX_NUMBER)', { businessId: business.id })
+    } else {
       const timeframePart = customerTimeframe ? ` around ${customerTimeframe}` : ''
       const parts = [
         `New lead! ${customerName} wants ${service}${timeframePart}.`,
@@ -336,10 +346,10 @@ export async function notifyOwnerOnLeadCaptured(
         const telnyx = new Telnyx({ apiKey: process.env.TELNYX_API_KEY! })
         await telnyx.messages.send({
           from: fromNumber,
-          to: toPhone.trim(),
+          to: toPhone,
           text: smsText,
         })
-        console.error('[NOTIFY OWNER] Lead captured SMS sent to', toPhone.trim())
+        console.error('[NOTIFY OWNER] Lead captured SMS sent to', toPhone)
       } catch (err) {
         console.error('[NOTIFY OWNER] Lead captured SMS FAILED:', err instanceof Error ? err.message : String(err))
       }
@@ -414,18 +424,23 @@ export async function notifyOwnerOnHumanNeeded(
 
   // SMS
   if (business.notifyBySms) {
-    const toPhone = business.ownerPhone || business.forwardingNumber
+    const rawPhone = business.ownerPhone || business.forwardingNumber
+    const toPhone = rawPhone ? normalizeToE164(rawPhone.trim()) : ''
     const fromNumber = resolveOwnerSmsFrom(business)
-    if (toPhone && fromNumber) {
+    if (!toPhone) {
+      console.error('[NOTIFY OWNER] Human needed SMS SKIP: No ownerPhone or forwardingNumber set (or invalid format)', { businessId: business.id })
+    } else if (!fromNumber) {
+      console.error('[NOTIFY OWNER] Human needed SMS SKIP: no sender resolved (no telnyxPhoneNumber, no notificationSenderNumber, no NOTIFICATIONS_TELNYX_NUMBER)', { businessId: business.id })
+    } else {
       const smsText = `⚠️ A customer needs your help! ${customerName} (${customerPhone}) needs a personal follow-up. Check your email for the full conversation.`
       try {
         const telnyx = new Telnyx({ apiKey: process.env.TELNYX_API_KEY! })
         await telnyx.messages.send({
           from: fromNumber,
-          to: toPhone.trim(),
+          to: toPhone,
           text: smsText,
         })
-        console.error('[NOTIFY OWNER] Human needed SMS sent to', toPhone.trim())
+        console.error('[NOTIFY OWNER] Human needed SMS sent to', toPhone)
       } catch (err) {
         console.error('[NOTIFY OWNER] Human needed SMS FAILED:', err instanceof Error ? err.message : String(err))
       }
@@ -491,18 +506,23 @@ export async function notifyOwnerOnAIFailed(
   const tz = business.timezone ?? 'America/New_York'
 
   if (business.notifyBySms) {
-    const toPhone = business.ownerPhone || business.forwardingNumber
+    const rawPhone = business.ownerPhone || business.forwardingNumber
+    const toPhone = rawPhone ? normalizeToE164(rawPhone.trim()) : ''
     const fromNumber = resolveOwnerSmsFrom(business)
-    if (toPhone && fromNumber) {
+    if (!toPhone) {
+      console.error('[NOTIFY OWNER] AI failed SMS SKIP: No ownerPhone or forwardingNumber set (or invalid format)', { businessId: business.id })
+    } else if (!fromNumber) {
+      console.error('[NOTIFY OWNER] AI failed SMS SKIP: no sender resolved (no telnyxPhoneNumber, no notificationSenderNumber, no NOTIFICATIONS_TELNYX_NUMBER)', { businessId: business.id })
+    } else {
       const smsText = `⚠️ AI was temporarily unavailable. We sent ${customerName} (${customerPhone}) a fallback message. Please follow up when you can.`
       try {
         const telnyx = new Telnyx({ apiKey: process.env.TELNYX_API_KEY! })
         await telnyx.messages.send({
           from: fromNumber,
-          to: toPhone.trim(),
+          to: toPhone,
           text: smsText,
         })
-        console.error('[NOTIFY OWNER] AI failed SMS sent to', toPhone.trim())
+        console.error('[NOTIFY OWNER] AI failed SMS sent to', toPhone)
       } catch (err) {
         console.error('[NOTIFY OWNER] AI failed SMS FAILED:', err instanceof Error ? err.message : String(err))
       }
