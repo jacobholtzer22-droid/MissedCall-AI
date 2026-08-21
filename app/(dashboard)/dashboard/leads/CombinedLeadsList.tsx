@@ -50,9 +50,10 @@ type UnifiedLead = {
   sortTs: number
   dateStr: string
   businessName?: string // website leads only, and only when in an owner group
+  isPartial?: boolean // /book contact step submitted, no time slot picked yet
 }
 
-type SourceFilter = 'all' | 'missed_call' | 'website'
+type SourceFilter = 'all' | 'partial' | 'missed_call' | 'website'
 
 // Light-theme badge colors (matches the Contacts page palette). Labels come from
 // BUCKET_LABELS so missed-call statuses stay consistent with the Conversations tab.
@@ -64,6 +65,8 @@ const BUCKET_LIGHT: Record<ConversationBucket, string> = {
 }
 
 const WEBSITE_STATUS: Record<string, { label: string; className: string }> = {
+  // Contact captured on /book but no time picked. Highest-intent callback list.
+  partial: { label: 'Call now', className: 'bg-red-100 text-red-700 border border-red-200' },
   new: { label: 'New', className: 'bg-blue-100 text-blue-700' },
   contacted: { label: 'Contacted', className: 'bg-amber-100 text-amber-700' },
   converted: { label: 'Converted', className: 'bg-green-100 text-green-700' },
@@ -160,6 +163,7 @@ export function CombinedLeadsList({
         sortTs: new Date(w.createdAt).getTime(),
         dateStr: formatRelativeTime(w.createdAt),
         businessName: w.businessName,
+        isPartial: w.status === 'partial',
       }
     })
     return [...fromConvos, ...fromWeb].sort((a, b) => b.sortTs - a.sortTs)
@@ -168,16 +172,18 @@ export function CombinedLeadsList({
   const counts = useMemo(
     () => ({
       all: merged.length,
+      partial: merged.filter(l => l.isPartial).length,
       missed_call: merged.filter(l => l.kind === 'missed_call').length,
       website: merged.filter(l => l.kind === 'website').length,
     }),
     [merged]
   )
 
-  const visible = useMemo(
-    () => (filter === 'all' ? merged : merged.filter(l => l.kind === filter)),
-    [merged, filter]
-  )
+  const visible = useMemo(() => {
+    if (filter === 'all') return merged
+    if (filter === 'partial') return merged.filter(l => l.isPartial)
+    return merged.filter(l => l.kind === filter)
+  }, [merged, filter])
 
   function handleRowClick(lead: UnifiedLead) {
     if (lead.kind === 'missed_call' && lead.conversationId) {
@@ -189,6 +195,7 @@ export function CombinedLeadsList({
 
   const FILTERS: { value: SourceFilter; label: string }[] = [
     { value: 'all', label: `All (${counts.all})` },
+    { value: 'partial', label: `Call now (${counts.partial})` },
     { value: 'missed_call', label: `Missed Call (${counts.missed_call})` },
     { value: 'website', label: `Website (${counts.website})` },
   ]
@@ -240,7 +247,12 @@ export function CombinedLeadsList({
                   <button
                     type="button"
                     onClick={() => handleRowClick(lead)}
-                    className="w-full text-left p-4 hover:bg-gray-50 transition flex items-start gap-3"
+                    className={cn(
+                      'w-full text-left p-4 transition flex items-start gap-3',
+                      lead.isPartial
+                        ? 'border-l-4 border-l-red-500 bg-red-50/60 hover:bg-red-50'
+                        : 'hover:bg-gray-50'
+                    )}
                   >
                     <span className="mt-0.5 shrink-0 text-gray-400">
                       {lead.kind === 'missed_call' ? (
@@ -297,8 +309,10 @@ export function CombinedLeadsList({
           >
             <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
               <div className="flex items-center gap-2">
-                <Globe className="h-5 w-5 text-blue-600" />
-                <h2 className="text-lg font-bold text-gray-900">Website Lead</h2>
+                <Globe className={cn('h-5 w-5', detail.isPartial ? 'text-red-600' : 'text-blue-600')} />
+                <h2 className="text-lg font-bold text-gray-900">
+                  {detail.isPartial ? 'Partial lead - call now' : 'Website Lead'}
+                </h2>
               </div>
               <button
                 type="button"
@@ -317,7 +331,9 @@ export function CombinedLeadsList({
               {detail.phone && (
                 <div className="flex items-center gap-2 text-gray-700">
                   <Phone className="h-4 w-4 text-gray-400" />
-                  <span>{formatPhoneNumber(detail.phone)}</span>
+                  <a href={`tel:${detail.phone}`} className="text-blue-600 font-medium hover:underline">
+                    {formatPhoneNumber(detail.phone)}
+                  </a>
                 </div>
               )}
               {detail.email && (

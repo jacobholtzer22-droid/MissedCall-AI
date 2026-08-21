@@ -62,3 +62,17 @@ export function fbTrack(eventName: string, params?: Record<string, unknown>): vo
     fbq('track', eventName)
   }
 }
+
+/**
+ * Fire a Meta custom event. Used for per-step funnel analytics so drop-off is
+ * measurable without adding another vendor. Same queueing guarantees as fbTrack.
+ */
+export function fbTrackCustom(eventName: string, params?: Record<string, unknown>): void {
+  const fbq = ensureFbq()
+  if (!fbq) return
+  if (params) {
+    fbq('trackCustom', eventName, params)
+  } else {
+    fbq('trackCustom', eventName)
+  }
+}
