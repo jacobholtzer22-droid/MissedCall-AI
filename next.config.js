@@ -1,5 +1,17 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  async redirects() {
+    return [
+      // /booking received paid traffic and 404'd. Next.js `permanent: true`
+      // emits a 308, the method-preserving equivalent of a 301; crawlers and
+      // ad platforms treat it the same way.
+      {
+        source: '/booking',
+        destination: '/book',
+        permanent: true,
+      },
+    ]
+  },
   async headers() {
     return [
       {

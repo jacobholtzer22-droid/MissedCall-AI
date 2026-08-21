@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { Calendar, Check, ArrowLeft, Clock, Loader2, ArrowRight } from 'lucide-react'
 import { Logo } from '@/app/components/Logo'
+import { fbTrack } from '@/lib/meta-pixel'
 
 // ─────────────────────────────────────────────────────────
 // Constants — unchanged from original
@@ -137,13 +138,13 @@ export default function BookPage() {
   const [formError, setFormError] = useState('')
 
   const scheduleFiredRef = useRef(false)
+  const leadFiredRef = useRef(false)
   useEffect(() => {
     if (step !== 'confirmation') return
     if (scheduleFiredRef.current) return
     scheduleFiredRef.current = true
-    if (typeof window !== 'undefined' && (window as any).fbq) {
-      (window as any).fbq('track', 'Schedule')
-    }
+    // Booking completed. Do not move or rename this event.
+    fbTrack('Schedule')
   }, [step])
 
   useEffect(() => {
@@ -228,6 +229,12 @@ export default function BookPage() {
       if (!res.ok) {
         const data = await res.json().catch(() => ({}))
         throw new Error(data.error || 'Failed to book call')
+      }
+      // Contact details captured. Fires once, ahead of Schedule. When the
+      // contact step moves in front of the calendar, this call moves with it.
+      if (!leadFiredRef.current) {
+        leadFiredRef.current = true
+        fbTrack('Lead')
       }
       setStep('confirmation')
     } catch (err) {
