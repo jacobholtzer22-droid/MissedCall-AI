@@ -352,7 +352,13 @@ model Appointment {
   status String @default("confirmed") // confirmed, cancelled, completed, no_show
 
   // Reminders
-  reminderSentAt DateTime?
+  reminderSentAt DateTime? // legacy, unused — nothing writes it
+
+  // Marketing funnel (/book) demo-call reminders. Separate nullable timestamps
+  // so each reminder is independently idempotent: the cron claims one by
+  // conditionally setting its column, then sends.
+  reminderNightBeforeSentAt DateTime?
+  reminderHourBeforeSentAt  DateTime?
 
   // Timestamps
   createdAt DateTime @default(now())

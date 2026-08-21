@@ -476,15 +476,19 @@ export async function POST(request: NextRequest) {
             businessName: businessName.trim(),
             serviceType,
             servicesInterested: extraList,
+            // Prospect gets a real Google invite. Everything in `message` below
+            // ends up in the description they can read, so ad attribution is
+            // routed to privateNotes instead.
+            attendeeEmail: email.trim(),
             message: [
               tradeType?.trim() ? `Business type: ${tradeType.trim()}` : null,
               missedCalls?.trim() ? `Missed calls per week: ${missedCalls.trim()}` : null,
               whoAnswers?.trim() ? `Who answers now: ${whoAnswers.trim()}` : null,
               notes?.trim() || null,
-              formatAttributionBlock(attribution),
             ]
               .filter(Boolean)
               .join('\n') || null,
+            privateNotes: formatAttributionBlock(attribution),
           }
         )
         if (googleEventId) {
@@ -507,6 +511,7 @@ export async function POST(request: NextRequest) {
         scheduledAt: slotStartDate,
         duration: SLOT_MINUTES,
         notes: [
+          smsConsent ? 'SMS consent: yes (captured at booking)' : 'SMS consent: no',
           `Business: ${businessName.trim()}`,
           tradeType?.trim() ? `Business type: ${tradeType.trim()}` : null,
           missedCalls?.trim() ? `Missed calls per week: ${missedCalls.trim()}` : null,

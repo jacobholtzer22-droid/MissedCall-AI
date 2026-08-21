@@ -572,6 +572,18 @@ export type CreateMarketingCalendarEventOptions = {
   servicesInterested: string[] // interests from form
   serviceType?: string | null // derived booking type — used in the event title when present
   message?: string | null
+  /**
+   * Invite the prospect as a Google Calendar attendee. When set, Google emails
+   * them a real invite with Yes/No/Maybe and it lands on their own calendar.
+   * The event `description` becomes visible to them, so anything private must
+   * go in `privateNotes` instead.
+   */
+  attendeeEmail?: string | null
+  /**
+   * Owner-only data (ad attribution). Written to extendedProperties.private,
+   * which attendees never receive. Deliberately NOT in the description.
+   */
+  privateNotes?: string | null
 }
 
 /**
@@ -585,7 +597,16 @@ export async function createMarketingCalendarEvent(
   customerName: string,
   options: CreateMarketingCalendarEventOptions
 ): Promise<string | null> {
-  const { customerPhone, customerEmail, businessName, servicesInterested, serviceType, message } = options
+  const {
+    customerPhone,
+    customerEmail,
+    businessName,
+    servicesInterested,
+    serviceType,
+    message,
+    attendeeEmail,
+    privateNotes,
+  } = options
 
   const calendar = await getCalendarClient(businessId)
   if (!calendar) return null
@@ -611,8 +632,12 @@ export async function createMarketingCalendarEvent(
   ].filter(Boolean)
   const description = descriptionLines.join('\n')
 
+  const invitee = attendeeEmail?.trim()
+
   const eventBody = {
     summary,
+    // Visible to the prospect once they are an attendee. Keep it to what they
+    // should see: no ad attribution, no internal notes.
     description,
     start: { dateTime: start.toISOString(), timeZone: tz },
     end: { dateTime: end.toISOString(), timeZone: tz },
@@ -623,11 +648,31 @@ export async function createMarketingCalendarEvent(
         { method: 'email' as const, minutes: 15 },
       ],
     },
+    ...(invitee
+      ? {
+          attendees: [{ email: invitee, displayName: customerName }],
+          // One prospect per call. Don't leak the guest list or let them add others.
+          guestsCanInviteOthers: false,
+          guestsCanSeeOtherGuests: false,
+          guestsCanModify: false,
+        }
+      : {}),
+    ...(privateNotes?.trim()
+      ? {
+          extendedProperties: {
+            // Owner-only. Not delivered to attendees in the invite.
+            private: { attribution: privateNotes.trim().slice(0, 1024) },
+          },
+        }
+      : {}),
   }
 
   const event = await calendar.events.insert({
     calendarId: 'primary',
     requestBody: eventBody,
+    // 'all' makes Google actually email the invite. Without it the attendee is
+    // attached silently and never hears about it.
+    sendUpdates: invitee ? 'all' : 'none',
   })
 
   return event.data.id ?? null

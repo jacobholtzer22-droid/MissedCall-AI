@@ -1960,6 +1960,10 @@ const isPublicApiRoute = createRouteMatcher([
 
 37. **Turnstile enforcement is opt-in via `TURNSTILE_ENFORCE`** — Default `false` means missing or failed Turnstile tokens are logged but the lead is processed normally. Set to `'true'` only after confirming the Turnstile widget is live on all forms that POST to `/api/contact`. Siteverify network failures always fail open (lead allowed) regardless of enforce mode — never lose a real lead to a Cloudflare outage.
 
+### Client-Side Tags
+
+38. **Never verify a client-side tag by grepping the served HTML.** `MetaPixel` renders a `next/script` with `strategy="afterInteractive"` from inside a client component, so the snippet lands in the layout JS chunk (`/_next/static/chunks/app/layout-*.js`), never in the HTML document. A clean HTML grep is the expected result for a perfectly healthy pixel. `.env.local` is equally useless as evidence: it is gitignored and never deployed. To verify, grep the layout chunk, run `vercel env ls production`, and check an older deployment before declaring an outage. A 2026-08-21 audit declared a full pixel outage on exactly these two invalid tests when the pixel had been live since 2026-05-30. See `docs/pixel-record-correction.md`.
+
 ---
 
 ---
