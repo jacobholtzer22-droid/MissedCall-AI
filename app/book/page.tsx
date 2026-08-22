@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { Calendar, Check, ArrowLeft, Clock, Loader2, ArrowRight } from 'lucide-react'
 import { Logo } from '@/app/components/Logo'
 import { fbTrack, fbTrackCustom } from '@/lib/meta-pixel'
+import { validateUsMobile } from '@/lib/phone-utils'
 import { parseAttribution, type Attribution } from '@/lib/attribution'
 
 // ─────────────────────────────────────────────────────────
@@ -218,6 +219,7 @@ export default function BookPage() {
   })
   const [contactSubmitting, setContactSubmitting] = useState(false)
   const [formError, setFormError] = useState('')
+  const [phoneError, setPhoneError] = useState('')
   const [partialLeadId, setPartialLeadId] = useState<string | null>(null)
 
   const scheduleFiredRef = useRef(false)
@@ -321,6 +323,7 @@ export default function BookPage() {
 
   function handleFormChange(e: React.ChangeEvent<HTMLInputElement>) {
     const { name, type } = e.target
+    if (name === 'phone') setPhoneError('')
     setFormError('')
     if (type === 'checkbox' && name === 'smsConsent') {
       setFormData(prev => ({ ...prev, smsConsent: e.target.checked }))
@@ -363,7 +366,9 @@ export default function BookPage() {
     e.preventDefault()
     setFormError('')
     if (!formData.firstName.trim()) { setFormError('Please enter your first name.'); return }
-    if (!formData.phone.trim()) { setFormError('Please enter your mobile number.'); return }
+    const phoneCheck = validateUsMobile(formData.phone)
+    if (!phoneCheck.ok) { setPhoneError(phoneCheck.reason); setFormError(phoneCheck.reason); return }
+    setPhoneError('')
     if (!formData.businessName.trim()) { setFormError('Please enter your business name.'); return }
     if (!formData.email.trim()) { setFormError('Please enter your email.'); return }
     if (!formData.smsConsent) { setFormError('Please check the box so I can text you the details.'); return }
@@ -377,7 +382,7 @@ export default function BookPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           firstName: formData.firstName.trim(),
-          phone: formData.phone.trim(),
+          phone: phoneCheck.e164,
           email: formData.email.trim(),
           businessName: formData.businessName.trim(),
           smsConsent: formData.smsConsent,
@@ -414,6 +419,11 @@ export default function BookPage() {
     const day = days.find(d => d.date === selectedDate)
     if (!day) return
 
+    // Already validated at the contact step; recompute so the canonical E.164
+    // is what gets booked, and fall back to the raw value rather than blocking.
+    const phoneCheckForBooking = validateUsMobile(formData.phone)
+    const phoneForBooking = phoneCheckForBooking.ok ? phoneCheckForBooking.e164 : formData.phone.trim()
+
     setSubmitting(true)
     setBookingError('')
     try {
@@ -422,7 +432,7 @@ export default function BookPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           name: formData.firstName.trim(),
-          phone: formData.phone.trim(),
+          phone: phoneForBooking,
           email: formData.email.trim(),
           businessName: formData.businessName.trim(),
           tradeType,
@@ -603,8 +613,25 @@ export default function BookPage() {
                       Mobile <span style={{ color: '#EE6B1A' }}>*</span>
                     </label>
                     <input id="book-phone" type="tel" name="phone" required value={formData.phone}
-                      onChange={handleFormChange} placeholder="(555) 123-4567" autoComplete="tel"
-                      className={inputCls} style={inputStyle} onFocus={onFocus} onBlur={onBlur} />
+                      inputMode="tel" autoComplete="tel" placeholder="(555) 123-4567"
+                      onChange={handleFormChange}
+                      aria-invalid={phoneError ? true : undefined}
+                      aria-describedby={phoneError ? 'book-phone-error' : undefined}
+                      className={inputCls}
+                      style={phoneError ? { ...inputStyle, borderColor: '#EE6B1A' } : inputStyle}
+                      onFocus={onFocus}
+                      onBlur={(ev) => {
+                        onBlur(ev)
+                        const value = ev.currentTarget.value
+                        if (!value.trim()) return
+                        const check = validateUsMobile(value)
+                        setPhoneError(check.ok ? '' : check.reason)
+                      }} />
+                    {phoneError && (
+                      <p id="book-phone-error" className="mt-2 text-[12px] font-semibold" style={{ color: '#EE6B1A' }}>
+                        {phoneError}
+                      </p>
+                    )}
                   </div>
                 </div>
                 <div className="grid sm:grid-cols-2 gap-5 mb-5">

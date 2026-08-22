@@ -11,7 +11,7 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { normalizeToE164 } from '@/lib/phone-utils'
+import { validateUsMobile } from '@/lib/phone-utils'
 import {
   getMarketingBusiness,
   notifyOwnerOfMarketingEvent,
@@ -64,6 +64,14 @@ export async function POST(request: NextRequest) {
     if (!firstName || !phone || !email || !businessName) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
     }
+
+    // Never store a lead we cannot text. The client validates too, but this is
+    // the boundary that actually matters: a bad number here means no
+    // confirmation SMS and no reminders for whatever follows.
+    const phoneCheck = validateUsMobile(phone)
+    if (!phoneCheck.ok) {
+      return NextResponse.json({ error: phoneCheck.reason, field: 'phone' }, { status: 400 })
+    }
     if (!body.smsConsent) {
       return NextResponse.json({ error: 'SMS consent is required' }, { status: 400 })
     }
@@ -74,7 +82,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Lead capture unavailable' }, { status: 503 })
     }
 
-    const e164 = normalizeToE164(phone)
+    const e164 = phoneCheck.e164
 
     const message = [
       'Partial lead from /book. Contact captured, no time slot picked yet.',

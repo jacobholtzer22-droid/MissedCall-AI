@@ -4,7 +4,7 @@ import { addMinutes } from 'date-fns'
 import { db } from '@/lib/db'
 import Telnyx from 'telnyx'
 import { createMarketingCalendarEvent, getBusyTimes } from '@/lib/google-calendar'
-import { normalizeToE164 } from '@/lib/phone-utils'
+import { validateUsMobile } from '@/lib/phone-utils'
 import {
   getMarketingBusiness,
   notifyOwnerOfMarketingEvent,
@@ -389,6 +389,11 @@ export async function POST(request: NextRequest) {
     if (!name?.trim() || !phone?.trim() || !email?.trim() || !businessName?.trim()) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
     }
+
+    const phoneCheck = validateUsMobile(phone)
+    if (!phoneCheck.ok) {
+      return NextResponse.json({ error: phoneCheck.reason, field: 'phone' }, { status: 400 })
+    }
     if (!smsConsent) {
       return NextResponse.json({ error: 'SMS consent is required' }, { status: 400 })
     }
@@ -471,7 +476,7 @@ export async function POST(request: NextRequest) {
           slotEndDate,
           name.trim(),
           {
-            customerPhone: phone.trim(),
+            customerPhone: phoneCheck.e164,
             customerEmail: email.trim(),
             businessName: businessName.trim(),
             serviceType,
@@ -505,7 +510,7 @@ export async function POST(request: NextRequest) {
       data: {
         businessId: business.id,
         customerName: name.trim(),
-        customerPhone: phone.trim(),
+        customerPhone: phoneCheck.e164,
         customerEmail: email.trim(),
         serviceType,
         scheduledAt: slotStartDate,
@@ -552,7 +557,7 @@ export async function POST(request: NextRequest) {
           ? await db.websiteLead.findFirst({
               where: { id: partialLeadId, businessId: business.id },
             })
-          : null) ?? (await findPartialLeadByPhone(business.id, phone.trim()))
+          : null) ?? (await findPartialLeadByPhone(business.id, phoneCheck.e164))
 
       const leadMessage = [
         `Booked a ${SLOT_MINUTES}-minute demo for ${dateLabel} at ${timeLabel} ET.`,
@@ -575,7 +580,7 @@ export async function POST(request: NextRequest) {
           data: {
             status: 'converted',
             name: name.trim(),
-            phone: normalizeToE164(phone.trim()),
+            phone: phoneCheck.e164,
             email: email.trim(),
             message: leadMessage,
           },
@@ -587,7 +592,7 @@ export async function POST(request: NextRequest) {
           data: {
             businessId: business.id,
             name: name.trim(),
-            phone: normalizeToE164(phone.trim()),
+            phone: phoneCheck.e164,
             email: email.trim(),
             message: leadMessage,
             status: 'converted',
@@ -607,7 +612,7 @@ export async function POST(request: NextRequest) {
       html: `
         <h2>New demo booked</h2>
         <p><strong>Name:</strong> ${escapeHtml(name.trim())}</p>
-        <p><strong>Phone:</strong> ${escapeHtml(phone.trim())}</p>
+        <p><strong>Phone:</strong> ${escapeHtml(phoneCheck.e164)}</p>
         <p><strong>Email:</strong> ${escapeHtml(email.trim())}</p>
         <p><strong>Business:</strong> ${escapeHtml(businessName.trim())}</p>
         <p><strong>Business type:</strong> ${escapeHtml(tradeType?.trim() || 'Not specified')}</p>
@@ -619,7 +624,7 @@ export async function POST(request: NextRequest) {
         <p><strong>Notes:</strong> ${escapeHtml(notes?.trim() || 'None')}</p>
         <pre style="font-family:inherit;white-space:pre-wrap;margin:0">${escapeHtml(formatAttributionBlock(attribution))}</pre>
       `,
-      smsText: `Demo booked.\nName: ${name.trim()}\nPhone: ${phone.trim()}\nBusiness: ${businessName.trim()}\nMisses/wk: ${missedCalls?.trim() || 'n/a'}\nTime: ${dateLabel} at ${timeLabel} ET\n${formatAttributionLine(attribution)}`,
+      smsText: `Demo booked.\nName: ${name.trim()}\nPhone: ${phoneCheck.e164}\nBusiness: ${businessName.trim()}\nMisses/wk: ${missedCalls?.trim() || 'n/a'}\nTime: ${dateLabel} at ${timeLabel} ET\n${formatAttributionLine(attribution)}`,
     })
 
     // ── Customer confirmation: text first, then email ────────────────────────
@@ -631,7 +636,7 @@ export async function POST(request: NextRequest) {
         const telnyx = new Telnyx({ apiKey: process.env.TELNYX_API_KEY })
         await telnyx.messages.send({
           from: process.env.MARKETING_TELNYX_NUMBER,
-          to: normalizeToE164(phone.trim()),
+          to: phoneCheck.e164,
           text: `You are booked with Align and Acquire for ${dateLabel} at ${timeLabel} ET. I will call this number and show you the text-back live. Reply STOP to opt out.`,
         })
       } catch (err) {

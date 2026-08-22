@@ -43,3 +43,66 @@ export function phonesMatch(a: string, b: string): boolean {
   }
   return na === nb
 }
+
+// ===========================================
+// US MOBILE VALIDATION
+// ===========================================
+// normalizeToE164 is lenient by design: it returns '' for junk rather than
+// throwing, which is right for matching but wrong for accepting user input.
+// A lead once submitted "McGee" as their mobile, which normalized to '' and
+// produced a booking with no confirmation SMS and no reminders.
+//
+// Use validateUsMobile for anything a human types. It is the single source of
+// truth for both the /book client and the API routes, so the inline error the
+// visitor sees and the server's rejection reason always agree.
+
+export type PhoneValidation = { ok: true; e164: string } | { ok: false; reason: string }
+
+const CONTAINS_LETTERS = /[A-Za-z]/
+
+export function validateUsMobile(raw: string | null | undefined): PhoneValidation {
+  const input = typeof raw === 'string' ? raw.trim() : ''
+  if (!input) {
+    return { ok: false, reason: 'Please enter your mobile number.' }
+  }
+  if (CONTAINS_LETTERS.test(input)) {
+    return { ok: false, reason: 'Numbers only please. Letters are not a phone number.' }
+  }
+
+  const digits = input.replace(/\D/g, '')
+  const national = digits.length === 11 && digits.startsWith('1') ? digits.slice(1) : digits
+
+  if (national.length !== 10) {
+    return { ok: false, reason: 'Enter a 10 digit US mobile number, like (555) 123-4567.' }
+  }
+
+  const areaCode = national.slice(0, 3)
+  const exchange = national.slice(3, 6)
+
+  // NANP: area code and exchange both have to start 2-9.
+  if (areaCode[0] === '0' || areaCode[0] === '1') {
+    return { ok: false, reason: 'That area code is not valid. Check the number and try again.' }
+  }
+  if (exchange[0] === '0' || exchange[0] === '1') {
+    return { ok: false, reason: 'That does not look like a valid US number. Check it and try again.' }
+  }
+  // N11 service codes (411, 911, ...) are not assignable area codes.
+  if (areaCode[1] === '1' && areaCode[2] === '1') {
+    return { ok: false, reason: 'That area code is not valid. Check the number and try again.' }
+  }
+  // All one digit, e.g. 0000000000 / 1111111111.
+  if (/^(\d)\1{9}$/.test(national)) {
+    return { ok: false, reason: 'That does not look like a real number. Check it and try again.' }
+  }
+  // 555-0100 through 555-0199 are reserved for fiction.
+  if (exchange === '555' && national.slice(6, 8) === '01') {
+    return { ok: false, reason: 'That is a placeholder number. Enter your real mobile so I can text you.' }
+  }
+
+  return { ok: true, e164: `+1${national}` }
+}
+
+/** Convenience wrapper for audits and filters. */
+export function isValidUsMobile(raw: string | null | undefined): boolean {
+  return validateUsMobile(raw).ok
+}
