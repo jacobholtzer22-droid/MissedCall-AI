@@ -467,10 +467,11 @@ export async function POST(request: NextRequest) {
 
     // Create Google Calendar event if the business has calendar connected (same as client booking flow)
     let googleEventId: string | null = null
+    let googleEventLink: string | null = null
     let calendarSyncFailed = false
     if (business.googleCalendarConnected) {
       try {
-        googleEventId = await createMarketingCalendarEvent(
+        const calendarResult = await createMarketingCalendarEvent(
           business.id,
           slotStartDate,
           slotEndDate,
@@ -496,6 +497,8 @@ export async function POST(request: NextRequest) {
             privateNotes: formatAttributionBlock(attribution),
           }
         )
+        googleEventId = calendarResult.id
+        googleEventLink = calendarResult.htmlLink
         if (googleEventId) {
           console.log('[marketing-bookings] Google Calendar event created:', googleEventId)
         }
@@ -621,10 +624,11 @@ export async function POST(request: NextRequest) {
         <p><strong>Booking type:</strong> ${escapeHtml(serviceType)}</p>
         <p><strong>Interested in:</strong> ${escapeHtml(extraList.length ? extraList.join(', ') : 'Not specified')}</p>
         <p><strong>Time:</strong> ${escapeHtml(dateLabel)} at ${escapeHtml(timeLabel)} (Eastern Time)</p>
+        ${googleEventLink ? `<p><strong>Calendar:</strong> <a href="${escapeHtml(googleEventLink)}">Open the event in Google Calendar</a></p>` : ''}
         <p><strong>Notes:</strong> ${escapeHtml(notes?.trim() || 'None')}</p>
         <pre style="font-family:inherit;white-space:pre-wrap;margin:0">${escapeHtml(formatAttributionBlock(attribution))}</pre>
       `,
-      smsText: `Demo booked.\nName: ${name.trim()}\nPhone: ${phoneCheck.e164}\nBusiness: ${businessName.trim()}\nMisses/wk: ${missedCalls?.trim() || 'n/a'}\nTime: ${dateLabel} at ${timeLabel} ET\n${formatAttributionLine(attribution)}`,
+      smsText: `Demo booked.\nName: ${name.trim()}\nPhone: ${phoneCheck.e164}\nBusiness: ${businessName.trim()}\nMisses/wk: ${missedCalls?.trim() || 'n/a'}\nTime: ${dateLabel} at ${timeLabel} ET\n${formatAttributionLine(attribution)}${googleEventLink ? `\nCalendar: ${googleEventLink}` : ''}`,
     })
 
     // ── Customer confirmation: text first, then email ────────────────────────

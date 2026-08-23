@@ -38,12 +38,17 @@ const WHO_ANSWERS_OPTIONS = [
   'Office help or an answering service',
 ] as const
 
-const EXTRA_NEEDS_OPTIONS = [
-  'Website',
-  'Ads',
-  'Spam call blocking',
-  'Just the Missed-Call AI system',
-] as const
+// `value` is what gets stored and sent to the API. `label` is what the visitor
+// reads. They differ for the missed-call option on purpose: the stored string is
+// load-bearing downstream (deriveServiceType in /api/marketing-bookings keys off
+// it, and it appears in appointment notes, the lead record, the owner email and
+// the calendar event). Changing the display text must not change the data.
+const EXTRA_NEEDS_OPTIONS: { value: string; label: string }[] = [
+  { value: 'Website', label: 'Website' },
+  { value: 'Ads', label: 'Ads' },
+  { value: 'Spam call blocking', label: 'Spam call blocking' },
+  { value: 'Just the Missed-Call AI system', label: 'Missed call system' },
+]
 
 type Step =
   | 'landing'
@@ -684,17 +689,17 @@ export default function BookPage() {
                   </span>
                   <div className="grid gap-3 sm:grid-cols-2">
                     {EXTRA_NEEDS_OPTIONS.map(opt => {
-                      const isSelected = extraNeeds.includes(opt)
+                      const isSelected = extraNeeds.includes(opt.value)
                       return (
                         <label
-                          key={opt}
+                          key={opt.value}
                           className="group relative flex cursor-pointer items-center justify-between gap-3 border-2 px-4 py-3.5 transition-colors min-h-[44px]"
                           style={{
                             borderColor: isSelected ? '#EE6B1A' : 'rgba(110,118,129,0.35)',
                             background: isSelected ? 'rgba(238,107,26,0.08)' : 'transparent',
                           }}
                         >
-                          <span className="text-[14px] font-semibold" style={{ color: isSelected ? '#F2F0EB' : '#6E7681' }}>{opt}</span>
+                          <span className="text-[14px] font-semibold" style={{ color: isSelected ? '#F2F0EB' : '#6E7681' }}>{opt.label}</span>
                           <span
                             className="grid h-5 w-5 shrink-0 place-items-center border-2 transition-colors"
                             style={{
@@ -707,9 +712,9 @@ export default function BookPage() {
                           <input
                             type="checkbox"
                             name="extraNeeds"
-                            value={opt}
+                            value={opt.value}
                             checked={isSelected}
-                            onChange={() => toggleExtraNeed(opt)}
+                            onChange={() => toggleExtraNeed(opt.value)}
                             className="sr-only"
                           />
                         </label>
@@ -918,7 +923,7 @@ export default function BookPage() {
             </div>
 
             <p className="text-[14px] mb-10" style={{ color: 'rgba(242,240,235,0.55)' }}>
-              You&apos;ll get a text from me confirming. Talk soon. Jacob.
+              You&apos;re talking to me, Jacob, the owner. Not a sales rep. The whole thing takes under 15 minutes. You&apos;ll get a text from me confirming. Talk soon.
             </p>
             <Link
               href="/"

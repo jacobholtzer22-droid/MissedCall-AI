@@ -590,13 +590,16 @@ export type CreateMarketingCalendarEventOptions = {
  * Creates a Google Calendar event for a marketing discovery call booking.
  * Title: "Discovery Call — [customer name]", 15-minute reminder, description with contact/details.
  */
+/** Google event id plus the owner-facing link to open it. */
+export type MarketingCalendarEventResult = { id: string | null; htmlLink: string | null }
+
 export async function createMarketingCalendarEvent(
   businessId: string,
   start: Date,
   end: Date,
   customerName: string,
   options: CreateMarketingCalendarEventOptions
-): Promise<string | null> {
+): Promise<MarketingCalendarEventResult> {
   const {
     customerPhone,
     customerEmail,
@@ -609,7 +612,7 @@ export async function createMarketingCalendarEvent(
   } = options
 
   const calendar = await getCalendarClient(businessId)
-  if (!calendar) return null
+  if (!calendar) return { id: null, htmlLink: null }
 
   const business = await db.business.findUnique({
     where: { id: businessId },
@@ -675,7 +678,7 @@ export async function createMarketingCalendarEvent(
     sendUpdates: invitee ? 'all' : 'none',
   })
 
-  return event.data.id ?? null
+  return { id: event.data.id ?? null, htmlLink: event.data.htmlLink ?? null }
 }
 
 export async function deleteCalendarEvent(businessId: string, eventId: string): Promise<boolean> {
