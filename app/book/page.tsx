@@ -6,6 +6,7 @@ import { Calendar, Check, ArrowLeft, Clock, Loader2, ArrowRight } from 'lucide-r
 import { Logo } from '@/app/components/Logo'
 import { fbTrack, fbTrackCustom } from '@/lib/meta-pixel'
 import { validateUsMobile } from '@/lib/phone-utils'
+import BookTestimonials from '@/app/components/BookTestimonials'
 import { parseAttribution, type Attribution } from '@/lib/attribution'
 
 // ─────────────────────────────────────────────────────────
@@ -529,6 +530,7 @@ export default function BookPage() {
             <p className="text-[17px] leading-relaxed mb-10" style={{ color: 'rgba(242,240,235,0.7)' }}>
               Watch it happen live on your own line.
             </p>
+            <BookTestimonials />
             <button
               type="button"
               onClick={() => { completeStep('landing'); setStep('trade') }}

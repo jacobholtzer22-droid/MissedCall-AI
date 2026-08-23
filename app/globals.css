@@ -284,3 +284,12 @@
     opacity: 1 !important;
   }
 }
+
+/* Testimonial carousel card transition (/book landing). Respects reduced motion. */
+@keyframes aaFade {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .animate-\[aaFade_320ms_ease-out\] { animation: none !important; }
+}
