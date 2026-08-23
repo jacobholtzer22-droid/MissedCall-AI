@@ -111,9 +111,9 @@ function reminderText(kind: ReminderKind, name: string, scheduledAt: Date): stri
   const first = name.trim().split(/\s+/)[0] || 'there'
   const { dateLabel, timeLabel } = formatWhen(scheduledAt)
   if (kind === 'night_before') {
-    return `Hi ${first}, this is Jacob with Align and Acquire. Reminder: our demo call is ${dateLabel} at ${timeLabel} ET. I will call your business line and you will watch the text back come in. Reply STOP to opt out.`
+    return `Hi ${first}, this is Jacob with Align and Acquire. Reminder: our demo call is ${dateLabel} at ${timeLabel} ET. I will show you the system running on real client accounts. Reply STOP to opt out.`
   }
-  return `Hi ${first}, Jacob here. Our demo call is in about an hour, at ${timeLabel} ET. I will call your business line, let it ring, and you will see the text back land. Reply STOP to opt out.`
+  return `Hi ${first}, Jacob here. Our demo call is in about an hour, at ${timeLabel} ET. I will show you the system running on real client accounts. Reply STOP to opt out.`
 }
 
 /** True when this number has opted out of texts from this business. */

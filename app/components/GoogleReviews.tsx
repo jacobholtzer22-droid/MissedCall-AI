@@ -67,7 +67,7 @@ const ROTATE_MS = 7000
 
 // Stable public link to the Google Business Profile listing (cid form —
 // survives name/address edits, unlike the long /maps/place URLs).
-const GOOGLE_LISTING_URL = 'https://maps.google.com/?cid=11437658075713946562'
+export const GOOGLE_LISTING_URL = 'https://maps.google.com/?cid=11437658075713946562'
 
 // Reviewer initials avatar. Deliberately NOT the Google-hosted profile
 // photos: those URLs (lh3.googleusercontent.com/...) rotate and would

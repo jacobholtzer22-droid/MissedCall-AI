@@ -641,7 +641,7 @@ export async function POST(request: NextRequest) {
         await telnyx.messages.send({
           from: process.env.MARKETING_TELNYX_NUMBER,
           to: phoneCheck.e164,
-          text: `You are booked with Align and Acquire for ${dateLabel} at ${timeLabel} ET. I will call this number and show you the text-back live. Reply STOP to opt out.`,
+          text: `You are booked with Align and Acquire for ${dateLabel} at ${timeLabel} ET. I will show you the system running on real client accounts. Reply STOP to opt out.`,
         })
       } catch (err) {
         console.error('Failed to send customer confirmation SMS via Telnyx:', err)
@@ -664,7 +664,7 @@ export async function POST(request: NextRequest) {
               <h2>You're booked</h2>
               <p>Hi ${escapeHtml(name.trim())},</p>
               <p>Your demo is set for <strong>${escapeHtml(dateLabel)} at ${escapeHtml(timeLabel)} (Eastern Time)</strong>.</p>
-              <p>It takes about ${SLOT_MINUTES} minutes. I will call your business line, let it ring out, and you will watch the text back hit your phone. Then I will answer any questions.</p>
+              <p>It takes about ${SLOT_MINUTES} minutes. I will show you the system running on real client accounts: real text-back conversations, and the jobs that got booked out of them. Then I will answer any questions.</p>
               <p>You will also get a text from me confirming.</p>
               <p>Need to move it? Just reply to this email.</p>
               <p>Talk soon, Jacob</p>

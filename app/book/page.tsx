@@ -6,7 +6,7 @@ import { Calendar, Check, ArrowLeft, Clock, Loader2, ArrowRight } from 'lucide-r
 import { Logo } from '@/app/components/Logo'
 import { fbTrack, fbTrackCustom } from '@/lib/meta-pixel'
 import { validateUsMobile } from '@/lib/phone-utils'
-import BookTestimonials from '@/app/components/BookTestimonials'
+import BookTestimonials, { BookFeaturedTestimonial } from '@/app/components/BookTestimonials'
 import { parseAttribution, type Attribution } from '@/lib/attribution'
 
 // ─────────────────────────────────────────────────────────
@@ -533,7 +533,7 @@ export default function BookPage() {
               Your missed calls, texted back in 8 seconds. Booked on your calendar.
             </h1>
             <p className="text-[17px] leading-relaxed mb-10" style={{ color: 'rgba(242,240,235,0.7)' }}>
-              Watch it happen live on your own line.
+              I&apos;ll show you the system running on real client accounts.
             </p>
             <BookTestimonials />
             <button
@@ -544,6 +544,7 @@ export default function BookPage() {
             >
               Show me <ArrowRight size={17} strokeWidth={2.5} />
             </button>
+            <BookFeaturedTestimonial />
           </div>
         )}
 
@@ -764,7 +765,7 @@ export default function BookPage() {
             <StepProgress current={step} />
             <div className="mb-8">
               <h1 className="text-[clamp(1.8rem,5vw,2.9rem)] font-black uppercase leading-[0.94] tracking-tight mb-3">
-                Pick a time. I&apos;ll call your line and you&apos;ll watch the text-back happen in 8 seconds.
+                Pick a time. I&apos;ll show you the system running on real client accounts.
               </h1>
               <p className="text-[14px]" style={{ color: 'rgba(242,240,235,0.6)' }}>
                 Takes about 15 minutes. Pick today or tomorrow if you want to see it fast.
@@ -915,9 +916,9 @@ export default function BookPage() {
                 What happens on the call
               </p>
               <ol className="space-y-3 text-[14px] leading-relaxed" style={{ color: 'rgba(242,240,235,0.75)' }}>
-                <li>1. I call your business line and let it ring out, like a customer would.</li>
-                <li>2. You watch the text back land on my phone in 8 seconds.</li>
-                <li>3. I show you what happens when that lead replies and books itself in.</li>
+                <li>1. I show you the system running on real client accounts.</li>
+                <li>2. You read real text-back conversations, word for word.</li>
+                <li>3. You see the jobs that got booked out of them.</li>
                 <li>4. You ask whatever you want. If it is not a fit, no hard feelings.</li>
               </ol>
             </div>

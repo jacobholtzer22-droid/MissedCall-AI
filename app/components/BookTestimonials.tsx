@@ -1,7 +1,8 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Star } from 'lucide-react'
+import { Star, ExternalLink } from 'lucide-react'
+import { GOOGLE_LISTING_URL } from './GoogleReviews'
 
 // ─────────────────────────────────────────────────────────
 // /book landing social proof.
@@ -37,16 +38,6 @@ const TESTIMONIALS: Testimonial[] = [
     rating: 5,
     quote:
       'Helped me stay focused on the job and not lose any leads. Works even better than expected. 100% recommend',
-  },
-  {
-    name: 'Brett',
-    business: 'Master Gardener LLC',
-    rating: 5,
-    // Contiguous cut from the full testimonial on /reviews. Nothing reworded.
-    quote:
-      "The ones I miss, the AI texts them back right away so I'm not losing work while I'm out on a job.",
-    photo: '/images/testimonial-master-gardener.jpg',
-    photoAlt: 'Jacob shaking hands with Brett of Master Gardener LLC',
   },
   {
     name: 'Cameron Brillantes',
@@ -90,6 +81,20 @@ const TESTIMONIALS: Testimonial[] = [
       'Liam got me connected with this amazing company through a call and I was grateful to have answered it. I got in communication with Jacob the owner who helped me strategize ways to make my business better. Great experience overall',
   },
 ]
+
+// Brett is deliberately NOT in TESTIMONIALS: he has his own block below the
+// fold where the handshake photo is big enough to read. Keeping him in both
+// would duplicate the same person on one screen.
+const FEATURED: Testimonial = {
+  name: 'Brett',
+  business: 'Master Gardener LLC',
+  rating: 5,
+  // Contiguous cut from the full testimonial on /reviews. Nothing reworded.
+  quote:
+    "The ones I miss, the AI texts them back right away so I'm not losing work while I'm out on a job.",
+  photo: '/images/testimonial-master-gardener.jpg',
+  photoAlt: 'Jacob shaking hands with Brett of Master Gardener LLC',
+}
 
 const ROTATE_MS = 5000
 const SWIPE_THRESHOLD_PX = 40
@@ -152,36 +157,6 @@ function Attribution({ item }: { item: Testimonial }) {
 }
 
 function Card({ item }: { item: Testimonial }) {
-  if (item.photo) {
-    return (
-      <div className="grid h-full grid-cols-[38%_1fr]">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src={item.photo}
-          alt={item.photoAlt ?? ''}
-          className="h-full w-full object-cover object-[center_28%]"
-        />
-        <div className="flex min-w-0 flex-col justify-between p-4">
-          <div>
-            <Stars rating={item.rating} />
-            <p
-              className="mt-2 overflow-hidden text-[13px] leading-snug"
-              style={{
-                color: 'rgba(242,240,235,0.88)',
-                display: '-webkit-box',
-                WebkitLineClamp: 4,
-                WebkitBoxOrient: 'vertical',
-              }}
-            >
-              {item.quote}
-            </p>
-          </div>
-          <Attribution item={item} />
-        </div>
-      </div>
-    )
-  }
-
   return (
     <div className="flex h-full flex-col justify-between p-4 sm:p-5">
       <div>
@@ -276,6 +251,53 @@ export default function BookTestimonials() {
           </button>
         ))}
       </div>
+
+      {/* Secondary by design: quiet type, no button styling, must not compete
+          with the primary CTA directly beneath it. */}
+      <div className="mt-2 text-center">
+        <a
+          href={GOOGLE_LISTING_URL}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.18em] underline underline-offset-4 transition-colors"
+          style={{ color: '#6E7681' }}
+          onMouseEnter={(e) => (e.currentTarget.style.color = '#EE6B1A')}
+          onMouseLeave={(e) => (e.currentTarget.style.color = '#6E7681')}
+        >
+          Read our Google reviews
+          <ExternalLink size={11} strokeWidth={2.25} aria-hidden="true" />
+        </a>
+      </div>
     </div>
+  )
+}
+
+/**
+ * Featured testimonial block. Lives below the fold on the /book landing screen
+ * so the photo can be large enough to actually read without pushing the CTA
+ * down. Same verbatim pull-quote as before, same attribution.
+ */
+export function BookFeaturedTestimonial() {
+  return (
+    <section className="mt-14 border-2" style={{ borderColor: 'rgba(110,118,129,0.35)', background: 'rgba(242,240,235,0.03)' }}>
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={FEATURED.photo}
+        alt={FEATURED.photoAlt ?? ''}
+        className="w-full object-cover object-[center_28%] aspect-[4/3] sm:aspect-[16/9]"
+      />
+      <div className="p-6 sm:p-8">
+        <Stars rating={FEATURED.rating} />
+        <p className="mt-3 text-[16px] leading-relaxed sm:text-[18px]" style={{ color: 'rgba(242,240,235,0.9)' }}>
+          {FEATURED.quote}
+        </p>
+        <div className="mt-5 border-t-2 pt-4" style={{ borderColor: 'rgba(110,118,129,0.25)' }}>
+          <div className="text-[15px] font-bold" style={{ color: '#F2F0EB' }}>{FEATURED.name}</div>
+          <div className="font-mono text-[10px] uppercase tracking-[0.18em] mt-1" style={{ color: '#6E7681' }}>
+            {FEATURED.business}
+          </div>
+        </div>
+      </div>
+    </section>
   )
 }
