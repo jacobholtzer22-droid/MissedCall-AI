@@ -533,7 +533,7 @@ export default function BookPage() {
               Your missed calls, texted back in 8 seconds. Booked on your calendar.
             </h1>
             <p className="text-[17px] leading-relaxed mb-10" style={{ color: 'rgba(242,240,235,0.7)' }}>
-              I&apos;ll show you the system running on real client accounts.
+              I&apos;ll show you it running on real client accounts.
             </p>
             <BookTestimonials />
             <button
@@ -917,7 +917,7 @@ export default function BookPage() {
               </p>
               <ol className="space-y-3 text-[14px] leading-relaxed" style={{ color: 'rgba(242,240,235,0.75)' }}>
                 <li>1. I show you the system running on real client accounts.</li>
-                <li>2. You read real text-back conversations, word for word.</li>
+                <li>2. I show you real text-back conversations, word for word.</li>
                 <li>3. You see the jobs that got booked out of them.</li>
                 <li>4. You ask whatever you want. If it is not a fit, no hard feelings.</li>
               </ol>
