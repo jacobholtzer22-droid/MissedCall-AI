@@ -138,18 +138,40 @@ function Card({ children }: { children: React.ReactNode }) {
 // ─────────────────────────────────────────────────────────
 // Progress indicator
 // ─────────────────────────────────────────────────────────
+// Landing plus the decision to continue already count as progress, so the first
+// question opens at 50%. Every step advances, none repeats a value, and the
+// confirmation screen lands on 100%.
+//
+// These percentages are display only. STEPS / stepNumber above still drive the
+// pixel step_number parameter and are deliberately left alone.
+const STEP_PROGRESS: Partial<Record<Step, { pct: number; label: string }>> = {
+  trade: { pct: 50, label: 'Your business' },
+  missed: { pct: 62, label: 'Missed calls' },
+  answers: { pct: 74, label: 'Who answers' },
+  contact: { pct: 86, label: 'Your details' },
+  calendar: { pct: 94, label: 'Pick a time' },
+  confirmation: { pct: 100, label: 'Booked' },
+}
+
 function StepProgress({ current }: { current: Step }) {
-  const num = stepNumber(current)
-  if (!num) return null
-  const total = STEPS.length
-  const pct = Math.round((num / total) * 100)
+  const entry = STEP_PROGRESS[current]
+  if (!entry) return null
+  const { pct, label } = entry
   return (
     <div className="mb-8">
       <div className="flex items-center justify-between font-mono text-[10px] uppercase tracking-[0.2em] mb-2" style={{ color: '#6E7681' }}>
-        <span>Step {num} of {total}</span>
+        <span>{label}</span>
         <span style={{ color: '#EE6B1A' }}>{pct}%</span>
       </div>
-      <div className="h-1 w-full" style={{ background: 'rgba(110,118,129,0.25)' }}>
+      <div
+        className="h-1 w-full"
+        style={{ background: 'rgba(110,118,129,0.25)' }}
+        role="progressbar"
+        aria-valuenow={pct}
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-label={`Progress: ${label}`}
+      >
         <div
           className="h-1 transition-all duration-300"
           style={{ width: `${pct}%`, background: '#EE6B1A' }}
@@ -859,6 +881,9 @@ export default function BookPage() {
         {/* ── Confirmation ──────────────────────────────── */}
         {step === 'confirmation' && (
           <div className="text-center">
+            <div className="text-left">
+              <StepProgress current={step} />
+            </div>
             <div className="inline-flex items-center justify-center h-16 w-16 border-2 mb-8 mx-auto" style={{ borderColor: '#EE6B1A' }}>
               <Check size={32} strokeWidth={2.5} style={{ color: '#EE6B1A' }} />
             </div>
