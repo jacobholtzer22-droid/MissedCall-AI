@@ -222,19 +222,16 @@ export default function BookFunnelClient({
       </header>
       <div className="aa-hazard" />
 
-      <main className="mx-auto max-w-4xl px-5 sm:px-8 py-8 md:py-14">
+      <main className="mx-auto max-w-4xl px-5 sm:px-8 py-6 md:py-14">
         {/* ── Hero ─────────────────────────────────────── */}
-        <section className="mb-6">
-          <div className="inline-flex items-center gap-2 font-mono text-[11px] font-semibold uppercase tracking-[0.28em] mb-3">
+        <section className="mb-4">
+          <div className="inline-flex items-center gap-2 font-mono text-[11px] font-semibold uppercase tracking-[0.28em] mb-2">
             <span className="inline-block h-2.5 w-2.5" style={{ background: '#EE6B1A' }} />
             <span style={{ color: '#EE6B1A' }}>Free live demo</span>
           </div>
-          <h1 className="text-[clamp(1.5rem,4.6vw,2.6rem)] font-black uppercase leading-[1.12] tracking-tight mb-3">
-            Your missed calls, texted back in 8 seconds. Booked on your calendar.
+          <h1 className="text-[clamp(1.5rem,5.2vw,2.6rem)] font-black uppercase leading-[1.1] tracking-tight mb-4">
+            Missed calls, texted back in 8 seconds.
           </h1>
-          <p className="text-[15px] leading-[1.55] mb-4" style={{ color: 'rgba(242,240,235,0.72)' }}>
-            I&apos;ll show you it running on real client accounts.
-          </p>
           <a
             href="#step-2"
             className="aa-btn flex items-center justify-center gap-2 px-8 py-3.5 text-[15px] font-bold uppercase tracking-wide min-h-[52px] sm:inline-flex sm:w-auto"
@@ -244,48 +241,17 @@ export default function BookFunnelClient({
             <ArrowRight size={17} strokeWidth={2.5} />
           </a>
 
-          {/* Scroll cue, not a second CTA. The whole block is the hit area, not
-              just the arrow, so it is thumb-reachable without aiming. */}
-          <a
-            href="#step-1"
-            className="mt-3 flex flex-col items-center gap-1 py-2 w-full group"
-            style={{ color: '#6E7681' }}
-            aria-label="See how it works"
-          >
-            <span className="font-mono text-[11px] uppercase tracking-[0.22em] transition-colors group-hover:text-[#EE6B1A]">
-              See how it works
-            </span>
-            <ChevronDown
-              size={20}
-              strokeWidth={2.5}
-              aria-hidden="true"
-              className="motion-safe:animate-[aaNudge_2.4s_ease-in-out_infinite] transition-colors group-hover:text-[#EE6B1A]"
-            />
-          </a>
         </section>
 
-        <div className="mb-3">
+        <div className="mb-4">
           <BrettTestimonial />
         </div>
 
-        <div className="mb-6">
-          <ReviewCarousel />
-        </div>
-
         {/* ── Step 1 ───────────────────────────────────── */}
-        <section id="step-1" className="mb-10 scroll-mt-6">
-          <div className="mb-3">
-            <div className="inline-flex items-center gap-2 font-mono text-[10px] font-semibold uppercase tracking-[0.28em] mb-2">
-              <span className="inline-block h-2 w-2" style={{ background: '#EE6B1A' }} />
-              <span style={{ color: '#EE6B1A' }}>Step 1</span>
-            </div>
-            <h2 className="text-[clamp(1.2rem,4vw,2rem)] font-black uppercase leading-[1.15] tracking-tight">
-              Watch me run it live on a real account
-            </h2>
-            <p className="text-[13px] leading-[1.5] mt-2" style={{ color: 'rgba(242,240,235,0.65)' }}>
-              Under two minutes. Real missed call, real text back, real booked quote.
-            </p>
-          </div>
+        <section id="step-1" className="mb-8 scroll-mt-6">
+          <h2 className="text-[clamp(1.1rem,3.8vw,1.9rem)] font-black uppercase leading-[1.15] tracking-tight mb-2">
+            <span style={{ color: '#EE6B1A' }}>Step 1.</span> Watch me run it live
+          </h2>
           <div className="border-2 overflow-hidden" style={{ borderColor: BORDER, background: CARD }}>
             {playing ? (
               <video
@@ -304,14 +270,22 @@ export default function BookFunnelClient({
                 onClick={handlePlayClick}
                 aria-label="Play the demo video"
                 className="relative w-full aspect-[1664/1080] grid place-items-center group overflow-hidden"
-                style={
-                  posterSrc
-                    ? { backgroundImage: `url(${posterSrc})`, backgroundSize: 'cover', backgroundPosition: 'center' }
-                    : { background: 'linear-gradient(135deg, #1d2026 0%, #16181C 60%, #22252b 100%)' }
-                }
+                style={{ background: 'linear-gradient(135deg, #1d2026 0%, #16181C 60%, #22252b 100%)' }}
               >
                 {posterSrc && (
-                  <span aria-hidden="true" className="absolute inset-0" style={{ background: 'linear-gradient(180deg, rgba(22,24,28,0.35) 0%, rgba(22,24,28,0.55) 100%)' }} />
+                  <>
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={posterSrc}
+                      alt=""
+                      aria-hidden="true"
+                      fetchPriority="high"
+                      loading="eager"
+                      decoding="async"
+                      className="absolute inset-0 h-full w-full object-cover"
+                    />
+                    <span aria-hidden="true" className="absolute inset-0" style={{ background: 'linear-gradient(180deg, rgba(22,24,28,0.35) 0%, rgba(22,24,28,0.55) 100%)' }} />
+                  </>
                 )}
                 <span className="relative grid place-items-center rounded-full transition-transform motion-safe:group-hover:scale-105" style={{ background: '#EE6B1A', width: 84, height: 84, boxShadow: '0 6px 24px rgba(0,0,0,0.45)' }}>
                   <Play size={34} strokeWidth={2.5} fill="#16181C" style={{ color: '#16181C', marginLeft: 4 }} />
@@ -322,7 +296,16 @@ export default function BookFunnelClient({
               </button>
             )}
           </div>
+          <p className="text-[13px] leading-[1.5] mt-2.5" style={{ color: 'rgba(242,240,235,0.6)' }}>
+            Under two minutes. Real missed call, real text back, real booked quote.
+          </p>
         </section>
+
+        {/* Reviews keep their place on the page, just below the player rather
+            than above it: they no longer get to push the video off the screen. */}
+        <div className="mb-8">
+          <ReviewCarousel />
+        </div>
 
         {/* Urgency sits at the booking decision, not at the top of the page:
             they see the clock right as they are about to pick a time. */}

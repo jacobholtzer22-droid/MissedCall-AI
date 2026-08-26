@@ -30,20 +30,20 @@ export default function BrettTestimonial() {
       <img
         src={PHOTO}
         alt="Jacob shaking hands with Brett of Master Gardener LLC"
-        className="w-[96px] sm:w-[140px] shrink-0 self-stretch object-cover object-[center_28%]"
+        className="w-[76px] sm:w-[120px] shrink-0 self-stretch object-cover object-[center_28%]"
       />
-      <div className="min-w-0 flex-1 p-3 sm:p-4">
-        <div className="flex items-center gap-1 mb-1.5" role="img" aria-label="5 out of 5 stars">
+      <div className="min-w-0 flex-1 px-3 py-2.5 sm:p-4">
+        <div className="flex items-center gap-0.5 mb-1" role="img" aria-label="5 out of 5 stars">
           {Array.from({ length: 5 }).map((_, i) => (
-            <Star key={i} size={12} strokeWidth={0} fill="#FBBC04" aria-hidden="true" />
+            <Star key={i} size={11} strokeWidth={0} fill="#FBBC04" aria-hidden="true" />
           ))}
         </div>
-        <p className="text-[13px] sm:text-[14px] leading-[1.55]" style={{ color: 'rgba(242,240,235,0.9)' }}>
+        <p className="text-[12.5px] sm:text-[14px] leading-[1.45]" style={{ color: 'rgba(242,240,235,0.9)' }}>
           {QUOTE}
         </p>
-        <div className="mt-2">
-          <span className="block text-[12px] font-bold" style={{ color: '#F2F0EB' }}>Brett</span>
-          <span className="block font-mono text-[9px] uppercase tracking-[0.16em]" style={{ color: '#6E7681' }}>
+        <div className="mt-1.5 flex items-baseline gap-2 min-w-0">
+          <span className="text-[12px] font-bold shrink-0" style={{ color: '#F2F0EB' }}>Brett</span>
+          <span className="font-mono text-[9px] uppercase tracking-[0.16em] truncate" style={{ color: '#6E7681' }}>
             Master Gardener LLC
           </span>
         </div>
