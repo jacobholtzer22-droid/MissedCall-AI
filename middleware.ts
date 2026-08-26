@@ -6,6 +6,7 @@ import {
   VARIANT_COOKIE_MAX_AGE,
   assignVariant,
   isVariant,
+  isLiveVariant,
   variantFromQuery,
   newVisitorId,
 } from '@/lib/variant'
@@ -48,10 +49,15 @@ function assignFunnelCookies(request: NextRequest): NextResponse {
   const existingVariant = request.cookies.get(VARIANT_COOKIE)?.value
   const existingVisitor = request.cookies.get(VISITOR_COOKIE)?.value
 
-  const variant = forced ?? (isVariant(existingVariant) ? existingVariant : assignVariant())
+  // A sticky cookie only survives while its arm is still live. Setting an arm's
+  // weight to 0 therefore migrates its existing visitors on their next visit
+  // instead of stranding them in a retired experience. `?v=` still forces any
+  // arm for preview, live or not.
+  const keepExisting = isVariant(existingVariant) && isLiveVariant(existingVariant)
+  const variant = forced ?? (keepExisting ? existingVariant : assignVariant())
   const visitorId = existingVisitor || newVisitorId()
 
-  const needsVariantWrite = forced ? forced !== existingVariant : !isVariant(existingVariant)
+  const needsVariantWrite = variant !== existingVariant
   const needsVisitorWrite = !existingVisitor
 
   // Make both readable by the page on THIS request, not just the next one.

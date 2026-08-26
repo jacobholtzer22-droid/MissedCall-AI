@@ -6,6 +6,7 @@ import { validateUsMobile } from '@/lib/phone-utils'
 import type { Attribution } from '@/lib/attribution'
 import type { CouponState } from '@/lib/coupon'
 import { CouponApplied } from './CouponBanner'
+import ProgressBar from './ProgressBar'
 import {
   TRADES,
   NOT_AN_OWNER,
@@ -36,33 +37,6 @@ const BORDER = 'rgba(110,118,129,0.35)'
 const inputCls =
   'w-full px-4 py-4 border-2 text-[16px] font-medium outline-none bg-transparent focus:border-[#EE6B1A]'
 const inputStyle = { borderColor: BORDER, color: '#F2F0EB' }
-
-function ProgressBar({ current, total, label }: { current: number; total: number; label: string }) {
-  // Starts at 50%: picking a time already counted as real progress.
-  const pct = Math.round(50 + (current / total) * 50)
-  return (
-    <div className="px-5 pt-4 sm:px-7">
-      <div
-        className="flex items-center justify-between font-mono text-[10px] uppercase tracking-[0.2em] mb-2"
-        style={{ color: '#6E7681' }}
-      >
-        <span>{label}</span>
-        <span style={{ color: '#EE6B1A' }}>{pct}%</span>
-      </div>
-      <div
-        className="h-1 w-full"
-        style={{ background: 'rgba(110,118,129,0.25)' }}
-        role="progressbar"
-        aria-valuenow={pct}
-        aria-valuemin={50}
-        aria-valuemax={100}
-        aria-label={`Progress: ${label}`}
-      >
-        <div className="h-1 transition-all duration-300" style={{ width: `${pct}%`, background: '#EE6B1A' }} />
-      </div>
-    </div>
-  )
-}
 
 function Choice({ value, onPick }: { value: string; onPick: (v: string) => void }) {
   return (
@@ -310,7 +284,8 @@ export default function BookingWizard({
           </button>
         </div>
 
-        <ProgressBar current={stepIndex} total={steps.length - 1} label={LABELS[step]} />
+        {/* Starts at 50%: picking a time already counted as real progress. */}
+        <ProgressBar pct={50 + (stepIndex / Math.max(1, steps.length - 1)) * 50} label={LABELS[step]} min={50} />
 
         {/* Chosen time stays visible the whole way through. */}
         <div className="mx-5 sm:mx-7 mt-4 border-2 px-4 py-3 flex items-center gap-2.5"

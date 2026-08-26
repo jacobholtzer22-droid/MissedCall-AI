@@ -17,7 +17,7 @@ import { cookies } from 'next/headers'
 import { db } from '@/lib/db'
 import BookFunnelClient, { type InitialGate } from './BookFunnelClient'
 import { GATE_COOKIE } from './constants'
-import { VARIANT_COOKIE, VISITOR_COOKIE, assignVariant, isVariant, variantFromQuery, type Variant } from '@/lib/variant'
+import { VARIANT_COOKIE, VISITOR_COOKIE, assignVariant, isVariant, isLiveVariant, variantFromQuery, type Variant } from '@/lib/variant'
 import { claimCoupon, toState, type CouponState } from '@/lib/coupon'
 
 export const dynamic = 'force-dynamic'
@@ -61,7 +61,8 @@ export default async function BookPage({
   // run for this request. An unpersisted arm is far better than a crash.
   const forced = variantFromQuery(searchParams?.v)
   const fromCookie = cookieStore.get(VARIANT_COOKIE)?.value
-  const variant: Variant = forced ?? (isVariant(fromCookie) ? fromCookie : assignVariant())
+  const keepExisting = isVariant(fromCookie) && isLiveVariant(fromCookie)
+  const variant: Variant = forced ?? (keepExisting ? fromCookie : assignVariant())
 
   const initialGate = await resolveGate(cookieStore.get(GATE_COOKIE)?.value)
 

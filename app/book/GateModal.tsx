@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { X, ArrowLeft, Loader2 } from 'lucide-react'
 import { validateUsMobile } from '@/lib/phone-utils'
+import ProgressBar from './ProgressBar'
 import { TRADES, NOT_AN_OWNER, formatPhoneInput } from './constants'
 
 export type GateResult = { leadId: string; name: string; phone: string; trade: string; qualified: boolean }
@@ -137,7 +138,7 @@ export default function GateModal({ open, watchedSeconds, attribution, onClose, 
         className="w-full sm:max-w-lg border-2 max-h-[88dvh] overflow-y-auto motion-safe:animate-[aaFade_220ms_ease-out]"
         style={{ background: '#16181C', borderColor: border }}
       >
-        <div className="flex items-center justify-between px-5 py-4 border-b-2" style={{ borderColor: border }}>
+        <div className="flex items-center justify-between px-5 pt-3 sm:px-7">
           {screen === 2 ? (
             <button
               type="button"
@@ -149,9 +150,7 @@ export default function GateModal({ open, watchedSeconds, attribution, onClose, 
               Back
             </button>
           ) : (
-            <span className="font-mono text-[11px] uppercase tracking-[0.2em]" style={{ color: '#6E7681' }}>
-              Step {screen} of 2
-            </span>
+            <span />
           )}
           <button
             type="button"
@@ -163,6 +162,11 @@ export default function GateModal({ open, watchedSeconds, attribution, onClose, 
             <X size={20} strokeWidth={2.5} />
           </button>
         </div>
+
+        {/* Same treatment as the booking wizard so the two feel like one flow.
+            Two screens, so the bar is partially complete on the trade question
+            and further along on name and number. */}
+        <ProgressBar pct={screen === 1 ? 50 : 90} label={screen === 1 ? 'Your business' : 'Your details'} />
 
         {screen === 1 && (
           <div className="p-5 sm:p-7">
