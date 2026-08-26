@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
-import { ArrowLeft, ArrowRight, Play, Calendar, Clock, Check, Loader2 } from 'lucide-react'
+import { ArrowLeft, ArrowRight, ChevronDown, Play, Calendar, Clock, Check, Loader2 } from 'lucide-react'
 import { Logo } from '@/app/components/Logo'
 import GoogleReviewsCard from '@/app/components/GoogleReviewsCard'
 import { getDemoVideoUrl, getDemoPosterUrl } from '@/lib/demo-video'
@@ -235,15 +235,33 @@ export default function BookFunnelClient({
           <p className="text-[15px] leading-[1.55] mb-4" style={{ color: 'rgba(242,240,235,0.72)' }}>
             I&apos;ll show you it running on real client accounts.
           </p>
-          <div className="flex flex-col sm:flex-row gap-3">
-            <a href="#step-2" className="aa-btn inline-flex items-center justify-center gap-2 px-8 py-3.5 text-[15px] font-bold uppercase tracking-wide min-h-[52px]" style={{ background: '#EE6B1A', color: '#16181C' }}>
-              Book now
-              <ArrowRight size={17} strokeWidth={2.5} />
-            </a>
-            <a href="#step-1" className="aa-btn-ghost inline-flex items-center justify-center gap-2 border-2 px-8 py-3.5 text-[15px] font-bold uppercase tracking-wide min-h-[52px]" style={{ borderColor: '#6E7681', color: '#F2F0EB' }}>
+          <a
+            href="#step-2"
+            className="aa-btn flex items-center justify-center gap-2 px-8 py-3.5 text-[15px] font-bold uppercase tracking-wide min-h-[52px] sm:inline-flex sm:w-auto"
+            style={{ background: '#EE6B1A', color: '#16181C' }}
+          >
+            Book now
+            <ArrowRight size={17} strokeWidth={2.5} />
+          </a>
+
+          {/* Scroll cue, not a second CTA. The whole block is the hit area, not
+              just the arrow, so it is thumb-reachable without aiming. */}
+          <a
+            href="#step-1"
+            className="mt-3 flex flex-col items-center gap-1 py-2 w-full group"
+            style={{ color: '#6E7681' }}
+            aria-label="See how it works"
+          >
+            <span className="font-mono text-[11px] uppercase tracking-[0.22em] transition-colors group-hover:text-[#EE6B1A]">
               See how it works
-            </a>
-          </div>
+            </span>
+            <ChevronDown
+              size={20}
+              strokeWidth={2.5}
+              aria-hidden="true"
+              className="motion-safe:animate-[aaNudge_2.4s_ease-in-out_infinite] transition-colors group-hover:text-[#EE6B1A]"
+            />
+          </a>
         </section>
 
         <div className="mb-3">

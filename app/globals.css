@@ -293,3 +293,13 @@
 @media (prefers-reduced-motion: reduce) {
   .animate-\[aaFade_320ms_ease-out\] { animation: none !important; }
 }
+
+/* Scroll cue on /book. Quiet on purpose: a small vertical drift, not a bounce.
+   motion-safe: in the markup already gates it, this is the belt-and-braces. */
+@keyframes aaNudge {
+  0%, 100% { transform: translateY(0); opacity: 0.75; }
+  50%      { transform: translateY(4px); opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .motion-safe\:animate-\[aaNudge_2\.4s_ease-in-out_infinite\] { animation: none !important; }
+}
