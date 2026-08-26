@@ -1,44 +1,69 @@
 'use client'
 
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Star, ChevronDown, ChevronUp } from 'lucide-react'
+import { Roboto } from 'next/font/google'
 import { REVIEWS, GOOGLE_LISTING_URL, type Review } from './GoogleReviews'
 
 // ─────────────────────────────────────────────────────────
-// Google-styled reviews block for /book.
+// Google-parity review block for /book.
 //
-// Separate component on purpose: the shared GoogleReviews still renders on /
-// and /reviews, which are not in scope, so restyling in place would have
-// changed them too.
+// Rendered in Google's LIGHT theme on purpose: name, body and reply greys only
+// read correctly on white, and card-level parity was the requirement. That
+// makes this a white surface sitting on the dark funnel page, which is how an
+// embedded Google widget looks anyway.
 //
-// Collapsed by default to exactly two reviews. The point of the collapse is
-// that the video section stays reachable in the first scroll on a phone:
-// reviews come first, but they must not bury Step 1.
+// Roboto, not Google Sans. Google Sans is not licensed for third-party use.
+// Roboto is Apache-2.0 and is what Google renders review bodies in.
 //
-// Review text is VERBATIM. Long reviews clamp to three lines with a real expand
-// control, never a rewrite, and the full text is always in the DOM as real text
-// so it stays selectable, translatable and readable by a screen reader.
+// THREE THINGS DELIBERATELY DO NOT RENDER, because the data does not have them:
+//   - relative dates: no review carries a date, so none is shown. A plausible
+//     "2 months ago" would be fabricated.
+//   - profile photos: not stored (Google's lh3 URLs rotate and break), so every
+//     avatar is an initial circle, which is exactly what Google shows for
+//     photoless accounts.
+//   - owner replies: no reply data exists, so no reply block is emitted.
+// If any of those arrive in the data later, the markup below is ready for them.
 //
-// No dates render. The source data carries no timestamps and a relative date
-// would be fabricated.
+// The G mark attributes where the reviews live. It is never laid out to imply
+// Google endorses the business.
 // ─────────────────────────────────────────────────────────
 
-const GOOGLE_STAR = '#FBBC04'
-const COLLAPSED_COUNT = 2
+const roboto = Roboto({ subsets: ['latin'], weight: ['400', '500'], display: 'swap' })
 
-// Pinned to the top of the collapsed view, in this order. Names must match the
-// review data exactly, which is why it is "Brillantes" here.
+// Google's own values, sampled from the Maps review surface.
+const G = {
+  surface: '#FFFFFF',
+  divider: '#E8EAED',
+  name: '#202124',
+  body: '#3C4043',
+  meta: '#70757A',
+  star: '#FBBC04',
+  starEmpty: '#DADCE0',
+  link: '#1A73E8',
+  replyBg: '#F1F3F4',
+}
+
+// The palette Google assigns to photoless accounts.
+const AVATAR_COLORS = ['#1A73E8', '#D93025', '#1E8E3E', '#9334E6', '#E37400', '#12B5CB', '#C5221F', '#188038']
+
+const COLLAPSED_COUNT = 2
+// Pinned to the top of the collapsed view. Names must match the review data
+// exactly, which is why it is "Brillantes".
 const PINNED_NAMES = ['Cameron Brillantes', 'Ryan']
 
 function orderReviews(all: Review[]): Review[] {
-  const pinned = PINNED_NAMES.map((n) => all.find((r) => r.name === n)).filter(
-    (r): r is Review => Boolean(r)
-  )
+  const pinned = PINNED_NAMES.map((n) => all.find((r) => r.name === n)).filter((r): r is Review => Boolean(r))
   const rest = all.filter((r) => !PINNED_NAMES.includes(r.name))
   return [...pinned, ...rest]
 }
 
-function GoogleG({ size = 16 }: { size?: number }) {
+function colorFor(name: string) {
+  let h = 0
+  for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0
+  return AVATAR_COLORS[h % AVATAR_COLORS.length]
+}
+
+function GoogleG({ size = 18 }: { size?: number }) {
   return (
     <svg width={size} height={size} viewBox="0 0 48 48" aria-hidden="true" focusable="false">
       <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z" />
@@ -49,34 +74,30 @@ function GoogleG({ size = 16 }: { size?: number }) {
   )
 }
 
-function Stars({ rating, size = 14 }: { rating: number; size?: number }) {
+/** Google renders 5 stars always, filling per rating. 14px, 2px apart. */
+function Stars({ rating }: { rating: number }) {
   return (
-    <span className="inline-flex items-center gap-0.5" role="img" aria-label={`${rating} out of 5 stars`}>
+    <span className="inline-flex items-center" style={{ gap: 1 }} role="img" aria-label={`${rating} out of 5 stars`}>
       {Array.from({ length: 5 }).map((_, i) => (
-        <Star key={i} size={size} strokeWidth={0} fill={i < rating ? GOOGLE_STAR : 'rgba(110,118,129,0.4)'} aria-hidden="true" />
+        <svg key={i} width="14" height="14" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+          <path
+            fill={i < rating ? G.star : G.starEmpty}
+            d="M12 17.27 18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"
+          />
+        </svg>
       ))}
     </span>
   )
 }
 
-function initialsOf(name: string) {
-  return name.split(' ').filter(Boolean).slice(0, 2).map((p) => p[0]?.toUpperCase() ?? '').join('')
-}
-
-const AVATAR_COLORS = ['#EE6B1A', '#5C7A89', '#8B7355', '#7A6A8A', '#4E7A5E']
-function colorFor(name: string) {
-  let h = 0
-  for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0
-  return AVATAR_COLORS[h % AVATAR_COLORS.length]
-}
-
-function ReviewCard({ name, rating, text }: Review) {
+function ReviewRow({ review, last }: { review: Review; last: boolean }) {
+  const { name, rating, text, date } = review
   const [expanded, setExpanded] = useState(false)
   const [clamped, setClamped] = useState(false)
-  const bodyRef = useRef<HTMLParagraphElement>(null)
+  const bodyRef = useRef<HTMLDivElement>(null)
 
-  // Measured, not guessed from character count: whether three lines actually
-  // truncate depends on the rendered width.
+  // Measured rather than guessed from character count: whether four lines
+  // actually truncate depends on rendered width.
   useEffect(() => {
     const el = bodyRef.current
     if (!el) return
@@ -88,47 +109,69 @@ function ReviewCard({ name, rating, text }: Review) {
   }, [])
 
   return (
-    <li className="border-2 p-3.5 sm:p-5" style={{ borderColor: 'rgba(110,118,129,0.3)', background: 'rgba(242,240,235,0.03)' }}>
-      <div className="flex items-center gap-3 mb-2.5">
+    <li style={{ padding: '16px 0', borderBottom: last ? 'none' : `1px solid ${G.divider}` }}>
+      <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
         <span
-          className="grid h-9 w-9 shrink-0 place-items-center rounded-full text-[13px] font-bold"
-          style={{ background: colorFor(name), color: '#16181C' }}
           aria-hidden="true"
+          style={{
+            width: 40, height: 40, borderRadius: '50%', flexShrink: 0,
+            background: colorFor(name), color: '#FFFFFF',
+            display: 'grid', placeItems: 'center',
+            fontSize: 18, fontWeight: 400, lineHeight: 1,
+          }}
         >
-          {initialsOf(name)}
+          {name.trim().charAt(0).toUpperCase()}
         </span>
-        <span className="min-w-0">
-          <span className="block text-[14px] font-bold truncate" style={{ color: '#F2F0EB' }}>{name}</span>
-          <Stars rating={rating} />
-        </span>
+
+        <div style={{ minWidth: 0, flex: 1 }}>
+          <div style={{ color: G.name, fontSize: 14, fontWeight: 400, lineHeight: '20px' }}>{name}</div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 2 }}>
+            <Stars rating={rating} />
+            {/* Only if the data actually carries a date. */}
+            {date && <span style={{ color: G.meta, fontSize: 12, lineHeight: '16px' }}>{date}</span>}
+          </div>
+
+          <div
+            ref={bodyRef}
+            style={{
+              color: G.body, fontSize: 14, lineHeight: '20px', marginTop: 10,
+              ...(expanded
+                ? {}
+                : { display: '-webkit-box', WebkitLineClamp: 4, WebkitBoxOrient: 'vertical', overflow: 'hidden' }),
+            }}
+          >
+            {text}
+          </div>
+
+          {(clamped || expanded) && (
+            <button
+              type="button"
+              onClick={() => setExpanded((v) => !v)}
+              aria-expanded={expanded}
+              style={{
+                color: G.link, fontSize: 14, lineHeight: '20px', marginTop: 2,
+                background: 'none', border: 0, padding: '10px 0', cursor: 'pointer',
+                minHeight: 44, display: 'inline-flex', alignItems: 'center',
+              }}
+            >
+              {expanded ? 'Less' : 'More'}
+            </button>
+          )}
+
+          {/* Owner reply. No review currently carries one, so nothing renders. */}
+          {review.ownerReply && (
+            <div style={{ background: G.replyBg, borderRadius: 8, padding: 12, marginTop: 12 }}>
+              <div style={{ color: G.name, fontSize: 13, fontWeight: 500, lineHeight: '18px' }}>
+                Response from the owner
+              </div>
+              <div style={{ color: G.body, fontSize: 13, lineHeight: '18px', marginTop: 4 }}>
+                {review.ownerReply}
+              </div>
+            </div>
+          )}
+        </div>
       </div>
-      <p
-        ref={bodyRef}
-        className={expanded ? 'text-[14px] leading-[1.6]' : 'text-[14px] leading-[1.6] overflow-hidden'}
-        style={
-          expanded
-            ? { color: 'rgba(242,240,235,0.85)' }
-            : {
-                color: 'rgba(242,240,235,0.85)',
-                display: '-webkit-box',
-                WebkitLineClamp: 3,
-                WebkitBoxOrient: 'vertical',
-              }
-        }
-      >
-        {text}
-      </p>
-      {(clamped || expanded) && (
-        <button
-          type="button"
-          onClick={() => setExpanded((v) => !v)}
-          aria-expanded={expanded}
-          className="mt-1 inline-flex items-center font-mono text-[10px] uppercase tracking-[0.16em] underline underline-offset-4 min-h-[44px]"
-          style={{ color: '#6E7681' }}
-        >
-          {expanded ? 'Show less' : 'Read more'}
-        </button>
-      )}
     </li>
   )
 }
@@ -139,33 +182,40 @@ export default function GoogleReviewsCard() {
   const visible = showAll ? ordered : ordered.slice(0, COLLAPSED_COUNT)
   const hidden = ordered.length - COLLAPSED_COUNT
 
-  // Derived, never hardcoded: adding a review updates the count and the
-  // aggregate everywhere automatically.
+  // Derived, never hardcoded, so adding a review updates both automatically.
   const average = REVIEWS.reduce((sum, r) => sum + r.rating, 0) / REVIEWS.length
 
   return (
-    <section aria-label="Reviews from Google">
-      <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+    <section
+      aria-label="Reviews from Google"
+      className={roboto.className}
+      style={{ background: G.surface, borderRadius: 8, padding: '4px 16px 16px' }}
+    >
+      <div
+        style={{
+          display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between',
+          gap: 8, padding: '12px 0', borderBottom: `1px solid ${G.divider}`,
+        }}
+      >
         <a
           href={GOOGLE_LISTING_URL}
           target="_blank"
           rel="noopener noreferrer"
-          className="inline-flex items-center gap-2 text-[13px] font-semibold underline underline-offset-4"
-          style={{ color: 'rgba(242,240,235,0.85)' }}
+          style={{ display: 'inline-flex', alignItems: 'center', gap: 8, color: G.name, fontSize: 14, textDecoration: 'none' }}
         >
-          <GoogleG size={17} />
+          <GoogleG size={18} />
           Reviews from Google
         </a>
-        <span className="inline-flex items-center gap-2 text-[13px]" style={{ color: '#6E7681' }}>
-          <span className="font-bold tabular-nums" style={{ color: '#F2F0EB' }}>{average.toFixed(1)}</span>
-          <Stars rating={Math.round(average)} size={13} />
-          <span>{REVIEWS.length} reviews</span>
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, color: G.meta, fontSize: 13 }}>
+          <span style={{ color: G.name, fontWeight: 500 }}>{average.toFixed(1)}</span>
+          <Stars rating={Math.round(average)} />
+          <span>({REVIEWS.length})</span>
         </span>
       </div>
 
-      <ul className="grid gap-3 sm:grid-cols-2">
-        {visible.map((r) => (
-          <ReviewCard key={r.name} {...r} />
+      <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>
+        {visible.map((r, i) => (
+          <ReviewRow key={r.name} review={r} last={i === visible.length - 1} />
         ))}
       </ul>
 
@@ -174,18 +224,13 @@ export default function GoogleReviewsCard() {
           type="button"
           onClick={() => setShowAll((v) => !v)}
           aria-expanded={showAll}
-          className="mt-4 w-full border-2 py-3.5 text-[14px] font-bold uppercase tracking-wide inline-flex items-center justify-center gap-2 min-h-[52px]"
-          style={{ borderColor: 'rgba(110,118,129,0.4)', color: '#F2F0EB' }}
+          style={{
+            width: '100%', minHeight: 44, marginTop: 8,
+            background: 'none', border: `1px solid ${G.divider}`, borderRadius: 20,
+            color: G.link, fontSize: 14, fontWeight: 500, cursor: 'pointer',
+          }}
         >
-          {showAll ? (
-            <>
-              See less <ChevronUp size={16} strokeWidth={2.5} />
-            </>
-          ) : (
-            <>
-              See more <span style={{ color: '#6E7681' }}>({hidden})</span> <ChevronDown size={16} strokeWidth={2.5} />
-            </>
-          )}
+          {showAll ? 'Show less' : `More reviews (${hidden})`}
         </button>
       )}
     </section>

@@ -17,7 +17,11 @@ export interface Review {
   name: string
   rating: number
   text: string
+  /** Relative date as Google shows it. Absent on every current row: the
+   *  snapshot has no timestamps, and a rendered date must never be invented. */
   date?: string
+  /** Verbatim owner reply, if one exists. Absent on every current row. */
+  ownerReply?: string
 }
 
 export const REVIEWS: Review[] = [
