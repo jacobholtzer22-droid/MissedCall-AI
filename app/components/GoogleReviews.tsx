@@ -13,14 +13,14 @@ import { Star, Quote, ChevronLeft, ChevronRight, ExternalLink } from 'lucide-rea
 // Listing at time of capture (Aug 2026): 5.0 average, 8 reviews,
 // all 5-star.
 // ─────────────────────────────────────────────────────────
-interface Review {
+export interface Review {
   name: string
   rating: number
   text: string
   date?: string
 }
 
-const REVIEWS: Review[] = [
+export const REVIEWS: Review[] = [
   {
     name: 'Benji Hussey',
     rating: 5,

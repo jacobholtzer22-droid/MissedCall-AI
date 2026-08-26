@@ -361,6 +361,9 @@ model Appointment {
   // Needs a real column because the reminder SMS reads it back at send time.
   googleMeetLink String?
 
+  // A/B arm this booking came from: "gate" | "nogate" | null for pre-test rows.
+  variant String?
+
   reminderNightBeforeSentAt DateTime?
   reminderHourBeforeSentAt  DateTime?
 
@@ -573,12 +576,16 @@ model WebsiteLead {
 
   status String @default("new") // new, contacted, converted, closed
 
+  // A/B arm this lead came from: "gate" | "nogate" | null for pre-test rows.
+  variant String?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@index([businessId])
   @@index([status])
   @@index([createdAt])
+  @@index([variant])
 }
 
 // ===========================================
@@ -603,4 +610,28 @@ model GoogleAdsSnapshot {
 
   @@unique([businessId, campaignId, date])
   @@index([businessId, date])
+}
+
+// ===========================================
+// COUPON CLAIM — $200 off the setup fee, 24h to book
+// ===========================================
+// Server-authoritative. The countdown on the page reads expiresAt from here, so
+// refreshing, clearing storage, or revisiting cannot reset it, and an expired
+// claim stays expired. No evergreen timers.
+model CouponClaim {
+  id String @id @default(cuid())
+
+  code      String  @unique // shown to the visitor and quoted in the confirmation
+  visitorId String // opaque id from the httpOnly visitor cookie
+  leadId    String? // bound once the visitor becomes a lead
+  variant   String? // which A/B arm claimed it
+
+  claimedAt     DateTime  @default(now())
+  expiresAt     DateTime // claimedAt + 24h
+  redeemedAt    DateTime? // set when a booking actually used it
+  appointmentId String?
+
+  @@index([visitorId])
+  @@index([leadId])
+  @@index([expiresAt])
 }

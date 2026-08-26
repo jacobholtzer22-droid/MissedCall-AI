@@ -33,6 +33,8 @@ import {
   overlapsWithBusy,
 } from '@/lib/marketing-slots'
 import { GATE_COOKIE, NOT_AN_OWNER, CALL_LENGTH_MINUTES } from '@/app/book/constants'
+import { VARIANT_COOKIE, VISITOR_COOKIE } from '@/lib/variant'
+import { getClaimForVisitor, setupFeeLine, SETUP_FEE_DISCOUNTED } from '@/lib/coupon'
 
 export const dynamic = 'force-dynamic'
 
@@ -95,6 +97,8 @@ export async function POST(request: NextRequest) {
     }
 
     // Identity comes from the gate cookie when present, otherwise from the form.
+    const variant = request.cookies.get(VARIANT_COOKIE)?.value ?? null
+    const visitorId = request.cookies.get(VISITOR_COOKIE)?.value ?? ''
     const leadId = request.cookies.get(GATE_COOKIE)?.value ?? null
     let lead = leadId
       ? await db.websiteLead.findFirst({ where: { id: leadId, businessId: business.id } })
@@ -197,6 +201,11 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // Coupon: only honoured if this visitor holds an unexpired claim right now.
+    const claim = visitorId ? await getClaimForVisitor(visitorId) : null
+    const couponValid = Boolean(claim && claim.expiresAt.getTime() > Date.now())
+    const couponLine = setupFeeLine(claim, couponValid)
+
     const dateLabel = slotStart.toLocaleDateString('en-US', {
       weekday: 'long', month: 'short', day: 'numeric', timeZone: TIMEZONE,
     })
@@ -216,6 +225,8 @@ export async function POST(request: NextRequest) {
         notes: [
           'SMS consent: yes (captured at booking)',
           `Source: meta_demo_video`,
+          couponLine,
+          variant ? `Variant: ${variant}` : null,
           companyName ? `Company: ${companyName}` : null,
           trade ? `Trade: ${trade}` : null,
           missesPerWeek ? `Missed calls per week: ${missesPerWeek}` : null,
@@ -228,6 +239,7 @@ export async function POST(request: NextRequest) {
         googleCalendarEventId: googleEventId,
         googleMeetLink,
         calendarSyncFailed,
+        variant,
       },
     })
 
@@ -256,6 +268,8 @@ export async function POST(request: NextRequest) {
         <p><strong>Name:</strong> ${escapeHtml(name)}</p>
         <p><strong>Mobile:</strong> ${escapeHtml(phoneE164)}</p>
         <p><strong>Email:</strong> ${escapeHtml(email)}</p>
+        <p><strong>Setup:</strong> ${escapeHtml(couponLine)}</p>
+        <p><strong>Variant:</strong> ${escapeHtml(variant ?? 'unassigned')}</p>
         <p><strong>Company:</strong> ${escapeHtml(companyName || 'Not given')}</p>
         <p><strong>Trade:</strong> ${escapeHtml(trade || 'Not specified')}</p>
         <p><strong>Missed calls per week:</strong> ${escapeHtml(missesPerWeek || 'Not specified')}</p>
@@ -266,7 +280,7 @@ export async function POST(request: NextRequest) {
         ${calendarSyncFailed ? '<p style="color:#b00"><strong>Calendar sync FAILED. No Meet link. Fix before the call.</strong></p>' : ''}
         <pre style="font-family:inherit;white-space:pre-wrap;margin:0">${escapeHtml(formatAttributionBlock(attribution))}</pre>
       `,
-      smsText: `Demo booked.\nName: ${name}${companyName ? ` (${companyName})` : ''}\nMobile: ${phoneE164}\nTrade: ${trade || 'n/a'}\nMisses/wk: ${missesPerWeek || 'n/a'}\nTime: ${dateLabel} at ${timeLabel} ET${googleMeetLink ? `\nMeet: ${googleMeetLink}` : ''}\n${formatAttributionLine(attribution)}`,
+      smsText: `Demo booked.\nName: ${name}${companyName ? ` (${companyName})` : ''}\nMobile: ${phoneE164}\nTrade: ${trade || 'n/a'}\nMisses/wk: ${missesPerWeek || 'n/a'}\nTime: ${dateLabel} at ${timeLabel} ET\n${couponLine}${googleMeetLink ? `\nMeet: ${googleMeetLink}` : ''}\n${formatAttributionLine(attribution)}`,
     })
 
     // Customer confirmation SMS
@@ -279,7 +293,7 @@ export async function POST(request: NextRequest) {
           to: phoneE164,
           text: `You are booked with Align and Acquire for ${dateLabel} at ${timeLabel} ET. I will show you the system running on real client accounts.${
             googleMeetLink ? `\nJoin here: ${googleMeetLink}` : ''
-          }\n${WATCH_BEFORE_LINE} ${getDemoVideoAbsoluteUrl()}\nReply STOP to opt out.`,
+          }${couponValid && claim ? `\nSetup $${SETUP_FEE_DISCOUNTED} locked in with code ${claim.code}.` : ''}\n${WATCH_BEFORE_LINE} ${getDemoVideoAbsoluteUrl()}\nReply STOP to opt out.`,
         })
       } catch (err) {
         console.error('[demo-book] confirmation SMS failed:', err)
@@ -305,6 +319,7 @@ export async function POST(request: NextRequest) {
               <p>Your demo is set for <strong>${escapeHtml(dateLabel)} at ${escapeHtml(timeLabel)} (Eastern Time)</strong>.</p>
               <p>It takes about ${CALL_LENGTH_MINUTES} minutes. I will show you the system running on real client accounts: real text-back conversations, and the jobs that got booked out of them. Then I will answer any questions.</p>
               ${googleMeetLink ? `<p><strong>Join here:</strong> <a href="${googleMeetLink}">${googleMeetLink}</a></p>` : ''}
+              ${couponValid && claim ? `<p><strong>Setup fee:</strong> $${SETUP_FEE_DISCOUNTED} locked in with code ${claim.code}.</p>` : ''}
               <p>${WATCH_BEFORE_LINE} <a href="${getDemoVideoAbsoluteUrl()}">Watch the video</a></p>
               <p>You will also get a text from me confirming.</p>
               <p>Talk soon, Jacob</p>
@@ -314,6 +329,12 @@ export async function POST(request: NextRequest) {
       } catch (err) {
         console.error('[demo-book] confirmation email failed:', err)
       }
+    }
+
+    if (couponValid && claim) {
+      await db.couponClaim
+        .update({ where: { id: claim.id }, data: { redeemedAt: new Date(), appointmentId: appointment.id } })
+        .catch((err) => console.error('[demo-book] coupon redeem mark failed:', err))
     }
 
     console.log(`[demo-book] BOOKED appointmentId=${appointment.id} qualified=${qualified} meet=${googleMeetLink ?? 'none'}`)
@@ -326,6 +347,7 @@ export async function POST(request: NextRequest) {
         dateLabel,
         timeLabel,
         meetLink: googleMeetLink,
+        couponLine: couponValid ? couponLine : null,
       },
     })
   } catch (error) {

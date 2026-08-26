@@ -25,6 +25,7 @@ import {
 } from '@/lib/attribution'
 import { rateLimit, getClientIp } from '@/lib/rate-limit'
 import { GATE_COOKIE, GATE_COOKIE_MAX_AGE, NOT_AN_OWNER } from '@/app/book/constants'
+import { VARIANT_COOKIE, VISITOR_COOKIE } from '@/lib/variant'
 
 export const dynamic = 'force-dynamic'
 
@@ -77,6 +78,8 @@ export async function POST(request: NextRequest) {
         ? Math.max(0, Math.round(body.watchedSeconds))
         : 0
     const attribution = sanitizeAttribution(body.attribution)
+    const variant = request.cookies.get(VARIANT_COOKIE)?.value ?? null
+    const visitorId = request.cookies.get(VISITOR_COOKIE)?.value ?? ''
 
     if (!name || !trade) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
@@ -105,6 +108,7 @@ export async function POST(request: NextRequest) {
       `Qualified: ${qualified ? 'yes' : 'no'}`,
       `Source: ${LEAD_SOURCE}`,
       `Landing path: ${landingPath}`,
+      variant ? `Variant: ${variant}` : null,
       watchedSeconds > 0 ? `Watched before gate: ${watchedSeconds}s` : null,
       '',
       formatAttributionBlock(attribution),
@@ -129,7 +133,7 @@ export async function POST(request: NextRequest) {
     const lead = existing
       ? await db.websiteLead.update({
           where: { id: existing.id },
-          data: { name, phone: phoneCheck.e164, message },
+          data: { name, phone: phoneCheck.e164, message, variant },
         })
       : await db.websiteLead.create({
           data: {
@@ -138,15 +142,24 @@ export async function POST(request: NextRequest) {
             phone: phoneCheck.e164,
             message,
             status: 'partial',
+            variant,
           },
         })
 
-    // Only qualified leads are worth interrupting the owner for.
+    if (visitorId) {
+      await db.couponClaim
+        .updateMany({ where: { visitorId, leadId: null }, data: { leadId: lead.id } })
+        .catch((err) => console.error('[demo-lead] coupon bind failed:', err))
+    }
+
+    // Only qualified leads are worth interrupting the owner for. In `nogate`
+    // this fires mid-wizard, which is the point: someone who gave a number and
+    // then abandoned is still callable.
     if (qualified && !existing) {
       await notifyOwnerOfMarketingEvent({
         ownerEmailFallback: business.ownerEmail,
         ownerPhoneFallback: business.ownerPhone,
-        subject: `Call now: ${name} (${trade}) just started the demo video`,
+        subject: `Call now: ${name} (${trade})${variant ? ` [${variant}]` : ''}`,
         html: `
           <h2>New gated demo lead</h2>
           <p>They gave their number and started the video. Call while they are still watching.</p>
@@ -154,14 +167,15 @@ export async function POST(request: NextRequest) {
           <p><strong>Mobile:</strong> ${escapeHtml(phoneCheck.e164)}</p>
           <p><strong>Trade:</strong> ${escapeHtml(trade)}</p>
           <p><strong>Landing path:</strong> ${escapeHtml(landingPath)}</p>
+          <p><strong>Variant:</strong> ${escapeHtml(variant ?? 'unassigned')}</p>
           <pre style="font-family:inherit;white-space:pre-wrap;margin:0">${escapeHtml(formatAttributionBlock(attribution))}</pre>
         `,
-        smsText: `Call now. ${name} (${trade}) just unlocked the demo video.\nMobile: ${phoneCheck.e164}\n${formatAttributionLine(attribution)}`,
+        smsText: `Call now. ${name} (${trade}) gave their number on /book.\nMobile: ${phoneCheck.e164}\nVariant: ${variant ?? 'n/a'}\n${formatAttributionLine(attribution)}`,
       })
     }
 
     console.log(
-      `[demo-lead] ${qualified ? 'QUALIFIED' : 'unqualified'} leadId=${lead.id} trade=${JSON.stringify(trade)} phone=${phoneCheck.e164}`
+      `[demo-lead] ${qualified ? 'QUALIFIED' : 'unqualified'} leadId=${lead.id} variant=${variant ?? 'none'} trade=${JSON.stringify(trade)} phone=${phoneCheck.e164}`
     )
 
     const res = NextResponse.json({ success: true, leadId: lead.id, qualified })

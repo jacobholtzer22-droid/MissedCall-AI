@@ -1,36 +1,42 @@
 // ===========================================
-// /book — GATED DEMO VIDEO FUNNEL
+// /book — GATED DEMO FUNNEL, A/B: gate vs nogate
 // ===========================================
-// Server component. Reads the httpOnly gate cookie and resolves the lead so the
-// booking step can show the captured name and phone without ever trusting
-// client-side state.
+// Server component. Three jobs before render:
+//   1. Resolve (or assign) the A/B arm and pin it in an httpOnly cookie so a
+//      visitor never flips mid-funnel. `?v=gate` / `?v=nogate` forces an arm.
+//   2. Issue an opaque visitor id, which ties the coupon claim and the lead
+//      record to one browser.
+//   3. Resolve the gate cookie so the booking wizard can skip questions the
+//      visitor already answered.
 //
-// Replaced the previous six-screen wizard. The wizard's qualification questions
-// now live on the booking form (Step 2) rather than in front of the video,
-// because the wizard converted at 0.23% across 433 cold landing page views.
+// Cookies are written here rather than in middleware because the assignment has
+// to happen on the same request that renders, or the first pageview would be
+// unassigned.
 
 import { cookies } from 'next/headers'
 import { db } from '@/lib/db'
 import BookFunnelClient, { type InitialGate } from './BookFunnelClient'
 import { GATE_COOKIE } from './constants'
+import { VARIANT_COOKIE, assignVariant, isVariant, variantFromQuery, type Variant } from '@/lib/variant'
 
 export const dynamic = 'force-dynamic'
 
-async function resolveGate(): Promise<InitialGate> {
+async function resolveGate(leadId: string | undefined): Promise<InitialGate> {
+  if (!leadId) return null
   try {
-    const cookieStore = await cookies()
-    const leadId = cookieStore.get(GATE_COOKIE)?.value
-    if (!leadId) return null
-
     const lead = await db.websiteLead.findUnique({
       where: { id: leadId },
-      select: { id: true, name: true, phone: true, message: true },
+      select: { id: true, name: true, phone: true, email: true, message: true },
     })
     if (!lead?.phone) return null
-
-    // Trade was written into the lead body at gate time.
     const trade = lead.message?.match(/^Trade: (.+)$/m)?.[1]?.trim() ?? ''
-    return { leadId: lead.id, name: lead.name, phone: lead.phone, trade }
+    return {
+      leadId: lead.id,
+      name: lead.name,
+      phone: lead.phone,
+      trade,
+      email: lead.email ?? '',
+    }
   } catch (err) {
     // A cookie or database hiccup must never take the funnel down. Fall back to
     // the ungated path, which asks for everything.
@@ -39,7 +45,24 @@ async function resolveGate(): Promise<InitialGate> {
   }
 }
 
-export default async function BookPage() {
-  const initialGate = await resolveGate()
-  return <BookFunnelClient initialGate={initialGate} />
+export default async function BookPage({
+  searchParams,
+}: {
+  searchParams: { v?: string; debug?: string }
+}) {
+  const cookieStore = await cookies()
+
+  // Cookies are assigned in middleware, not here: Next.js forbids
+  // cookies().set() during a server component render. Middleware forwards the
+  // freshly assigned values on the same request, so this read sees them.
+  //
+  // The fallbacks exist so the page still renders if middleware ever did not
+  // run for this request. An unpersisted arm is far better than a crash.
+  const forced = variantFromQuery(searchParams?.v)
+  const fromCookie = cookieStore.get(VARIANT_COOKIE)?.value
+  const variant: Variant = forced ?? (isVariant(fromCookie) ? fromCookie : assignVariant())
+
+  const initialGate = await resolveGate(cookieStore.get(GATE_COOKIE)?.value)
+
+  return <BookFunnelClient initialGate={initialGate} variant={variant} />
 }
