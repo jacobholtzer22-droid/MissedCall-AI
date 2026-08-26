@@ -8,11 +8,12 @@ import GoogleReviewsCard from '@/app/components/GoogleReviewsCard'
 import { getDemoVideoUrl, getDemoPosterUrl } from '@/lib/demo-video'
 import { parseAttribution, type Attribution } from '@/lib/attribution'
 import type { Variant } from '@/lib/variant'
+import type { CouponState } from '@/lib/coupon'
 import { trackStandard, trackCustomEvent, setPixelVariant } from './pixel'
 import GateModal, { type GateResult } from './GateModal'
 import BookingWizard, { type ChosenSlot, type WizardPrefill } from './BookingWizard'
 import ReviewStrip from './ReviewStrip'
-import CouponBanner from './CouponBanner'
+import CouponBanner, { CouponApplied } from './CouponBanner'
 import { GATE_AT_SECONDS, NOT_AN_OWNER } from './constants'
 
 const BORDER = 'rgba(110,118,129,0.35)'
@@ -50,9 +51,11 @@ function SectionHeading({ step, title }: { step: string; title: string }) {
 export default function BookFunnelClient({
   initialGate,
   variant,
+  coupon,
 }: {
   initialGate: InitialGate
   variant: Variant
+  coupon: CouponState
 }) {
   const [gate, setGate] = useState<InitialGate>(initialGate)
   const [modalOpen, setModalOpen] = useState(false)
@@ -243,17 +246,11 @@ export default function BookFunnelClient({
         </section>
 
         <div className="mb-5">
-          <CouponBanner />
+          <CouponBanner initial={coupon} />
         </div>
 
-        <div className="mb-5">
+        <div className="mb-12">
           <ReviewStrip />
-        </div>
-
-        {/* Directly under the strip, collapsed to two, so Step 1 stays
-            reachable in the first scroll on a phone. */}
-        <div className="mb-10">
-          <GoogleReviewsCard />
         </div>
 
         {/* ── Step 1 ───────────────────────────────────── */}
@@ -351,6 +348,8 @@ export default function BookFunnelClient({
                 </div>
               )}
 
+              <CouponApplied state={coupon} />
+
               <div className="flex items-center justify-between mb-4">
                 <span className="inline-flex items-center gap-2 font-mono text-[11px] uppercase tracking-[0.18em]" style={{ color: '#6E7681' }}>
                   <Calendar size={14} strokeWidth={2.25} style={{ color: '#EE6B1A' }} />
@@ -420,6 +419,8 @@ export default function BookFunnelClient({
           )}
         </section>
 
+
+        <GoogleReviewsCard />
       </main>
 
       {variant === 'gate' && (
@@ -438,6 +439,7 @@ export default function BookFunnelClient({
         prefill={prefill}
         attribution={attributionRef.current}
         needsLeadWrite={!gate}
+        coupon={coupon}
         onClose={() => setWizardOpen(false)}
         onLeadCaptured={(qualified) => fireLeadOnce(qualified)}
         onSlotTaken={() => {

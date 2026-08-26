@@ -17,7 +17,8 @@ import { cookies } from 'next/headers'
 import { db } from '@/lib/db'
 import BookFunnelClient, { type InitialGate } from './BookFunnelClient'
 import { GATE_COOKIE } from './constants'
-import { VARIANT_COOKIE, assignVariant, isVariant, variantFromQuery, type Variant } from '@/lib/variant'
+import { VARIANT_COOKIE, VISITOR_COOKIE, assignVariant, isVariant, variantFromQuery, type Variant } from '@/lib/variant'
+import { claimCoupon, toState, type CouponState } from '@/lib/coupon'
 
 export const dynamic = 'force-dynamic'
 
@@ -64,5 +65,23 @@ export default async function BookPage({
 
   const initialGate = await resolveGate(cookieStore.get(GATE_COOKIE)?.value)
 
-  return <BookFunnelClient initialGate={initialGate} variant={variant} />
+  // The 24h window starts on first pageview, no button and no user action.
+  // claimCoupon is idempotent: it returns the existing claim rather than
+  // issuing a new one, so re-rendering can never extend the deadline.
+  //
+  // Resolved server-side on purpose. Fetching it client-side would mean the
+  // countdown pops in after paint, and it has to be readable the moment they
+  // land.
+  let coupon: CouponState = { status: 'none' }
+  const visitorId = cookieStore.get(VISITOR_COOKIE)?.value
+  if (visitorId) {
+    try {
+      coupon = toState(await claimCoupon(visitorId, variant))
+    } catch (err) {
+      // A coupon failure must never take the funnel down. Full price, no banner.
+      console.error('[book] auto-claim failed:', err)
+    }
+  }
+
+  return <BookFunnelClient initialGate={initialGate} variant={variant} coupon={coupon} />
 }

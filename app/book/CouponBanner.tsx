@@ -1,145 +1,99 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
-import { Tag, Loader2 } from 'lucide-react'
-import { SETUP_FEE_FULL, SETUP_FEE_DISCOUNTED, type CouponState } from '@/lib/coupon'
+import { useEffect, useState } from 'react'
+import { SETUP_FEE_FULL, SETUP_FEE_DISCOUNTED, DISCOUNT_PERCENT, type CouponState } from '@/lib/coupon'
 
 // ─────────────────────────────────────────────────────────
-// $200 off the setup fee, 24 hours to book.
+// The 24 hour window starts automatically on first pageview. There is no claim
+// button and nothing for the visitor to do: booking inside the window applies
+// the discount by itself.
 //
-// The deadline is whatever the server stored at claim time. This component
-// never invents one. On mount it asks /api/coupon/status, and the countdown is
-// derived from that timestamp, so refreshing, clearing storage or coming back
-// tomorrow all show the true remaining time. Expired says expired.
+// The deadline is whatever the server stored at first visit. This component
+// never invents one and never restarts one. It receives the server state as a
+// prop so the countdown is correct on first paint, then re-reads from the
+// server on mount to survive a cached page being restored from bfcache.
 //
 // $400 is the real setup fee and matches the live ads. There is no inflated
-// anchor.
+// anchor: the percentage is derived from the two real numbers.
 // ─────────────────────────────────────────────────────────
 
 function remaining(expiresAt: string): { done: boolean; label: string } {
   const ms = new Date(expiresAt).getTime() - Date.now()
-  if (ms <= 0) return { done: true, label: '0h 00m 00s' }
+  if (ms <= 0) return { done: true, label: '00:00:00' }
   const h = Math.floor(ms / 3_600_000)
   const m = Math.floor((ms % 3_600_000) / 60_000)
   const s = Math.floor((ms % 60_000) / 1000)
-  return { done: false, label: `${h}h ${String(m).padStart(2, '0')}m ${String(s).padStart(2, '0')}s` }
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return { done: false, label: `${pad(h)}:${pad(m)}:${pad(s)}` }
 }
 
-export default function CouponBanner({ onClaimed }: { onClaimed?: (code: string) => void }) {
-  const [state, setState] = useState<CouponState>({ status: 'none' })
-  const [loading, setLoading] = useState(true)
-  const [claiming, setClaiming] = useState(false)
-  const [error, setError] = useState('')
-  const [tick, setTick] = useState(0)
+export default function CouponBanner({ initial }: { initial: CouponState }) {
+  const [state, setState] = useState<CouponState>(initial)
+  const [, setTick] = useState(0)
 
+  // Re-sync with the server after mount. A page restored from bfcache can be
+  // minutes or hours stale, and a countdown that resumes from a stale number
+  // would be lying.
   useEffect(() => {
     let cancelled = false
-    fetch('/api/coupon/status')
-      .then((r) => r.json())
-      .then((d: CouponState) => !cancelled && setState(d))
-      .catch(() => {})
-      .finally(() => !cancelled && setLoading(false))
+    const sync = () => {
+      fetch('/api/coupon/status')
+        .then((r) => r.json())
+        .then((d: CouponState) => !cancelled && setState(d))
+        .catch(() => {})
+    }
+    sync()
+    const onShow = (e: PageTransitionEvent) => {
+      if (e.persisted) sync()
+    }
+    window.addEventListener('pageshow', onShow)
     return () => {
       cancelled = true
+      window.removeEventListener('pageshow', onShow)
     }
   }, [])
 
-  // Drives the countdown re-render. The value comes from the server timestamp,
-  // this only decides when to repaint.
   useEffect(() => {
     if (state.status !== 'active') return
     const id = setInterval(() => setTick((t) => t + 1), 1000)
     return () => clearInterval(id)
   }, [state.status])
 
-  const claim = useCallback(async () => {
-    setClaiming(true)
-    setError('')
-    try {
-      const res = await fetch('/api/coupon/claim', { method: 'POST' })
-      const data = await res.json()
-      if (!res.ok) {
-        setError(data?.error || 'Could not issue that code.')
-        return
-      }
-      setState(data as CouponState)
-      if (data?.status === 'active' && data?.code) onClaimed?.(data.code)
-    } catch {
-      setError('Network hiccup. Try again.')
-    } finally {
-      setClaiming(false)
-    }
-  }, [onClaimed])
-
-  if (loading) return null
-
-  const wrap = 'border-2 px-4 py-3.5 sm:px-5 sm:py-4'
-  const orange = { borderColor: 'rgba(238,107,26,0.5)', background: 'rgba(238,107,26,0.09)' }
-  const grey = { borderColor: 'rgba(110,118,129,0.35)', background: 'rgba(242,240,235,0.03)' }
-
-  if (state.status === 'active') {
-    const left = remaining(state.expiresAt)
-    if (left.done) {
-      // Crossed zero while the page was open. Say so, do not roll it over.
-      return (
-        <div className={wrap} style={grey}>
-          <p className="text-[13px] leading-[1.6]" style={{ color: '#6E7681' }}>
-            Your ${SETUP_FEE_DISCOUNTED} setup offer expired. Setup is ${SETUP_FEE_FULL}. Book below and I will
-            still walk you through the whole thing.
-          </p>
-        </div>
-      )
-    }
-    return (
-      <div className={wrap} style={orange} aria-live="polite">
-        <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
-          <span className="text-[15px] font-bold" style={{ color: '#F2F0EB' }}>
-            Setup ${SETUP_FEE_DISCOUNTED} instead of ${SETUP_FEE_FULL}
-          </span>
-          <span className="font-mono text-[11px] uppercase tracking-[0.16em]" style={{ color: '#EE6B1A' }}>
-            code {state.code}
-          </span>
-        </div>
-        <p className="mt-1.5 text-[13px] leading-[1.6]" style={{ color: 'rgba(242,240,235,0.75)' }}>
-          Book a time in the next <span className="font-bold tabular-nums" style={{ color: '#EE6B1A' }}>{left.label}</span> and the discount holds.
-        </p>
-      </div>
-    )
-  }
-
-  if (state.status === 'expired') {
-    return (
-      <div className={wrap} style={grey}>
-        <p className="text-[13px] leading-[1.6]" style={{ color: '#6E7681' }}>
-          Your ${SETUP_FEE_DISCOUNTED} setup offer (code {state.code}) expired. Setup is ${SETUP_FEE_FULL}.
-        </p>
-      </div>
-    )
-  }
+  // Expired or absent: banner is gone, full price, no drama.
+  if (state.status !== 'active') return null
+  const left = remaining(state.expiresAt)
+  if (left.done) return null
 
   return (
-    <div className={wrap} style={orange}>
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="min-w-0">
-          <p className="text-[15px] font-bold leading-[1.5]" style={{ color: '#F2F0EB' }}>
-            Claim $200 off your setup fee
-          </p>
-          <p className="mt-1 text-[13px] leading-[1.6]" style={{ color: 'rgba(242,240,235,0.75)' }}>
-            Setup is ${SETUP_FEE_FULL}. Claim this and book within 24 hours and it is ${SETUP_FEE_DISCOUNTED}.
-          </p>
-        </div>
-        <button
-          type="button"
-          onClick={claim}
-          disabled={claiming}
-          className="aa-btn inline-flex items-center gap-2 px-5 py-3 text-[14px] font-bold uppercase tracking-wide min-h-[48px] disabled:opacity-50"
-          style={{ background: '#EE6B1A', color: '#16181C' }}
-        >
-          {claiming ? <Loader2 size={16} className="motion-safe:animate-spin" /> : <Tag size={16} strokeWidth={2.5} />}
-          Claim it
-        </button>
-      </div>
-      {error && <p className="mt-2 text-[12px] font-semibold" style={{ color: '#EE6B1A' }}>{error}</p>}
+    <div
+      className="border-2 px-4 py-3.5 sm:px-5 sm:py-4"
+      style={{ borderColor: 'rgba(238,107,26,0.5)', background: 'rgba(238,107,26,0.09)' }}
+      aria-live="off"
+    >
+      <p className="text-[15px] font-bold leading-[1.5]" style={{ color: '#F2F0EB' }}>
+        {DISCOUNT_PERCENT}% off your setup fee if you book in the next{' '}
+        <span className="tabular-nums whitespace-nowrap" style={{ color: '#EE6B1A' }}>
+          {left.label}
+        </span>
+      </p>
+      <p className="mt-1.5 text-[13px] leading-[1.6]" style={{ color: 'rgba(242,240,235,0.75)' }}>
+        Setup is ${SETUP_FEE_FULL}. Book a time before the clock runs out and it is $
+        {SETUP_FEE_DISCOUNTED}. No code to enter, it comes off by itself.
+      </p>
     </div>
+  )
+}
+
+/** Compact line for the point of decision: booking CTA and wizard confirm. */
+export function CouponApplied({ state }: { state: CouponState }) {
+  if (state.status !== 'active') return null
+  if (new Date(state.expiresAt).getTime() <= Date.now()) return null
+  return (
+    <p
+      className="text-[13px] font-semibold leading-[1.6] mb-4 px-3.5 py-2.5 border-2"
+      style={{ borderColor: 'rgba(238,107,26,0.4)', background: 'rgba(238,107,26,0.08)', color: '#EE6B1A' }}
+    >
+      {DISCOUNT_PERCENT}% off applied: setup fee ${SETUP_FEE_FULL} &rarr; ${SETUP_FEE_DISCOUNTED}
+    </p>
   )
 }

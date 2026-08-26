@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Star, ChevronDown, ChevronUp } from 'lucide-react'
 import { REVIEWS, GOOGLE_LISTING_URL } from '@/app/components/GoogleReviews'
 
@@ -23,6 +23,8 @@ import { REVIEWS, GOOGLE_LISTING_URL } from '@/app/components/GoogleReviews'
 
 const PHOTO = '/images/testimonial-master-gardener.jpg'
 const ROTATE_MS = 6000
+const RESUME_AFTER_MS = 10_000
+const SWIPE_THRESHOLD_PX = 40
 
 type Slide = {
   name: string
@@ -57,11 +59,27 @@ function initialsOf(name: string) {
 
 export default function ReviewStrip() {
   const [index, setIndex] = useState(0)
-  const [paused, setPaused] = useState(false)
   // Reading the full quote must not be interrupted by the carousel moving on.
   const [expanded, setExpanded] = useState(false)
   const [reduceMotion, setReduceMotion] = useState(false)
-  const touchRef = useRef(false)
+  // Any interaction (swipe, dot tap, hover) parks rotation until the visitor
+  // has been idle for RESUME_AFTER_MS. A single boolean could not express
+  // "resume later", which is why hover-pause worked but swipe did nothing.
+  const [interactedAt, setInteractedAt] = useState<number | null>(null)
+  const [hovering, setHovering] = useState(false)
+  const touchStartX = useRef<number | null>(null)
+  const touchStartY = useRef<number | null>(null)
+  const swiping = useRef(false)
+
+  const nudge = useCallback(() => setInteractedAt(Date.now()), [])
+
+  const go = useCallback((next: number) => {
+    setIndex((prev) => {
+      const n = SLIDES.length
+      return ((next % n) + n) % n
+    })
+    setExpanded(false)
+  }, [])
 
   useEffect(() => {
     if (typeof window === 'undefined' || !window.matchMedia) return
@@ -72,14 +90,23 @@ export default function ReviewStrip() {
     return () => mq.removeEventListener?.('change', apply)
   }, [])
 
+  const parked = hovering || expanded || interactedAt !== null
+
   useEffect(() => {
-    if (paused || expanded || reduceMotion) return
+    if (parked || reduceMotion) return
     const id = setInterval(() => setIndex((i) => (i + 1) % SLIDES.length), ROTATE_MS)
     return () => clearInterval(id)
-  }, [paused, expanded, reduceMotion])
+  }, [parked, reduceMotion])
 
-  // Moving to another review collapses the previous one, so an expanded card
-  // never carries over to somebody else's words.
+  // Resume once they have stopped touching it for a while.
+  useEffect(() => {
+    if (interactedAt === null) return
+    const id = setTimeout(() => setInteractedAt(null), RESUME_AFTER_MS)
+    return () => clearTimeout(id)
+  }, [interactedAt])
+
+  // Auto-rotation also collapses, so an expanded card never carries over onto
+  // somebody else's words.
   useEffect(() => {
     setExpanded(false)
   }, [index])
@@ -89,17 +116,44 @@ export default function ReviewStrip() {
   return (
     <div
       className="border-2 overflow-hidden"
-      style={{ borderColor: 'rgba(110,118,129,0.35)', background: 'rgba(242,240,235,0.03)' }}
-      onMouseEnter={() => setPaused(true)}
-      onMouseLeave={() => setPaused(false)}
-      onTouchStart={() => {
-        touchRef.current = true
-        setPaused(true)
+      style={{
+        borderColor: 'rgba(110,118,129,0.35)',
+        background: 'rgba(242,240,235,0.03)',
+        // Let the browser own vertical scrolling, let us own horizontal swipe.
+        touchAction: 'pan-y',
       }}
-      onTouchEnd={() => {
-        // Resume shortly after the finger lifts so a scroll past does not
-        // freeze the strip for the rest of the session.
-        if (touchRef.current) setTimeout(() => setPaused(false), 4000)
+      onMouseEnter={() => setHovering(true)}
+      onMouseLeave={() => setHovering(false)}
+      onTouchStart={(e) => {
+        const t = e.touches[0]
+        if (!t) return
+        touchStartX.current = t.clientX
+        touchStartY.current = t.clientY
+        swiping.current = false
+        nudge()
+      }}
+      onTouchMove={(e) => {
+        const t = e.touches[0]
+        const sx = touchStartX.current
+        const sy = touchStartY.current
+        if (!t || sx === null || sy === null) return
+        // Only claim the gesture once it is clearly horizontal, so vertical
+        // page scrolling through the strip is never hijacked.
+        if (!swiping.current && Math.abs(t.clientX - sx) > Math.abs(t.clientY - sy) + 6) {
+          swiping.current = true
+        }
+        if (swiping.current && e.cancelable) e.preventDefault()
+      }}
+      onTouchEnd={(e) => {
+        const sx = touchStartX.current
+        touchStartX.current = null
+        touchStartY.current = null
+        if (sx === null || !swiping.current) return
+        const endX = e.changedTouches[0]?.clientX ?? sx
+        const delta = endX - sx
+        if (Math.abs(delta) >= SWIPE_THRESHOLD_PX) go(index + (delta < 0 ? 1 : -1))
+        swiping.current = false
+        nudge()
       }}
       aria-live="polite"
     >
@@ -167,7 +221,10 @@ export default function ReviewStrip() {
             <button
               key={s.name + i}
               type="button"
-              onClick={() => setIndex(i)}
+              onClick={() => {
+                go(i)
+                nudge()
+              }}
               aria-label={`Show review from ${s.name}`}
               aria-selected={i === index}
               role="tab"

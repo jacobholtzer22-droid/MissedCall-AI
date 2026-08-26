@@ -4,6 +4,8 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { X, ArrowLeft, Loader2, Check, Calendar } from 'lucide-react'
 import { validateUsMobile } from '@/lib/phone-utils'
 import type { Attribution } from '@/lib/attribution'
+import type { CouponState } from '@/lib/coupon'
+import { CouponApplied } from './CouponBanner'
 import {
   TRADES,
   NOT_AN_OWNER,
@@ -93,6 +95,7 @@ export default function BookingWizard({
   onSlotTaken,
   onLeadCaptured,
   needsLeadWrite,
+  coupon,
 }: {
   open: boolean
   slot: ChosenSlot | null
@@ -104,6 +107,7 @@ export default function BookingWizard({
   onLeadCaptured: (qualified: boolean) => void
   /** true in `nogate`: the lead has not been written yet, this wizard must do it. */
   needsLeadWrite: boolean
+  coupon: CouponState
 }) {
   const [trade, setTrade] = useState(prefill.trade ?? '')
   const [name, setName] = useState(prefill.name ?? '')
@@ -450,6 +454,7 @@ export default function BookingWizard({
               <h2 className="text-[clamp(1.4rem,4.6vw,1.9rem)] font-black uppercase leading-[1.15] tracking-tight mb-5">
                 Look right?
               </h2>
+              <CouponApplied state={coupon} />
               <dl className="border-2" style={{ borderColor: BORDER }}>
                 {[
                   ['Time', `${slot.dateLabel} at ${slot.display}`],

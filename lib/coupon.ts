@@ -15,6 +15,10 @@ import { db } from '@/lib/db'
 
 export const SETUP_FEE_FULL = 400
 export const SETUP_FEE_DISCOUNTED = 200
+/** Derived so the headline can never drift from the two real numbers. */
+export const DISCOUNT_PERCENT = Math.round(
+  ((SETUP_FEE_FULL - SETUP_FEE_DISCOUNTED) / SETUP_FEE_FULL) * 100
+)
 export const COUPON_WINDOW_HOURS = 24
 
 /** Unambiguous alphabet: no O/0, no I/1. These get read off a phone screen. */
