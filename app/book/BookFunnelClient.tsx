@@ -1,0 +1,532 @@
+'use client'
+
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import Link from 'next/link'
+import { ArrowLeft, ArrowRight, Play, Calendar, Clock, Check, Loader2, Lock } from 'lucide-react'
+import { Logo } from '@/app/components/Logo'
+import GoogleReviews from '@/app/components/GoogleReviews'
+import { BookFeaturedTestimonial } from '@/app/components/BookTestimonials'
+import { validateUsMobile } from '@/lib/phone-utils'
+import { getDemoVideoUrl } from '@/lib/demo-video'
+import { parseAttribution, type Attribution } from '@/lib/attribution'
+import { trackStandard, trackCustomEvent } from './pixel'
+import GateModal, { type GateResult } from './GateModal'
+import {
+  GATE_AT_SECONDS,
+  TRADES,
+  NOT_AN_OWNER,
+  MISSES_PER_WEEK,
+  WHO_ANSWERS,
+  formatPhoneInput,
+} from './constants'
+
+const BORDER = 'rgba(110,118,129,0.35)'
+const CARD = 'rgba(242,240,235,0.03)'
+const ATTRIBUTION_KEY = 'aa_book_attribution'
+
+type ApiDay = {
+  date: string
+  isToday: boolean
+  label: string
+  timezoneLabel: string
+  slots: { iso: string; display: string }[]
+}
+
+export type InitialGate = { leadId: string; name: string; phone: string; trade: string } | null
+
+const inputCls =
+  'w-full px-4 py-3.5 border-2 text-[16px] font-medium outline-none bg-transparent focus:border-[#EE6B1A]'
+const inputStyle = { borderColor: BORDER, color: '#F2F0EB' }
+const labelCls = 'block font-mono text-[11px] font-bold uppercase tracking-[0.2em] mb-2'
+
+function SectionHeading({ step, title }: { step: string; title: string }) {
+  return (
+    <div className="mb-6">
+      <div className="inline-flex items-center gap-2 font-mono text-[11px] font-semibold uppercase tracking-[0.28em] mb-3">
+        <span className="inline-block h-2.5 w-2.5" style={{ background: '#EE6B1A' }} />
+        <span style={{ color: '#EE6B1A' }}>{step}</span>
+      </div>
+      <h2 className="text-[clamp(1.7rem,5vw,2.6rem)] font-black uppercase leading-[0.95] tracking-tight">{title}</h2>
+    </div>
+  )
+}
+
+export default function BookFunnelClient({ initialGate }: { initialGate: InitialGate }) {
+  const [gate, setGate] = useState<InitialGate>(initialGate)
+  const [modalOpen, setModalOpen] = useState(false)
+  const [playing, setPlaying] = useState(false)
+  const [watchedSeconds, setWatchedSeconds] = useState(0)
+  const videoRef = useRef<HTMLVideoElement>(null)
+  const attributionRef = useRef<Attribution>({})
+  const viewContentFired = useRef(false)
+
+  // Booking form
+  const [days, setDays] = useState<ApiDay[]>([])
+  const [slotsLoading, setSlotsLoading] = useState(true)
+  const [slotsError, setSlotsError] = useState('')
+  const [selectedDate, setSelectedDate] = useState<string | null>(null)
+  const [selectedSlot, setSelectedSlot] = useState<{ iso: string; display: string; dateLabel: string } | null>(null)
+  const [email, setEmail] = useState('')
+  const [misses, setMisses] = useState('')
+  const [who, setWho] = useState('')
+  const [trade, setTrade] = useState('')
+  const [name, setName] = useState('')
+  const [phone, setPhone] = useState('')
+  const [honeypot, setHoneypot] = useState('')
+  const [bookingError, setBookingError] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+  const [booked, setBooked] = useState<{ dateLabel: string; timeLabel: string; meetLink: string | null } | null>(null)
+
+  // ── Attribution + ViewContent, once on mount ──────────────────────────────
+  useEffect(() => {
+    // Ref guard, not just an empty dep array: React StrictMode double-invokes
+    // effects in dev, and ViewContent is an ad-reporting event that must not
+    // double count.
+    if (viewContentFired.current) return
+    viewContentFired.current = true
+
+    let attribution: Attribution = {}
+    try {
+      const fromUrl = parseAttribution(window.location.search)
+      const stored = sessionStorage.getItem(ATTRIBUTION_KEY)
+      attribution = Object.keys(fromUrl).length ? fromUrl : stored ? JSON.parse(stored) : {}
+      if (Object.keys(fromUrl).length) sessionStorage.setItem(ATTRIBUTION_KEY, JSON.stringify(fromUrl))
+    } catch {
+      attribution = {}
+    }
+    attributionRef.current = attribution
+    trackStandard('ViewContent', { content_name: 'book_funnel' })
+  }, [])
+
+  // ── Slot feed ─────────────────────────────────────────────────────────────
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      try {
+        const res = await fetch('/api/marketing-bookings')
+        if (!res.ok) throw new Error('slots')
+        const data = (await res.json()) as { days?: ApiDay[]; calendarUnavailable?: boolean }
+        if (cancelled) return
+        if (data.calendarUnavailable) {
+          setSlotsError('I cannot read my calendar right now. Try again in a minute.')
+        }
+        const list = data.days ?? []
+        setDays(list)
+        const firstOpen = list.find((d) => d.slots.length > 0)
+        setSelectedDate(firstOpen?.date ?? list[0]?.date ?? null)
+      } catch {
+        if (!cancelled) setSlotsError('Could not load times. Try again in a minute.')
+      } finally {
+        if (!cancelled) setSlotsLoading(false)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  const timezoneLabel = useMemo(() => days[0]?.timezoneLabel ?? 'Eastern Time (ET)', [days])
+  const daySlots = useMemo(
+    () => (selectedDate ? days.find((d) => d.date === selectedDate)?.slots ?? [] : []),
+    [days, selectedDate]
+  )
+
+  // ── Video gate ────────────────────────────────────────────────────────────
+  const startPlayback = useCallback(() => {
+    setPlaying(true)
+    // Play after the element is rendered/unmuted.
+    setTimeout(() => {
+      videoRef.current?.play().catch(() => {
+        /* autoplay blocked, the visible controls still work */
+      })
+    }, 60)
+  }, [])
+
+  function handlePlayClick() {
+    if (gate) {
+      startPlayback()
+      return
+    }
+    if (GATE_AT_SECONDS > 0) {
+      // Free preview until the gate timestamp.
+      startPlayback()
+      return
+    }
+    setModalOpen(true)
+  }
+
+  function handleTimeUpdate() {
+    const v = videoRef.current
+    if (!v) return
+    setWatchedSeconds(v.currentTime)
+    if (!gate && GATE_AT_SECONDS > 0 && v.currentTime >= GATE_AT_SECONDS) {
+      v.pause()
+      setModalOpen(true)
+    }
+  }
+
+  function handleGateComplete(result: GateResult) {
+    setGate({ leadId: result.leadId, name: result.name, phone: result.phone, trade: result.trade })
+    if (result.qualified) {
+      trackStandard('Lead', { content_name: 'demo_video_gate' })
+    } else {
+      trackCustomEvent('UnqualifiedLead', { content_name: 'demo_video_gate' })
+    }
+    setModalOpen(false)
+    startPlayback()
+  }
+
+  async function clearGate() {
+    await fetch('/api/demo-lead/clear', { method: 'POST' }).catch(() => {})
+    setGate(null)
+  }
+
+  // ── Booking submit ────────────────────────────────────────────────────────
+  async function submitBooking(e: React.FormEvent) {
+    e.preventDefault()
+    setBookingError('')
+    if (!selectedSlot) return setBookingError('Pick a time first.')
+    if (!email.trim() || !email.includes('@')) return setBookingError('Please enter a valid email.')
+    if (!gate) {
+      if (!trade) return setBookingError('Pick what kind of business you run.')
+      if (!name.trim()) return setBookingError('Please enter your first name.')
+      const c = validateUsMobile(phone)
+      if (!c.ok) return setBookingError(c.reason)
+    }
+    setSubmitting(true)
+    try {
+      const res = await fetch('/api/demo-book', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: email.trim(),
+          slotStart: selectedSlot.iso,
+          missesPerWeek: misses,
+          whoAnswers: who,
+          ...(gate ? {} : { name: name.trim(), phone, trade }),
+          attribution: attributionRef.current,
+          website: honeypot,
+        }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        setBookingError(data?.error || 'Could not book that time.')
+        setSubmitting(false)
+        return
+      }
+      trackStandard('Schedule', { content_name: 'demo_call' })
+      setBooked({
+        dateLabel: data?.appointment?.dateLabel ?? selectedSlot.dateLabel,
+        timeLabel: data?.appointment?.timeLabel ?? selectedSlot.display,
+        meetLink: data?.appointment?.meetLink ?? null,
+      })
+    } catch {
+      setBookingError('Network hiccup. Try again.')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  const videoSrc = getDemoVideoUrl()
+
+  return (
+    <div className="min-h-dvh aa-grid-bg" style={{ background: '#16181C', color: '#F2F0EB' }}>
+      {/* Header */}
+      <header className="border-b-2" style={{ borderColor: 'rgba(110,118,129,0.28)', background: 'rgba(22,24,28,0.95)' }}>
+        <div className="mx-auto max-w-4xl px-5 sm:px-8 py-4 flex items-center justify-between">
+          <Link href="/" className="flex items-center gap-3">
+            <Logo size="sm" />
+            <span className="hidden sm:block text-[14px] font-extrabold tracking-tight">Align and Acquire</span>
+          </Link>
+          <Link
+            href="/"
+            className="inline-flex items-center gap-2 font-mono text-[11px] uppercase tracking-[0.18em]"
+            style={{ color: '#6E7681' }}
+          >
+            <ArrowLeft size={13} strokeWidth={2.5} />
+            Back to site
+          </Link>
+        </div>
+      </header>
+      <div className="aa-hazard" />
+
+      <main className="mx-auto max-w-4xl px-5 sm:px-8 py-12 md:py-16">
+        {/* ── Hero ────────────────────────────────────────────────────── */}
+        <section className="mb-16">
+          <div className="inline-flex items-center gap-2 font-mono text-[11px] font-semibold uppercase tracking-[0.28em] mb-4">
+            <span className="inline-block h-2.5 w-2.5" style={{ background: '#EE6B1A' }} />
+            <span style={{ color: '#EE6B1A' }}>Free live demo</span>
+          </div>
+          <h1 className="text-[clamp(2.1rem,6.5vw,3.6rem)] font-black uppercase leading-[0.92] tracking-tight mb-5">
+            Your missed calls, texted back in 8 seconds. Booked on your calendar.
+          </h1>
+          <p className="text-[17px] leading-relaxed mb-8" style={{ color: 'rgba(242,240,235,0.7)' }}>
+            I&apos;ll show you it running on real client accounts.
+          </p>
+          <div className="flex flex-col sm:flex-row gap-3">
+            <a
+              href="#step-2"
+              className="aa-btn inline-flex items-center justify-center gap-2 px-8 py-4 text-[16px] font-bold uppercase tracking-wide min-h-[52px]"
+              style={{ background: '#EE6B1A', color: '#16181C' }}
+            >
+              Book now
+              <ArrowRight size={17} strokeWidth={2.5} />
+            </a>
+            <a
+              href="#step-1"
+              className="aa-btn-ghost inline-flex items-center justify-center gap-2 border-2 px-8 py-4 text-[16px] font-bold uppercase tracking-wide min-h-[52px]"
+              style={{ borderColor: '#6E7681', color: '#F2F0EB' }}
+            >
+              See how it works
+            </a>
+          </div>
+        </section>
+
+        {/* ── Step 1: video ───────────────────────────────────────────── */}
+        <section id="step-1" className="mb-16 scroll-mt-6">
+          <SectionHeading step="Step 1" title="Watch the video" />
+          <div className="border-2 overflow-hidden" style={{ borderColor: BORDER, background: CARD }}>
+            {playing ? (
+              <video
+                ref={videoRef}
+                src={videoSrc}
+                controls
+                playsInline
+                preload="metadata"
+                onTimeUpdate={handleTimeUpdate}
+                className="w-full aspect-video bg-black"
+              />
+            ) : (
+              <button
+                type="button"
+                onClick={handlePlayClick}
+                aria-label="Play the demo video"
+                className="relative w-full aspect-video grid place-items-center group"
+                style={{ background: 'linear-gradient(135deg, #1d2026 0%, #16181C 60%, #22252b 100%)' }}
+              >
+                <span
+                  className="grid place-items-center rounded-full transition-transform motion-safe:group-hover:scale-105"
+                  style={{ background: '#EE6B1A', width: 84, height: 84 }}
+                >
+                  <Play size={34} strokeWidth={2.5} fill="#16181C" style={{ color: '#16181C', marginLeft: 4 }} />
+                </span>
+                <span
+                  className="absolute bottom-4 left-0 right-0 text-center font-mono text-[11px] uppercase tracking-[0.2em]"
+                  style={{ color: '#6E7681' }}
+                >
+                  2 minutes
+                </span>
+              </button>
+            )}
+          </div>
+        </section>
+
+        {/* ── Step 2: booking ─────────────────────────────────────────── */}
+        <section id="step-2" className="mb-16 scroll-mt-6">
+          <SectionHeading step="Step 2" title="Book a 10 minute call" />
+
+          {booked ? (
+            <div className="border-2 p-7 text-center" style={{ borderColor: 'rgba(238,107,26,0.45)', background: 'rgba(238,107,26,0.07)' }}>
+              <div className="inline-flex items-center justify-center h-16 w-16 border-2 mb-6 mx-auto" style={{ borderColor: '#EE6B1A' }}>
+                <Check size={32} strokeWidth={2.5} style={{ color: '#EE6B1A' }} />
+              </div>
+              <h3 className="text-[clamp(1.8rem,5vw,2.6rem)] font-black uppercase leading-[0.95] tracking-tight mb-4">Locked in.</h3>
+              <p className="text-[16px] font-bold mb-2">
+                {booked.dateLabel} at {booked.timeLabel}
+                <span className="ml-2 text-[13px] font-normal" style={{ color: '#6E7681' }}>({timezoneLabel})</span>
+              </p>
+              {booked.meetLink && (
+                <p className="text-[14px] mb-4">
+                  <a href={booked.meetLink} target="_blank" rel="noopener noreferrer" className="underline underline-offset-4" style={{ color: '#EE6B1A' }}>
+                    Join on Google Meet
+                  </a>
+                </p>
+              )}
+              <div className="border-2 p-5 text-left max-w-md mx-auto my-6" style={{ borderColor: BORDER, background: CARD }}>
+                <p className="font-mono text-[11px] font-bold uppercase tracking-[0.2em] mb-3" style={{ color: '#6E7681' }}>
+                  What happens on the call
+                </p>
+                <ol className="space-y-2.5 text-[14px] leading-relaxed" style={{ color: 'rgba(242,240,235,0.75)' }}>
+                  <li>1. I show you the system running on real client accounts.</li>
+                  <li>2. I show you real text-back conversations, word for word.</li>
+                  <li>3. You see the jobs that got booked out of them.</li>
+                  <li>4. You ask whatever you want. If it is not a fit, no hard feelings.</li>
+                </ol>
+              </div>
+              <p className="text-[14px]" style={{ color: 'rgba(242,240,235,0.55)' }}>
+                You&apos;re talking to me, Jacob, the owner. Not a sales rep. You&apos;ll get a text from me confirming. Talk soon.
+              </p>
+            </div>
+          ) : (
+            <form className="border-2 p-5 sm:p-7" style={{ borderColor: BORDER, background: CARD }} onSubmit={submitBooking}>
+              {/* Honeypot */}
+              <div aria-hidden="true" className="absolute w-px h-px overflow-hidden -left-[9999px]">
+                <label htmlFor="book-website">Website</label>
+                <input id="book-website" name="website" type="text" tabIndex={-1} autoComplete="off"
+                  value={honeypot} onChange={(e) => setHoneypot(e.target.value)} />
+              </div>
+
+              {gate ? (
+                <div className="mb-6 border-2 px-4 py-3.5" style={{ borderColor: 'rgba(238,107,26,0.35)', background: 'rgba(238,107,26,0.06)' }}>
+                  <p className="text-[14px] font-semibold">{gate.name}</p>
+                  <p className="text-[13px]" style={{ color: '#6E7681' }}>{gate.phone}</p>
+                  <button
+                    type="button"
+                    onClick={clearGate}
+                    className="mt-2 font-mono text-[10px] uppercase tracking-[0.18em] underline underline-offset-4 min-h-[44px]"
+                    style={{ color: '#6E7681' }}
+                  >
+                    Not you?
+                  </button>
+                </div>
+              ) : (
+                <>
+                  <label htmlFor="b-trade" className={labelCls} style={{ color: '#6E7681' }}>What kind of business do you run?</label>
+                  <select id="b-trade" value={trade} onChange={(e) => setTrade(e.target.value)}
+                    className={`${inputCls} mb-5`} style={inputStyle}>
+                    <option value="">Pick one</option>
+                    {TRADES.map((t) => <option key={t} value={t}>{t}</option>)}
+                  </select>
+
+                  <div className="grid sm:grid-cols-2 gap-5 mb-5">
+                    <div>
+                      <label htmlFor="b-name" className={labelCls} style={{ color: '#6E7681' }}>First name</label>
+                      <input id="b-name" type="text" autoComplete="given-name" value={name}
+                        onChange={(e) => setName(e.target.value)} placeholder="Your first name"
+                        className={inputCls} style={inputStyle} />
+                    </div>
+                    <div>
+                      <label htmlFor="b-phone" className={labelCls} style={{ color: '#6E7681' }}>Cell number</label>
+                      <input id="b-phone" type="tel" inputMode="tel" autoComplete="tel" value={phone}
+                        onChange={(e) => setPhone(formatPhoneInput(e.target.value))} placeholder="(555) 123-4567"
+                        className={inputCls} style={inputStyle} />
+                    </div>
+                  </div>
+                </>
+              )}
+
+              <label htmlFor="b-email" className={labelCls} style={{ color: '#6E7681' }}>Email</label>
+              <input id="b-email" type="email" autoComplete="email" value={email}
+                onChange={(e) => { setEmail(e.target.value); setBookingError('') }}
+                placeholder="you@company.com" className={`${inputCls} mb-5`} style={inputStyle} />
+
+              <label htmlFor="b-misses" className={labelCls} style={{ color: '#6E7681' }}>
+                How many calls do you miss in a typical week?
+              </label>
+              <select id="b-misses" value={misses} onChange={(e) => setMisses(e.target.value)}
+                className={`${inputCls} mb-5`} style={inputStyle}>
+                <option value="">Pick one</option>
+                {MISSES_PER_WEEK.map((m) => <option key={m} value={m}>{m}</option>)}
+              </select>
+
+              <label htmlFor="b-who" className={labelCls} style={{ color: '#6E7681' }}>
+                Who answers your phone right now?
+              </label>
+              <select id="b-who" value={who} onChange={(e) => setWho(e.target.value)}
+                className={`${inputCls} mb-6`} style={inputStyle}>
+                <option value="">Pick one</option>
+                {WHO_ANSWERS.map((w) => <option key={w} value={w}>{w}</option>)}
+              </select>
+
+              {/* Slot picker */}
+              <div className="flex items-center justify-between mb-4">
+                <span className="inline-flex items-center gap-2 font-mono text-[11px] uppercase tracking-[0.18em]" style={{ color: '#6E7681' }}>
+                  <Calendar size={14} strokeWidth={2.25} style={{ color: '#EE6B1A' }} />
+                  Pick a time
+                </span>
+                <span className="font-mono text-[10px] uppercase tracking-widest" style={{ color: '#6E7681' }}>{timezoneLabel}</span>
+              </div>
+
+              {slotsLoading ? (
+                <div className="flex items-center gap-2 py-6" style={{ color: '#6E7681' }}>
+                  <Loader2 size={18} className="motion-safe:animate-spin" style={{ color: '#EE6B1A' }} />
+                  <span className="font-mono text-[11px] uppercase tracking-widest">Loading times</span>
+                </div>
+              ) : slotsError ? (
+                <p className="text-[13px] mb-4" style={{ color: '#EE6B1A' }}>{slotsError}</p>
+              ) : (
+                <>
+                  <div className="flex gap-2 overflow-x-auto pb-3 mb-4 [scrollbar-width:none]">
+                    {days.map((d) => {
+                      const active = d.date === selectedDate
+                      const open = d.slots.length > 0
+                      return (
+                        <button key={d.date} type="button" disabled={!open}
+                          onClick={() => { setSelectedDate(d.date); setSelectedSlot(null) }}
+                          className="min-w-[104px] px-3 py-3 border-2 text-left text-[12px] shrink-0"
+                          style={{
+                            borderColor: active ? '#EE6B1A' : BORDER,
+                            background: active ? 'rgba(238,107,26,0.1)' : 'transparent',
+                            color: open ? (active ? '#F2F0EB' : '#6E7681') : 'rgba(110,118,129,0.4)',
+                            cursor: open ? 'pointer' : 'not-allowed',
+                          }}>
+                          <div className="font-bold uppercase tracking-wide text-[11px]">
+                            {d.isToday ? 'Today' : d.label.split(' ')[0]}
+                          </div>
+                          <div className="text-[11px] mt-0.5" style={{ color: '#6E7681' }}>
+                            {d.isToday ? d.label : d.label.split(' ').slice(1).join(' ')}
+                          </div>
+                          <div className="mt-1.5 font-mono text-[10px] uppercase tracking-widest" style={{ color: open ? '#EE6B1A' : 'rgba(110,118,129,0.4)' }}>
+                            {open ? `${d.slots.length} open` : 'Full'}
+                          </div>
+                        </button>
+                      )
+                    })}
+                  </div>
+
+                  {daySlots.length === 0 ? (
+                    <p className="text-[13px] mb-4" style={{ color: '#6E7681' }}>Nothing left that day. Try another.</p>
+                  ) : (
+                    <div className="flex flex-wrap gap-2 mb-6">
+                      {daySlots.map((s) => {
+                        const active = selectedSlot?.iso === s.iso
+                        const dayLabel = days.find((d) => d.date === selectedDate)?.label ?? ''
+                        return (
+                          <button key={s.iso} type="button"
+                            onClick={() => setSelectedSlot({ iso: s.iso, display: s.display, dateLabel: dayLabel })}
+                            className="px-4 py-3 border-2 text-[14px] font-semibold min-h-[48px]"
+                            style={{
+                              borderColor: active ? '#EE6B1A' : BORDER,
+                              background: active ? 'rgba(238,107,26,0.12)' : 'transparent',
+                              color: '#F2F0EB',
+                            }}>
+                            <Clock size={13} strokeWidth={2.25} className="inline mr-1.5 -mt-0.5" style={{ color: '#EE6B1A' }} />
+                            {s.display}
+                          </button>
+                        )
+                      })}
+                    </div>
+                  )}
+                </>
+              )}
+
+              {bookingError && <p className="mb-4 text-[13px] font-semibold" style={{ color: '#EE6B1A' }}>{bookingError}</p>}
+
+              <button type="submit" disabled={submitting}
+                className="aa-btn w-full py-4 text-[16px] font-bold uppercase tracking-wide flex items-center justify-center gap-2 disabled:opacity-50 min-h-[52px]"
+                style={{ background: '#EE6B1A', color: '#16181C' }}>
+                {submitting ? (<><Loader2 size={18} className="motion-safe:animate-spin" /> Booking</>) : 'Book my call'}
+              </button>
+            </form>
+          )}
+        </section>
+
+        <BookFeaturedTestimonial />
+      </main>
+
+      <div style={{ background: '#F2F0EB', color: '#16181C' }}>
+        <div className="mx-auto max-w-5xl px-5 sm:px-8 py-14">
+          <GoogleReviews />
+        </div>
+      </div>
+
+      <GateModal
+        open={modalOpen}
+        watchedSeconds={watchedSeconds}
+        attribution={attributionRef.current as Record<string, string>}
+        onClose={() => setModalOpen(false)}
+        onComplete={handleGateComplete}
+      />
+    </div>
+  )
+}
