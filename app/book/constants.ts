@@ -54,4 +54,4 @@ export function formatPhoneInput(raw: string): string {
  * The block is longer than the promised call so a call that runs over does not
  * collide with the next one.
  */
-export const CALL_LENGTH_MINUTES = 10
+export const CALL_LENGTH_MINUTES = 15

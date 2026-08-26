@@ -288,7 +288,7 @@ export default function BookFunnelClient({ initialGate }: { initialGate: Initial
         <section id="step-1" className="mb-16 scroll-mt-6">
           <SectionHeading step="Step 1" title="Watch me run it live on a real account" />
           <p className="text-[15px] leading-relaxed -mt-3 mb-6" style={{ color: 'rgba(242,240,235,0.65)' }}>
-            90 seconds. Real missed call, real text back, real booked quote.
+            Under two minutes. Real missed call, real text back, real booked quote.
           </p>
           <div className="border-2 overflow-hidden" style={{ borderColor: BORDER, background: CARD }}>
             {playing ? (
@@ -319,7 +319,7 @@ export default function BookFunnelClient({ initialGate }: { initialGate: Initial
                   className="absolute bottom-4 left-0 right-0 text-center font-mono text-[11px] uppercase tracking-[0.2em]"
                   style={{ color: '#6E7681' }}
                 >
-                  90 seconds
+                  Under two minutes
                 </span>
               </button>
             )}
@@ -328,7 +328,7 @@ export default function BookFunnelClient({ initialGate }: { initialGate: Initial
 
         {/* ── Step 2: booking ─────────────────────────────────────────── */}
         <section id="step-2" className="mb-16 scroll-mt-6">
-          <SectionHeading step="Step 2" title="Book a 10 minute call" />
+          <SectionHeading step="Step 2" title="Book a 15 minute call" />
 
           {booked ? (
             <div className="border-2 p-7 text-center" style={{ borderColor: 'rgba(238,107,26,0.45)', background: 'rgba(238,107,26,0.07)' }}>
