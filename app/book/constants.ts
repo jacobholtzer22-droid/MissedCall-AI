@@ -47,3 +47,11 @@ export function formatPhoneInput(raw: string): string {
   if (digits.length <= 6) return `(${digits.slice(0, 3)}) ${digits.slice(3)}`
   return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}`
 }
+
+/**
+ * Length promised to the visitor, in minutes. Deliberately separate from
+ * SLOT_MINUTES in lib/marketing-slots.ts, which is the calendar BLOCK length.
+ * The block is longer than the promised call so a call that runs over does not
+ * collide with the next one.
+ */
+export const CALL_LENGTH_MINUTES = 10

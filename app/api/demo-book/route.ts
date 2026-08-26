@@ -32,7 +32,7 @@ import {
   overlapsWithExisting,
   overlapsWithBusy,
 } from '@/lib/marketing-slots'
-import { GATE_COOKIE, NOT_AN_OWNER } from '@/app/book/constants'
+import { GATE_COOKIE, NOT_AN_OWNER, CALL_LENGTH_MINUTES } from '@/app/book/constants'
 
 export const dynamic = 'force-dynamic'
 
@@ -50,6 +50,7 @@ type Payload = {
   slotStart?: string
   missesPerWeek?: string
   whoAnswers?: string
+  companyName?: string
   // Only sent when the visitor never completed the gate.
   name?: string
   phone?: string
@@ -75,6 +76,9 @@ export async function POST(request: NextRequest) {
 
     const email = body.email?.trim() ?? ''
     const missesPerWeek = body.missesPerWeek?.trim() ?? ''
+    // Optional on purpose. A required company field is one more thing between
+    // someone and a booking, and it comes up on the call anyway.
+    const companyName = body.companyName?.trim() ?? ''
     const whoAnswers = body.whoAnswers?.trim() ?? ''
     const attribution = sanitizeAttribution(body.attribution)
 
@@ -169,12 +173,14 @@ export async function POST(request: NextRequest) {
           {
             customerPhone: phoneE164,
             customerEmail: email,
-            businessName: trade || 'Not specified',
+            businessName: companyName || trade || 'Not specified',
             serviceType,
             servicesInterested: [],
             attendeeEmail: email,
+            companyName: companyName || null,
             watchBeforeUrl: getDemoVideoAbsoluteUrl(),
             message: [
+              companyName ? `Company: ${companyName}` : null,
               trade ? `Trade: ${trade}` : null,
               missesPerWeek ? `Missed calls per week: ${missesPerWeek}` : null,
               whoAnswers ? `Who answers now: ${whoAnswers}` : null,
@@ -210,6 +216,7 @@ export async function POST(request: NextRequest) {
         notes: [
           'SMS consent: yes (captured at booking)',
           `Source: meta_demo_video`,
+          companyName ? `Company: ${companyName}` : null,
           trade ? `Trade: ${trade}` : null,
           missesPerWeek ? `Missed calls per week: ${missesPerWeek}` : null,
           whoAnswers ? `Who answers now: ${whoAnswers}` : null,
@@ -249,6 +256,7 @@ export async function POST(request: NextRequest) {
         <p><strong>Name:</strong> ${escapeHtml(name)}</p>
         <p><strong>Mobile:</strong> ${escapeHtml(phoneE164)}</p>
         <p><strong>Email:</strong> ${escapeHtml(email)}</p>
+        <p><strong>Company:</strong> ${escapeHtml(companyName || 'Not given')}</p>
         <p><strong>Trade:</strong> ${escapeHtml(trade || 'Not specified')}</p>
         <p><strong>Missed calls per week:</strong> ${escapeHtml(missesPerWeek || 'Not specified')}</p>
         <p><strong>Who answers now:</strong> ${escapeHtml(whoAnswers || 'Not specified')}</p>
@@ -258,7 +266,7 @@ export async function POST(request: NextRequest) {
         ${calendarSyncFailed ? '<p style="color:#b00"><strong>Calendar sync FAILED. No Meet link. Fix before the call.</strong></p>' : ''}
         <pre style="font-family:inherit;white-space:pre-wrap;margin:0">${escapeHtml(formatAttributionBlock(attribution))}</pre>
       `,
-      smsText: `Demo booked.\nName: ${name}\nMobile: ${phoneE164}\nTrade: ${trade || 'n/a'}\nMisses/wk: ${missesPerWeek || 'n/a'}\nTime: ${dateLabel} at ${timeLabel} ET${googleMeetLink ? `\nMeet: ${googleMeetLink}` : ''}\n${formatAttributionLine(attribution)}`,
+      smsText: `Demo booked.\nName: ${name}${companyName ? ` (${companyName})` : ''}\nMobile: ${phoneE164}\nTrade: ${trade || 'n/a'}\nMisses/wk: ${missesPerWeek || 'n/a'}\nTime: ${dateLabel} at ${timeLabel} ET${googleMeetLink ? `\nMeet: ${googleMeetLink}` : ''}\n${formatAttributionLine(attribution)}`,
     })
 
     // Customer confirmation SMS
@@ -295,7 +303,7 @@ export async function POST(request: NextRequest) {
               <h2>You're booked</h2>
               <p>Hi ${escapeHtml(name)},</p>
               <p>Your demo is set for <strong>${escapeHtml(dateLabel)} at ${escapeHtml(timeLabel)} (Eastern Time)</strong>.</p>
-              <p>It takes about ${SLOT_MINUTES} minutes. I will show you the system running on real client accounts: real text-back conversations, and the jobs that got booked out of them. Then I will answer any questions.</p>
+              <p>It takes about ${CALL_LENGTH_MINUTES} minutes. I will show you the system running on real client accounts: real text-back conversations, and the jobs that got booked out of them. Then I will answer any questions.</p>
               ${googleMeetLink ? `<p><strong>Join here:</strong> <a href="${googleMeetLink}">${googleMeetLink}</a></p>` : ''}
               <p>${WATCH_BEFORE_LINE} <a href="${getDemoVideoAbsoluteUrl()}">Watch the video</a></p>
               <p>You will also get a text from me confirming.</p>

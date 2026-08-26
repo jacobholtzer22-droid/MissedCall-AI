@@ -6,10 +6,11 @@ import Telnyx from 'telnyx'
 import { createMarketingCalendarEvent, getBusyTimes } from '@/lib/google-calendar'
 import { getDemoVideoAbsoluteUrl, WATCH_BEFORE_LINE } from '@/lib/demo-video'
 import { validateUsMobile } from '@/lib/phone-utils'
+import { CALL_LENGTH_MINUTES } from '@/app/book/constants'
 import {
   TIMEZONE,
   START_HOUR,
-  LAST_SLOT_HOUR,
+  lastSlotOffsetMinutes,
   SLOT_MINUTES,
   SLOT_STEP_MINUTES,
   MAX_DAYS_AHEAD,
@@ -186,15 +187,8 @@ export async function GET(request: NextRequest) {
         0,
         TIMEZONE
       )
-      const lastSlotStart = new TZDate(
-        day.getFullYear(),
-        day.getMonth(),
-        day.getDate(),
-        LAST_SLOT_HOUR, // 7 PM
-        30, // 7:30 PM — last slot starts here, ends at 7:45
-        0,
-        0,
-        TIMEZONE
+      const lastSlotStart = new Date(
+        firstSlot.getTime() + lastSlotOffsetMinutes() * 60 * 1000
       )
 
       let cursor = new Date(firstSlot.getTime())
@@ -562,7 +556,7 @@ export async function POST(request: NextRequest) {
               <h2>You're booked</h2>
               <p>Hi ${escapeHtml(name.trim())},</p>
               <p>Your demo is set for <strong>${escapeHtml(dateLabel)} at ${escapeHtml(timeLabel)} (Eastern Time)</strong>.</p>
-              <p>It takes about ${SLOT_MINUTES} minutes. I will show you the system running on real client accounts: real text-back conversations, and the jobs that got booked out of them. Then I will answer any questions.</p>
+              <p>It takes about ${CALL_LENGTH_MINUTES} minutes. I will show you the system running on real client accounts: real text-back conversations, and the jobs that got booked out of them. Then I will answer any questions.</p>
               ${googleMeetLink ? `<p><strong>Join here:</strong> <a href="${googleMeetLink}">${googleMeetLink}</a></p>` : ''}
               <p>${WATCH_BEFORE_LINE} <a href="${getDemoVideoAbsoluteUrl()}">Watch the video</a></p>
               <p>You will also get a text from me confirming.</p>

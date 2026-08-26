@@ -69,6 +69,7 @@ export default function BookFunnelClient({ initialGate }: { initialGate: Initial
   const [email, setEmail] = useState('')
   const [misses, setMisses] = useState('')
   const [who, setWho] = useState('')
+  const [company, setCompany] = useState('')
   const [trade, setTrade] = useState('')
   const [name, setName] = useState('')
   const [phone, setPhone] = useState('')
@@ -203,6 +204,7 @@ export default function BookFunnelClient({ initialGate }: { initialGate: Initial
           slotStart: selectedSlot.iso,
           missesPerWeek: misses,
           whoAnswers: who,
+          companyName: company.trim(),
           ...(gate ? {} : { name: name.trim(), phone, trade }),
           attribution: attributionRef.current,
           website: honeypot,
@@ -284,7 +286,10 @@ export default function BookFunnelClient({ initialGate }: { initialGate: Initial
 
         {/* ── Step 1: video ───────────────────────────────────────────── */}
         <section id="step-1" className="mb-16 scroll-mt-6">
-          <SectionHeading step="Step 1" title="Watch the video" />
+          <SectionHeading step="Step 1" title="Watch me run it live on a real account" />
+          <p className="text-[15px] leading-relaxed -mt-3 mb-6" style={{ color: 'rgba(242,240,235,0.65)' }}>
+            90 seconds. Real missed call, real text back, real booked quote.
+          </p>
           <div className="border-2 overflow-hidden" style={{ borderColor: BORDER, background: CARD }}>
             {playing ? (
               <video
@@ -314,7 +319,7 @@ export default function BookFunnelClient({ initialGate }: { initialGate: Initial
                   className="absolute bottom-4 left-0 right-0 text-center font-mono text-[11px] uppercase tracking-[0.2em]"
                   style={{ color: '#6E7681' }}
                 >
-                  2 minutes
+                  90 seconds
                 </span>
               </button>
             )}
@@ -365,68 +370,6 @@ export default function BookFunnelClient({ initialGate }: { initialGate: Initial
                 <input id="book-website" name="website" type="text" tabIndex={-1} autoComplete="off"
                   value={honeypot} onChange={(e) => setHoneypot(e.target.value)} />
               </div>
-
-              {gate ? (
-                <div className="mb-6 border-2 px-4 py-3.5" style={{ borderColor: 'rgba(238,107,26,0.35)', background: 'rgba(238,107,26,0.06)' }}>
-                  <p className="text-[14px] font-semibold">{gate.name}</p>
-                  <p className="text-[13px]" style={{ color: '#6E7681' }}>{gate.phone}</p>
-                  <button
-                    type="button"
-                    onClick={clearGate}
-                    className="mt-2 font-mono text-[10px] uppercase tracking-[0.18em] underline underline-offset-4 min-h-[44px]"
-                    style={{ color: '#6E7681' }}
-                  >
-                    Not you?
-                  </button>
-                </div>
-              ) : (
-                <>
-                  <label htmlFor="b-trade" className={labelCls} style={{ color: '#6E7681' }}>What kind of business do you run?</label>
-                  <select id="b-trade" value={trade} onChange={(e) => setTrade(e.target.value)}
-                    className={`${inputCls} mb-5`} style={inputStyle}>
-                    <option value="">Pick one</option>
-                    {TRADES.map((t) => <option key={t} value={t}>{t}</option>)}
-                  </select>
-
-                  <div className="grid sm:grid-cols-2 gap-5 mb-5">
-                    <div>
-                      <label htmlFor="b-name" className={labelCls} style={{ color: '#6E7681' }}>First name</label>
-                      <input id="b-name" type="text" autoComplete="given-name" value={name}
-                        onChange={(e) => setName(e.target.value)} placeholder="Your first name"
-                        className={inputCls} style={inputStyle} />
-                    </div>
-                    <div>
-                      <label htmlFor="b-phone" className={labelCls} style={{ color: '#6E7681' }}>Cell number</label>
-                      <input id="b-phone" type="tel" inputMode="tel" autoComplete="tel" value={phone}
-                        onChange={(e) => setPhone(formatPhoneInput(e.target.value))} placeholder="(555) 123-4567"
-                        className={inputCls} style={inputStyle} />
-                    </div>
-                  </div>
-                </>
-              )}
-
-              <label htmlFor="b-email" className={labelCls} style={{ color: '#6E7681' }}>Email</label>
-              <input id="b-email" type="email" autoComplete="email" value={email}
-                onChange={(e) => { setEmail(e.target.value); setBookingError('') }}
-                placeholder="you@company.com" className={`${inputCls} mb-5`} style={inputStyle} />
-
-              <label htmlFor="b-misses" className={labelCls} style={{ color: '#6E7681' }}>
-                How many calls do you miss in a typical week?
-              </label>
-              <select id="b-misses" value={misses} onChange={(e) => setMisses(e.target.value)}
-                className={`${inputCls} mb-5`} style={inputStyle}>
-                <option value="">Pick one</option>
-                {MISSES_PER_WEEK.map((m) => <option key={m} value={m}>{m}</option>)}
-              </select>
-
-              <label htmlFor="b-who" className={labelCls} style={{ color: '#6E7681' }}>
-                Who answers your phone right now?
-              </label>
-              <select id="b-who" value={who} onChange={(e) => setWho(e.target.value)}
-                className={`${inputCls} mb-6`} style={inputStyle}>
-                <option value="">Pick one</option>
-                {WHO_ANSWERS.map((w) => <option key={w} value={w}>{w}</option>)}
-              </select>
 
               {/* Slot picker */}
               <div className="flex items-center justify-between mb-4">
@@ -499,6 +442,75 @@ export default function BookFunnelClient({ initialGate }: { initialGate: Initial
                   )}
                 </>
               )}
+
+              {gate ? (
+                <div className="mb-6 border-2 px-4 py-3.5" style={{ borderColor: 'rgba(238,107,26,0.35)', background: 'rgba(238,107,26,0.06)' }}>
+                  <p className="text-[14px] font-semibold">{gate.name}</p>
+                  <p className="text-[13px]" style={{ color: '#6E7681' }}>{gate.phone}</p>
+                  <button
+                    type="button"
+                    onClick={clearGate}
+                    className="mt-2 font-mono text-[10px] uppercase tracking-[0.18em] underline underline-offset-4 min-h-[44px]"
+                    style={{ color: '#6E7681' }}
+                  >
+                    Not you?
+                  </button>
+                </div>
+              ) : (
+                <>
+                  <label htmlFor="b-trade" className={labelCls} style={{ color: '#6E7681' }}>What kind of business do you run?</label>
+                  <select id="b-trade" value={trade} onChange={(e) => setTrade(e.target.value)}
+                    className={`${inputCls} mb-5`} style={inputStyle}>
+                    <option value="">Pick one</option>
+                    {TRADES.map((t) => <option key={t} value={t}>{t}</option>)}
+                  </select>
+
+                  <div className="grid sm:grid-cols-2 gap-5 mb-5">
+                    <div>
+                      <label htmlFor="b-name" className={labelCls} style={{ color: '#6E7681' }}>First name</label>
+                      <input id="b-name" type="text" autoComplete="given-name" value={name}
+                        onChange={(e) => setName(e.target.value)} placeholder="Your first name"
+                        className={inputCls} style={inputStyle} />
+                    </div>
+                    <div>
+                      <label htmlFor="b-phone" className={labelCls} style={{ color: '#6E7681' }}>Cell number</label>
+                      <input id="b-phone" type="tel" inputMode="tel" autoComplete="tel" value={phone}
+                        onChange={(e) => setPhone(formatPhoneInput(e.target.value))} placeholder="(555) 123-4567"
+                        className={inputCls} style={inputStyle} />
+                    </div>
+                  </div>
+                </>
+              )}
+
+              <label htmlFor="b-email" className={labelCls} style={{ color: '#6E7681' }}>Email</label>
+              <input id="b-email" type="email" autoComplete="email" required value={email}
+                onChange={(e) => { setEmail(e.target.value); setBookingError('') }}
+                placeholder="you@company.com" className={`${inputCls} mb-5`} style={inputStyle} />
+
+              <label htmlFor="b-company" className={labelCls} style={{ color: '#6E7681' }}>
+                Company name <span className="normal-case tracking-normal text-[10px]">(optional)</span>
+              </label>
+              <input id="b-company" type="text" autoComplete="organization" value={company}
+                onChange={(e) => setCompany(e.target.value)}
+                placeholder="Your business" className={`${inputCls} mb-5`} style={inputStyle} />
+
+              <label htmlFor="b-misses" className={labelCls} style={{ color: '#6E7681' }}>
+                How many calls do you miss in a typical week?
+              </label>
+              <select id="b-misses" value={misses} onChange={(e) => setMisses(e.target.value)}
+                className={`${inputCls} mb-5`} style={inputStyle}>
+                <option value="">Pick one</option>
+                {MISSES_PER_WEEK.map((m) => <option key={m} value={m}>{m}</option>)}
+              </select>
+
+              <label htmlFor="b-who" className={labelCls} style={{ color: '#6E7681' }}>
+                Who answers your phone right now?
+              </label>
+              <select id="b-who" value={who} onChange={(e) => setWho(e.target.value)}
+                className={`${inputCls} mb-6`} style={inputStyle}>
+                <option value="">Pick one</option>
+                {WHO_ANSWERS.map((w) => <option key={w} value={w}>{w}</option>)}
+              </select>
 
               {bookingError && <p className="mb-4 text-[13px] font-semibold" style={{ color: '#EE6B1A' }}>{bookingError}</p>}
 

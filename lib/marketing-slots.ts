@@ -17,11 +17,11 @@ export const TIMEZONE = 'America/New_York'
 export const START_HOUR = 8 // 8:00 AM ET
 export const END_HOUR = 20 // 8:00 PM ET — extended so West Coast visitors see real same-day options
 export const LAST_SLOT_HOUR = 19 // last slot starts 7:30 PM and ends at 7:45 PM
-export const SLOT_MINUTES = 15 // 15-minute live demo
+export const SLOT_MINUTES = 30 // 30-minute live demo
 export const BUFFER_MINUTES = 15
-export const SLOT_STEP_MINUTES = SLOT_MINUTES + BUFFER_MINUTES // 30 — slot starts on the :00 and :30
+export const SLOT_STEP_MINUTES = SLOT_MINUTES + BUFFER_MINUTES // 45 — 30 min call plus a 15 min gap
 export const MIN_NOTICE_HOURS = 2
-export const MAX_DAYS_AHEAD = 14
+export const MAX_DAYS_AHEAD = 5
 
 export function getNowInTz() {
   return new TZDate(new Date(), TIMEZONE)
@@ -50,13 +50,30 @@ export function isWithinHours(slotStart: Date, slotEnd: Date) {
   return startHour >= START_HOUR && endHour <= END_HOUR
 }
 
-// Slot starts land on the :00 and :30 in ET, 8:00 AM through 7:30 PM.
+/**
+ * Slot starts are every SLOT_STEP_MINUTES from START_HOUR, and the call has to
+ * finish by END_HOUR.
+ *
+ * Derived rather than hard-coded on purpose: this used to test `mins === 0 ||
+ * mins === 30`, which silently matched only a 30 minute step. Changing the slot
+ * length without changing that literal would have thrown away most of the day's
+ * slots with no error.
+ */
 export function isValidSlotStart(d: Date) {
   const tz = toTZDate(d)
-  const mins = tz.getMinutes()
   const hour = tz.getHours()
-  if (hour < START_HOUR || hour > LAST_SLOT_HOUR) return false
-  return mins === 0 || mins === 30
+  const mins = tz.getMinutes()
+  if (hour < START_HOUR) return false
+  const minutesFromOpen = (hour - START_HOUR) * 60 + mins
+  if (minutesFromOpen < 0) return false
+  if (minutesFromOpen % SLOT_STEP_MINUTES !== 0) return false
+  return minutesFromOpen + SLOT_MINUTES <= (END_HOUR - START_HOUR) * 60
+}
+
+/** Minutes past START_HOUR for the last slot that still finishes by END_HOUR. */
+export function lastSlotOffsetMinutes(): number {
+  const usable = (END_HOUR - START_HOUR) * 60 - SLOT_MINUTES
+  return Math.floor(usable / SLOT_STEP_MINUTES) * SLOT_STEP_MINUTES
 }
 
 export function formatDisplay(slotStart: Date) {

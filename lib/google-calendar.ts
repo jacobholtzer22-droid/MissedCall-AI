@@ -586,6 +586,8 @@ export type CreateMarketingCalendarEventOptions = {
   privateNotes?: string | null
   /** Founder video link, shown to the attendee in the invite description. */
   watchBeforeUrl?: string | null
+  /** Optional company name, appended to the event title when supplied. */
+  companyName?: string | null
 }
 
 /**
@@ -616,6 +618,7 @@ export async function createMarketingCalendarEvent(
     attendeeEmail,
     privateNotes,
     watchBeforeUrl,
+    companyName,
   } = options
 
   const calendar = await getCalendarClient(businessId)
@@ -627,9 +630,10 @@ export async function createMarketingCalendarEvent(
   })
   const tz = business?.timezone ?? 'America/New_York'
 
+  const who = companyName?.trim() ? `${customerName}, ${companyName.trim()}` : customerName
   const summary = serviceType?.trim()
-    ? `${serviceType.trim()} — ${customerName}`
-    : `Discovery Call — ${customerName}`
+    ? `${serviceType.trim()} — ${who}`
+    : `Discovery Call — ${who}`
   const descriptionLines = [
     `Name: ${customerName}`,
     `Phone: ${customerPhone}`,
