@@ -72,7 +72,16 @@ export default function CouponBanner({ initial }: { initial: CouponState }) {
     >
       <p className="text-[15px] font-bold leading-[1.5]" style={{ color: '#F2F0EB' }}>
         {DISCOUNT_PERCENT}% off your setup fee if you book in the next{' '}
-        <span className="tabular-nums whitespace-nowrap" style={{ color: '#EE6B1A' }}>
+        {/* suppressHydrationWarning is correct here, not a papered-over bug: the
+            server renders this at server time and the client re-computes a
+            moment later, so the digits legitimately differ. The alternative,
+            rendering the timer only after mount, would leave a visible gap
+            where the deadline should be. Only the digits are exempted. */}
+        <span
+          className="tabular-nums whitespace-nowrap"
+          style={{ color: '#EE6B1A' }}
+          suppressHydrationWarning
+        >
           {left.label}
         </span>
       </p>

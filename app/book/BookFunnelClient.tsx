@@ -12,7 +12,8 @@ import type { CouponState } from '@/lib/coupon'
 import { trackStandard, trackCustomEvent, setPixelVariant } from './pixel'
 import GateModal, { type GateResult } from './GateModal'
 import BookingWizard, { type ChosenSlot, type WizardPrefill } from './BookingWizard'
-import ReviewStrip from './ReviewStrip'
+import BrettTestimonial from './BrettTestimonial'
+import ReviewCarousel from './ReviewCarousel'
 import CouponBanner, { CouponApplied } from './CouponBanner'
 import { GATE_AT_SECONDS, NOT_AN_OWNER } from './constants'
 
@@ -38,12 +39,12 @@ export type InitialGate = {
 
 function SectionHeading({ step, title }: { step: string; title: string }) {
   return (
-    <div className="mb-6">
-      <div className="inline-flex items-center gap-2 font-mono text-[11px] font-semibold uppercase tracking-[0.28em] mb-3">
+    <div className="mb-4">
+      <div className="inline-flex items-center gap-2 font-mono text-[11px] font-semibold uppercase tracking-[0.28em] mb-2.5">
         <span className="inline-block h-2.5 w-2.5" style={{ background: '#EE6B1A' }} />
         <span style={{ color: '#EE6B1A' }}>{step}</span>
       </div>
-      <h2 className="text-[clamp(1.7rem,5vw,2.6rem)] font-black uppercase leading-[1.1] tracking-tight">{title}</h2>
+      <h2 className="text-[clamp(1.35rem,4.4vw,2.2rem)] font-black uppercase leading-[1.15] tracking-tight">{title}</h2>
     </div>
   )
 }
@@ -221,44 +222,52 @@ export default function BookFunnelClient({
       </header>
       <div className="aa-hazard" />
 
-      <main className="mx-auto max-w-4xl px-5 sm:px-8 py-12 md:py-16">
+      <main className="mx-auto max-w-4xl px-5 sm:px-8 py-8 md:py-14">
         {/* ── Hero ─────────────────────────────────────── */}
-        <section className="mb-8">
-          <div className="inline-flex items-center gap-2 font-mono text-[11px] font-semibold uppercase tracking-[0.28em] mb-4">
+        <section className="mb-6">
+          <div className="inline-flex items-center gap-2 font-mono text-[11px] font-semibold uppercase tracking-[0.28em] mb-3">
             <span className="inline-block h-2.5 w-2.5" style={{ background: '#EE6B1A' }} />
             <span style={{ color: '#EE6B1A' }}>Free live demo</span>
           </div>
-          <h1 className="text-[clamp(2rem,6vw,3.4rem)] font-black uppercase leading-[1.05] tracking-tight mb-5">
+          <h1 className="text-[clamp(1.5rem,4.6vw,2.6rem)] font-black uppercase leading-[1.12] tracking-tight mb-3">
             Your missed calls, texted back in 8 seconds. Booked on your calendar.
           </h1>
-          <p className="text-[17px] leading-[1.6] mb-6" style={{ color: 'rgba(242,240,235,0.72)' }}>
+          <p className="text-[15px] leading-[1.55] mb-4" style={{ color: 'rgba(242,240,235,0.72)' }}>
             I&apos;ll show you it running on real client accounts.
           </p>
           <div className="flex flex-col sm:flex-row gap-3">
-            <a href="#step-2" className="aa-btn inline-flex items-center justify-center gap-2 px-8 py-4 text-[16px] font-bold uppercase tracking-wide min-h-[56px]" style={{ background: '#EE6B1A', color: '#16181C' }}>
+            <a href="#step-2" className="aa-btn inline-flex items-center justify-center gap-2 px-8 py-3.5 text-[15px] font-bold uppercase tracking-wide min-h-[52px]" style={{ background: '#EE6B1A', color: '#16181C' }}>
               Book now
               <ArrowRight size={17} strokeWidth={2.5} />
             </a>
-            <a href="#step-1" className="aa-btn-ghost inline-flex items-center justify-center gap-2 border-2 px-8 py-4 text-[16px] font-bold uppercase tracking-wide min-h-[56px]" style={{ borderColor: '#6E7681', color: '#F2F0EB' }}>
+            <a href="#step-1" className="aa-btn-ghost inline-flex items-center justify-center gap-2 border-2 px-8 py-3.5 text-[15px] font-bold uppercase tracking-wide min-h-[52px]" style={{ borderColor: '#6E7681', color: '#F2F0EB' }}>
               See how it works
             </a>
           </div>
         </section>
 
-        <div className="mb-5">
-          <CouponBanner initial={coupon} />
+        <div className="mb-3">
+          <BrettTestimonial />
         </div>
 
-        <div className="mb-12">
-          <ReviewStrip />
+        <div className="mb-6">
+          <ReviewCarousel />
         </div>
 
         {/* ── Step 1 ───────────────────────────────────── */}
-        <section id="step-1" className="mb-16 scroll-mt-6">
-          <SectionHeading step="Step 1" title="Watch me run it live on a real account" />
-          <p className="text-[15px] leading-[1.6] -mt-3 mb-6" style={{ color: 'rgba(242,240,235,0.68)' }}>
-            Under two minutes. Real missed call, real text back, real booked quote.
-          </p>
+        <section id="step-1" className="mb-10 scroll-mt-6">
+          <div className="mb-3">
+            <div className="inline-flex items-center gap-2 font-mono text-[10px] font-semibold uppercase tracking-[0.28em] mb-2">
+              <span className="inline-block h-2 w-2" style={{ background: '#EE6B1A' }} />
+              <span style={{ color: '#EE6B1A' }}>Step 1</span>
+            </div>
+            <h2 className="text-[clamp(1.2rem,4vw,2rem)] font-black uppercase leading-[1.15] tracking-tight">
+              Watch me run it live on a real account
+            </h2>
+            <p className="text-[13px] leading-[1.5] mt-2" style={{ color: 'rgba(242,240,235,0.65)' }}>
+              Under two minutes. Real missed call, real text back, real booked quote.
+            </p>
+          </div>
           <div className="border-2 overflow-hidden" style={{ borderColor: BORDER, background: CARD }}>
             {playing ? (
               <video
@@ -296,6 +305,12 @@ export default function BookFunnelClient({
             )}
           </div>
         </section>
+
+        {/* Urgency sits at the booking decision, not at the top of the page:
+            they see the clock right as they are about to pick a time. */}
+        <div className="mb-8 -mt-6">
+          <CouponBanner initial={coupon} />
+        </div>
 
         {/* ── Step 2 ───────────────────────────────────── */}
         <section id="step-2" className="mb-16 scroll-mt-6">
