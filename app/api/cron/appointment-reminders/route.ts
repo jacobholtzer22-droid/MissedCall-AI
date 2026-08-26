@@ -33,6 +33,7 @@ import Telnyx from 'telnyx'
 import { db } from '@/lib/db'
 import { normalizeToE164, phonesMatch } from '@/lib/phone-utils'
 import { getMarketingBusiness } from '@/lib/marketing-funnel'
+import { getCalendarEventState } from '@/lib/google-calendar'
 import { isSendableStatus } from '@/lib/reminder-status'
 
 export const dynamic = 'force-dynamic'
@@ -240,13 +241,43 @@ async function runAppointmentReminders(request: NextRequest) {
     // dead we want the flag to stay burned so no later run retries it.
     const fresh = await db.appointment.findUnique({
       where: { id: appt.id },
-      select: { status: true, googleMeetLink: true },
+      select: { status: true, googleMeetLink: true, googleCalendarEventId: true },
     })
     if (!fresh || !isSendableStatus(fresh.status)) {
       const reason = !fresh ? 'deleted before send' : `status '${fresh.status}' at send time`
       console.log(`[reminders] ABORT kind=${kind} appointmentId=${appt.id} reason=${reason}`)
       result.skipped.push({ id: appt.id, reason })
       continue
+    }
+
+    // Scenario B guard: the booking is 'confirmed' in our database, but it may
+    // have been cancelled directly in Google Calendar, which nothing syncs back.
+    // That is the realistic failure mode while there is no admin calendar UI.
+    //
+    // Deliberately three-state. 'unknown' (network error, expired token, Google
+    // 5xx) must NOT be treated as cancelled, or one bad API call would wipe out
+    // live bookings. On unknown we log and still send, because our own record
+    // says the booking is on.
+    if (fresh.googleCalendarEventId) {
+      const calState = await getCalendarEventState(business.id, fresh.googleCalendarEventId)
+      if (calState === 'cancelled') {
+        await db.appointment.update({
+          where: { id: appt.id },
+          data: { status: 'cancelled' },
+        })
+        console.log(
+          `[reminders] ABORT kind=${kind} appointmentId=${appt.id} reason=cancelled in Google Calendar ` +
+            `eventId=${fresh.googleCalendarEventId} (booking marked cancelled in DB, no SMS sent)`
+        )
+        result.skipped.push({ id: appt.id, reason: 'cancelled in Google Calendar' })
+        continue
+      }
+      if (calState === 'unknown') {
+        console.warn(
+          `[reminders] WARN appointmentId=${appt.id} could not verify Google event ` +
+            `${fresh.googleCalendarEventId}. Proceeding with send on DB status '${fresh.status}'.`
+        )
+      }
     }
 
     const to = normalizeToE164(appt.customerPhone)

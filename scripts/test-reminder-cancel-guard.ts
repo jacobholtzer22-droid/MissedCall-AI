@@ -61,6 +61,26 @@ const cancelledOnly = bookings.filter((b) => b.status === 'cancelled')
 const sentToCancelled = cancelledOnly.filter((b) => sent.includes(b.id)).length
 check('zero SMS sent to cancelled bookings', sentToCancelled, 0)
 
+// Scenario B: cancelled directly in Google Calendar. Our DB still says
+// 'confirmed', so only the calendar state can catch it. 'unknown' must never be
+// treated as cancelled, or a transient Google error would kill live bookings.
+console.log('')
+console.log('=== google calendar state handling (scenario B) ===')
+
+type CalState = 'active' | 'cancelled' | 'unknown'
+function decide(dbStatus: string, calState: CalState): 'send' | 'skip-cancelled' | 'send-unverified' {
+  if (!isSendableStatus(dbStatus)) return 'skip-cancelled'
+  if (calState === 'cancelled') return 'skip-cancelled'
+  if (calState === 'unknown') return 'send-unverified'
+  return 'send'
+}
+
+check('confirmed + google active         -> send', decide('confirmed', 'active'), 'send')
+check('confirmed + google cancelled      -> skip', decide('confirmed', 'cancelled'), 'skip-cancelled')
+check('confirmed + google unknown        -> still send', decide('confirmed', 'unknown'), 'send-unverified')
+check('cancelled in DB + google active   -> skip', decide('cancelled', 'active'), 'skip-cancelled')
+check('transient error never cancels a live booking', decide('confirmed', 'unknown') === 'skip-cancelled', false)
+
 console.log('')
 if (failures > 0) {
   console.error(`${failures} assertion(s) failed`)

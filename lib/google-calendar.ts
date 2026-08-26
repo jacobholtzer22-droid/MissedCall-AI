@@ -726,6 +726,37 @@ export async function deleteCalendarEvent(businessId: string, eventId: string): 
 }
 
 /** Returns true if the event exists in Google Calendar, false if not found or error */
+/**
+ * Three-state event lookup. Unlike calendarEventExists, this distinguishes
+ * "Google says it is gone" from "we could not ask Google".
+ *
+ * That distinction matters when the answer drives a destructive write: the
+ * reminder cron marks bookings cancelled based on this, and collapsing a
+ * network blip or an expired token into 'cancelled' would kill live bookings.
+ *
+ *   'cancelled' - 404 from Google, or the event exists with status 'cancelled'
+ *                 (Google keeps deleted events retrievable in that state)
+ *   'active'    - event exists and is not cancelled
+ *   'unknown'   - no usable calendar client, or any other error. Caller must
+ *                 NOT treat this as gone.
+ */
+export async function getCalendarEventState(
+  businessId: string,
+  eventId: string
+): Promise<'active' | 'cancelled' | 'unknown'> {
+  const calendar = await getCalendarClient(businessId)
+  if (!calendar) return 'unknown'
+
+  try {
+    const event = await calendar.events.get({ calendarId: 'primary', eventId })
+    return event.data.status === 'cancelled' ? 'cancelled' : 'active'
+  } catch (err) {
+    const code = (err as { code?: number; status?: number })?.code ?? (err as { status?: number })?.status
+    if (code === 404 || code === 410) return 'cancelled'
+    return 'unknown'
+  }
+}
+
 export async function calendarEventExists(businessId: string, eventId: string): Promise<boolean> {
   const calendar = await getCalendarClient(businessId)
   if (!calendar) return false
