@@ -15,14 +15,15 @@ import { REVIEWS, GOOGLE_LISTING_URL, type Review } from './GoogleReviews'
 // Roboto, not Google Sans. Google Sans is not licensed for third-party use.
 // Roboto is Apache-2.0 and is what Google renders review bodies in.
 //
-// THREE THINGS DELIBERATELY DO NOT RENDER, because the data does not have them:
-//   - relative dates: no review carries a date, so none is shown. A plausible
-//     "2 months ago" would be fabricated.
-//   - profile photos: not stored (Google's lh3 URLs rotate and break), so every
-//     avatar is an initial circle, which is exactly what Google shows for
-//     photoless accounts.
-//   - owner replies: no reply data exists, so no reply block is emitted.
-// If any of those arrive in the data later, the markup below is ready for them.
+// Data now comes from the live Google Business Profile pull, so dates and
+// photos are real:
+//   - relative dates are DERIVED from Google's createTime, never hand-written.
+//     No timestamp means no date renders.
+//   - profile photos are Google's own lh3 URLs. Those can rotate or 404, so a
+//     failed load falls back to the initial circle rather than showing a broken
+//     image, which is also what Google renders for photoless accounts.
+//   - owner replies: none of the nine carry one, so no reply block is emitted.
+//     The markup is ready if you start replying.
 //
 // The G mark attributes where the reviews live. It is never laid out to imply
 // Google endorses the business.
@@ -45,6 +46,25 @@ const G = {
 
 // The palette Google assigns to photoless accounts.
 const AVATAR_COLORS = ['#1A73E8', '#D93025', '#1E8E3E', '#9334E6', '#E37400', '#12B5CB', '#C5221F', '#188038']
+
+/**
+ * Google's own relative-date phrasing, computed from the real createTime.
+ * Returns null when there is no timestamp, so nothing is ever invented.
+ */
+function relativeDate(iso?: string): string | null {
+  if (!iso) return null
+  const then = new Date(iso).getTime()
+  if (!Number.isFinite(then)) return null
+  const days = Math.floor((Date.now() - then) / 86_400_000)
+  if (days < 1) return 'today'
+  if (days < 7) return days === 1 ? 'a day ago' : `${days} days ago`
+  const weeks = Math.floor(days / 7)
+  if (days < 30) return weeks <= 1 ? 'a week ago' : `${weeks} weeks ago`
+  const months = Math.floor(days / 30)
+  if (days < 365) return months <= 1 ? 'a month ago' : `${months} months ago`
+  const years = Math.floor(days / 365)
+  return years <= 1 ? 'a year ago' : `${years} years ago`
+}
 
 const COLLAPSED_COUNT = 2
 // Pinned to the top of the collapsed view. Names must match the review data
@@ -91,7 +111,9 @@ function Stars({ rating }: { rating: number }) {
 }
 
 function ReviewRow({ review, last }: { review: Review; last: boolean }) {
-  const { name, rating, text, date } = review
+  const { name, rating, text, photoUrl, createdAt } = review
+  const [photoBroken, setPhotoBroken] = useState(false)
+  const date = relativeDate(createdAt)
   const [expanded, setExpanded] = useState(false)
   const [clamped, setClamped] = useState(false)
   const bodyRef = useRef<HTMLDivElement>(null)
@@ -111,17 +133,29 @@ function ReviewRow({ review, last }: { review: Review; last: boolean }) {
   return (
     <li style={{ padding: '16px 0', borderBottom: last ? 'none' : `1px solid ${G.divider}` }}>
       <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
-        <span
-          aria-hidden="true"
-          style={{
-            width: 40, height: 40, borderRadius: '50%', flexShrink: 0,
-            background: colorFor(name), color: '#FFFFFF',
-            display: 'grid', placeItems: 'center',
-            fontSize: 18, fontWeight: 400, lineHeight: 1,
-          }}
-        >
-          {name.trim().charAt(0).toUpperCase()}
-        </span>
+        {photoUrl && !photoBroken ? (
+          /* eslint-disable-next-line @next/next/no-img-element */
+          <img
+            src={photoUrl}
+            alt=""
+            aria-hidden="true"
+            referrerPolicy="no-referrer"
+            onError={() => setPhotoBroken(true)}
+            style={{ width: 40, height: 40, borderRadius: '50%', flexShrink: 0, objectFit: 'cover' }}
+          />
+        ) : (
+          <span
+            aria-hidden="true"
+            style={{
+              width: 40, height: 40, borderRadius: '50%', flexShrink: 0,
+              background: colorFor(name), color: '#FFFFFF',
+              display: 'grid', placeItems: 'center',
+              fontSize: 18, fontWeight: 400, lineHeight: 1,
+            }}
+          >
+            {name.trim().charAt(0).toUpperCase()}
+          </span>
+        )}
 
         <div style={{ minWidth: 0, flex: 1 }}>
           <div style={{ color: G.name, fontSize: 14, fontWeight: 400, lineHeight: '20px' }}>{name}</div>

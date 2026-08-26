@@ -5,65 +5,96 @@ import { Star, Quote, ChevronLeft, ChevronRight, ExternalLink } from 'lucide-rea
 
 // ─────────────────────────────────────────────────────────
 // Google reviews — Align and Acquire (Google Business Profile).
-// Text is reproduced VERBATIM from the public listing, including
-// original capitalisation and punctuation. Do not edit, shorten,
-// or "improve" any review text. Static content — no runtime call
-// to Google.
 //
-// Listing at time of capture (Aug 2026): 5.0 average, 8 reviews,
-// all 5-star.
+// Pulled verbatim from the live GBP API on 2026-08-26 via the connected
+// Google Business Profile integration (location 3820569693245684558).
+// Google reported averageRating 5, totalReviewCount 9.
+//
+// Text is EXACTLY as Google returned it, including typographic apostrophes and
+// the reviewer's own capitalisation. Do not edit, shorten, or "improve" any
+// review. Order below is Google's own: newest first.
+//
+// This is still a snapshot, not a live fetch: hitting Google on every render
+// would put a third-party dependency and its latency in front of paid traffic.
+// To refresh it, ask Claude to re-pull from the GBP connector.
 // ─────────────────────────────────────────────────────────
 export interface Review {
   name: string
   rating: number
   text: string
-  /** Relative date as Google shows it. Absent on every current row: the
-   *  snapshot has no timestamps, and a rendered date must never be invented. */
-  date?: string
-  /** Verbatim owner reply, if one exists. Absent on every current row. */
+  /** Google-hosted avatar. Can rotate or 404, so every consumer must fall back
+   *  to an initial circle rather than showing a broken image. */
+  photoUrl?: string
+  /** ISO timestamp from Google. Relative dates are derived from this, never
+   *  written by hand. */
+  createdAt?: string
+  /** Verbatim owner reply, if one exists. None of the current nine have one. */
   ownerReply?: string
 }
 
 export const REVIEWS: Review[] = [
   {
-    name: 'Benji Hussey',
+    name: 'Mervin Hoch',
     rating: 5,
-    text: 'Great experience working with Jacob, he is very involved and you can tell he really cares about his client relationships. Would recommend',
-  },
-  {
-    name: 'Colin Albright',
-    rating: 5,
-    text: 'Highly recommend Align & Acquire! They built an awesome website for my business and were great to work with. Very helpful, professional, and always quick to answer questions. I’m extremely happy with the final result!',
-  },
-  {
-    name: 'Hayley Harpe',
-    rating: 5,
-    text: 'Highly recommend the service Jacob offers! He is super professional and always on time. Also a super friendly guy who cares about his customers. 5 stars all the way!!!!',
-  },
-  {
-    name: 'Ryan',
-    rating: 5,
-    text: 'Helped me stay focused on the job and not lose any leads. Works even better than expected. 100% recommend',
+    text: 'Jacob has been good to work with. Response the same day, providing resolutions for our needs.',
+    photoUrl: 'https://lh3.googleusercontent.com/a/ACg8ocI4pnlFi5uw4OIaPeCUa1MQhehJz_2Dai3Q6ksY0T9lWi2tKg=s120-c-rp-mo-br100',
+    createdAt: '2026-08-13T20:32:09.100Z',
   },
   {
     name: 'Klederson Rodas',
     rating: 5,
     text: 'Great communication, affordable pricing, and quality work. I’ve definitely seen results from the work he does. Highly recommend!',
+    photoUrl: 'https://lh3.googleusercontent.com/a/ACg8ocLdFIR-BCZWhV0shahIMgsquYtwQbmxVRHVd-yg4NvSSBH0=s120-c-rp-mo-br100',
+    createdAt: '2026-08-11T20:18:17.788Z',
   },
   {
     name: 'Will Schnelk',
     rating: 5,
     text: 'Great service, jacob is respectful and is very knowledgeable on what he’s doing.',
+    photoUrl: 'https://lh3.googleusercontent.com/a-/ALV-UjWyvCeJGFbJiRcNRiM4wLebi0kMUUEZhX0HHCktgPEMU0SGkld6=s120-c-rp-mo-br100',
+    createdAt: '2026-07-08T16:21:02.967Z',
+  },
+  {
+    name: 'Hayley Harpe',
+    rating: 5,
+    text: 'Highly recommend the service Jacob offers! He is super professional and always on time. Also a super friendly guy who cares about his customers. 5 stars all the way!!!!',
+    photoUrl: 'https://lh3.googleusercontent.com/a/ACg8ocIBdfdkO8ENZMS6btG8pxwjtnXVXR72X_YaA-S9voXZUlpktA=s120-c-rp-mo-br100',
+    createdAt: '2026-07-08T17:01:16.668Z',
   },
   {
     name: 'Cameron Brillantes',
     rating: 5,
     text: 'Great experience working with Align and Acquire. Jacob is professional, responsive, and really understands how to help local businesses generate more leads. Highly recommend if you’re looking to grow your business and stop missing potential customers.',
+    photoUrl: 'https://lh3.googleusercontent.com/a/ACg8ocIBv0mmAbLWFwj7RVorHypb2uq-oJKHG7ST1_p8hvd0s6Ggm2A=s120-c-rp-mo-br100',
+    createdAt: '2026-07-08T16:33:06.211Z',
+  },
+  {
+    name: 'Colin Albright',
+    rating: 5,
+    text: 'Highly recommend Align & Acquire! They built an awesome website for my business and were great to work with. Very helpful, professional, and always quick to answer questions. I’m extremely happy with the final result!',
+    photoUrl: 'https://lh3.googleusercontent.com/a-/ALV-UjWBApl7LAw9z1fffnCbOD046Z6gwXrscbhCiMfnBWS2Rl4It90=s120-c-rp-mo-br100',
+    createdAt: '2026-07-06T17:51:43.660Z',
+  },
+  {
+    name: 'Benji Hussey',
+    rating: 5,
+    text: 'Great experience working with Jacob, he is very involved and you can tell he really cares about his client relationships. Would recommend',
+    photoUrl: 'https://lh3.googleusercontent.com/a/ACg8ocIwCC7Qd2gwbLu367S85cFpEeRO5JF7iIvUvZtWTIVX0-uZQA=s120-c-rp-mo-br100',
+    createdAt: '2026-07-06T17:46:27.953Z',
   },
   {
     name: 'Keegan Kaiser',
     rating: 5,
     text: 'Liam got me connected with this amazing company through a call and I was grateful to have answered it. I got in communication with Jacob the owner who helped me strategize ways to make my business better. Great experience overall',
+    photoUrl: 'https://lh3.googleusercontent.com/a/ACg8ocJtFFgP-qMiqterMumCBAMRw08s8MAATMBR5SW1S8fXHLM3ZQ=s120-c-rp-mo-br100',
+    createdAt: '2026-07-06T17:40:19.074Z',
+  },
+  {
+    name: 'Ryan',
+    rating: 5,
+    text: 'Helped me stay focused on the job and not lose any leads. Works even better than expected. 100% recommend',
+    photoUrl: 'https://lh3.googleusercontent.com/a-/ALV-UjXAULkcXEkaXyA-nrkDFIsoomkXo7k10wfo6NF_KAPVDIzNhYQ3=s120-c-rp-mo-br100',
+    createdAt: '2026-07-06T17:36:36.228Z',
   },
 ]
 
