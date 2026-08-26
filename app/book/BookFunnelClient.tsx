@@ -220,7 +220,7 @@ export default function BookFunnelClient({
 
       <main className="mx-auto max-w-4xl px-5 sm:px-8 py-12 md:py-16">
         {/* ── Hero ─────────────────────────────────────── */}
-        <section className="mb-10">
+        <section className="mb-8">
           <div className="inline-flex items-center gap-2 font-mono text-[11px] font-semibold uppercase tracking-[0.28em] mb-4">
             <span className="inline-block h-2.5 w-2.5" style={{ background: '#EE6B1A' }} />
             <span style={{ color: '#EE6B1A' }}>Free live demo</span>
@@ -228,7 +228,7 @@ export default function BookFunnelClient({
           <h1 className="text-[clamp(2rem,6vw,3.4rem)] font-black uppercase leading-[1.05] tracking-tight mb-5">
             Your missed calls, texted back in 8 seconds. Booked on your calendar.
           </h1>
-          <p className="text-[17px] leading-[1.6] mb-8" style={{ color: 'rgba(242,240,235,0.72)' }}>
+          <p className="text-[17px] leading-[1.6] mb-6" style={{ color: 'rgba(242,240,235,0.72)' }}>
             I&apos;ll show you it running on real client accounts.
           </p>
           <div className="flex flex-col sm:flex-row gap-3">
@@ -242,12 +242,18 @@ export default function BookFunnelClient({
           </div>
         </section>
 
-        <div className="mb-6">
+        <div className="mb-5">
           <CouponBanner />
         </div>
 
-        <div className="mb-14">
+        <div className="mb-5">
           <ReviewStrip />
+        </div>
+
+        {/* Directly under the strip, collapsed to two, so Step 1 stays
+            reachable in the first scroll on a phone. */}
+        <div className="mb-10">
+          <GoogleReviewsCard />
         </div>
 
         {/* ── Step 1 ───────────────────────────────────── */}
@@ -414,7 +420,6 @@ export default function BookFunnelClient({
           )}
         </section>
 
-        <GoogleReviewsCard />
       </main>
 
       {variant === 'gate' && (

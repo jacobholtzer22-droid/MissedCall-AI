@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { Star } from 'lucide-react'
+import { Star, ChevronDown, ChevronUp } from 'lucide-react'
 import { REVIEWS, GOOGLE_LISTING_URL } from '@/app/components/GoogleReviews'
 
 // ─────────────────────────────────────────────────────────
@@ -58,6 +58,8 @@ function initialsOf(name: string) {
 export default function ReviewStrip() {
   const [index, setIndex] = useState(0)
   const [paused, setPaused] = useState(false)
+  // Reading the full quote must not be interrupted by the carousel moving on.
+  const [expanded, setExpanded] = useState(false)
   const [reduceMotion, setReduceMotion] = useState(false)
   const touchRef = useRef(false)
 
@@ -71,10 +73,16 @@ export default function ReviewStrip() {
   }, [])
 
   useEffect(() => {
-    if (paused || reduceMotion) return
+    if (paused || expanded || reduceMotion) return
     const id = setInterval(() => setIndex((i) => (i + 1) % SLIDES.length), ROTATE_MS)
     return () => clearInterval(id)
-  }, [paused, reduceMotion])
+  }, [paused, expanded, reduceMotion])
+
+  // Moving to another review collapses the previous one, so an expanded card
+  // never carries over to somebody else's words.
+  useEffect(() => {
+    setExpanded(false)
+  }, [index])
 
   const slide = SLIDES[index]
 
@@ -100,7 +108,7 @@ export default function ReviewStrip() {
         <img
           src={PHOTO}
           alt="Jacob shaking hands with Brett of Master Gardener LLC"
-          className="w-[104px] sm:w-[132px] shrink-0 object-cover object-[center_28%]"
+          className="w-[104px] sm:w-[132px] shrink-0 self-stretch object-cover object-[center_28%]"
         />
         <div key={index} className="min-w-0 flex-1 p-3.5 sm:p-4 motion-safe:animate-[aaFade_300ms_ease-out]">
           <div className="flex items-center gap-1.5 mb-1.5">
@@ -110,16 +118,29 @@ export default function ReviewStrip() {
             <span className="sr-only">{slide.rating} out of 5 stars</span>
           </div>
           <p
-            className="text-[13px] sm:text-[14px] leading-[1.55] overflow-hidden"
-            style={{
-              color: 'rgba(242,240,235,0.9)',
-              display: '-webkit-box',
-              WebkitLineClamp: 2,
-              WebkitBoxOrient: 'vertical',
-            }}
+            className={expanded ? 'text-[13px] sm:text-[14px] leading-[1.6]' : 'text-[13px] sm:text-[14px] leading-[1.6] overflow-hidden'}
+            style={
+              expanded
+                ? { color: 'rgba(242,240,235,0.9)' }
+                : {
+                    color: 'rgba(242,240,235,0.9)',
+                    display: '-webkit-box',
+                    WebkitLineClamp: 2,
+                    WebkitBoxOrient: 'vertical',
+                  }
+            }
           >
             {slide.quote}
           </p>
+          <button
+            type="button"
+            onClick={() => setExpanded((v) => !v)}
+            aria-expanded={expanded}
+            className="mt-1 inline-flex items-center gap-1 font-mono text-[10px] uppercase tracking-[0.16em] underline underline-offset-4 min-h-[44px]"
+            style={{ color: '#6E7681' }}
+          >
+            {expanded ? (<>Show less <ChevronUp size={12} strokeWidth={2.5} /></>) : (<>Read it <ChevronDown size={12} strokeWidth={2.5} /></>)}
+          </button>
           <div className="mt-2 flex items-center gap-2 min-w-0">
             {!slide.isBrett && (
               <span
