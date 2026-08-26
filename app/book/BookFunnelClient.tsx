@@ -7,7 +7,7 @@ import { Logo } from '@/app/components/Logo'
 import GoogleReviews from '@/app/components/GoogleReviews'
 import { BookFeaturedTestimonial } from '@/app/components/BookTestimonials'
 import { validateUsMobile } from '@/lib/phone-utils'
-import { getDemoVideoUrl } from '@/lib/demo-video'
+import { getDemoVideoUrl, getDemoPosterUrl } from '@/lib/demo-video'
 import { parseAttribution, type Attribution } from '@/lib/attribution'
 import { trackStandard, trackCustomEvent } from './pixel'
 import GateModal, { type GateResult } from './GateModal'
@@ -230,6 +230,7 @@ export default function BookFunnelClient({ initialGate }: { initialGate: Initial
   }
 
   const videoSrc = getDemoVideoUrl()
+  const posterSrc = getDemoPosterUrl()
 
   return (
     <div className="min-h-dvh aa-grid-bg" style={{ background: '#16181C', color: '#F2F0EB' }}>
@@ -295,29 +296,47 @@ export default function BookFunnelClient({ initialGate }: { initialGate: Initial
               <video
                 ref={videoRef}
                 src={videoSrc}
+                poster={posterSrc || undefined}
                 controls
                 playsInline
                 preload="metadata"
                 onTimeUpdate={handleTimeUpdate}
-                className="w-full aspect-video bg-black"
+                className="w-full aspect-[2/1] bg-black"
               />
             ) : (
               <button
                 type="button"
                 onClick={handlePlayClick}
                 aria-label="Play the demo video"
-                className="relative w-full aspect-video grid place-items-center group"
-                style={{ background: 'linear-gradient(135deg, #1d2026 0%, #16181C 60%, #22252b 100%)' }}
+                className="relative w-full aspect-[2/1] grid place-items-center group overflow-hidden"
+                style={
+                  posterSrc
+                    ? {
+                        backgroundImage: `url(${posterSrc})`,
+                        backgroundSize: 'cover',
+                        backgroundPosition: 'center',
+                      }
+                    : { background: 'linear-gradient(135deg, #1d2026 0%, #16181C 60%, #22252b 100%)' }
+                }
               >
+                {/* Scrim so the play button and duration stay legible on top of
+                    a bright dashboard screenshot. */}
+                {posterSrc && (
+                  <span
+                    aria-hidden="true"
+                    className="absolute inset-0"
+                    style={{ background: 'linear-gradient(180deg, rgba(22,24,28,0.35) 0%, rgba(22,24,28,0.55) 100%)' }}
+                  />
+                )}
                 <span
-                  className="grid place-items-center rounded-full transition-transform motion-safe:group-hover:scale-105"
-                  style={{ background: '#EE6B1A', width: 84, height: 84 }}
+                  className="relative grid place-items-center rounded-full transition-transform motion-safe:group-hover:scale-105"
+                  style={{ background: '#EE6B1A', width: 84, height: 84, boxShadow: '0 6px 24px rgba(0,0,0,0.45)' }}
                 >
                   <Play size={34} strokeWidth={2.5} fill="#16181C" style={{ color: '#16181C', marginLeft: 4 }} />
                 </span>
                 <span
-                  className="absolute bottom-4 left-0 right-0 text-center font-mono text-[11px] uppercase tracking-[0.2em]"
-                  style={{ color: '#6E7681' }}
+                  className="absolute bottom-3 left-1/2 -translate-x-1/2 px-3 py-1.5 font-mono text-[10px] uppercase tracking-[0.2em] whitespace-nowrap"
+                  style={{ color: '#F2F0EB', background: 'rgba(22,24,28,0.78)' }}
                 >
                   Under two minutes
                 </span>

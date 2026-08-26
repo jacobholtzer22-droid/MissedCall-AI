@@ -24,4 +24,14 @@ export function getDemoVideoAbsoluteUrl(): string {
   return `${base}${url.startsWith('/') ? '' : '/'}${url}`
 }
 
+/**
+ * Poster frame shown before playback. Matters more than a normal poster here:
+ * the <video> element is not rendered until the gate clears, so this image is
+ * also the background of the placeholder play button. Empty string when unset,
+ * in which case the placeholder falls back to a plain gradient.
+ */
+export function getDemoPosterUrl(): string {
+  return process.env.NEXT_PUBLIC_DEMO_POSTER_URL?.trim() || ''
+}
+
 export const WATCH_BEFORE_LINE = 'Watch this before we talk, takes 2 minutes.'
