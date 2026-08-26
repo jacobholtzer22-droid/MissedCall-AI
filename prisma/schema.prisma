@@ -357,6 +357,10 @@ model Appointment {
   // Marketing funnel (/book) demo-call reminders. Separate nullable timestamps
   // so each reminder is independently idempotent: the cron claims one by
   // conditionally setting its column, then sends.
+  // Google Meet link for the booking, from conferenceData on event insert.
+  // Needs a real column because the reminder SMS reads it back at send time.
+  googleMeetLink String?
+
   reminderNightBeforeSentAt DateTime?
   reminderHourBeforeSentAt  DateTime?
 

@@ -33,6 +33,7 @@ import Telnyx from 'telnyx'
 import { db } from '@/lib/db'
 import { normalizeToE164, phonesMatch } from '@/lib/phone-utils'
 import { getMarketingBusiness } from '@/lib/marketing-funnel'
+import { isSendableStatus } from '@/lib/reminder-status'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
@@ -47,6 +48,8 @@ const NIGHT_BEFORE_GRACE_MS = 12 * 60 * 60 * 1000
 
 // Consent marker written by /api/marketing-bookings at creation time.
 const CONSENT_MARKER = 'SMS consent: yes'
+
+
 
 type ReminderKind = 'night_before' | 'hour_before'
 
@@ -107,13 +110,19 @@ function formatWhen(scheduledAt: Date): { dateLabel: string; timeLabel: string }
   }
 }
 
-function reminderText(kind: ReminderKind, name: string, scheduledAt: Date): string {
+function reminderText(
+  kind: ReminderKind,
+  name: string,
+  scheduledAt: Date,
+  meetLink: string | null
+): string {
   const first = name.trim().split(/\s+/)[0] || 'there'
   const { dateLabel, timeLabel } = formatWhen(scheduledAt)
+  const join = meetLink ? `\nJoin here: ${meetLink}` : ''
   if (kind === 'night_before') {
-    return `Hi ${first}, this is Jacob with Align and Acquire. Reminder: our demo call is ${dateLabel} at ${timeLabel} ET. I will show you the system running on real client accounts. Reply STOP to opt out.`
+    return `Hi ${first}, this is Jacob with Align and Acquire. Reminder: our demo call is ${dateLabel} at ${timeLabel} ET. I will show you the system running on real client accounts.${join}\nReply STOP to opt out.`
   }
-  return `Hi ${first}, Jacob here. Our demo call is in about an hour, at ${timeLabel} ET. I will show you the system running on real client accounts. Reply STOP to opt out.`
+  return `Hi ${first}, Jacob here. Our demo call is in about an hour, at ${timeLabel} ET. I will show you the system running on real client accounts.${join}\nReply STOP to opt out.`
 }
 
 /** True when this number has opted out of texts from this business. */
@@ -227,8 +236,21 @@ async function runAppointmentReminders(request: NextRequest) {
       continue
     }
 
+    // Send-time status re-read. Deliberately AFTER the claim: if the booking is
+    // dead we want the flag to stay burned so no later run retries it.
+    const fresh = await db.appointment.findUnique({
+      where: { id: appt.id },
+      select: { status: true, googleMeetLink: true },
+    })
+    if (!fresh || !isSendableStatus(fresh.status)) {
+      const reason = !fresh ? 'deleted before send' : `status '${fresh.status}' at send time`
+      console.log(`[reminders] ABORT kind=${kind} appointmentId=${appt.id} reason=${reason}`)
+      result.skipped.push({ id: appt.id, reason })
+      continue
+    }
+
     const to = normalizeToE164(appt.customerPhone)
-    const text = reminderText(kind, appt.customerName, appt.scheduledAt)
+    const text = reminderText(kind, appt.customerName, appt.scheduledAt, fresh.googleMeetLink)
 
     try {
       await telnyx.messages.send({ from: fromNumber, to, text })

@@ -48,3 +48,6 @@ coverage/
 .env*.local
 .claude/
 conversations-export-*.jsonl
+
+# Founder demo video lives on Vercel Blob, never in git (59MB).
+*.mp4

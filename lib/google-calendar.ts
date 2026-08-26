@@ -584,14 +584,20 @@ export type CreateMarketingCalendarEventOptions = {
    * which attendees never receive. Deliberately NOT in the description.
    */
   privateNotes?: string | null
+  /** Founder video link, shown to the attendee in the invite description. */
+  watchBeforeUrl?: string | null
 }
 
 /**
  * Creates a Google Calendar event for a marketing discovery call booking.
  * Title: "Discovery Call — [customer name]", 15-minute reminder, description with contact/details.
  */
-/** Google event id plus the owner-facing link to open it. */
-export type MarketingCalendarEventResult = { id: string | null; htmlLink: string | null }
+/** Google event id, the owner-facing link, and the Meet link for the call. */
+export type MarketingCalendarEventResult = {
+  id: string | null
+  htmlLink: string | null
+  hangoutLink: string | null
+}
 
 export async function createMarketingCalendarEvent(
   businessId: string,
@@ -609,10 +615,11 @@ export async function createMarketingCalendarEvent(
     message,
     attendeeEmail,
     privateNotes,
+    watchBeforeUrl,
   } = options
 
   const calendar = await getCalendarClient(businessId)
-  if (!calendar) return { id: null, htmlLink: null }
+  if (!calendar) return { id: null, htmlLink: null, hangoutLink: null }
 
   const business = await db.business.findUnique({
     where: { id: businessId },
@@ -630,9 +637,12 @@ export async function createMarketingCalendarEvent(
     `Business: ${businessName}`,
     servicesInterested.length > 0 ? `Services interested in: ${servicesInterested.join(', ')}` : null,
     message?.trim() ? `Message: ${message.trim()}` : null,
+    ...(watchBeforeUrl?.trim()
+      ? ['', 'Watch this before we talk, takes 2 minutes.', watchBeforeUrl.trim()]
+      : []),
     '',
     'Booked via /book (Align and Acquire)',
-  ].filter(Boolean)
+  ].filter((line) => line !== null)
   const description = descriptionLines.join('\n')
 
   const invitee = attendeeEmail?.trim()
@@ -668,17 +678,39 @@ export async function createMarketingCalendarEvent(
           },
         }
       : {}),
+    // Google Meet. Verified 2026-08-26: without conferenceDataVersion:1 on the
+    // insert call below, the API silently DROPS this whole block and returns an
+    // event with no hangoutLink. The request body alone is not enough.
+    conferenceData: {
+      createRequest: {
+        requestId: `aa-${businessId}-${start.getTime()}`,
+        conferenceSolutionKey: { type: 'hangoutsMeet' },
+      },
+    },
   }
 
   const event = await calendar.events.insert({
     calendarId: 'primary',
     requestBody: eventBody,
+    // Required. Without it Google drops conferenceData and returns no Meet link.
+    conferenceDataVersion: 1,
     // 'all' makes Google actually email the invite. Without it the attendee is
     // attached silently and never hears about it.
     sendUpdates: invitee ? 'all' : 'none',
   })
 
-  return { id: event.data.id ?? null, htmlLink: event.data.htmlLink ?? null }
+  const hangoutLink = event.data.hangoutLink ?? null
+  const conferenceStatus = event.data.conferenceData?.createRequest?.status?.statusCode ?? null
+
+  // Surface conferencing failures instead of degrading to a call with no link.
+  if (!hangoutLink) {
+    throw new Error(
+      `Google Meet link was not created for event ${event.data.id ?? 'unknown'} ` +
+        `(conference status: ${conferenceStatus ?? 'absent'}). The booking exists on the calendar but has no Meet link.`
+    )
+  }
+
+  return { id: event.data.id ?? null, htmlLink: event.data.htmlLink ?? null, hangoutLink }
 }
 
 export async function deleteCalendarEvent(businessId: string, eventId: string): Promise<boolean> {

@@ -4,6 +4,7 @@ import { addMinutes } from 'date-fns'
 import { db } from '@/lib/db'
 import Telnyx from 'telnyx'
 import { createMarketingCalendarEvent, getBusyTimes } from '@/lib/google-calendar'
+import { getDemoVideoAbsoluteUrl, WATCH_BEFORE_LINE } from '@/lib/demo-video'
 import { validateUsMobile } from '@/lib/phone-utils'
 import {
   getMarketingBusiness,
@@ -468,6 +469,7 @@ export async function POST(request: NextRequest) {
     // Create Google Calendar event if the business has calendar connected (same as client booking flow)
     let googleEventId: string | null = null
     let googleEventLink: string | null = null
+    let googleMeetLink: string | null = null
     let calendarSyncFailed = false
     if (business.googleCalendarConnected) {
       try {
@@ -486,6 +488,7 @@ export async function POST(request: NextRequest) {
             // ends up in the description they can read, so ad attribution is
             // routed to privateNotes instead.
             attendeeEmail: email.trim(),
+            watchBeforeUrl: getDemoVideoAbsoluteUrl(),
             message: [
               tradeType?.trim() ? `Business type: ${tradeType.trim()}` : null,
               missedCalls?.trim() ? `Missed calls per week: ${missedCalls.trim()}` : null,
@@ -499,6 +502,7 @@ export async function POST(request: NextRequest) {
         )
         googleEventId = calendarResult.id
         googleEventLink = calendarResult.htmlLink
+        googleMeetLink = calendarResult.hangoutLink
         if (googleEventId) {
           console.log('[marketing-bookings] Google Calendar event created:', googleEventId)
         }
@@ -534,6 +538,7 @@ export async function POST(request: NextRequest) {
         status: 'confirmed',
         source: 'website',
         googleCalendarEventId: googleEventId,
+        googleMeetLink,
         calendarSyncFailed,
       },
     })
@@ -625,6 +630,7 @@ export async function POST(request: NextRequest) {
         <p><strong>Interested in:</strong> ${escapeHtml(extraList.length ? extraList.join(', ') : 'Not specified')}</p>
         <p><strong>Time:</strong> ${escapeHtml(dateLabel)} at ${escapeHtml(timeLabel)} (Eastern Time)</p>
         ${googleEventLink ? `<p><strong>Calendar:</strong> <a href="${escapeHtml(googleEventLink)}">Open the event in Google Calendar</a></p>` : ''}
+        ${googleMeetLink ? `<p><strong>Meet:</strong> <a href="${escapeHtml(googleMeetLink)}">${escapeHtml(googleMeetLink)}</a></p>` : ''}
         <p><strong>Notes:</strong> ${escapeHtml(notes?.trim() || 'None')}</p>
         <pre style="font-family:inherit;white-space:pre-wrap;margin:0">${escapeHtml(formatAttributionBlock(attribution))}</pre>
       `,
@@ -641,7 +647,7 @@ export async function POST(request: NextRequest) {
         await telnyx.messages.send({
           from: process.env.MARKETING_TELNYX_NUMBER,
           to: phoneCheck.e164,
-          text: `You are booked with Align and Acquire for ${dateLabel} at ${timeLabel} ET. I will show you the system running on real client accounts. Reply STOP to opt out.`,
+          text: `You are booked with Align and Acquire for ${dateLabel} at ${timeLabel} ET. I will show you the system running on real client accounts.${googleMeetLink ? `\nJoin here: ${googleMeetLink}` : ''}\n${WATCH_BEFORE_LINE} ${getDemoVideoAbsoluteUrl()}\nReply STOP to opt out.`,
         })
       } catch (err) {
         console.error('Failed to send customer confirmation SMS via Telnyx:', err)
@@ -665,6 +671,8 @@ export async function POST(request: NextRequest) {
               <p>Hi ${escapeHtml(name.trim())},</p>
               <p>Your demo is set for <strong>${escapeHtml(dateLabel)} at ${escapeHtml(timeLabel)} (Eastern Time)</strong>.</p>
               <p>It takes about ${SLOT_MINUTES} minutes. I will show you the system running on real client accounts: real text-back conversations, and the jobs that got booked out of them. Then I will answer any questions.</p>
+              ${googleMeetLink ? `<p><strong>Join here:</strong> <a href="${googleMeetLink}">${googleMeetLink}</a></p>` : ''}
+              <p>${WATCH_BEFORE_LINE} <a href="${getDemoVideoAbsoluteUrl()}">Watch the video</a></p>
               <p>You will also get a text from me confirming.</p>
               <p>Need to move it? Just reply to this email.</p>
               <p>Talk soon, Jacob</p>
