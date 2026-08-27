@@ -774,8 +774,14 @@ export async function notifyOwnerOnWebsiteLead(
   </body>
 </html>`
 
+    // Reply-To the lead, so the owner can just hit reply. `email` arrives as
+    // string | null | undefined and is never validated upstream, so require a real
+    // address here; anything else omits the header entirely.
+    const trimmedLeadEmail = typeof email === 'string' ? email.trim() : ''
+    const leadReplyTo = /^[^@\s]+@[^@\s]+$/.test(trimmedLeadEmail) ? trimmedLeadEmail : undefined
+
     try {
-      await sendEmail(business.ownerEmail, subject, textBody, htmlBody)
+      await sendEmail(business.ownerEmail, subject, textBody, htmlBody, leadReplyTo)
       console.error('[NOTIFY OWNER] Website lead email sent to', business.ownerEmail)
       result.emailSent = true
     } catch (err) {
@@ -826,7 +832,10 @@ function getTransporter() {
 // `html`, when provided, is sent as-is (caller already produced full email HTML).
 // When omitted, the plain-text `text` is wrapped via plainTextToEmailHtml — this keeps
 // every existing text-only notifier working unchanged.
-async function sendEmail(to: string, subject: string, text: string, html?: string): Promise<void> {
+// `replyTo`, when provided, sets the Reply-To header so the owner can reply straight to
+// the customer. When omitted the key is not added at all, so the payload every existing
+// caller sends is unchanged. `from` is never affected.
+async function sendEmail(to: string, subject: string, text: string, html?: string, replyTo?: string): Promise<void> {
   console.error('[NOTIFY OWNER] sendEmail called', { to, subject: subject.slice(0, 50) + '...', html: html ? '(html)' : '(text)' })
   try {
     const resend = new Resend(process.env.RESEND_API_KEY)
@@ -835,6 +844,7 @@ async function sendEmail(to: string, subject: string, text: string, html?: strin
       to,
       subject,
       html: html ?? plainTextToEmailHtml(text),
+      ...(replyTo ? { replyTo } : {}),
     })
     if (result.error) {
       throw new Error(`Resend error: ${result.error.message}`)

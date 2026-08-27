@@ -1423,9 +1423,13 @@ notifyOwnerOnWebsiteLead(business, params): Promise<{ smsSent, emailSent }>
 // When a client tenant's website contact form is submitted (/api/contact with businessId/businessSlug).
 // SMS: "📩 New website lead! [Name] just submitted your contact form..."
 // Email: Subject "[Business] New Website Lead - [Name]"; clean HTML layout + plain-text fallback.
+//        Sets Reply-To to the lead's email so the owner can reply straight to the customer
+//        (see "Email transport" below). This is the ONLY notifier that passes replyTo.
 ```
 
-**Email transport:** `sendEmail(to, subject, text, html?)` uses Resend (`RESEND_API_KEY`). When `html` is omitted it wraps `text` via `plainTextToEmailHtml`. The legacy nodemailer/SMTP `getTransporter()` is still present in the file but is **dead code — nothing calls it** (the SMTP_* env vars are no longer used for sending).
+**Email transport:** `sendEmail(to, subject, text, html?, replyTo?)` uses Resend (`RESEND_API_KEY`). When `html` is omitted it wraps `text` via `plainTextToEmailHtml`. The legacy nodemailer/SMTP `getTransporter()` is still present in the file but is **dead code — nothing calls it** (the SMTP_* env vars are no longer used for sending).
+
+**`replyTo` (optional, 5th arg):** sets the Reply-To header. Key casing is `replyTo` — camelCase — per resend 6.9.3's `CreateEmailBaseOptions`; the SDK maps it to the wire's `reply_to` internally, so passing `reply_to` at the call site is a type error AND is silently dropped at runtime. It is applied via a conditional spread (`...(replyTo ? { replyTo } : {})`) so that when it is omitted the object handed to `resend.emails.send()` is byte-identical to what it was before the param existed — the key is absent entirely, never present-with-`undefined`. **`notifyOwnerOnWebsiteLead` is the only caller that passes it**; the other six notifiers call the 3-or-4-arg form and are unaffected. The lead's address is guarded before being passed (`typeof email === 'string'` — the value arrives as `string | null | undefined` and `/api/contact` never validates its format — then `/^[^@\s]+@[^@\s]+$/`); anything failing that omits the header rather than sending a junk one. **`from` stays `notifications@alignandacquire.com` in every case** — never set `from` to a lead's address (it would break SPF/DKIM on the sending domain). `replyTo`, unlike `from`, needs no domain verification.
 
 ### `lib/import-contacts.ts`
 ```typescript
