@@ -579,6 +579,15 @@ model WebsiteLead {
   // A/B arm this lead came from: "gate" | "nogate" | null for pre-test rows.
   variant String?
 
+  // Spam scoring (see lib/spam-score.ts). All nullable and additive: null means
+  // the row predates scoring, which is why spamScore is not defaulted to 0.
+  // A high score sets status='spam' and suppresses owner notification — it NEVER
+  // prevents the row being written.
+  spamScore   Int?
+  spamReasons Json? // string[] of SpamReason codes
+  sourceIp    String?
+  userAgent   String? @db.Text
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
