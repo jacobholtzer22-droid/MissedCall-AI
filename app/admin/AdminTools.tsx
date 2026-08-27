@@ -1,16 +1,18 @@
 'use client'
 
 import { useState, useRef, useEffect } from 'react'
-import { ChevronDown, RefreshCw, Download, RotateCcw } from 'lucide-react'
+import { useRouter } from 'next/navigation'
+import { ChevronDown, RefreshCw, Download, RotateCcw, ShieldAlert } from 'lucide-react'
 
 interface Props {
   onToast: (message: string, type: 'success' | 'error') => void
   onRefresh: () => Promise<void>
 }
 
-type ActionKey = 'telnyx' | 'ads' | 'sheets' | 'export' | 'refresh'
+type ActionKey = 'telnyx' | 'ads' | 'sheets' | 'export' | 'refresh' | 'spam'
 
 export function AdminTools({ onToast, onRefresh }: Props) {
+  const router = useRouter()
   const [open, setOpen] = useState(false)
   const [loading, setLoading] = useState<ActionKey | null>(null)
   const ref = useRef<HTMLDivElement>(null)
@@ -102,6 +104,12 @@ export function AdminTools({ onToast, onRefresh }: Props) {
       label: 'Export to Excel',
       icon: Download,
       action: exportExcel,
+    },
+    {
+      key: 'spam',
+      label: 'Spam / scored leads',
+      icon: ShieldAlert,
+      action: () => router.push('/admin/spam'),
     },
   ]
 
