@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
-import { ArrowLeft, ArrowRight, ChevronDown, Play, Calendar, Clock, Check, Loader2 } from 'lucide-react'
+import { ArrowLeft, ArrowRight, CornerLeftDown, Play, Calendar, Clock, Check, Loader2 } from 'lucide-react'
 import { Logo } from '@/app/components/Logo'
 import GoogleReviewsCard from '@/app/components/GoogleReviewsCard'
 import { getDemoVideoUrl, getDemoPosterUrl } from '@/lib/demo-video'
@@ -14,7 +14,6 @@ import { trackStandard, trackCustomEvent, setPixelVariant } from './pixel'
 import GateModal, { type GateResult } from './GateModal'
 import BookingWizard, { type ChosenSlot, type WizardPrefill } from './BookingWizard'
 import BrettTestimonial from './BrettTestimonial'
-import ReviewCarousel from './ReviewCarousel'
 import CouponBanner, { CouponApplied } from './CouponBanner'
 import { GATE_AT_SECONDS, NOT_AN_OWNER } from './constants'
 
@@ -244,15 +243,26 @@ export default function BookFunnelClient({
 
         </section>
 
-        <div className="mb-4">
-          <BrettTestimonial />
-        </div>
 
         {/* ── Step 1 ───────────────────────────────────── */}
         <section id="step-1" className="mb-8 scroll-mt-6">
           <h2 className="text-[clamp(1.1rem,3.8vw,1.9rem)] font-black uppercase leading-[1.15] tracking-tight mb-2">
             <span style={{ color: '#EE6B1A' }}>Step 1.</span> Watch me run it live
           </h2>
+          {/* Points straight down at the player, so the price registers before
+              they press play rather than only inside the video. */}
+          <div className="flex items-center gap-2 mb-2">
+            <span
+              className="inline-flex items-center gap-1.5 px-3 py-2 text-[17px] font-black leading-none"
+              style={{ background: '#EE6B1A', color: '#16181C' }}
+            >
+              ${MONTHLY_FEE}/month
+            </span>
+            <CornerLeftDown size={20} strokeWidth={2.75} style={{ color: '#EE6B1A' }} aria-hidden="true" />
+            <span className="font-mono text-[10px] uppercase tracking-[0.2em]" style={{ color: '#6E7681' }}>
+              shown in the video
+            </span>
+          </div>
           <div className="border-2 overflow-hidden" style={{ borderColor: BORDER, background: CARD }}>
             {playing ? (
               <video
@@ -300,22 +310,11 @@ export default function BookFunnelClient({
           <p className="text-[13px] leading-[1.5] mt-2.5" style={{ color: 'rgba(242,240,235,0.6)' }}>
             Under two minutes. Real missed call, real text back, real booked quote.
           </p>
-          {/* Stated right under the player so the number they just heard in the
-              video is the number on the page. */}
-          <p className="text-[14px] font-bold leading-[1.5] mt-2" style={{ color: '#F2F0EB' }}>
-            The price in the video is ${MONTHLY_FEE} a month.
-          </p>
         </section>
-
-        {/* Reviews keep their place on the page, just below the player rather
-            than above it: they no longer get to push the video off the screen. */}
-        <div className="mb-8">
-          <ReviewCarousel />
-        </div>
 
         {/* Urgency sits at the booking decision, not at the top of the page:
             they see the clock right as they are about to pick a time. */}
-        <div className="mb-8 -mt-6">
+        <div className="mb-8">
           <CouponBanner initial={coupon} />
         </div>
 
@@ -441,6 +440,10 @@ export default function BookFunnelClient({
           )}
         </section>
 
+
+        <div className="mb-8">
+          <BrettTestimonial />
+        </div>
 
         <GoogleReviewsCard />
       </main>
