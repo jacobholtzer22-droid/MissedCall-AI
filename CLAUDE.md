@@ -22,6 +22,7 @@ This document is the single source of truth for understanding, debugging, and mo
 14. [Google Ads Integration](#14-google-ads-integration)
 15. [Admin Dashboard](#15-admin-dashboard)
 16. [SEO Architecture](#16-seo-architecture)
+17. [Contact Form Spam Scoring](#17-contact-form-spam-scoring)
 
 ---
 
@@ -241,6 +242,10 @@ This document is the single source of truth for understanding, debugging, and mo
 │   ├── owner-group.ts            # getOwnerGroupBusinesses() — resolve ownerGroupId group (aggregated Website Leads + Google Ads)
 │   ├── import-contacts.ts        # parseContactFile (Excel/CSV → contacts array)
 │   ├── conversation-buckets.ts   # getConversationBucket() — cold/active/stalled/closed classification
+│   ├── spam-score.ts             # scoreSubmission() — additive contact-form spam scoring (see §17)
+│   ├── spam-score.test.ts        # unit tests: `npm test`
+│   ├── spam-constants.ts         # HONEYPOT_FIELD — dependency-free, safe for the client bundle
+│   ├── spam-velocity.ts          # getVelocityCounts() — cross-tenant 24h repeat-sender counts
 │   ├── telnyx-usage-sync.ts      # syncTelnyxUsage (MDR + CDR → TelnyxUsageRecord)
 │   ├── usage-export.ts           # getUsageForExport (aggregate for Excel export)
 │   └── email-format.ts           # plainTextToEmailHtml, bodyContainsHtml
@@ -323,8 +328,11 @@ Every variable the app uses, what it controls, and what breaks without it.
 ### Spam Hardening (Contact Form)
 | Variable | Required | Purpose |
 |---|---|---|
-| `TURNSTILE_SECRET_KEY` | No | Cloudflare Turnstile secret key for `/api/contact` verification. Without it, Turnstile checks are skipped |
-| `TURNSTILE_ENFORCE` | No | `'true'` to reject submissions with missing or failed Turnstile tokens. Default: `false` (log only, process normally). Roll out by setting to `'true'` after confirming Turnstile widget is live on all forms |
+| `TURNSTILE_SECRET_KEY` | No | Cloudflare Turnstile secret key for `/api/contact` verification. Without it, Turnstile checks are skipped. **Not set in production.** |
+| `TURNSTILE_ENFORCE` | No | **Read nowhere in the code as of Aug 2026 — the auto-condemn branch it drove was removed.** See the warning below before reintroducing it. **Not set in production.** |
+| `SPAM_SCORE_THRESHOLD` | No | Score at or above which a contact submission is marked `status='spam'` and the owner is not notified. Default `100`. Comparison is `>=`. Lower = more aggressive. Read from env on **every request**, so retuning needs no code change — but see the redeploy caveat in §17. Set to `100000` for shadow mode. Weights live in `lib/spam-score.ts`, not here |
+
+> **Do not set `TURNSTILE_ENFORCE=true`.** No form on the platform or on any client site emits a Turnstile token, and no Turnstile widget script is deployed anywhere. `TURNSTILE_SECRET_KEY` and `TURNSTILE_ENFORCE` are both absent from Vercel production. Setting `TURNSTILE_ENFORCE=true` today would mark **every real lead from every client** as spam and suppress **all** owner notifications platform-wide. It may only be enabled after a Turnstile widget is confirmed live on every form that POSTs to `/api/contact` — including the client-site repos, which deploy independently of this one.
 
 ### Google Ads
 | Variable | Required | Purpose |
@@ -722,10 +730,17 @@ name        String
 phone       String?
 email       String?
 message     String?  @db.Text
-status      String   @default("new")  // new, contacted, converted, closed
+status      String   @default("new")  // new, contacted, converted, closed, spam
+variant     String?                    // /book A/B arm: "gate" | "nogate" | null
+spamScore   Int?                       // null = row predates scoring; 0 = scored, clean
+spamReasons Json?                      // string[] of SpamReason codes (lib/spam-score.ts)
+sourceIp    String?
+userAgent   String?  @db.Text
 createdAt   DateTime @default(now())
 updatedAt   DateTime @updatedAt
 ```
+
+The four spam columns are nullable and additive (added Aug 2026 via `npm run db:push`; mirrored in `scripts/sql/2026-08-27_add_websiteLead_spam_columns.sql`). **Every `/api/contact` submission writes a row here, spam included** — see §17 and gotcha #39.
 
 ---
 
@@ -1150,7 +1165,7 @@ async function sendSMS(business, to, text)
 
 | Route | Method | Purpose |
 |---|---|---|
-| `/api/contact` | POST | Website contact form. Body: `{ name, phone?, message?, smsConsent, businessId?, businessSlug?, email?, website?, turnstileToken? }`. **Spam hardening:** `website` is a honeypot (non-empty = spam); `turnstileToken` is verified against Cloudflare Turnstile siteverify (4s timeout, fails open on network error). `TURNSTILE_ENFORCE=true` rejects missing/failed tokens; default false (log only). Spam path: marketing submissions are logged with `[SPAM]` prefix and return 200 (no email, no DB write); tenant submissions create a `WebsiteLead(status='spam')` and return 200 (no Contact, no owner notification). Bots see an identical success response. **Normal path:** when no `businessId`/`businessSlug` (marketing page): sends Resend email to `YOUR_EMAIL`. When either is present (client tenant site): awaits `findOrCreateContact(source='website_form')` + `db.websiteLead.create(status='new')` sequentially in-path, then calls `notifyOwnerOnWebsiteLead()` (owner SMS + email). All DB writes are fully awaited before responding. All user input in the email body is HTML-escaped via a local `escapeHtml()` helper. No auth, no rate limiting — open endpoint. |
+| `/api/contact` | POST | Website contact form. Body: `{ name, phone?, message?, smsConsent, businessId?, businessSlug?, email?, hp_7d3a_ref?, website?, turnstileToken? }`. **Every submission is scored** by `scoreSubmission()` (`lib/spam-score.ts`) and **every submission writes a `WebsiteLead` row** carrying `spamScore`, `spamReasons`, `sourceIp`, `userAgent` — a high score sets `status='spam'` and suppresses Contact creation plus owner notification, it NEVER discards the record. Bots get an identical 200 either way. `hp_7d3a_ref` (and legacy `website`) is the honeypot; a non-empty value auto-condemns. Cross-tenant velocity counts come from `getVelocityCounts()` (`lib/spam-velocity.ts`). **Marketing path** (no `businessId`/`businessSlug`): row is written against `MARKETING_BUSINESS_ID`; clean submissions also send the Resend email to `YOUR_EMAIL`. If no marketing business is configured, the payload is logged and not persisted. **Tenant path:** awaits `findOrCreateContact(source='website_form')` + `websiteLead.create` sequentially, then `notifyOwnerOnWebsiteLead()`. **Business not found:** returns 404 and fires a throttled ops alert email carrying the full payload (see gotcha #40). All user input in email bodies is HTML-escaped. No auth, no rate limiting — open endpoint. |
 | `/api/book-demo` | POST | Demo request form submission |
 
 ---
@@ -1962,11 +1977,23 @@ const isPublicApiRoute = createRouteMatcher([
 
 36. **`WebsiteLead(status='spam')` is excluded from all dashboard queries** — `/api/dashboard/website-leads` and `/api/dashboard/analytics` both filter `status: { not: 'spam' }`. Admin/Neon access is intentionally unfiltered so Jacob can audit spam volume. If you add a new query on `WebsiteLead` for client-facing surfaces, add the same filter.
 
-37. **Turnstile enforcement is opt-in via `TURNSTILE_ENFORCE`** — Default `false` means missing or failed Turnstile tokens are logged but the lead is processed normally. Set to `'true'` only after confirming the Turnstile widget is live on all forms that POST to `/api/contact`. Siteverify network failures always fail open (lead allowed) regardless of enforce mode — never lose a real lead to a Cloudflare outage.
+37. **`TURNSTILE_ENFORCE` was a platform-wide kill switch and its auto-condemn branch has been removed.** A **missing** token is now worth nothing at all; only an explicit siteverify `success:false` contributes score (`SPAM_WEIGHTS.TURNSTILE_FAILED`, 25), which on its own can never condemn. Siteverify network failures and a missing `TURNSTILE_SECRET_KEY` both fail open — never lose a real lead to a Cloudflare outage.
+
+> **Do not set `TURNSTILE_ENFORCE=true`.** No form on the platform or on any client site emits a Turnstile token, and no Turnstile widget script is deployed anywhere. `TURNSTILE_SECRET_KEY` and `TURNSTILE_ENFORCE` are both absent from Vercel production. Setting `TURNSTILE_ENFORCE=true` today would mark **every real lead from every client** as spam and suppress **all** owner notifications platform-wide. It may only be enabled after a Turnstile widget is confirmed live on every form that POSTs to `/api/contact` — including the client-site repos, which deploy independently of this one.
 
 ### Client-Side Tags
 
 38. **Never verify a client-side tag by grepping the served HTML.** `MetaPixel` renders a `next/script` with `strategy="afterInteractive"` from inside a client component, so the snippet lands in the layout JS chunk (`/_next/static/chunks/app/layout-*.js`), never in the HTML document. A clean HTML grep is the expected result for a perfectly healthy pixel. `.env.local` is equally useless as evidence: it is gitignored and never deployed. To verify, grep the layout chunk, run `vercel env ls production`, and check an older deployment before declaring an outage. A 2026-08-21 audit declared a full pixel outage on exactly these two invalid tests when the pixel had been live since 2026-05-30. See `docs/pixel-record-correction.md`.
+
+### Contact Form Spam Scoring
+
+39. **No submission is ever silently dropped, and this is the system's most important invariant.** Every `/api/contact` request writes a `WebsiteLead` row — spam included. A high score suppresses the *notification*, never the *record*. Both historical silent-drop paths were closed in Aug 2026: marketing-path spam (which logged and returned 200 with no DB write) now persists against the marketing business, and business-not-found now alerts. If you add a branch to this route, it must write a row or alert before returning.
+
+40. **The dropped-lead alert is throttled per lambda instance, on purpose.** `/api/contact` cannot write a `WebsiteLead` when the `businessSlug` resolves to nothing — there is no valid FK — so it emails the full payload to `YOUR_EMAIL` instead. The throttle is a module-scope `Map` keyed on the failed reference, one alert per hour, with an occurrence count in the body. On Vercel that is **per lambda instance and therefore approximate**: several instances can each send a first alert for the same slug. That is the intended trade — the goal is to stop a bot hammering a bad slug from burying the signal, not exactly-once delivery. A typo'd slug in a client `site.config.ts` loses 100% of that site's leads, so this alert must never be removed without a replacement.
+
+41. **`spamScore = null` is not the same as `spamScore = 0`.** Null means the row predates scoring (Aug 2026); 0 means it was scored and cleared every signal. This is why the column has no default. `/api/admin/spam-leads` selects `status='spam' OR spamScore != null` specifically to include clean scored rows — a view showing only condemned rows can never surface a real lead that scored 85 and got through, which is the row that proves the weights are drifting.
+
+42. **Never verify the honeypot by reading this repo alone.** `app/components/ContactForm.tsx` is the only form here that emits `hp_7d3a_ref`. Every client tenant site (e.g. `Clients/Brett Master Gardner/Brett Website/components/ContactForm.tsx`) is a **separate repo with a separate deploy** and emits no honeypot at all. The observed bots also replay the real form payload, so they will learn to send the field. The scoring design deliberately does not lean on the honeypot — content signals (b)–(f) condemn all four observed samples without it.
 
 ---
 
@@ -2092,7 +2119,8 @@ Super-admin panel at `/admin` — only accessible when `userId == ADMIN_USER_ID`
 | `app/admin/ClientTable.tsx` | **Mobile:** card list (`md:hidden divide-y`) per business. **Desktop:** dense table (`hidden md:table`). `FeatureIcons` defined at module scope. Columns: Name, Status, MRR, Features, Convos (this month / all-time stacked), Leads (this month / all-time stacked), Actions |
 | `app/admin/ClientDetailPanel.tsx` | Slide-out panel triggered by row click. `w-full sm:w-[520px] lg:w-[600px]` — full-width on phones. Three tabs: Toggles, Settings, Tools |
 | `app/admin/HeaderKPIs.tsx` | Top KPI strip: `grid-cols-1 sm:grid-cols-3` — stacks on mobile |
-| `app/admin/AdminTools.tsx` | Admin-level tools (Telnyx usage sync, Excel export) |
+| `app/admin/AdminTools.tsx` | Admin-level tools dropdown (Telnyx usage sync, Excel export, **Spam / scored leads** → `/admin/spam`) |
+| `app/admin/spam/page.tsx` | Cross-tenant scored-submission audit view. **Read only, no mutations.** See §17 |
 | `app/admin/types.ts` | `AdminBusiness` interface — includes all Business fields plus `_count` (conversations, appointments, users, screenedCalls, blockedCalls30d) and computed `conversationsThisMonth`, `conversationsLastMonth`, `leadsThisMonth`, `conversationsAllTime`, `leadsAllTime` |
 | `app/admin/ClientDetailPanel/TogglesTab.tsx` | Toggle rows for all feature flags: MissedCall AI, Call Screener, Spam Filter, Online Booking, Google Calendar (read-only status), Google Ads, Notify by SMS/Email, Mass Outreach (massMessagingEnabled). `px-4 sm:px-6` padding. |
 | `app/admin/ClientDetailPanel/SettingsTab.tsx` | Editable fields: fees, Telnyx number, forwarding number, AI config, timezone, `ownerGroupId` (Admin Only section — blank clears the group). All `grid-cols-2` form rows are `grid-cols-1 sm:grid-cols-2`. `px-4 sm:px-6` padding. |
@@ -2206,7 +2234,76 @@ Implemented on the `seo-foundation` branch (July 2026). Everything below applies
 
 ---
 
-*This document reflects the codebase as of July 14, 2026 (SMS booking-link handoff). Update after any significant architectural changes.*
+## 17. Contact Form Spam Scoring
+
+Added Aug 2026 on the `contact-spam-scoring` branch, after bot submissions reached client inboxes despite the existing honeypot + Turnstile hardening. Root cause: **neither check was operative.** No form on the platform or on any client site emitted a honeypot field or a Turnstile token, and `TURNSTILE_SECRET_KEY`/`TURNSTILE_ENFORCE` were absent from production — so `detectSpam()` returned `{isSpam:false}` for 100% of requests.
+
+### The one rule
+
+**A submission is never dropped.** Every `/api/contact` request writes a `WebsiteLead` row. A score at or above the threshold sets `status='spam'` and suppresses Contact creation and owner notification — it never discards the record. Silent lead loss is the worst failure mode in this system; see gotcha #39.
+
+### Files
+
+| File | Role |
+|---|---|
+| `lib/spam-score.ts` | `scoreSubmission()` — pure, synchronous, no DB/network. All weights exported as `SPAM_WEIGHTS`. Tune here, never in the route. |
+| `lib/spam-constants.ts` | `HONEYPOT_FIELD` only. Dependency-free so the client form can import it without pulling server code into the browser bundle. |
+| `lib/spam-velocity.ts` | `getVelocityCounts()` — the only DB-touching piece, kept separate so the scorer's tests need no database. |
+| `lib/spam-score.test.ts` | 30 tests. `npm test` (`npx tsx --test`, Node's built-in runner, no new deps). |
+| `app/api/admin/spam-leads/route.ts` | Read-only cross-tenant feed for the admin view. |
+| `app/admin/spam/page.tsx` | `/admin/spam`, reached from the AdminTools dropdown. **Read only — no mutations.** |
+
+### Signals and weights
+
+Threshold `SPAM_SCORE_THRESHOLD`, default **100**, compared with **`>=`** (not `>`: a threshold should mean "at or above condemns", and with `>` a sample landing exactly on it would be delivered).
+
+| Signal | Weight | Notes |
+|---|---|---|
+| Honeypot `hp_7d3a_ref` / `website` filled | 1000 | The **only** auto-condemn. Short-circuits everything else. |
+| gmail/googlemail local part, 4+ dots | 60 | One inbox faking many identities. |
+| …exactly 3 dots | **0** | Detector and reason code live at weight 0. "Start at 0, tune from admin view distribution." |
+| Gibberish in `name` | 55 | |
+| Gibberish in `message` | 35 | category cap **80** |
+| Phone fails structural NANP | 40 | via `validateUsMobile()`; area-code list is a TODO, see below |
+| Bare 7–11 digit run where prose belongs | 40 | **two** suppressions: phone field empty + run is valid, OR run equals the phone field |
+| B2B solicitation phrase, strong | 40 ea | category cap **120** — 3 strong phrases condemn, 2 do not |
+| B2B solicitation phrase, weak | 12 ea | all six weak phrases together = 72, still under threshold |
+| Email local unrelated to name | 20 | **gated**: only scores when gmail-dots or gibberish already fired |
+| Cross-tenant velocity (email / IP, 24h) | 30 / 60 | category cap **60** |
+| Turnstile explicit `success:false` | 25 | never a *missing* token — see gotcha #37 |
+
+**No single category cap reaches the threshold.** Condemnation always requires the honeypot, a 3+ phrase solicitation cluster, or two independent content categories agreeing.
+
+### Things that will bite you if you tune this
+
+- **The gibberish detector requires 2 of 3 conditions, not 1, and `y` counts as a vowel.** Both are load-bearing false-positive defenses. `Schmidt` has a 0.14 vowel ratio and a naive one-condition check condemns it; `Krzysztof` is only spared because `y` is a vowel. Both are regression-tested — if you "simplify" the rule, those tests fail. Do not bump them.
+- **The design deliberately does not lean on the honeypot.** The observed bots replay the real form payload, so they will send whatever fields they saw, honeypot included. All four observed samples are condemned by content signals alone.
+- **It also does not lean on gmail dots**, the cheapest thing for the operator to change. A regression test asserts all four samples still clear the threshold with that signal removed entirely (135/140/115/120).
+- **B2B phrase normalization is load-bearing.** Lowercase, strip apostrophes, fold hyphens to spaces. Without it `"This isn't a sales call"` and `"It's a 20-minute demo"` both miss, dropping the observed solicitation bot from 5 phrase hits to 3 — its detection floor.
+- **Detector (e) has two suppression rules and both matter.** It scores a bare digit run only when the customer is not plausibly giving their own number: suppressed if the phone field is empty and the run is valid, and suppressed if the run **equals** the phone field as bare digits. That equality rule is what separates real behaviour from the bots — a person repeating their number sends the *same* digits twice, while the observed bots send a *different* number in the message (sample 1: `2711934617` vs `9969063456`; sample 3: `5254356086` vs `7129221395`). Without it, a real customer with a dotted gmail that does not match their typed name, who filled the phone field and wrote "call me at &lt;same number&gt;", stacked to 60 + 20 + 40 = 120 and was condemned. Regression-tested.
+- **TODO — assigned NANP area codes.** Sample phone numbers used area codes 271, 221 and 525: structurally legal but unassigned, so they pass today's check. Pull the official list from NANPA's "Geographic Area Code Number Report" CSV at `https://nationalnanpa.com/enas/geoAreaCodeNumberReport.do`. **Do not approximate it from memory — a wrong list rejects real customers.** Adding it later is a pure gain requiring no retuning.
+
+### Headroom
+
+The worst legitimate submission constructible against these weights (3-dot gmail, phone repeated in the message, "book a call") scores **52** — 48% headroom. Analysed real-customer cases all score 0–24: a one-word `"Aeration"` message, an address typed as digits with the phone field empty, a 2-dot gmail, the surnames Nguyen/Ng/Xu/Bhattacharya/Schmidt, and a property manager writing "our clients" and "book a call". Each is an explicit named test. **The legitimate-submission tests matter more than the spam ones** — a missed bot is an annoying email; a condemned real customer is a lost job for a client, and they never find out.
+
+### Shadow-mode rollout
+
+This endpoint is the sole lead funnel for every client, so scoring goes live in shadow mode first: **score and store everything, condemn nothing.**
+
+1. **Deploy with `SPAM_SCORE_THRESHOLD=100000`.** Every submission is scored and every score, reason list, source IP and user agent is written to the `WebsiteLead` row. `verdict.isSpam` is `score >= threshold`, so at 100000 it is `false` for everything — including a filled honeypot, which is worth 1000. Nothing is condemned, no Contact creation is skipped, and **every owner SMS and email fires exactly as it does today**.
+2. **Watch `/admin/spam` for one week** against real traffic. The default ≥ 70 filter shows the near misses in both directions; "All scored" shows the full distribution. This is the data for tuning `GMAIL_DOTS_3` (currently 0) and confirming no real client lead scores near 100.
+3. **Then lower `SPAM_SCORE_THRESHOLD` to `100`.** Condemnation begins from that moment. Nothing else changes.
+
+**The code path that guarantees step 1** (`app/api/contact/route.ts`): `verdict` is computed for every request; `leadFields` always carries `spamScore`/`spamReasons`/`sourceIp`/`userAgent`; the `if (verdict.isSpam)` branch is the *only* thing that skips `findOrCreateContact()` and `notifyOwnerOnWebsiteLead()`. When that branch is false, execution falls through to exactly the code that ran before this feature existed. `/api/admin/spam-leads` matches on `status='spam' OR spamScore != null`, which is why cleared rows still appear in the view.
+
+⚠️ **`getSpamThreshold()` reads `process.env.SPAM_SCORE_THRESHOLD` on every call, not at module load** — so changing the value needs no code change. **But Vercel binds environment variables to a deployment**, so editing the variable in the dashboard does not affect functions already running. After changing it, trigger a redeploy (re-deploying the same commit from the Vercel dashboard is enough). The per-request read is what makes the *value* swappable; the redeploy is a platform requirement, not a code one.
+
+### Auditing
+
+`/admin/spam` lists scored submissions across all tenants, condemned and not, defaulting to score ≥ 70. It shows score, reason codes, full payload, source IP and user agent. Read only by design.
+
+*This document reflects the codebase as of August 27, 2026 (contact form spam scoring). Update after any significant architectural changes.*
 
 ---
 
