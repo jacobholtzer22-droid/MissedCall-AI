@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import { Send, CircleCheckBig } from 'lucide-react'
+import { HONEYPOT_FIELD } from '@/lib/spam-constants'
 
 export default function ContactForm() {
   const [loading, setLoading] = useState(false)
@@ -17,6 +18,7 @@ export default function ContactForm() {
     const name = formData.get('name') as string
     const phone = formData.get('phone') as string
     const message = formData.get('message') as string
+    const honeypot = (formData.get(HONEYPOT_FIELD) as string) ?? ''
 
     if (!name.trim()) { setError('Please enter your name.'); return }
     if (!consentChecked) { setError('Please check the consent box to continue.'); return }
@@ -26,7 +28,13 @@ export default function ContactForm() {
       const res = await fetch('/api/contact', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: name.trim(), phone: phone.trim() || undefined, message: message.trim(), smsConsent: consentChecked }),
+        body: JSON.stringify({
+          name: name.trim(),
+          phone: phone.trim() || undefined,
+          message: message.trim(),
+          smsConsent: consentChecked,
+          [HONEYPOT_FIELD]: honeypot,
+        }),
       })
       if (!res.ok) throw new Error('Failed to submit')
       setSubmitted(true)
@@ -65,6 +73,21 @@ export default function ContactForm() {
       className="border-2 p-7 sm:p-9"
       style={{ background: '#16181C', borderColor: 'rgba(110,118,129,0.35)', color: '#F2F0EB' }}
     >
+      {/*
+        Honeypot. The field name is a nonsense token on purpose: a plausible name
+        like "company" gets populated by Chrome autofill, which silently killed
+        real leads before. Hidden from sighted users, taken out of the tab order,
+        and hidden from screen readers so nobody can fill it by accident.
+
+        Low value by design — the bots hitting these forms replay the real payload
+        and will learn to send this field too. The scoring in lib/spam-score.ts
+        does not lean on it.
+      */}
+      <div aria-hidden="true" style={{ position: 'absolute', left: '-9999px', width: 1, height: 1, overflow: 'hidden' }}>
+        <label htmlFor="contact-hp">Do not fill this in</label>
+        <input id="contact-hp" type="text" name={HONEYPOT_FIELD} tabIndex={-1} autoComplete="off" defaultValue="" />
+      </div>
+
       <div className="grid sm:grid-cols-2 gap-5 mb-5">
         <div>
           <label htmlFor="contact-name" className="block font-mono text-[11px] font-bold uppercase tracking-[0.2em] mb-2" style={{ color: '#6E7681' }}>
