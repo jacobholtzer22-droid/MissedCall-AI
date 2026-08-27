@@ -13,6 +13,13 @@
 
 import { db } from '@/lib/db'
 
+/**
+ * Monthly price quoted in the founder video, so /book must state the same
+ * number. NOTE: /pricing lists MissedCall AI at $299/mo and /missedcall-ai
+ * says $300/month. Those are not reconciled. If this changes, change them too.
+ */
+export const MONTHLY_FEE = 250
+
 export const SETUP_FEE_FULL = 400
 export const SETUP_FEE_DISCOUNTED = 200
 /** Derived so the headline can never drift from the two real numbers. */

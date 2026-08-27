@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { SETUP_FEE_FULL, SETUP_FEE_DISCOUNTED, DISCOUNT_PERCENT, type CouponState } from '@/lib/coupon'
+import { SETUP_FEE_FULL, SETUP_FEE_DISCOUNTED, DISCOUNT_PERCENT, MONTHLY_FEE, type CouponState } from '@/lib/coupon'
 
 // ─────────────────────────────────────────────────────────
 // The 24 hour window starts automatically on first pageview. There is no claim
@@ -71,7 +71,7 @@ export default function CouponBanner({ initial }: { initial: CouponState }) {
       aria-live="off"
     >
       <p className="text-[15px] font-bold leading-[1.5]" style={{ color: '#F2F0EB' }}>
-        {DISCOUNT_PERCENT}% off your setup fee if you book in the next{' '}
+        ${MONTHLY_FEE} a month. {DISCOUNT_PERCENT}% off your setup fee if you book in the next{' '}
         {/* suppressHydrationWarning is correct here, not a papered-over bug: the
             server renders this at server time and the client re-computes a
             moment later, so the digits legitimately differ. The alternative,

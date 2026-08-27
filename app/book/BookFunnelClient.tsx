@@ -9,6 +9,7 @@ import { getDemoVideoUrl, getDemoPosterUrl } from '@/lib/demo-video'
 import { parseAttribution, type Attribution } from '@/lib/attribution'
 import type { Variant } from '@/lib/variant'
 import type { CouponState } from '@/lib/coupon'
+import { MONTHLY_FEE } from '@/lib/coupon'
 import { trackStandard, trackCustomEvent, setPixelVariant } from './pixel'
 import GateModal, { type GateResult } from './GateModal'
 import BookingWizard, { type ChosenSlot, type WizardPrefill } from './BookingWizard'
@@ -298,6 +299,11 @@ export default function BookFunnelClient({
           </div>
           <p className="text-[13px] leading-[1.5] mt-2.5" style={{ color: 'rgba(242,240,235,0.6)' }}>
             Under two minutes. Real missed call, real text back, real booked quote.
+          </p>
+          {/* Stated right under the player so the number they just heard in the
+              video is the number on the page. */}
+          <p className="text-[14px] font-bold leading-[1.5] mt-2" style={{ color: '#F2F0EB' }}>
+            The price in the video is ${MONTHLY_FEE} a month.
           </p>
         </section>
 
