@@ -96,6 +96,26 @@ model Business {
   notifyByEmail        Boolean @default(true) // Send email to owner on booking events
   massMessagingEnabled Boolean @default(false) // Unlock email + SMS campaign outreach features
 
+  // QuickBooks / Intuit OAuth (see lib/quickbooks.ts)
+  quickbooksConnected     Boolean   @default(false)
+  qbRealmId               String? // Intuit company id — arrives ONLY as a callback query param, cannot be recovered later
+  qbAccessToken           String?   @db.Text
+  qbRefreshToken          String?   @db.Text
+  qbAccessTokenExpiresAt  DateTime?
+  qbRefreshTokenExpiresAt DateTime? // QBO expires an idle refresh token after 100 days
+  qbLastRefreshError      String?   @db.Text
+
+  // Review request automation (see lib/quickbooks.ts, ReviewRequest)
+  reviewRequestsEnabled Boolean @default(false)
+  reviewTrigger         String  @default("payment_received") // payment_received, invoice_sent, invoice_created
+  reviewDelayMinutes    Int     @default(120)
+  reviewQuietStartHour  Int     @default(9) // business-local hour, inclusive
+  reviewQuietEndHour    Int     @default(20) // business-local hour, exclusive
+  reviewCapDays         Int     @default(90)
+  googleReviewLink      String?
+  reviewMessageTemplate String? @db.Text
+  billingWebhookSecret  String?
+
   // Timestamps
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -116,9 +136,13 @@ model Business {
   activities         Activity[]
   websiteLeads       WebsiteLead[]
   googleAdsSnapshots GoogleAdsSnapshot[]
+  reviewRequests     ReviewRequest[]
 
   @@index([stripeCustomerId])
   @@index([ownerGroupId])
+  // NOT unique: one QBO company can legitimately map to several Business rows
+  // (an owner running multiple businesses out of one QuickBooks file).
+  @@index([qbRealmId])
 }
 
 // ===========================================
@@ -175,6 +199,7 @@ model Contact {
   jobs            Job[]
   emailRecipients EmailRecipient[]
   activities      Activity[]
+  reviewRequests  ReviewRequest[]
 
   @@unique([businessId, phoneNumber])
   @@index([businessId])
@@ -595,6 +620,49 @@ model WebsiteLead {
   @@index([status])
   @@index([createdAt])
   @@index([variant])
+}
+
+// ===========================================
+// REVIEW REQUEST - One review-request SMS per billing event
+// ===========================================
+model ReviewRequest {
+  id         String   @id @default(cuid())
+  businessId String
+  business   Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  // SetNull, not Cascade: deleting a contact must not erase the send history.
+  // That row is the audit trail when a customer asks why they were texted.
+  contactId     String?
+  contact       Contact? @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  customerPhone String // E.164 at write
+  customerName  String?
+
+  source             String // quickbooks, zapier, square, manual
+  externalInvoiceId  String
+  externalCustomerId String?
+
+  status     String  @default("queued") // queued, sending, sent, skipped, failed
+  skipReason String? // opted_out, frequency_cap, no_phone, invalid_phone, no_review_link, feature_disabled, duplicate, expired, send_failed
+
+  scheduledFor DateTime?
+  sentAt       DateTime?
+
+  telnyxSid    String?
+  telnyxStatus String?
+  messageBody  String? @db.Text
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Per-invoice dedupe: the same billing event can never queue twice.
+  @@unique([businessId, source, externalInvoiceId])
+  // businessId-leading, so it also serves businessId-only lookups.
+  @@index([businessId, createdAt])
+  // Deliberately NOT tenant-prefixed: this is the cron's cross-tenant drain query.
+  @@index([status, scheduledFor])
+  // Powers the per-customer frequency cap (reviewCapDays).
+  @@index([businessId, customerPhone, sentAt])
+  @@index([contactId])
 }
 
 // ===========================================
