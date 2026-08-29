@@ -2336,3 +2336,86 @@ Remaining pages not yet audited for mobile: `appointments`, `analytics`, `voicem
 6. **Email campaigns:** `[first name]`/`[last name]`/`[name]`/`[full name]` personalization tokens, per-recipient failure handling
 7. **Admin:** E.164 normalization on blocked-number save, `scripts/check-calendar-tokens.ts`, `scripts/normalize-blocked-numbers.ts`, `scripts/sql/2026-07-20_add_noReplyAlert.sql`
 8. **Admin panel + docs:** booking override fields in SettingsTab, `docs/system-layout.md` updates
+
+---
+
+## 18. Review Request Automation — Foundation Layer (Aug 2026)
+
+Added on the `review-automation-foundation` branch. **This section documents the foundation only: schema, Intuit OAuth, and `lib/quickbooks.ts`. The webhook, the send path, the cron, and the dashboard page do not exist yet.**
+
+### New `Business` columns
+
+| Column | Type | Purpose |
+|---|---|---|
+| `quickbooksConnected` | `Boolean @default(false)` | Set true by a successful token exchange or refresh; set false by a refresh failure or an expired refresh token |
+| `qbRealmId` | `String?` | Intuit company id. **Arrives ONLY as a query param on the OAuth callback** — absent from the token response, unrecoverable later. `@@index([qbRealmId])`, deliberately NOT unique: one QBO company can legitimately map to several `Business` rows (an owner running multiple businesses from one QuickBooks file) |
+| `qbAccessToken` | `String? @db.Text` | Plaintext, same as the existing `googleAccessToken` |
+| `qbRefreshToken` | `String? @db.Text` | Plaintext. **Rotates on every refresh** |
+| `qbAccessTokenExpiresAt` | `DateTime?` | From `expires_in`. Google has no equivalent column, which is why `getValidAccessToken` refreshes on every call |
+| `qbRefreshTokenExpiresAt` | `DateTime?` | From `x_refresh_token_expires_in`. QBO expires an idle refresh token after 100 days |
+| `qbLastRefreshError` | `String? @db.Text` | Last refresh failure message; cleared on success |
+| `reviewRequestsEnabled` | `Boolean @default(false)` | Master feature flag, off for every existing tenant |
+| `reviewTrigger` | `String @default("payment_received")` | `payment_received`, `invoice_sent`, `invoice_created` |
+| `reviewDelayMinutes` | `Int @default(120)` | Delay from billing event to send |
+| `reviewQuietStartHour` / `reviewQuietEndHour` | `Int @default(9)` / `Int @default(20)` | Business-local send window (start inclusive, end exclusive). **No quiet-hours logic exists yet** — these are storage only |
+| `reviewCapDays` | `Int @default(90)` | Per-customer frequency cap window |
+| `googleReviewLink` | `String?` | Destination link for the review text |
+| `reviewMessageTemplate` | `String? @db.Text` | Per-tenant copy override |
+| `billingWebhookSecret` | `String?` | Shared secret for the generic (Zapier/Square) billing endpoint |
+
+### `ReviewRequest` model
+
+One row per billing event. Statuses `queued, sending, sent, skipped, failed`; sources `quickbooks, zapier, square, manual`; skip reasons `opted_out, frequency_cap, no_phone, invalid_phone, no_review_link, feature_disabled, duplicate, expired, send_failed`.
+
+- `@@unique([businessId, source, externalInvoiceId])` — per-invoice dedupe; the same billing event can never queue twice.
+- `@@index([businessId, createdAt])` — `businessId`-leading, so it also serves `businessId`-only lookups (this is why there is no standalone `@@index([businessId])`).
+- `@@index([status, scheduledFor])` — **deliberately NOT tenant-prefixed.** The only such index in this schema. It exists for the cron's cross-tenant drain query.
+- `@@index([businessId, customerPhone, sentAt])` — powers the `reviewCapDays` frequency cap.
+- `contactId` uses **`onDelete: SetNull`, not Cascade** (`Activity` cascades). Deleting a contact must not erase the send history — that row is the audit trail when a customer asks why they were texted.
+
+Migration: `scripts/sql/2026-08-29_add_review_automation.sql` (applied via `npm run db:push`, verified against Neon 2026-08-29 — 16/16 columns, table + 6 indexes + 2 FKs present).
+
+### New env vars
+
+`QUICKBOOKS_CLIENT_ID`, `QUICKBOOKS_CLIENT_SECRET`, `QUICKBOOKS_REDIRECT_URI`, `QUICKBOOKS_WEBHOOK_VERIFIER_TOKEN`, `QUICKBOOKS_ENVIRONMENT` (`sandbox` | `production`), `QUICKBOOKS_STATE_SECRET`, and optional `QUICKBOOKS_MINOR_VERSION`.
+
+`QUICKBOOKS_ENVIRONMENT` **throws when unset or unrecognised** rather than defaulting. Defaulting to production would have a misconfigured deploy read a real company's books; defaulting to sandbox would have production silently read an empty test company forever.
+
+`QUICKBOOKS_MINOR_VERSION` is optional and unset by default. The current Intuit minor version could not be verified (the docs pages are client-rendered and return no content to a fetch), and Intuit's own sample sends none, so nothing is hardcoded.
+
+### OAuth routes
+
+| Route | Behavior |
+|---|---|
+| `/api/auth/quickbooks` | Clerk auth, `businessId` query param, same admin-or-owner check as the Google route, redirect to `getQbAuthUrl(businessId)` |
+| `/api/auth/quickbooks/callback` | Verifies `state` **first**, then requires `code` + `realmId`, then exchanges. Redirects: `?qb_connected=1`, `?qb_error=invalid_state`, `?qb_error=missing_params`, `?qb_error=denied`, `?qb_error=not_configured`, `?qb_error=exchange_failed` |
+
+Both routes are public under the existing middleware matcher only in the sense that `/api/auth/(.*)` is not listed as protected — the start route enforces Clerk itself, exactly as `/api/auth/google` does.
+
+### `lib/quickbooks.ts` — three deliberate divergences from `lib/google-calendar.ts`
+
+The module shape mirrors `google-calendar.ts`. These three differences are load-bearing; do not "simplify" them back:
+
+1. **Signed state.** `getQbAuthUrl` puts `businessId` + a random nonce + an HMAC-SHA256 of both (base64url) into `state`; `verifyQbState` verifies it with `timingSafeEqual` and returns the businessId or null. `app/api/auth/google/route.ts` passes a bare businessId and its callback trusts it.
+2. **Cached access token.** `getValidQbAccessToken` returns the stored token when `qbAccessTokenExpiresAt` is more than 5 minutes away. `getValidAccessToken` in `google-calendar.ts` calls `refreshAccessToken()` on **every** invocation — survivable only because Google's refresh tokens neither rotate nor idle-expire. Both are false for QuickBooks.
+3. **Rotation persisted unconditionally.** A rotated `refresh_token` is written whenever the response carries one, independent of whether an access token came with it. `google-calendar.ts` writes it only inside `if (credentials.access_token)`.
+
+`getValidQbAccessToken` also skips the network call entirely when `qbRefreshTokenExpiresAt` is already past — a dead refresh token cannot be revived by asking.
+
+**Verified 2026-08-29** against Intuit's OIDC discovery documents (`developer.api.intuit.com/.well-known/openid_configuration` and `…/openid_sandbox_configuration`) and Intuit's own source (`intuit/oauth-jsclient`, `IntuitDeveloper/SampleApp-WebhookNotifications-nodejs`): the authorize and token endpoints are **identical for sandbox and production** — only the API base URL and userinfo endpoint differ. There is no sandbox token endpoint; do not invent one.
+
+`verifyIntuitSignature(rawBody, signatureHeader)` is HMAC-SHA256 over the **raw** body, base64, timing-safe compared to the `intuit-signature` header. It takes the raw string on purpose: Intuit's own sample hashes `JSON.stringify(req.body)`, and any key-order or escaping difference between Intuit's bytes and Node's re-serialisation breaks the comparison. **The prompt-3 webhook route must read the body with `await request.text()` before parsing it.** Nothing else in this repo verifies any webhook signature (see gotcha #17), so there is no other pattern to copy.
+
+### ⚠️ The review send path must NEVER call these four
+
+Each would be the natural thing to reach for by pattern-matching the missed-call flow. Each is wrong here:
+
+- **`checkCooldown` / `recordMessageSent`** (`lib/sms-cooldown.ts`) — `ContactCooldown` is keyed on `(businessId, phoneNumber)` with **no message type**. A review send that stamped it would suppress that customer's missed-call text-back for the next 7 days; reading it would suppress review sends for anyone who recently called. The 90-day cap lives in `ReviewRequest` (`@@index([businessId, customerPhone, sentAt])`, window `Business.reviewCapDays`), never in `ContactCooldown`.
+- **`sendSMSAndLog`** (`app/api/webhooks/sms/route.ts`) — calls `recordMessageSent` internally, so using it inherits the problem above silently. It also requires a `conversationId`, and creating a `Conversation` for a review send makes those rows candidates for the no-reply owner-alert cron, which already misfires on campaign-created conversations.
+- **`isExistingContact`** (`lib/contacts-check.ts`) — queries `Contact WHERE source IS NULL` and exists to stop automated SMS to the client's own address book. Review recipients are existing customers **by design**; any tenant who bulk-imported customers without a source would have the feature silently do nothing.
+
+### Known gaps — accepted, no mitigation today
+
+1. **`getValidQbAccessToken` returns `null` in some failure modes and `throws` in others.** Null: no refresh token stored, refresh token already expired, refresh succeeded but returned no access token. Throws: the token endpoint itself failed. **Every caller must handle both.** In particular the prompt-3 cron must wrap each tenant in its own `try`/`catch` — one dead QuickBooks connection would otherwise abort the whole batch, exactly the way a single failure aborts nothing in `/api/cron/appointment-reminders` because that route catches per-appointment.
+2. **A refresh that succeeds followed by a failed `db.business.update` loses the rotated refresh token.** Intuit has already invalidated the old one at that point, so the connection is unrecoverable without re-consent. Known gap, no mitigation.
+3. **The OAuth state is signed but carries no expiry**, so a leaked state string verifies indefinitely. Mitigated in practice only by the Clerk admin-or-owner check on `/api/auth/quickbooks`, which bounds who can obtain one in the first place. Known gap.
