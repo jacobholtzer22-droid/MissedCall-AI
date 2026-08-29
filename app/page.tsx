@@ -6,7 +6,7 @@ import ScrollReveal from './components/ScrollReveal'
 import BrandFooter from './components/BrandFooter'
 import SmsThread from './components/SmsThread'
 import ROICalculator from './components/roi-calculator'
-import GoogleReviews from './components/GoogleReviews'
+import GoogleReviewsCard from './components/GoogleReviewsCard'
 
 export const metadata: Metadata = {
   // Brand first on purpose: the homepage owns the branded SERP; /missedcall-ai is keyword-first.
@@ -188,8 +188,17 @@ export default function HomePage() {
             </div>
           </ScrollReveal>
 
+          {/* Same Google-parity card the /book funnel renders. Constrained width:
+              a Google review list is a single column and stretches badly at 7xl.
+              JAWS is pinned first — it is the only review that names all three
+              services, so it earns the top slot on the all-services page. */}
           <ScrollReveal>
-            <GoogleReviews />
+            <div className="mx-auto max-w-3xl">
+              <GoogleReviewsCard
+                collapsedCount={3}
+                pinnedNames={['JAWS Lawn and Snow', 'Cameron Brillantes']}
+              />
+            </div>
           </ScrollReveal>
         </div>
       </section>

@@ -3,7 +3,7 @@ import Link from 'next/link'
 import { ArrowRight, Quote } from 'lucide-react'
 import ScrollReveal from '@/app/components/ScrollReveal'
 import BrandFooter from '@/app/components/BrandFooter'
-import GoogleReviews from '@/app/components/GoogleReviews'
+import GoogleReviewsCard from '@/app/components/GoogleReviewsCard'
 import TestimonialPhoto from '@/app/components/TestimonialPhoto'
 
 const DESCRIPTION =
@@ -112,8 +112,15 @@ export default function ReviewsPage() {
             </div>
           </ScrollReveal>
 
+          {/* This page exists to show the reviews, so nothing is collapsed
+              behind a "More reviews" button. */}
           <ScrollReveal>
-            <GoogleReviews />
+            <div className="mx-auto max-w-3xl">
+              <GoogleReviewsCard
+                collapsedCount="all"
+                pinnedNames={['JAWS Lawn and Snow']}
+              />
+            </div>
           </ScrollReveal>
 
           <ScrollReveal>

@@ -5,7 +5,10 @@ import { Roboto } from 'next/font/google'
 import { REVIEWS, GOOGLE_LISTING_URL, type Review } from './GoogleReviews'
 
 // ─────────────────────────────────────────────────────────
-// Google-parity review block for /book.
+// Google-parity review block. Shared surface: /book, / and /reviews all render
+// this one component so the review presentation cannot drift between the funnel
+// and the marketing site. Callers vary only how many rows show before the
+// "More reviews" button and which names sort to the top.
 //
 // Rendered in Google's LIGHT theme on purpose: name, body and reply greys only
 // read correctly on white, and card-level parity was the requirement. That
@@ -22,7 +25,7 @@ import { REVIEWS, GOOGLE_LISTING_URL, type Review } from './GoogleReviews'
 //   - profile photos are Google's own lh3 URLs. Those can rotate or 404, so a
 //     failed load falls back to the initial circle rather than showing a broken
 //     image, which is also what Google renders for photoless accounts.
-//   - owner replies: none of the nine carry one, so no reply block is emitted.
+//   - owner replies: none of the ten carry one, so no reply block is emitted.
 //     The markup is ready if you start replying.
 //
 // The G mark attributes where the reviews live. It is never laid out to imply
@@ -66,14 +69,16 @@ function relativeDate(iso?: string): string | null {
   return years <= 1 ? 'a year ago' : `${years} years ago`
 }
 
-const COLLAPSED_COUNT = 2
+// Defaults are the /book funnel's: two rows visible, missed-call-relevant
+// reviews on top. Other pages override via props.
+const DEFAULT_COLLAPSED_COUNT = 2
 // Pinned to the top of the collapsed view. Names must match the review data
 // exactly, which is why it is "Brillantes".
-const PINNED_NAMES = ['Cameron Brillantes', 'Ryan']
+const DEFAULT_PINNED_NAMES = ['Cameron Brillantes', 'Ryan']
 
-function orderReviews(all: Review[]): Review[] {
-  const pinned = PINNED_NAMES.map((n) => all.find((r) => r.name === n)).filter((r): r is Review => Boolean(r))
-  const rest = all.filter((r) => !PINNED_NAMES.includes(r.name))
+function orderReviews(all: Review[], pinnedNames: string[]): Review[] {
+  const pinned = pinnedNames.map((n) => all.find((r) => r.name === n)).filter((r): r is Review => Boolean(r))
+  const rest = all.filter((r) => !pinnedNames.includes(r.name))
   return [...pinned, ...rest]
 }
 
@@ -170,6 +175,8 @@ function ReviewRow({ review, last }: { review: Review; last: boolean }) {
             ref={bodyRef}
             style={{
               color: G.body, fontSize: 14, lineHeight: '20px', marginTop: 10,
+              // Google keeps the paragraph breaks reviewers type.
+              whiteSpace: 'pre-line',
               ...(expanded
                 ? {}
                 : { display: '-webkit-box', WebkitLineClamp: 4, WebkitBoxOrient: 'vertical', overflow: 'hidden' }),
@@ -210,11 +217,26 @@ function ReviewRow({ review, last }: { review: Review; last: boolean }) {
   )
 }
 
-export default function GoogleReviewsCard() {
+export default function GoogleReviewsCard({
+  collapsedCount = DEFAULT_COLLAPSED_COUNT,
+  pinnedNames = DEFAULT_PINNED_NAMES,
+}: {
+  /**
+   * Rows shown before the "More reviews" button, or 'all' to show every review
+   * with no button. Use 'all' rather than REVIEWS.length: REVIEWS lives in a
+   * 'use client' module, so a server page reading .length off it crosses the
+   * RSC boundary and throws "Could not find the module ... in the React Client
+   * Manifest" at request time (tsc does not catch this).
+   */
+  collapsedCount?: number | 'all'
+  /** Reviews sorted to the top, by exact name. Everything else keeps Google's newest-first order. */
+  pinnedNames?: string[]
+} = {}) {
   const [showAll, setShowAll] = useState(false)
-  const ordered = useMemo(() => orderReviews(REVIEWS), [])
-  const visible = showAll ? ordered : ordered.slice(0, COLLAPSED_COUNT)
-  const hidden = ordered.length - COLLAPSED_COUNT
+  const ordered = useMemo(() => orderReviews(REVIEWS, pinnedNames), [pinnedNames])
+  const limit = collapsedCount === 'all' ? ordered.length : collapsedCount
+  const visible = showAll ? ordered : ordered.slice(0, limit)
+  const hidden = ordered.length - limit
 
   // Derived, never hardcoded, so adding a review updates both automatically.
   const average = REVIEWS.reduce((sum, r) => sum + r.rating, 0) / REVIEWS.length

@@ -6,9 +6,9 @@ import { Star, Quote, ChevronLeft, ChevronRight, ExternalLink } from 'lucide-rea
 // ─────────────────────────────────────────────────────────
 // Google reviews — Align and Acquire (Google Business Profile).
 //
-// Pulled verbatim from the live GBP API on 2026-08-26 via the connected
+// Pulled verbatim from the live GBP API on 2026-08-28 via the connected
 // Google Business Profile integration (location 3820569693245684558).
-// Google reported averageRating 5, totalReviewCount 9.
+// Google reported averageRating 5, totalReviewCount 10.
 //
 // Text is EXACTLY as Google returned it, including typographic apostrophes and
 // the reviewer's own capitalisation. Do not edit, shorten, or "improve" any
@@ -28,11 +28,19 @@ export interface Review {
   /** ISO timestamp from Google. Relative dates are derived from this, never
    *  written by hand. */
   createdAt?: string
-  /** Verbatim owner reply, if one exists. None of the current nine have one. */
+  /** Verbatim owner reply, if one exists. None of the current ten have one. */
   ownerReply?: string
 }
 
 export const REVIEWS: Review[] = [
+  {
+    name: 'JAWS Lawn and Snow',
+    rating: 5,
+    text:
+      'Jacob has been great for my companies. After entertaining a couple website/SEO cold calls and talking with other potential vendors, it was refreshing to speak with a real person here in Michigan who actually knows what he’s doing.\n\nI originally started working with Jacob for website building and maintenance, and later found out he could help my businesses a lot with Google Ads as well. As I’ve continued using Align & Acquire for my three Washtenaw County service businesses, the leads have continued to pick up and improve in quality.\n\nI might even have a use for his MissCall AI missed-lead manager now, which is something I originally thought was pretty worthless for me with the amount and quality of leads I was getting before working with Jacob.\n\nI’ve been very happy with his website building, editing and maintenance, Google Ads, and overall service. Jacob is easy to work with, knows his stuff, and I’d definitely recommend him and Align & Acquire to other local business owners.',
+    photoUrl: 'https://lh3.googleusercontent.com/a-/ALV-UjWsGP68LrO65CMz4JhnFQFP9YbxKw4BX9tqo-OHiuZadvqmc5Q=s120-c-rp-mo-br100',
+    createdAt: '2026-08-29T00:58:03.982Z',
+  },
   {
     name: 'Mervin Hoch',
     rating: 5,
@@ -163,7 +171,10 @@ function ReviewCard({
     >
       <Quote size={32} strokeWidth={1.25} className="mb-6" style={{ color: '#EE6B1A' }} />
 
-      <p className="text-[17px] leading-relaxed sm:text-[18px]" style={{ color: '#16181C' }}>
+      <p
+        className="text-[17px] leading-relaxed sm:text-[18px]"
+        style={{ color: '#16181C', whiteSpace: 'pre-line' }}
+      >
         {review.text}
       </p>
 
