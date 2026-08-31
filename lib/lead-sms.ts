@@ -1,5 +1,5 @@
 // ===========================================
-// LEAD-FACING DEMO SMS
+// LEAD-FACING SMS
 // ===========================================
 // The text that delivers the demo. This did NOT exist before: the old gate
 // wrote a lead and notified the owner, and never messaged the lead at all.
@@ -7,6 +7,8 @@
 // Compliance notes, because this is a cold-ish send:
 //   - It goes from the marketing 10DLC number, the same pipeline client traffic
 //     uses, never from a number shared across tenants.
+//   - It carries NO link. The message is a personal follow-up, not a delivery
+//     mechanism, so there is nothing to click and nothing to phish.
 //   - The gate shows consent microcopy above the phone input before it is sent.
 //   - Body carries "Reply STOP to opt out". STOP is handled by the existing SMS
 //     webhook, which writes a BlockedNumber row.
@@ -25,16 +27,21 @@ export function newResumeToken(): string {
   return out
 }
 
+/**
+ * NOTE: currently unused. The lead SMS no longer carries a link, so nothing
+ * hands this token out. /api/demo-resume still works if a link is reintroduced;
+ * tokens are still minted so existing leads would keep working.
+ */
 export function resumeLink(token: string): string {
   const base = process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, '') || 'https://www.alignandacquire.com'
   return `${base}/api/demo-resume?t=${token}`
 }
 
-function body(link: string): string {
+function body(): string {
   return (
-    `Hey, it's Jacob from Align & Acquire. Thanks for the interest. ` +
-    `Your demo and price sheet: ${link}. ` +
-    `I'll personally reach out shortly, or just reply here with any questions. ` +
+    `Hey, it's Jacob from Align & Acquire. Thanks for showing interest. ` +
+    `I'll personally reach out to you shortly. ` +
+    `Questions in the meantime? Just reply here. ` +
     `Reply STOP to opt out.`
   )
 }
@@ -72,21 +79,12 @@ export async function sendLeadDemoSms(leadId: string, phone: string, funnelVaria
     return { sent: false, reason: 'already_sent' }
   }
 
-  const lead = await db.websiteLead.findUnique({ where: { id: leadId }, select: { resumeToken: true } })
-  const token = lead?.resumeToken
-  if (!token) {
-    await db.websiteLead.updateMany({ where: { id: leadId }, data: { demoSmsSentAt: null } })
-    console.error(`[lead-sms] SKIP leadId=${leadId} reason=no_resume_token`)
-    return { sent: false, reason: 'no_resume_token' }
-  }
-
-  const link = resumeLink(token)
   try {
     const telnyx = new Telnyx({ apiKey: process.env.TELNYX_API_KEY })
-    const res = await telnyx.messages.send({ from, to, text: body(link) })
+    const res = await telnyx.messages.send({ from, to, text: body() })
     const providerId = (res as { data?: { id?: string } })?.data?.id ?? 'unknown'
     console.log(
-      `[lead-sms] SENT leadId=${leadId} template=demo_delivery to=${to} from=${from} ` +
+      `[lead-sms] SENT leadId=${leadId} template=lead_followup to=${to} from=${from} ` +
         `video=${funnelVariant ?? 'none'} providerId=${providerId}`
     )
     return { sent: true, providerId }
@@ -94,7 +92,7 @@ export async function sendLeadDemoSms(leadId: string, phone: string, funnelVaria
     // Release the claim so a later wizard step can retry.
     await db.websiteLead.updateMany({ where: { id: leadId }, data: { demoSmsSentAt: null } })
     const message = err instanceof Error ? err.message : String(err)
-    console.error(`[lead-sms] FAILED leadId=${leadId} template=demo_delivery to=${to} from=${from} error=${message}`)
+    console.error(`[lead-sms] FAILED leadId=${leadId} template=lead_followup to=${to} from=${from} error=${message}`)
     return { sent: false, reason: message }
   }
 }

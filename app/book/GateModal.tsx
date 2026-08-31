@@ -33,10 +33,10 @@ const STEPS: StepKey[] = ['trade', 'phone', 'firstName', 'lastName', 'company', 
 const COPY: Record<StepKey, { headline: string; hint?: string }> = {
   trade: { headline: 'What kind of business do you run?' },
   phone: {
-    headline: 'Where should I text the demo and the price?',
+    headline: 'Enter your number to unlock the demo',
     // Consent notice. Must stay above the input and must keep the STOP line:
     // this is what makes the lead-facing SMS a consented send.
-    hint: "We'll text your demo link and price sheet to this number. Reply STOP any time.",
+    hint: "You'll get a quick text from Jacob. Reply STOP any time.",
   },
   firstName: { headline: 'What is your first name?' },
   lastName: { headline: 'And your last name?' },
