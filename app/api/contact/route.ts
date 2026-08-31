@@ -44,7 +44,7 @@ async function sendResendEmail(subject: string, html: string, to?: string) {
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      from: 'Align and Acquire <onboarding@resend.dev>',
+      from: 'Align and Acquire <notifications@alignandacquire.com>',
       to: recipient,
       subject,
       html,

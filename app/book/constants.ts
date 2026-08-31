@@ -66,3 +66,10 @@ export const SEND_SMS_AT: 'phone' | 'complete' = 'phone'
 
 /** sessionStorage key holding in-progress gate answers. */
 export const GATE_DRAFT_KEY = 'aa_gate_draft'
+
+/**
+ * Resends offered in the UI. Matches OTP_MAX_SENDS_PER_PHONE_HOUR - 1 in
+ * lib/otp.ts (one initial send plus this many). Kept here so the client can
+ * import it without pulling server-only code into the browser bundle.
+ */
+export const OTP_MAX_RESENDS = 2

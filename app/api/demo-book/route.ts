@@ -229,7 +229,7 @@ export async function POST(request: NextRequest) {
           `Source: meta_demo_video`,
           couponLine,
           variant ? `Variant: ${variant}` : null,
-          funnelVariant ? `Funnel video: ${funnelVariant}` : null,
+          funnelVariant ? `Funnel arm: ${funnelVariant}` : null,
           companyName ? `Company: ${companyName}` : null,
           trade ? `Trade: ${trade}` : null,
           missesPerWeek ? `Missed calls per week: ${missesPerWeek}` : null,
@@ -274,7 +274,7 @@ export async function POST(request: NextRequest) {
         <p><strong>Email:</strong> ${escapeHtml(email)}</p>
         <p><strong>Setup:</strong> ${escapeHtml(couponLine)}</p>
         <p><strong>Variant:</strong> ${escapeHtml(variant ?? 'unassigned')}</p>
-        <p><strong>Funnel video:</strong> ${escapeHtml(funnelVariant ?? 'unassigned')}</p>
+        <p><strong>Funnel arm:</strong> ${escapeHtml(funnelVariant ?? 'unassigned')}</p>
         <p><strong>Company:</strong> ${escapeHtml(companyName || 'Not given')}</p>
         <p><strong>Trade:</strong> ${escapeHtml(trade || 'Not specified')}</p>
         <p><strong>Missed calls per week:</strong> ${escapeHtml(missesPerWeek || 'Not specified')}</p>
@@ -315,7 +315,7 @@ export async function POST(request: NextRequest) {
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
-            from: 'Align and Acquire <onboarding@resend.dev>',
+            from: 'Align and Acquire <notifications@alignandacquire.com>',
             to: email,
             subject: `You're booked with Align and Acquire`,
             html: `

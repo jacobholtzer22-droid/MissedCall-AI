@@ -16,6 +16,7 @@
 import { cookies } from 'next/headers'
 import { db } from '@/lib/db'
 import BookFunnelClient, { type InitialGate } from './BookFunnelClient'
+import FormFirstClient from './FormFirstClient'
 import { GATE_COOKIE } from './constants'
 import { VARIANT_COOKIE, VISITOR_COOKIE, assignVariant, isVariant, isLiveVariant, variantFromQuery, type Variant } from '@/lib/variant'
 import { claimCoupon, toState, type CouponState } from '@/lib/coupon'
@@ -37,11 +38,16 @@ async function resolveGate(leadId: string | undefined): Promise<InitialGate> {
     })
     if (!lead?.phone) return null
     const trade = lead.message?.match(/^Trade: (.+)$/m)?.[1]?.trim() ?? ''
+    // Company is parsed back out of the lead body so the booking wizard can
+    // skip a question the gate already asked. The body is the only place it is
+    // stored: WebsiteLead has no company column.
+    const company = lead.message?.match(/^Company: (.+)$/m)?.[1]?.trim() ?? ''
     return {
       leadId: lead.id,
       name: lead.name,
       phone: lead.phone,
       trade,
+      company,
       email: lead.email ?? '',
     }
   } catch (err) {
@@ -95,6 +101,11 @@ export default async function BookPage({
       // A coupon failure must never take the funnel down. Full price, no banner.
       console.error('[book] auto-claim failed:', err)
     }
+  }
+
+  // Arm B is a different page at the same URL, not a variation of arm A.
+  if (funnelVariant === 'B') {
+    return <FormFirstClient initialGate={initialGate} variant={variant} funnelVariant={funnelVariant} />
   }
 
   return (

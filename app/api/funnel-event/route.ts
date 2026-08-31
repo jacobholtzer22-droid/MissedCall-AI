@@ -16,8 +16,22 @@ import { FUNNEL_VARIANT_COOKIE } from '@/lib/funnel-variant'
 
 export const dynamic = 'force-dynamic'
 
-const ALLOWED_NAMES = ['gate_step_completed', 'gate_opened', 'gate_abandoned', 'video_unlocked', 'honeypot_blocked']
-const ALLOWED_STEPS = ['trade', 'phone', 'firstName', 'lastName', 'company', 'email', 'complete', 'honeypot_blocked']
+// Landing views are counted here as well as in the pixel: /api/admin/funnel-ab
+// needs a denominator it can query, and pixel data cannot be read back.
+// otp_* are written from the server too (lib/funnel-log.ts) because a capped
+// send or a failed verify must be recorded whether or not the browser reports.
+const ALLOWED_NAMES = [
+  'landing_view',
+  'gate_step_completed', 'gate_opened', 'gate_abandoned', 'video_unlocked', 'honeypot_blocked',
+  'otp_sent', 'otp_verified', 'otp_failed',
+  'form_submitted', 'thanks_view',
+]
+const ALLOWED_STEPS = [
+  'landing',
+  'trade', 'phone', 'firstName', 'lastName', 'company', 'email', 'complete', 'honeypot_blocked',
+  'otp_sent', 'otp_verified', 'otp_failed',
+  'name', 'businessName', 'mobile', 'form', 'thanks',
+]
 
 export async function POST(request: NextRequest) {
   // Generous: this fires several times per genuine visitor.

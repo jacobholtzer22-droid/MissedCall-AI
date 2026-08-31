@@ -26,7 +26,7 @@ export function setPixelVariant(variant: string | null) {
   currentVariant = variant
 }
 
-/** Called once on mount with the server-assigned video arm (A or B). */
+/** Called once on mount with the server-assigned funnel-structure arm (A or B). */
 export function setPixelFunnelVariant(variant: string | null) {
   currentFunnelVariant = variant
 }

@@ -747,6 +747,40 @@ model CouponClaim {
 //
 // Deliberately thin: no PII, just which screen was completed, by which visitor,
 // in which arm. Join to WebsiteLead on visitorId when you need the person.
+/// One row per OTP SEND. Not one per phone, and not one per session: making
+/// every send a row is what makes the fraud caps countable with a plain query
+/// instead of in-memory state, which on Vercel is per-lambda and therefore
+/// useless as a real limit (see lib/rate-limit.ts).
+///
+/// The code is never stored in the clear. verifiedAt turns a row into a
+/// single-use ticket that the lead-write routes redeem.
+model PhoneVerification {
+  id String @id @default(cuid())
+
+  phone    String // E.164, always +1XXXXXXXXXX
+  codeHash String // sha256(code + phone + pepper). Never the code itself.
+
+  expiresAt DateTime
+  attempts  Int      @default(0) // verify attempts against THIS row, max 3
+  verifiedAt DateTime?
+  consumedAt DateTime? // set when a lead redeems it, so a ticket works once
+
+  visitorId     String?
+  variant       String?
+  funnelVariant String?
+  ip            String?
+
+  createdAt DateTime @default(now())
+
+  // Per-phone send caps and "find the active code for this number".
+  @@index([phone, createdAt])
+  // Per-IP send cap.
+  @@index([ip, createdAt])
+  // Global daily cap. Deliberately not tenant- or phone-prefixed: the query it
+  // serves counts every send platform-wide.
+  @@index([createdAt])
+}
+
 model FunnelEvent {
   id String @id @default(cuid())
 

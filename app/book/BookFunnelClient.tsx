@@ -34,6 +34,8 @@ export type InitialGate = {
   name: string
   phone: string
   trade: string
+  /** Parsed back out of the lead body so the wizard never asks twice. */
+  company: string
   email: string
 } | null
 
@@ -58,7 +60,7 @@ export default function BookFunnelClient({
 }: {
   initialGate: InitialGate
   variant: Variant
-  /** Which founder video plays. The ONLY difference between the arms. */
+  /** Which funnel STRUCTURE this visitor is in. Arm A renders this component. */
   funnelVariant: FunnelVariant
   coupon: CouponState
   /** Arrived from the demo SMS link: their video is already unlocked. */
@@ -109,6 +111,14 @@ export default function BookFunnelClient({
     }
     attributionRef.current = attribution
     trackStandard('ViewContent', { content_name: 'book_funnel' })
+    // Denominator for /api/admin/funnel-ab. Pixel data cannot be read back, so
+    // the view has to be recorded first-party as well.
+    void fetch('/api/funnel-event', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'landing_view', step: 'landing' }),
+      keepalive: true,
+    }).catch(() => {})
   }, [])
 
   useEffect(() => {
@@ -182,6 +192,7 @@ export default function BookFunnelClient({
       name: result.name,
       phone: result.phone,
       trade: result.trade,
+      company: result.company,
       email: result.email,
     })
     // Lead already fired when the phone screen banked the record. fireLeadOnce
@@ -210,6 +221,7 @@ export default function BookFunnelClient({
       name: gate?.name || undefined,
       phone: gate?.phone || undefined,
       email: gate?.email || undefined,
+      company: gate?.company || undefined,
     }),
     [gate]
   )

@@ -28,7 +28,7 @@ import {
 // their number and then abandoned is still a callable lead.
 // ─────────────────────────────────────────────────────────
 
-export type WizardPrefill = { trade?: string; name?: string; phone?: string; email?: string }
+export type WizardPrefill = { trade?: string; name?: string; phone?: string; email?: string; company?: string }
 export type ChosenSlot = { iso: string; display: string; dateLabel: string }
 
 type StepKey = 'trade' | 'name' | 'phone' | 'email' | 'company' | 'misses' | 'who' | 'confirm'
@@ -87,7 +87,7 @@ export default function BookingWizard({
   const [name, setName] = useState(prefill.name ?? '')
   const [phone, setPhone] = useState(prefill.phone ?? '')
   const [email, setEmail] = useState(prefill.email ?? '')
-  const [company, setCompany] = useState('')
+  const [company, setCompany] = useState(prefill.company ?? '')
   const [misses, setMisses] = useState('')
   const [who, setWho] = useState('')
   const [honeypot, setHoneypot] = useState('')
@@ -106,9 +106,11 @@ export default function BookingWizard({
     if (!prefill.name) s.push('name')
     if (!prefill.phone) s.push('phone')
     if (!prefill.email) s.push('email')
-    s.push('company', 'misses', 'who', 'confirm')
+    // Company came from the gate, so asking again is asking twice.
+    if (!prefill.company) s.push('company')
+    s.push('misses', 'who', 'confirm')
     return s
-  }, [prefill.trade, prefill.name, prefill.phone, prefill.email])
+  }, [prefill.trade, prefill.name, prefill.phone, prefill.email, prefill.company])
 
   useEffect(() => {
     if (open) {

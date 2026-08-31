@@ -549,7 +549,7 @@ export async function POST(request: NextRequest) {
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
-            from: 'Align and Acquire <onboarding@resend.dev>',
+            from: 'Align and Acquire <notifications@alignandacquire.com>',
             to: email,
             subject: `You're booked with Align and Acquire`,
             html: `

@@ -5,13 +5,19 @@ import { X, ArrowLeft, Loader2 } from 'lucide-react'
 import { validateUsMobile } from '@/lib/phone-utils'
 import ProgressBar from './ProgressBar'
 import { TRADES, NOT_AN_OWNER, formatPhoneInput, SEND_SMS_AT, GATE_DRAFT_KEY } from './constants'
+import OtpScreen from './OtpScreen'
 
 // ─────────────────────────────────────────────────────────
 // One question per screen.
 //
-// The lead is BANKED at the phone screen, not at the end: someone who gives a
-// number and then abandons on "last name" is still a callable lead, and the
-// owner hears about them in seconds. Later screens enrich the same row.
+// The lead is BANKED as soon as the number is VERIFIED, not at the end:
+// someone who verifies and then abandons on "last name" is still a callable
+// lead, and the owner hears about them in seconds. Later screens enrich the
+// same row.
+//
+// Verification sits between the phone screen and the bank on purpose. The bank
+// fires the instant lead SMS and the "call now" owner email, so writing a lead
+// for an unverified number would text a stranger and send Jacob to call them.
 //
 // Answers persist in sessionStorage so a refresh or an accidental back swipe
 // does not cost the visitor their progress.
@@ -22,13 +28,15 @@ export type GateResult = {
   name: string
   phone: string
   trade: string
+  /** Passed on so the booking wizard never asks for it a second time. */
+  company: string
   email: string
   qualified: boolean
 }
 
-type StepKey = 'trade' | 'phone' | 'firstName' | 'lastName' | 'company' | 'email'
+type StepKey = 'trade' | 'phone' | 'otp' | 'firstName' | 'lastName' | 'company' | 'email'
 
-const STEPS: StepKey[] = ['trade', 'phone', 'firstName', 'lastName', 'company', 'email']
+const STEPS: StepKey[] = ['trade', 'phone', 'otp', 'firstName', 'lastName', 'company', 'email']
 
 const COPY: Record<StepKey, { headline: string; hint?: string }> = {
   trade: { headline: 'What kind of business do you run?' },
@@ -38,6 +46,9 @@ const COPY: Record<StepKey, { headline: string; hint?: string }> = {
     // this is what makes the lead-facing SMS a consented send.
     hint: "You'll get a quick text from Jacob. Reply STOP any time.",
   },
+  // Rendered by OtpScreen, which owns its own copy. Present so the record is
+  // exhaustive over StepKey.
+  otp: { headline: 'Check your texts' },
   firstName: { headline: 'What is your first name?' },
   lastName: { headline: 'And your last name?' },
   company: { headline: 'What is your company called?' },
@@ -50,7 +61,7 @@ const inputCls =
 const inputStyle = { borderColor: border, color: '#F2F0EB' }
 
 type Draft = Record<StepKey, string>
-const EMPTY_DRAFT: Draft = { trade: '', phone: '', firstName: '', lastName: '', company: '', email: '' }
+const EMPTY_DRAFT: Draft = { trade: '', phone: '', otp: '', firstName: '', lastName: '', company: '', email: '' }
 
 function validate(step: StepKey, value: string): string {
   const v = value.trim()
@@ -61,6 +72,9 @@ function validate(step: StepKey, value: string): string {
       const check = validateUsMobile(v)
       return check.ok ? '' : check.reason
     }
+    case 'otp':
+      // OtpScreen validates and submits its own code.
+      return ''
     case 'firstName':
       return v.length >= 2 ? '' : 'Please enter your first name.'
     case 'lastName':
@@ -116,7 +130,12 @@ export default function GateModal({
         bankedRef.current = true
       }
       if (typeof saved._index === 'number' && saved._index > 0 && saved._index < STEPS.length) {
-        setIndex(saved._index)
+        // Never restore onto the OTP screen unless the lead was already banked:
+        // no code is in flight after a refresh, so the visitor would be staring
+        // at an input for a text that is never coming. Send them back to the
+        // phone screen, which re-sends on submit.
+        const restored = STEPS[saved._index] === 'otp' && !saved._leadId ? 1 : saved._index
+        setIndex(restored)
       }
     } catch {
       /* a corrupt draft must never block the gate */
@@ -178,12 +197,13 @@ export default function GateModal({
 
   /** Create or enrich the lead. Called at the phone screen and after it. */
   const save = useCallback(
-    async (data: Draft, stage: 'phone' | 'update') => {
+    async (data: Draft, stage: 'phone' | 'update', verificationId?: string) => {
       const res = await fetch('/api/demo-lead/wizard', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           stage,
+          verificationId,
           trade: data.trade,
           phone: data.phone,
           firstName: data.firstName,
@@ -216,6 +236,31 @@ export default function GateModal({
     [attribution, honeypot]
   )
 
+  /**
+   * The number is verified. THIS is where the lead is created, the Meta Lead
+   * event fires and the instant SMS goes out — all of it downstream of a real
+   * handset, and all of it exactly once (bankedRef here, DB claims server-side).
+   */
+  async function handleOtpVerified(verificationId: string) {
+    setSubmitting(true)
+    setError('')
+    try {
+      const result = await save(draft, 'phone', verificationId)
+      if (!bankedRef.current) {
+        bankedRef.current = true
+        onLeadBanked(Boolean(result.qualified))
+      }
+      logStep('otp')
+      const nextIndex = index + 1
+      persist(draft, nextIndex)
+      setIndex(nextIndex)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not save that. Try again.')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
   async function advance(rawValue: string) {
     const value = step === 'phone' ? rawValue : rawValue.trim()
     const problem = validate(step, value)
@@ -230,18 +275,42 @@ export default function GateModal({
 
     const isLast = index === STEPS.length - 1
 
-    // Bank at the phone screen, then keep the same row updated.
+    // The phone screen no longer writes anything. It requests a code and hands
+    // over to OtpScreen; the lead is banked once that verifies.
+    if (step === 'phone') {
+      setSubmitting(true)
+      try {
+        const res = await fetch('/api/otp/send', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ phone: value }),
+        })
+        const json = await res.json().catch(() => ({}))
+        if (!res.ok) {
+          setError(json?.error || 'Could not send a code. Try again.')
+          return
+        }
+      } catch {
+        setError('Could not send a code. Try again.')
+        return
+      } finally {
+        setSubmitting(false)
+      }
+      logStep('phone')
+      const nextIdx = index + 1
+      persist(next, nextIdx)
+      setIndex(nextIdx)
+      return
+    }
+
+    // Later screens enrich the row banked at verification.
     const shouldSave =
-      step === 'phone' || (bankedRef.current && (step !== 'trade' || SEND_SMS_AT === 'complete'))
+      bankedRef.current && (step !== 'trade' || SEND_SMS_AT === 'complete')
 
     if (shouldSave || (isLast && !bankedRef.current)) {
       setSubmitting(true)
       try {
-        const result = await save(next, step === 'phone' ? 'phone' : 'update')
-        if (step === 'phone' && !bankedRef.current) {
-          bankedRef.current = true
-          onLeadBanked(Boolean(result.qualified))
-        }
+        await save(next, 'update')
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Could not save that. Try again.')
         setSubmitting(false)
@@ -277,6 +346,7 @@ export default function GateModal({
           name: [next.firstName, next.lastName].filter(Boolean).join(' '),
           phone: next.phone,
           trade: next.trade,
+          company: next.company,
           email: next.email,
           qualified: next.trade !== NOT_AN_OWNER,
         })
@@ -360,16 +430,29 @@ export default function GateModal({
             </div>
           ) : (
             <>
-              <h2 className="text-[clamp(1.4rem,4.6vw,1.9rem)] font-black uppercase leading-[1.15] tracking-tight mb-2">
-                {COPY[step].headline}
-              </h2>
-              {COPY[step].hint && (
-                <p className="text-[14px] leading-[1.6] mb-5" style={{ color: 'rgba(242,240,235,0.6)' }}>
-                  {COPY[step].hint}
-                </p>
+              {step !== 'otp' && (
+                <>
+                  <h2 className="text-[clamp(1.4rem,4.6vw,1.9rem)] font-black uppercase leading-[1.15] tracking-tight mb-2">
+                    {COPY[step].headline}
+                  </h2>
+                  {COPY[step].hint && (
+                    <p className="text-[14px] leading-[1.6] mb-5" style={{ color: 'rgba(242,240,235,0.6)' }}>
+                      {COPY[step].hint}
+                    </p>
+                  )}
+                </>
               )}
 
-              {step === 'trade' ? (
+              {step === 'otp' ? (
+                <OtpScreen
+                  phone={draft.phone}
+                  onVerified={handleOtpVerified}
+                  onBack={() => {
+                    setError('')
+                    setIndex(1)
+                  }}
+                />
+              ) : step === 'trade' ? (
                 <div className="grid gap-2.5 mt-4">
                   {TRADES.map((t) => (
                     <button
@@ -442,6 +525,10 @@ export default function GateModal({
                     {submitting ? (<><Loader2 size={18} className="motion-safe:animate-spin" /> One sec</>) : 'Next'}
                   </button>
                 </form>
+              )}
+
+              {step === 'otp' && error && (
+                <p className="mt-3 text-[13px] font-semibold leading-[1.5]" style={{ color: '#EE6B1A' }}>{error}</p>
               )}
 
               {step === 'trade' && error && (

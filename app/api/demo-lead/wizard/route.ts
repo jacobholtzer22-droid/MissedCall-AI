@@ -31,6 +31,7 @@ import { rateLimit, getClientIp } from '@/lib/rate-limit'
 import { sendLeadDemoSms, newResumeToken } from '@/lib/lead-sms'
 import { SEND_SMS_AT } from '@/app/book/constants'
 import { isTestPhone } from '@/lib/test-allowlist'
+import { consumeVerification } from '@/lib/otp'
 import { GATE_COOKIE, GATE_COOKIE_MAX_AGE, NOT_AN_OWNER } from '@/app/book/constants'
 import { VARIANT_COOKIE, VISITOR_COOKIE } from '@/lib/variant'
 import { FUNNEL_VARIANT_COOKIE } from '@/lib/funnel-variant'
@@ -55,7 +56,17 @@ function escapeHtml(value: string): string {
 }
 
 type Payload = {
-  stage?: 'phone' | 'update'
+  /**
+   * phone  — arm A, the number was just verified. Creates/banks the lead.
+   * form   — arm B, the whole form was submitted and verified. Same bank path.
+   * update — a later arm A screen enriching the row already banked.
+   */
+  stage?: 'phone' | 'form' | 'update'
+  /** Single-use ticket from /api/otp/verify. Required to BANK a lead. */
+  verificationId?: string
+  /** Arm B sends one name field and a business name. */
+  fullName?: string
+  businessName?: string
   trade?: string
   phone?: string
   firstName?: string
@@ -88,7 +99,7 @@ function buildMessage(p: {
     `Source: ${LEAD_SOURCE}`,
     `Landing path: ${p.landingPath}`,
     p.variant ? `Variant: ${p.variant}` : null,
-    p.funnelVariant ? `Funnel video: ${p.funnelVariant}` : null,
+    p.funnelVariant ? `Funnel arm: ${p.funnelVariant}` : null,
     '',
     formatAttributionBlock(p.attribution),
   ].filter((l) => l !== null).join('\n')
@@ -136,19 +147,55 @@ export async function POST(request: NextRequest) {
     }
 
     const trade = body.trade?.trim() ?? ''
-    const firstName = body.firstName?.trim() ?? ''
-    const lastName = body.lastName?.trim() ?? ''
-    const company = body.company?.trim() ?? ''
+
+    // Arm B collects one name field and a business name. Split it here so the
+    // rest of this route, the CRM record and the owner email are identical for
+    // both arms rather than forking into two lead shapes.
+    const fullName = body.fullName?.trim() ?? ''
+    const nameParts = fullName.split(/\s+/).filter(Boolean)
+    const firstName = body.firstName?.trim() || nameParts[0] || ''
+    const lastName = body.lastName?.trim() || nameParts.slice(1).join(' ') || ''
+    const company = body.company?.trim() || body.businessName?.trim() || ''
     const email = body.email?.trim() ?? ''
     const landingPath = body.landingPath?.trim().slice(0, 300) ?? '/book'
     const attribution = sanitizeAttribution(body.attribution)
 
     // Server decides qualification. Never trust a client boolean.
-    const qualified = trade !== NOT_AN_OWNER && trade !== ''
+    //
+    // Arm B never asks for a trade — its qualifying signal is that someone
+    // filled in a business name. Falling through to the arm A rule would make
+    // every arm B lead unqualified, which silently suppresses BOTH the instant
+    // SMS and the owner email.
+    const qualified =
+      body.stage === 'form' ? company !== '' : trade !== NOT_AN_OWNER && trade !== ''
 
     const variant = request.cookies.get(VARIANT_COOKIE)?.value ?? null
     const funnelVariant = request.cookies.get(FUNNEL_VARIANT_COOKIE)?.value ?? null
     const visitorId = request.cookies.get(VISITOR_COOKIE)?.value ?? ''
+
+    // ── Verification gate ───────────────────────────────────────────────────
+    // Banking a lead fires the instant SMS and the "call now" owner email, so
+    // it may only happen for a number someone proved they hold. The ticket is
+    // redeemed server-side and is single use: a client flag would be trivially
+    // forgeable, and a reusable ticket would let one verified number write
+    // unlimited leads.
+    //
+    // stage "update" is exempt: it enriches a row that was already banked
+    // behind this same gate, and carries no new phone number.
+    const banksLead = body.stage === 'phone' || body.stage === 'form'
+    if (banksLead) {
+      const ok = await consumeVerification(body.verificationId ?? '', phoneCheck.e164)
+      if (!ok) {
+        console.warn(
+          `[demo-lead/wizard] REJECTED unverified bank stage=${body.stage} phone=${phoneCheck.e164} ` +
+            `verificationId=${body.verificationId ? 'present' : 'missing'}`
+        )
+        return NextResponse.json(
+          { error: 'Verify your number first.', field: 'code', needsVerification: true },
+          { status: 400 }
+        )
+      }
+    }
 
     const business = await getMarketingBusiness()
     if (!business) {
@@ -216,7 +263,7 @@ export async function POST(request: NextRequest) {
     // owner alert hang off this ONE expression on purpose: they drifted apart
     // once (email on isNew, SMS on the stage) and the owner silently lost every
     // returning lead.
-    const banked = body.stage === 'phone' || isNew
+    const banked = banksLead || isNew
 
     // TEST_PHONE_ALLOWLIST: my own handsets bypass BOTH send-once guards so a
     // repeat walk still fires both channels. See lib/test-allowlist.ts.
@@ -274,7 +321,10 @@ export async function POST(request: NextRequest) {
         test: isTest,
         ownerEmailFallback: business.ownerEmail,
         ownerPhoneFallback: business.ownerPhone,
-        subject: `Call now: ${displayName || phoneCheck.e164} (${trade})${funnelVariant ? ` [video ${funnelVariant}]` : ''}`,
+        // Arm B never asks for a trade, so `(${trade})` rendered as an empty
+        // "()" in the subject line. Fall back to the business name, which is
+        // the thing arm B actually knows about them.
+        subject: `Call now: ${displayName || phoneCheck.e164} (${trade || company || 'no trade given'})${funnelVariant ? ` [arm ${funnelVariant}]` : ''}`,
         html: `
           <h2>New gated demo lead</h2>
           <p>They gave their number at the gate. Call while they are still on the page.</p>
@@ -283,7 +333,7 @@ export async function POST(request: NextRequest) {
           <p><strong>Trade:</strong> ${escapeHtml(trade || 'not given')}</p>
           <p><strong>Company:</strong> ${escapeHtml(company || 'not given yet')}</p>
           <p><strong>Email:</strong> ${escapeHtml(email || 'not given yet')}</p>
-          <p><strong>Funnel video:</strong> ${escapeHtml(funnelVariant ?? 'unassigned')}</p>
+          <p><strong>Funnel arm:</strong> ${escapeHtml(funnelVariant ?? 'unassigned')}</p>
           <pre style="font-family:inherit;white-space:pre-wrap;margin:0">${escapeHtml(formatAttributionBlock(attribution))}</pre>
         `,
         smsText: `Call now. ${displayName || 'Someone'} (${trade || 'trade n/a'}) gave their number on /book.\nMobile: ${phoneCheck.e164}\nVideo: ${funnelVariant ?? 'n/a'}\n${formatAttributionLine(attribution)}`,
@@ -292,7 +342,7 @@ export async function POST(request: NextRequest) {
 
     console.log(
       `[demo-lead/wizard] stage=${body.stage ?? 'update'} ${isNew ? 'CREATED' : 'updated'} leadId=${lead.id} ` +
-        `qualified=${qualified} video=${funnelVariant ?? 'none'} phone=${phoneCheck.e164}`
+        `qualified=${qualified} arm=${funnelVariant ?? 'none'} phone=${phoneCheck.e164}`
     )
 
     const res = NextResponse.json({ success: true, leadId: lead.id, qualified, isNew })
