@@ -20,11 +20,19 @@ const PHOTO = '/images/testimonial-master-gardener.jpg'
 const QUOTE =
   "The ones I miss, the AI texts them back right away so I'm not losing work while I'm out on a job."
 
-export default function BrettTestimonial() {
+/**
+ * `bare` drops the heavy border and tightens the box for the arm B layout,
+ * which has exactly one bordered card (the form). Arm A passes nothing and is
+ * pixel-identical to before.
+ */
+export default function BrettTestimonial({ bare = false }: { bare?: boolean } = {}) {
   return (
     <div
-      className="border-2 overflow-hidden flex items-stretch"
-      style={{ borderColor: 'rgba(110,118,129,0.35)', background: 'rgba(242,240,235,0.03)' }}
+      className={`overflow-hidden flex items-stretch${bare ? ' rounded-lg' : ' border-2'}`}
+      style={{
+        ...(bare ? {} : { borderColor: 'rgba(110,118,129,0.35)' }),
+        background: 'rgba(242,240,235,0.03)',
+      }}
     >
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img

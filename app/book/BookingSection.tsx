@@ -27,11 +27,14 @@ export default function BookingSection({
   attribution,
   coupon,
   heading,
+  bare = false,
 }: {
   prefill: WizardPrefill
   attribution: Record<string, string>
   coupon: CouponState
   heading: string
+  /** Drop the bordered box. /book/thanks has no card-in-card. */
+  bare?: boolean
 }) {
   const [days, setDays] = useState<ApiDay[]>([])
   const [loading, setLoading] = useState(true)
@@ -105,7 +108,10 @@ export default function BookingSection({
 
   return (
     <>
-      <div className="border-2 p-5 sm:p-7" style={{ borderColor: BORDER, background: CARD }}>
+      <div
+        className={bare ? 'py-1' : 'border-2 p-5 sm:p-7'}
+        style={bare ? undefined : { borderColor: BORDER, background: CARD }}
+      >
         <div className="flex items-center justify-between mb-4">
           <span className="inline-flex items-center gap-2 font-mono text-[11px] uppercase tracking-[0.18em]" style={{ color: '#6E7681' }}>
             <Calendar size={14} strokeWidth={2.25} style={{ color: '#EE6B1A' }} />

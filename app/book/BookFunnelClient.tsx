@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { ArrowLeft, ArrowRight, CornerLeftDown, Play, Calendar, Clock, Check, Loader2 } from 'lucide-react'
 import { Logo } from '@/app/components/Logo'
 import GoogleReviewsCard from '@/app/components/GoogleReviewsCard'
-import { videoForVariant, type FunnelVariant } from '@/lib/funnel-variant'
+import { demoVideo, type FunnelVariant } from '@/lib/funnel-variant'
 import { parseAttribution, type Attribution } from '@/lib/attribution'
 import type { Variant } from '@/lib/variant'
 import type { CouponState } from '@/lib/coupon'
@@ -226,7 +226,7 @@ export default function BookFunnelClient({
     [gate]
   )
 
-  const { src: videoSrc, poster: posterSrc } = videoForVariant(funnelVariant)
+  const { src: videoSrc, poster: posterSrc } = demoVideo()
 
   return (
     <div className="min-h-dvh aa-grid-bg" style={{ background: '#16181C', color: '#F2F0EB' }}>

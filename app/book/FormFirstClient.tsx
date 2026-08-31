@@ -259,58 +259,68 @@ export default function FormFirstClient({
       </header>
       <div className="aa-hazard" />
 
-      <main className="mx-auto max-w-4xl px-5 sm:px-8 py-6 md:py-14">
-        {/* ── 1. Message-matched header ────────────────── */}
-        <section className="mb-6">
-          <div className="inline-flex items-center gap-2 font-mono text-[11px] font-semibold uppercase tracking-[0.28em] mb-2">
-            <span className="inline-block h-2.5 w-2.5" style={{ background: '#EE6B1A' }} />
-            <span style={{ color: '#EE6B1A' }}>Free live demo</span>
+      {/* max-w-6xl and a two-column hero: the old single stacked column pushed
+          the offer and the form below the fold on a 1440x900 desktop, which is
+          the whole point of a form-first arm. */}
+      <main className="mx-auto max-w-6xl px-5 sm:px-8 py-5 md:py-8">
+        {/* ── Hero: copy left, photo right ─────────────── */}
+        <section className="mb-6 lg:grid lg:grid-cols-[1.05fr_0.95fr] lg:gap-10 lg:items-center">
+          <div>
+            <div className="inline-flex items-center gap-2 font-mono text-[11px] font-semibold uppercase tracking-[0.28em] mb-2">
+              <span className="inline-block h-2.5 w-2.5" style={{ background: '#EE6B1A' }} />
+              <span style={{ color: '#EE6B1A' }}>Free live demo</span>
+            </div>
+            <h1 className="text-[clamp(1.65rem,5vw,2.9rem)] font-black uppercase leading-[1.06] tracking-tight mb-3">
+              I Don&apos;t Sell Leads. I Catch Yours.
+            </h1>
+            <p className="text-[clamp(1rem,2.2vw,1.15rem)] leading-[1.55] mb-5" style={{ color: 'rgba(242,240,235,0.78)' }}>
+              For $250 a month I build your website and catch the calls you&apos;re already missing.
+            </p>
+
+            {/* The offer, unboxed. It used to be a bordered card inside a page
+                of bordered cards; as plain bulleted lines it reads in one pass
+                and costs about 90px less height. */}
+            <p className="font-mono text-[11px] font-bold uppercase tracking-[0.18em] mb-3" style={{ color: '#6E7681' }}>
+              Here&apos;s the whole deal.
+            </p>
+            <ul className="space-y-2.5 mb-2">
+              {[
+                'A website built for you, free with the system, built to convert and get found on Google and AI search.',
+                'A missed call system on your line: miss a call, the caller gets a text back in 8 seconds, the AI answers their questions and books the job on your calendar.',
+              ].map((line) => (
+                <li key={line} className="flex gap-3">
+                  <span className="mt-[8px] h-2 w-2 shrink-0" style={{ background: '#EE6B1A' }} aria-hidden="true" />
+                  <span className="text-[15px] leading-[1.55]" style={{ color: 'rgba(242,240,235,0.82)' }}>{line}</span>
+                </li>
+              ))}
+              <li className="flex gap-3">
+                <span className="mt-[8px] h-2 w-2 shrink-0" style={{ background: '#EE6B1A' }} aria-hidden="true" />
+                <span className="text-[15px] font-bold leading-[1.55]" style={{ color: '#F2F0EB' }}>
+                  $250 a month plus a one-time setup. Month to month. 30-day money back. No contract.
+                </span>
+              </li>
+            </ul>
           </div>
-          <h1 className="text-[clamp(1.5rem,5.2vw,2.6rem)] font-black uppercase leading-[1.1] tracking-tight mb-3">
-            I Don&apos;t Sell Leads. I Catch Yours.
-          </h1>
-          <p className="text-[clamp(1rem,2.6vw,1.15rem)] leading-[1.6]" style={{ color: 'rgba(242,240,235,0.78)' }}>
-            For $250 a month I build your website and catch the calls you&apos;re already missing.
-          </p>
-        </section>
 
-        {/* ── 2. Handshake photo ───────────────────────── */}
-        <section className="mb-8">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            ref={photoRef}
-            src={photoSrc}
-            alt="Jacob shaking hands with Brett of Master Gardener LLC"
-            className="w-full border-2 object-cover max-h-[420px]"
-            style={{ borderColor: BORDER }}
-            onError={() => setPhotoSrc(HANDSHAKE_FALLBACK)}
-          />
-        </section>
-
-        {/* ── 3. The offer, plainly ────────────────────── */}
-        <section className="mb-8 border-2 p-5 sm:p-7" style={{ borderColor: BORDER, background: CARD }}>
-          <h2 className="text-[clamp(1.1rem,3.8vw,1.7rem)] font-black uppercase leading-[1.15] tracking-tight mb-4">
-            Here&apos;s the whole deal.
-          </h2>
-          <div className="space-y-4 text-[15px] sm:text-[16px] leading-[1.7]" style={{ color: 'rgba(242,240,235,0.82)' }}>
-            <p>
-              A website built for you, free with the system, built to convert and get found on Google
-              and AI search.
-            </p>
-            <p>
-              A missed call system on your line: miss a call, the caller gets a text back in 8 seconds,
-              the AI answers their questions and books the job on your calendar.
-            </p>
-            <p className="font-bold" style={{ color: '#F2F0EB' }}>
-              $250 a month plus a one-time setup. Month to month. 30-day money back. No contract.
-            </p>
+          {/* Photo: no border box, cropped toward the handshake rather than the
+              sky, and height-capped so it stops dominating the fold. */}
+          <div className="mt-6 lg:mt-0">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              ref={photoRef}
+              src={photoSrc}
+              alt="Jacob shaking hands with Brett of Master Gardener LLC"
+              className="w-full rounded-xl object-cover max-h-[260px] lg:max-h-[420px]"
+              style={{ objectPosition: 'center 42%' }}
+              onError={() => setPhotoSrc(HANDSHAKE_FALLBACK)}
+            />
           </div>
         </section>
 
-        {/* ── 4. Lead form ─────────────────────────────── */}
-        <section id="form" className="mb-10 scroll-mt-6 border-2 p-5 sm:p-7" style={{ borderColor: BORDER, background: CARD }}>
+        {/* ── Lead form: the only bordered card on the page ─ */}
+        <section id="form" className="mb-7 scroll-mt-6 border-2 p-4 sm:p-5" style={{ borderColor: BORDER, background: CARD }}>
           {stage === 'otp' ? (
-            <>
+            <div className="max-w-md">
               <OtpScreen
                 phone={form.phone}
                 onVerified={handleVerified}
@@ -322,13 +332,13 @@ export default function FormFirstClient({
               {formError && (
                 <p className="mt-3 text-[13px] font-semibold leading-[1.5]" style={{ color: '#EE6B1A' }}>{formError}</p>
               )}
-            </>
+            </div>
           ) : (
             <>
-              <h2 className="text-[clamp(1.1rem,3.8vw,1.7rem)] font-black uppercase leading-[1.15] tracking-tight mb-2">
+              <h2 className="text-[clamp(1.05rem,3vw,1.5rem)] font-black uppercase leading-[1.15] tracking-tight mb-1.5">
                 See it running on a real business
               </h2>
-              <p className="text-[14px] leading-[1.6] mb-6" style={{ color: 'rgba(242,240,235,0.6)' }}>
+              <p className="text-[13.5px] leading-[1.55] mb-4" style={{ color: 'rgba(242,240,235,0.6)' }}>
                 Fill this in and I&apos;ll text you a code to confirm your number. You&apos;ll get a quick
                 text from Jacob. Reply STOP any time.
               </p>
@@ -347,46 +357,49 @@ export default function FormFirstClient({
                   e.preventDefault()
                   void submit()
                 }}
-                className="space-y-4"
               >
-                {(Object.keys(EMPTY) as Field[]).map((field) => (
-                  <div key={field}>
-                    <label
-                      htmlFor={`ff-${field}`}
-                      className="block font-mono text-[11px] font-bold uppercase tracking-[0.18em] mb-2"
-                      style={{ color: '#6E7681' }}
-                    >
-                      {LABELS[field]}
-                    </label>
-                    <input
-                      id={`ff-${field}`}
-                      value={form[field]}
-                      onChange={(e) => setField(field, e.target.value)}
-                      type={field === 'phone' ? 'tel' : field === 'email' ? 'email' : 'text'}
-                      inputMode={field === 'phone' ? 'tel' : field === 'email' ? 'email' : 'text'}
-                      autoComplete={AUTOCOMPLETE[field]}
-                      placeholder={PLACEHOLDERS[field]}
-                      aria-invalid={errors[field] ? true : undefined}
-                      aria-describedby={errors[field] ? `ff-${field}-error` : undefined}
-                      className={inputCls}
-                      style={errors[field] ? { ...inputStyle, borderColor: '#EE6B1A' } : inputStyle}
-                    />
-                    {errors[field] && (
-                      <p id={`ff-${field}-error`} className="mt-2 text-[13px] font-semibold leading-[1.5]" style={{ color: '#EE6B1A' }}>
-                        {errors[field]}
-                      </p>
-                    )}
-                  </div>
-                ))}
+                {/* Two per row on desktop, stacked on mobile. Four stacked
+                    full-width inputs made the card taller than the hero. */}
+                <div className="grid gap-3 sm:grid-cols-2">
+                  {(Object.keys(EMPTY) as Field[]).map((field) => (
+                    <div key={field}>
+                      <label
+                        htmlFor={`ff-${field}`}
+                        className="block font-mono text-[10px] font-bold uppercase tracking-[0.18em] mb-1.5"
+                        style={{ color: '#6E7681' }}
+                      >
+                        {LABELS[field]}
+                      </label>
+                      <input
+                        id={`ff-${field}`}
+                        value={form[field]}
+                        onChange={(e) => setField(field, e.target.value)}
+                        type={field === 'phone' ? 'tel' : field === 'email' ? 'email' : 'text'}
+                        inputMode={field === 'phone' ? 'tel' : field === 'email' ? 'email' : 'text'}
+                        autoComplete={AUTOCOMPLETE[field]}
+                        placeholder={PLACEHOLDERS[field]}
+                        aria-invalid={errors[field] ? true : undefined}
+                        aria-describedby={errors[field] ? `ff-${field}-error` : undefined}
+                        className={inputCls}
+                        style={errors[field] ? { ...inputStyle, borderColor: '#EE6B1A' } : inputStyle}
+                      />
+                      {errors[field] && (
+                        <p id={`ff-${field}-error`} className="mt-1.5 text-[12.5px] font-semibold leading-[1.45]" style={{ color: '#EE6B1A' }}>
+                          {errors[field]}
+                        </p>
+                      )}
+                    </div>
+                  ))}
+                </div>
 
                 {formError && (
-                  <p className="text-[13px] font-semibold leading-[1.5]" style={{ color: '#EE6B1A' }}>{formError}</p>
+                  <p className="mt-3 text-[13px] font-semibold leading-[1.5]" style={{ color: '#EE6B1A' }}>{formError}</p>
                 )}
 
                 <button
                   type="submit"
                   disabled={busy}
-                  className="aa-btn w-full py-4 text-[16px] font-bold uppercase tracking-wide flex items-center justify-center gap-2 disabled:opacity-50 min-h-[56px]"
+                  className="aa-btn mt-4 w-full py-3.5 text-[16px] font-bold uppercase tracking-wide flex items-center justify-center gap-2 disabled:opacity-50 min-h-[54px]"
                   style={{ background: '#EE6B1A', color: '#16181C' }}
                 >
                   {busy ? (<><Loader2 size={18} className="motion-safe:animate-spin" /> One sec</>) : 'Show me the demo'}
@@ -396,9 +409,9 @@ export default function FormFirstClient({
           )}
         </section>
 
-        {/* ── 5. Proof, same components as arm A ───────── */}
-        <div className="mb-8">
-          <BrettTestimonial />
+        {/* ── Proof, tightened ─────────────────────────── */}
+        <div className="mb-4">
+          <BrettTestimonial bare />
         </div>
         <GoogleReviewsCard />
       </main>

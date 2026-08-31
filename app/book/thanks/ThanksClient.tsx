@@ -10,7 +10,6 @@ import GoogleReviewsCard from '@/app/components/GoogleReviewsCard'
 import { demoVideo } from '@/lib/funnel-variant'
 import type { CouponState } from '@/lib/coupon'
 
-const BORDER = 'rgba(110,118,129,0.35)'
 const ATTRIBUTION_KEY = 'aa_book_attribution'
 
 export default function ThanksClient({
@@ -59,18 +58,18 @@ export default function ThanksClient({
       </header>
       <div className="aa-hazard" />
 
-      <main className="mx-auto max-w-4xl px-5 sm:px-8 py-6 md:py-14">
-        <section className="mb-6">
-          <h1 className="text-[clamp(1.5rem,5.2vw,2.6rem)] font-black uppercase leading-[1.1] tracking-tight mb-3">
+      <main className="mx-auto max-w-4xl px-5 sm:px-8 py-5 md:py-8">
+        <section className="mb-5 text-center">
+          <h1 className="text-[clamp(1.55rem,4.6vw,2.5rem)] font-black uppercase leading-[1.08] tracking-tight mb-2.5">
             Thanks. Watch this while you wait.
           </h1>
-          <p className="text-[clamp(1rem,2.6vw,1.15rem)] leading-[1.6]" style={{ color: 'rgba(242,240,235,0.78)' }}>
+          <p className="text-[clamp(0.98rem,2.2vw,1.1rem)] leading-[1.55]" style={{ color: 'rgba(242,240,235,0.78)' }}>
             Jacob will personally reach out to you shortly.
           </p>
         </section>
 
-        <section className="mb-10">
-          <div className="relative border-2 overflow-hidden aspect-[1664/1080]" style={{ borderColor: BORDER, background: '#0F1114' }}>
+        <section className="mb-7 mx-auto max-w-2xl">
+          <div className="relative overflow-hidden rounded-xl aspect-[1664/1080]" style={{ background: '#0F1114' }}>
             <video
               ref={videoRef}
               src={src}
@@ -89,25 +88,26 @@ export default function ThanksClient({
                   void videoRef.current?.play()
                 }}
                 aria-label="Play the demo"
-                className="absolute inset-0 grid place-items-center"
+                className="absolute inset-0 grid place-items-center group"
                 style={{ background: 'rgba(15,17,20,0.35)' }}
               >
                 <span
-                  className="grid place-items-center h-[72px] w-[72px] border-2"
-                  style={{ borderColor: '#EE6B1A', background: 'rgba(238,107,26,0.92)' }}
+                  className="grid place-items-center rounded-full transition-transform motion-safe:group-hover:scale-105"
+                  style={{ background: '#EE6B1A', width: 84, height: 84, boxShadow: '0 6px 24px rgba(0,0,0,0.45)' }}
                 >
-                  <Play size={30} strokeWidth={2.5} style={{ color: '#16181C' }} fill="#16181C" />
+                  <Play size={34} strokeWidth={2.5} fill="#16181C" style={{ color: '#16181C', marginLeft: 4 }} />
                 </span>
               </button>
             )}
           </div>
         </section>
 
-        <section className="mb-12">
-          <h2 className="text-[clamp(1.1rem,3.8vw,1.7rem)] font-black uppercase leading-[1.15] tracking-tight mb-4">
+        <section className="mb-6 mx-auto max-w-2xl">
+          <h2 className="text-[clamp(1.05rem,3vw,1.5rem)] font-black uppercase leading-[1.15] tracking-tight mb-3">
             Or skip the wait and grab a time now.
           </h2>
           <BookingSection
+            bare
             heading="Pick a time"
             prefill={{
               trade: prefill.trade || undefined,
@@ -121,10 +121,12 @@ export default function ThanksClient({
           />
         </section>
 
-        <div className="mb-8">
-          <BrettTestimonial />
+        <div className="mb-4 mx-auto max-w-2xl">
+          <BrettTestimonial bare />
         </div>
-        <GoogleReviewsCard />
+        <div className="mx-auto max-w-2xl">
+          <GoogleReviewsCard />
+        </div>
       </main>
     </div>
   )

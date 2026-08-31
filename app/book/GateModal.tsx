@@ -408,7 +408,7 @@ export default function GateModal({
           </button>
         </div>
 
-        <ProgressBar pct={unlocked ? 100 : pct} label={`${unlocked ? 100 : pct}% of the way to the demo`} min={50} />
+        <ProgressBar pct={unlocked ? 100 : pct} label="Progress to your demo" min={50} />
 
         {/* Honeypot. Hidden from humans and from screen readers. */}
         {/* Honeypot. Renamed off "website": password managers and mobile

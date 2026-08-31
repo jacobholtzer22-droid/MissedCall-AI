@@ -48,18 +48,20 @@ export function funnelVariantFromQuery(value: string | null | undefined): Funnel
 }
 
 /**
- * The demo video. ONE video now, not one per arm: arm A gates it, arm B shows
- * the same film on the thank-you page. NEXT_PUBLIC_DEMO_VIDEO_URL_B is no
- * longer read — the arms differ by structure, not by footage.
+ * The demo video. ONE film, both arms: arm A gates it, arm B shows it on the
+ * thank-you page.
+ *
+ * This is the pt.3 cut. Its blob is still named "founder-video-b" for the
+ * historical reason that pt.3 was uploaded as variant B's video back when the
+ * A/B was two videos rather than two structures — the name is stale, the file
+ * is the canonical demo. The old "-v2" cut is no longer referenced anywhere.
+ *
+ * NEXT_PUBLIC_DEMO_VIDEO_URL_B and _POSTER_URL_B are gone: nothing reads a
+ * per-arm video any more.
  */
 export function demoVideo(): { src: string; poster: string } {
   return {
     src: process.env.NEXT_PUBLIC_DEMO_VIDEO_URL?.trim() || '/founder-video.mp4',
     poster: process.env.NEXT_PUBLIC_DEMO_POSTER_URL?.trim() || '',
   }
-}
-
-/** @deprecated Kept so arm A compiles unchanged. Both arms play the same file. */
-export function videoForVariant(_variant: FunnelVariant): { src: string; poster: string } {
-  return demoVideo()
 }
