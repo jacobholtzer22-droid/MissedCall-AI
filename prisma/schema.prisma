@@ -389,6 +389,9 @@ model Appointment {
   // A/B arm this booking came from: "gate" | "nogate" | null for pre-test rows.
   variant String?
 
+  // Funnel VIDEO A/B: "A" | "B". Separate from `variant` for the same reason.
+  funnelVariant String?
+
   reminderNightBeforeSentAt DateTime?
   reminderHourBeforeSentAt  DateTime?
 
@@ -604,6 +607,11 @@ model WebsiteLead {
   // A/B arm this lead came from: "gate" | "nogate" | null for pre-test rows.
   variant String?
 
+  // Funnel VIDEO A/B: "A" | "B". Deliberately a separate column from `variant`
+  // above, which holds the retired gate/nogate arm and feeds
+  // /api/admin/funnel-variants. Reusing it would corrupt that report.
+  funnelVariant String?
+
   // Spam scoring (see lib/spam-score.ts). All nullable and additive: null means
   // the row predates scoring, which is why spamScore is not defaulted to 0.
   // A high score sets status='spam' and suppresses owner notification — it NEVER
@@ -711,4 +719,30 @@ model CouponClaim {
   @@index([visitorId])
   @@index([leadId])
   @@index([expiresAt])
+}
+
+// ===========================================
+// FUNNEL EVENT — per-screen gate analytics
+// ===========================================
+// The site has no analytics store of its own, only the Meta pixel, and pixel
+// custom events cannot be queried from here. Drop-off per gate screen is the
+// whole point of the step wizard, so it is recorded first-party too.
+//
+// Deliberately thin: no PII, just which screen was completed, by which visitor,
+// in which arm. Join to WebsiteLead on visitorId when you need the person.
+model FunnelEvent {
+  id String @id @default(cuid())
+
+  name          String // e.g. "gate_step_completed"
+  step          String? // screen name: trade | phone | firstName | ...
+  visitorId     String?
+  variant       String? // gate | nogate
+  funnelVariant String? // A | B
+  metadata      Json?
+
+  createdAt DateTime @default(now())
+
+  @@index([name, createdAt])
+  @@index([visitorId])
+  @@index([funnelVariant])
 }

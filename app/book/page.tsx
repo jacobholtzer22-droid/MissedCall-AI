@@ -19,6 +19,12 @@ import BookFunnelClient, { type InitialGate } from './BookFunnelClient'
 import { GATE_COOKIE } from './constants'
 import { VARIANT_COOKIE, VISITOR_COOKIE, assignVariant, isVariant, isLiveVariant, variantFromQuery, type Variant } from '@/lib/variant'
 import { claimCoupon, toState, type CouponState } from '@/lib/coupon'
+import {
+  FUNNEL_VARIANT_COOKIE,
+  assignFunnelVariant,
+  isFunnelVariant,
+  funnelVariantFromQuery,
+} from '@/lib/funnel-variant'
 
 export const dynamic = 'force-dynamic'
 
@@ -49,7 +55,7 @@ async function resolveGate(leadId: string | undefined): Promise<InitialGate> {
 export default async function BookPage({
   searchParams,
 }: {
-  searchParams: { v?: string; debug?: string }
+  searchParams: { v?: string; variant?: string; debug?: string }
 }) {
   const cookieStore = await cookies()
 
@@ -63,6 +69,13 @@ export default async function BookPage({
   const fromCookie = cookieStore.get(VARIANT_COOKIE)?.value
   const keepExisting = isVariant(fromCookie) && isLiveVariant(fromCookie)
   const variant: Variant = forced ?? (keepExisting ? fromCookie : assignVariant())
+
+  // Middleware assigns and persists this. The fallback keeps the page rendering
+  // if middleware ever did not run for the request.
+  const cookieFunnel = cookieStore.get(FUNNEL_VARIANT_COOKIE)?.value
+  const funnelVariant =
+    funnelVariantFromQuery(searchParams?.variant) ??
+    (isFunnelVariant(cookieFunnel) ? cookieFunnel : assignFunnelVariant())
 
   const initialGate = await resolveGate(cookieStore.get(GATE_COOKIE)?.value)
 
@@ -84,5 +97,12 @@ export default async function BookPage({
     }
   }
 
-  return <BookFunnelClient initialGate={initialGate} variant={variant} coupon={coupon} />
+  return (
+    <BookFunnelClient
+      initialGate={initialGate}
+      variant={variant}
+      funnelVariant={funnelVariant}
+      coupon={coupon}
+    />
+  )
 }

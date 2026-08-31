@@ -10,6 +10,13 @@ import {
   variantFromQuery,
   newVisitorId,
 } from '@/lib/variant'
+import {
+  FUNNEL_VARIANT_COOKIE,
+  FUNNEL_VARIANT_MAX_AGE,
+  assignFunnelVariant,
+  isFunnelVariant,
+  funnelVariantFromQuery,
+} from '@/lib/funnel-variant'
 
 const isProtectedRoute = createRouteMatcher([
   '/dashboard(.*)',
@@ -60,13 +67,26 @@ function assignFunnelCookies(request: NextRequest): NextResponse {
   const needsVariantWrite = variant !== existingVariant
   const needsVisitorWrite = !existingVisitor
 
+  // ── Funnel video A/B ──────────────────────────────────────────────────────
+  // Independent of the gate/nogate arm above. Fair coin flip on first visit,
+  // sticky for 30 days, and ?variant=B forces an arm for QA.
+  const forcedFunnel = funnelVariantFromQuery(request.nextUrl.searchParams.get('variant'))
+  const existingFunnel = request.cookies.get(FUNNEL_VARIANT_COOKIE)?.value
+  const funnelVariant =
+    forcedFunnel ?? (isFunnelVariant(existingFunnel) ? existingFunnel : assignFunnelVariant())
+  const needsFunnelWrite = funnelVariant !== existingFunnel
+
   // Make both readable by the page on THIS request, not just the next one.
   if (needsVariantWrite) request.cookies.set(VARIANT_COOKIE, variant)
   if (needsVisitorWrite) request.cookies.set(VISITOR_COOKIE, visitorId)
+  if (needsFunnelWrite) request.cookies.set(FUNNEL_VARIANT_COOKIE, funnelVariant)
 
   const res = NextResponse.next({ request })
   if (needsVariantWrite) res.cookies.set(VARIANT_COOKIE, variant, COOKIE_OPTS)
   if (needsVisitorWrite) res.cookies.set(VISITOR_COOKIE, visitorId, COOKIE_OPTS)
+  if (needsFunnelWrite) {
+    res.cookies.set(FUNNEL_VARIANT_COOKIE, funnelVariant, { ...COOKIE_OPTS, maxAge: FUNNEL_VARIANT_MAX_AGE })
+  }
   return res
 }
 

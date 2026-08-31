@@ -19,10 +19,16 @@
 import { fbTrack, fbTrackCustom } from '@/lib/meta-pixel'
 
 let currentVariant: string | null = null
+let currentFunnelVariant: string | null = null
 
-/** Called once on mount with the server-assigned arm. */
+/** Called once on mount with the server-assigned gate arm. */
 export function setPixelVariant(variant: string | null) {
   currentVariant = variant
+}
+
+/** Called once on mount with the server-assigned video arm (A or B). */
+export function setPixelFunnelVariant(variant: string | null) {
+  currentFunnelVariant = variant
 }
 
 export function isPixelDebug(): boolean {
@@ -35,7 +41,11 @@ export function isPixelDebug(): boolean {
 }
 
 function withVariant(params?: Record<string, unknown>): Record<string, unknown> {
-  return currentVariant ? { ...(params ?? {}), variant: currentVariant } : { ...(params ?? {}) }
+  return {
+    ...(params ?? {}),
+    ...(currentVariant ? { variant: currentVariant } : {}),
+    ...(currentFunnelVariant ? { funnel_variant: currentFunnelVariant } : {}),
+  }
 }
 
 function log(kind: 'track' | 'trackCustom', event: string, params: Record<string, unknown>) {

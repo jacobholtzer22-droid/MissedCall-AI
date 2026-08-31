@@ -34,6 +34,7 @@ import {
 } from '@/lib/marketing-slots'
 import { GATE_COOKIE, NOT_AN_OWNER, CALL_LENGTH_MINUTES } from '@/app/book/constants'
 import { VARIANT_COOKIE, VISITOR_COOKIE } from '@/lib/variant'
+import { FUNNEL_VARIANT_COOKIE } from '@/lib/funnel-variant'
 import { getClaimForVisitor, setupFeeLine, SETUP_FEE_DISCOUNTED } from '@/lib/coupon'
 
 export const dynamic = 'force-dynamic'
@@ -98,6 +99,7 @@ export async function POST(request: NextRequest) {
 
     // Identity comes from the gate cookie when present, otherwise from the form.
     const variant = request.cookies.get(VARIANT_COOKIE)?.value ?? null
+    const funnelVariant = request.cookies.get(FUNNEL_VARIANT_COOKIE)?.value ?? null
     const visitorId = request.cookies.get(VISITOR_COOKIE)?.value ?? ''
     const leadId = request.cookies.get(GATE_COOKIE)?.value ?? null
     let lead = leadId
@@ -227,6 +229,7 @@ export async function POST(request: NextRequest) {
           `Source: meta_demo_video`,
           couponLine,
           variant ? `Variant: ${variant}` : null,
+          funnelVariant ? `Funnel video: ${funnelVariant}` : null,
           companyName ? `Company: ${companyName}` : null,
           trade ? `Trade: ${trade}` : null,
           missesPerWeek ? `Missed calls per week: ${missesPerWeek}` : null,
@@ -240,6 +243,7 @@ export async function POST(request: NextRequest) {
         googleMeetLink,
         calendarSyncFailed,
         variant,
+        funnelVariant,
       },
     })
 
@@ -270,6 +274,7 @@ export async function POST(request: NextRequest) {
         <p><strong>Email:</strong> ${escapeHtml(email)}</p>
         <p><strong>Setup:</strong> ${escapeHtml(couponLine)}</p>
         <p><strong>Variant:</strong> ${escapeHtml(variant ?? 'unassigned')}</p>
+        <p><strong>Funnel video:</strong> ${escapeHtml(funnelVariant ?? 'unassigned')}</p>
         <p><strong>Company:</strong> ${escapeHtml(companyName || 'Not given')}</p>
         <p><strong>Trade:</strong> ${escapeHtml(trade || 'Not specified')}</p>
         <p><strong>Missed calls per week:</strong> ${escapeHtml(missesPerWeek || 'Not specified')}</p>

@@ -5,12 +5,12 @@ import Link from 'next/link'
 import { ArrowLeft, ArrowRight, CornerLeftDown, Play, Calendar, Clock, Check, Loader2 } from 'lucide-react'
 import { Logo } from '@/app/components/Logo'
 import GoogleReviewsCard from '@/app/components/GoogleReviewsCard'
-import { getDemoVideoUrl, getDemoPosterUrl } from '@/lib/demo-video'
+import { videoForVariant, type FunnelVariant } from '@/lib/funnel-variant'
 import { parseAttribution, type Attribution } from '@/lib/attribution'
 import type { Variant } from '@/lib/variant'
 import type { CouponState } from '@/lib/coupon'
 import { MONTHLY_FEE } from '@/lib/coupon'
-import { trackStandard, trackCustomEvent, setPixelVariant } from './pixel'
+import { trackStandard, trackCustomEvent, setPixelVariant, setPixelFunnelVariant } from './pixel'
 import GateModal, { type GateResult } from './GateModal'
 import BookingWizard, { type ChosenSlot, type WizardPrefill } from './BookingWizard'
 import BrettTestimonial from './BrettTestimonial'
@@ -52,10 +52,13 @@ function SectionHeading({ step, title }: { step: string; title: string }) {
 export default function BookFunnelClient({
   initialGate,
   variant,
+  funnelVariant,
   coupon,
 }: {
   initialGate: InitialGate
   variant: Variant
+  /** Which founder video plays. The ONLY difference between the arms. */
+  funnelVariant: FunnelVariant
   coupon: CouponState
 }) {
   const [gate, setGate] = useState<InitialGate>(initialGate)
@@ -85,7 +88,8 @@ export default function BookFunnelClient({
 
   useEffect(() => {
     setPixelVariant(variant)
-  }, [variant])
+    setPixelFunnelVariant(funnelVariant)
+  }, [variant, funnelVariant])
 
   useEffect(() => {
     if (viewContentFired.current) return
@@ -174,8 +178,11 @@ export default function BookFunnelClient({
       name: result.name,
       phone: result.phone,
       trade: result.trade,
-      email: '',
+      email: result.email,
     })
+    // Lead already fired when the phone screen banked the record. fireLeadOnce
+    // is idempotent, so this is only a safety net for the SEND_SMS_AT
+    // "complete" path where no banking happened earlier.
     fireLeadOnce(result.qualified)
     setModalOpen(false)
     startPlayback()
@@ -203,8 +210,7 @@ export default function BookFunnelClient({
     [gate]
   )
 
-  const videoSrc = getDemoVideoUrl()
-  const posterSrc = getDemoPosterUrl()
+  const { src: videoSrc, poster: posterSrc } = videoForVariant(funnelVariant)
 
   return (
     <div className="min-h-dvh aa-grid-bg" style={{ background: '#16181C', color: '#F2F0EB' }}>
@@ -451,9 +457,11 @@ export default function BookFunnelClient({
       {variant === 'gate' && (
         <GateModal
           open={modalOpen}
-          watchedSeconds={watchedSeconds}
           attribution={attributionRef.current as Record<string, string>}
+          funnelVariant={funnelVariant}
           onClose={() => setModalOpen(false)}
+          onLeadBanked={(qualified) => fireLeadOnce(qualified)}
+          onStepCompleted={(step) => trackCustomEvent('gate_step_completed', { step })}
           onComplete={handleGateComplete}
         />
       )}

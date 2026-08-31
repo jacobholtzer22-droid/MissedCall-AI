@@ -26,6 +26,7 @@ import {
 import { rateLimit, getClientIp } from '@/lib/rate-limit'
 import { GATE_COOKIE, GATE_COOKIE_MAX_AGE, NOT_AN_OWNER } from '@/app/book/constants'
 import { VARIANT_COOKIE, VISITOR_COOKIE } from '@/lib/variant'
+import { FUNNEL_VARIANT_COOKIE } from '@/lib/funnel-variant'
 
 export const dynamic = 'force-dynamic'
 
@@ -79,6 +80,7 @@ export async function POST(request: NextRequest) {
         : 0
     const attribution = sanitizeAttribution(body.attribution)
     const variant = request.cookies.get(VARIANT_COOKIE)?.value ?? null
+    const funnelVariant = request.cookies.get(FUNNEL_VARIANT_COOKIE)?.value ?? null
     const visitorId = request.cookies.get(VISITOR_COOKIE)?.value ?? ''
 
     if (!name || !trade) {
@@ -133,7 +135,7 @@ export async function POST(request: NextRequest) {
     const lead = existing
       ? await db.websiteLead.update({
           where: { id: existing.id },
-          data: { name, phone: phoneCheck.e164, message, variant },
+          data: { name, phone: phoneCheck.e164, message, variant, funnelVariant },
         })
       : await db.websiteLead.create({
           data: {
@@ -143,6 +145,7 @@ export async function POST(request: NextRequest) {
             message,
             status: 'partial',
             variant,
+            funnelVariant,
           },
         })
 
