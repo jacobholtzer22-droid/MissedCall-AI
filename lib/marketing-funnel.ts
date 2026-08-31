@@ -7,7 +7,6 @@
 // Scope note: this is the Align and Acquire marketing funnel only. It does not
 // touch client-tenant booking, which goes through lib/create-booking.ts.
 
-import Telnyx from 'telnyx'
 import { db } from '@/lib/db'
 import { normalizeToE164, phonesMatch } from '@/lib/phone-utils'
 
@@ -29,8 +28,10 @@ export async function getMarketingBusiness() {
 type OwnerNotifyParams = {
   subject: string
   html: string
-  smsText: string
+  /** Retained so callers need not change. Unused: owner alerts are email only. */
+  smsText?: string
   ownerEmailFallback?: string | null
+  /** Unused, kept for call-site compatibility. */
   ownerPhoneFallback?: string | null
 }
 
@@ -41,13 +42,9 @@ type OwnerNotifyParams = {
 export async function notifyOwnerOfMarketingEvent({
   subject,
   html,
-  smsText,
   ownerEmailFallback,
-  ownerPhoneFallback,
 }: OwnerNotifyParams): Promise<void> {
   const ownerEmail = process.env.YOUR_EMAIL || ownerEmailFallback || 'jacob@alignandacquire.com'
-  const ownerPhone = process.env.OWNER_PHONE || ownerPhoneFallback
-  const telnyxFrom = process.env.MARKETING_TELNYX_NUMBER
 
   if (!process.env.RESEND_API_KEY) {
     console.error(`[owner-notify] SKIP email template=${subject.slice(0, 40)} reason=RESEND_API_KEY missing`)
@@ -81,25 +78,15 @@ export async function notifyOwnerOfMarketingEvent({
     }
   }
 
-  // This guard silently did nothing for months: OWNER_PHONE was never set in
-  // production and business.ownerPhone was null, so `ownerPhone` was always
-  // falsy. It failed quietly because the guard had no else branch. It does now.
-  if (!telnyxFrom) console.error('[owner-notify] SKIP sms reason=MARKETING_TELNYX_NUMBER missing')
-  if (!ownerPhone) {
-    console.error('[owner-notify] SKIP sms reason=no recipient (OWNER_PHONE env and business.ownerPhone both empty)')
-  }
-  if (!process.env.TELNYX_API_KEY) console.error('[owner-notify] SKIP sms reason=TELNYX_API_KEY missing')
-
-  if (telnyxFrom && ownerPhone && process.env.TELNYX_API_KEY) {
-    try {
-      const telnyx = new Telnyx({ apiKey: process.env.TELNYX_API_KEY })
-      const res = await telnyx.messages.send({ from: telnyxFrom, to: ownerPhone, text: smsText })
-      const providerId = (res as { data?: { id?: string } })?.data?.id ?? 'unknown'
-      console.log(`[owner-notify] SENT sms to=${ownerPhone} from=${telnyxFrom} template=owner_alert providerId=${providerId}`)
-    } catch (err) {
-      console.error(`[owner-notify] FAILED sms to=${ownerPhone} from=${telnyxFrom} error=${err instanceof Error ? err.message : String(err)}`)
-    }
-  }
+  // Owner notifications are EMAIL ONLY, deliberately.
+  //
+  // The owner SMS was removed rather than fixed: it required OWNER_PHONE or
+  // business.ownerPhone, both of which were empty in production, so it had
+  // never actually sent. Email works and is the channel that matters. smsText
+  // is still accepted so callers do not all have to change, and is unused.
+  //
+  // debug, not error: this is the designed state, not a misconfiguration.
+  console.debug('[owner-notify] sms intentionally disabled, email is the only owner channel')
 }
 
 const PARTIAL_LOOKBACK_DAYS = 60

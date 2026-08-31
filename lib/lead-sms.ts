@@ -32,9 +32,10 @@ export function resumeLink(token: string): string {
 
 function body(link: string): string {
   return (
-    `Hey, it's Jacob from Align & Acquire. Your demo and price sheet: ${link}. ` +
-    `This text was sent by the exact system I'd put on your line. ` +
-    `Questions? Just reply. Reply STOP to opt out.`
+    `Hey, it's Jacob from Align & Acquire. Thanks for the interest. ` +
+    `Your demo and price sheet: ${link}. ` +
+    `I'll personally reach out shortly, or just reply here with any questions. ` +
+    `Reply STOP to opt out.`
   )
 }
 
