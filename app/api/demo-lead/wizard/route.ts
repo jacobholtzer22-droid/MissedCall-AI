@@ -28,6 +28,8 @@ import {
   formatAttributionLine,
 } from '@/lib/attribution'
 import { rateLimit, getClientIp } from '@/lib/rate-limit'
+import { sendLeadDemoSms, newResumeToken } from '@/lib/lead-sms'
+import { SEND_SMS_AT } from '@/app/book/constants'
 import { GATE_COOKIE, GATE_COOKIE_MAX_AGE, NOT_AN_OWNER } from '@/app/book/constants'
 import { VARIANT_COOKIE, VISITOR_COOKIE } from '@/lib/variant'
 import { FUNNEL_VARIANT_COOKIE } from '@/lib/funnel-variant'
@@ -52,7 +54,8 @@ type Payload = {
   email?: string
   landingPath?: string
   attribution?: unknown
-  website?: string // honeypot
+  website?: string // legacy honeypot name
+  hp_ref?: string // current honeypot name
 }
 
 /** Everything captured so far, rendered into the lead body. */
@@ -89,9 +92,32 @@ export async function POST(request: NextRequest) {
     }
 
     const body = (await request.json()) as Payload
-    if (typeof body.website === 'string' && body.website.trim() !== '') {
-      // Honeypot. Look identical to success so bots learn nothing.
-      return NextResponse.json({ success: true })
+
+    // Honeypot. It used to return a bare { success: true }, which the client
+    // read as success and walked the visitor through every remaining screen
+    // while writing NO lead and sending NO notification. A human tripping it
+    // (autofill loves an off-screen field named "website") lost everything
+    // silently. It now returns an explicit blocked flag with no leadId, and the
+    // client treats a missing leadId as a hard failure.
+    const trap = typeof body.hp_ref === 'string' ? body.hp_ref : body.website
+    if (typeof trap === 'string' && trap.trim() !== '') {
+      console.warn(
+        `[demo-lead/wizard] HONEYPOT blocked ip=${getClientIp(request)} ` +
+          `field=${typeof body.hp_ref === 'string' && body.hp_ref.trim() ? 'hp_ref' : 'website'} ` +
+          `value_len=${trap.trim().length}`
+      )
+      await db.funnelEvent
+        .create({
+          data: {
+            name: 'honeypot_blocked',
+            step: 'honeypot_blocked',
+            visitorId: request.cookies.get(VISITOR_COOKIE)?.value ?? null,
+            variant: request.cookies.get(VARIANT_COOKIE)?.value ?? null,
+            funnelVariant: request.cookies.get(FUNNEL_VARIANT_COOKIE)?.value ?? null,
+          },
+        })
+        .catch(() => {})
+      return NextResponse.json({ success: false, blocked: true }, { status: 200 })
     }
 
     const phoneCheck = validateUsMobile(body.phone)
@@ -152,6 +178,7 @@ export async function POST(request: NextRequest) {
             status: 'partial',
             variant,
             funnelVariant,
+            resumeToken: newResumeToken(),
           },
         })
 
@@ -171,9 +198,25 @@ export async function POST(request: NextRequest) {
         .catch((err) => console.error('[demo-lead/wizard] coupon bind failed:', err))
     }
 
+    // ── Lead-facing demo SMS ────────────────────────────────────────────────
+    // Fires at the phone step by default (SEND_SMS_AT). sendLeadDemoSms claims
+    // the send with a conditional DB update, so a retry, a second tab or a
+    // later enrichment step can never double-text.
+    const smsDue = SEND_SMS_AT === 'phone' ? body.stage === 'phone' || isNew : Boolean(email)
+    if (smsDue && qualified) {
+      const sms = await sendLeadDemoSms(lead.id, phoneCheck.e164, funnelVariant)
+      if (!sms.sent && sms.reason !== 'already_sent') {
+        console.error(`[demo-lead/wizard] lead SMS not sent leadId=${lead.id} reason=${sms.reason}`)
+      }
+    }
+
     // Owner is notified once, the moment the number lands, and only for a real
     // business owner. Later enrichment steps must not re-notify.
     if (isNew && qualified) {
+      console.log(
+        `[demo-lead/wizard] owner-notify dispatch leadId=${lead.id} template=new_gate_lead ` +
+          `email=${process.env.YOUR_EMAIL ?? 'business fallback'} phone=${process.env.OWNER_PHONE ?? 'business fallback'}`
+      )
       await notifyOwnerOfMarketingEvent({
         ownerEmailFallback: business.ownerEmail,
         ownerPhoneFallback: business.ownerPhone,

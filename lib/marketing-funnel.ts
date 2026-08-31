@@ -49,9 +49,15 @@ export async function notifyOwnerOfMarketingEvent({
   const ownerPhone = process.env.OWNER_PHONE || ownerPhoneFallback
   const telnyxFrom = process.env.MARKETING_TELNYX_NUMBER
 
+  if (!process.env.RESEND_API_KEY) {
+    console.error(`[owner-notify] SKIP email template=${subject.slice(0, 40)} reason=RESEND_API_KEY missing`)
+  }
+  if (!ownerEmail) {
+    console.error(`[owner-notify] SKIP email reason=no recipient (YOUR_EMAIL and business.ownerEmail both empty)`)
+  }
   if (process.env.RESEND_API_KEY && ownerEmail) {
     try {
-      await fetch('https://api.resend.com/emails', {
+      const emailRes = await fetch('https://api.resend.com/emails', {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${process.env.RESEND_API_KEY}`,
@@ -64,17 +70,34 @@ export async function notifyOwnerOfMarketingEvent({
           html,
         }),
       })
+      const payload = (await emailRes.json().catch(() => ({}))) as { id?: string; message?: string }
+      if (emailRes.ok) {
+        console.log(`[owner-notify] SENT email to=${ownerEmail} template=${subject.slice(0, 48)} providerId=${payload.id ?? 'unknown'}`)
+      } else {
+        console.error(`[owner-notify] FAILED email to=${ownerEmail} status=${emailRes.status} error=${payload.message ?? 'unknown'}`)
+      }
     } catch (err) {
-      console.error('[marketing-funnel] owner email failed:', err)
+      console.error(`[owner-notify] FAILED email to=${ownerEmail} error=${err instanceof Error ? err.message : String(err)}`)
     }
   }
+
+  // This guard silently did nothing for months: OWNER_PHONE was never set in
+  // production and business.ownerPhone was null, so `ownerPhone` was always
+  // falsy. It failed quietly because the guard had no else branch. It does now.
+  if (!telnyxFrom) console.error('[owner-notify] SKIP sms reason=MARKETING_TELNYX_NUMBER missing')
+  if (!ownerPhone) {
+    console.error('[owner-notify] SKIP sms reason=no recipient (OWNER_PHONE env and business.ownerPhone both empty)')
+  }
+  if (!process.env.TELNYX_API_KEY) console.error('[owner-notify] SKIP sms reason=TELNYX_API_KEY missing')
 
   if (telnyxFrom && ownerPhone && process.env.TELNYX_API_KEY) {
     try {
       const telnyx = new Telnyx({ apiKey: process.env.TELNYX_API_KEY })
-      await telnyx.messages.send({ from: telnyxFrom, to: ownerPhone, text: smsText })
+      const res = await telnyx.messages.send({ from: telnyxFrom, to: ownerPhone, text: smsText })
+      const providerId = (res as { data?: { id?: string } })?.data?.id ?? 'unknown'
+      console.log(`[owner-notify] SENT sms to=${ownerPhone} from=${telnyxFrom} template=owner_alert providerId=${providerId}`)
     } catch (err) {
-      console.error('[marketing-funnel] owner SMS failed:', err)
+      console.error(`[owner-notify] FAILED sms to=${ownerPhone} from=${telnyxFrom} error=${err instanceof Error ? err.message : String(err)}`)
     }
   }
 }

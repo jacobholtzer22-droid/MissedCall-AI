@@ -34,7 +34,9 @@ const COPY: Record<StepKey, { headline: string; hint?: string }> = {
   trade: { headline: 'What kind of business do you run?' },
   phone: {
     headline: 'Where should I text the demo and the price?',
-    hint: 'I text it straight to this number. Reply STOP any time.',
+    // Consent notice. Must stay above the input and must keep the STOP line:
+    // this is what makes the lead-facing SMS a consented send.
+    hint: "We'll text your demo link and price sheet to this number. Reply STOP any time.",
   },
   firstName: { headline: 'What is your first name?' },
   lastName: { headline: 'And your last name?' },
@@ -190,12 +192,25 @@ export default function GateModal({
           email: data.email,
           landingPath: window.location.pathname + window.location.search,
           attribution,
-          website: honeypot,
+          hp_ref: honeypot,
         }),
       })
       const json = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(json?.error || 'Could not save that. Try again.')
-      if (json?.leadId) leadIdRef.current = json.leadId
+      // A 200 with no leadId means the server accepted the request but stored
+      // nothing (the honeypot branch). Treat it as a hard failure: the old code
+      // read it as success and walked people through the whole gate while
+      // saving nothing and notifying nobody.
+      if (!json?.leadId) {
+        void fetch('/api/funnel-event', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: 'honeypot_blocked', step: 'honeypot_blocked' }),
+          keepalive: true,
+        }).catch(() => {})
+        throw new Error('Something went wrong on our end. Please try that again.')
+      }
+      leadIdRef.current = json.leadId
       return json as { leadId?: string; qualified?: boolean }
     },
     [attribution, honeypot]
@@ -212,7 +227,6 @@ export default function GateModal({
 
     const next: Draft = { ...draft, [step]: value }
     setDraft(next)
-    logStep(step)
 
     const isLast = index === STEPS.length - 1
 
@@ -236,6 +250,11 @@ export default function GateModal({
         setSubmitting(false)
       }
     }
+
+    // Logged only AFTER any save succeeded. Logging first made the analytics
+    // claim screens were completed when nothing had been written, which is
+    // exactly what hid the honeypot bug.
+    logStep(step)
 
     if (isLast) {
       persist(next, index)
@@ -322,9 +341,13 @@ export default function GateModal({
         <ProgressBar pct={unlocked ? 100 : pct} label={`${unlocked ? 100 : pct}% of the way to the demo`} min={50} />
 
         {/* Honeypot. Hidden from humans and from screen readers. */}
+        {/* Honeypot. Renamed off "website": password managers and mobile
+            contact autofill happily fill an off-screen field with that name,
+            which silently blocked real people. hp_ref matches nothing an
+            autofill heuristic looks for. */}
         <div aria-hidden="true" className="absolute w-px h-px overflow-hidden -left-[9999px]">
-          <label htmlFor="gate-website">Website</label>
-          <input id="gate-website" name="website" type="text" tabIndex={-1} autoComplete="off"
+          <label htmlFor="hp_ref">Leave this empty</label>
+          <input id="hp_ref" name="hp_ref" type="text" tabIndex={-1} autoComplete="off"
             value={honeypot} onChange={(e) => setHoneypot(e.target.value)} />
         </div>
 

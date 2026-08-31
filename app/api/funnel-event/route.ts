@@ -16,8 +16,8 @@ import { FUNNEL_VARIANT_COOKIE } from '@/lib/funnel-variant'
 
 export const dynamic = 'force-dynamic'
 
-const ALLOWED_NAMES = ['gate_step_completed', 'gate_opened', 'gate_abandoned', 'video_unlocked']
-const ALLOWED_STEPS = ['trade', 'phone', 'firstName', 'lastName', 'company', 'email', 'complete']
+const ALLOWED_NAMES = ['gate_step_completed', 'gate_opened', 'gate_abandoned', 'video_unlocked', 'honeypot_blocked']
+const ALLOWED_STEPS = ['trade', 'phone', 'firstName', 'lastName', 'company', 'email', 'complete', 'honeypot_blocked']
 
 export async function POST(request: NextRequest) {
   // Generous: this fires several times per genuine visitor.

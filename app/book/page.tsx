@@ -55,7 +55,7 @@ async function resolveGate(leadId: string | undefined): Promise<InitialGate> {
 export default async function BookPage({
   searchParams,
 }: {
-  searchParams: { v?: string; variant?: string; debug?: string }
+  searchParams: { v?: string; variant?: string; debug?: string; resumed?: string }
 }) {
   const cookieStore = await cookies()
 
@@ -103,6 +103,7 @@ export default async function BookPage({
       variant={variant}
       funnelVariant={funnelVariant}
       coupon={coupon}
+      resumed={searchParams?.resumed === '1'}
     />
   )
 }

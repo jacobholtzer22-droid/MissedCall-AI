@@ -54,16 +54,20 @@ export default function BookFunnelClient({
   variant,
   funnelVariant,
   coupon,
+  resumed = false,
 }: {
   initialGate: InitialGate
   variant: Variant
   /** Which founder video plays. The ONLY difference between the arms. */
   funnelVariant: FunnelVariant
   coupon: CouponState
+  /** Arrived from the demo SMS link: their video is already unlocked. */
+  resumed?: boolean
 }) {
   const [gate, setGate] = useState<InitialGate>(initialGate)
   const [modalOpen, setModalOpen] = useState(false)
-  const [playing, setPlaying] = useState(false)
+  // Someone following the demo SMS link should land on the player, not the gate.
+  const [playing, setPlaying] = useState(resumed)
   const [watchedSeconds, setWatchedSeconds] = useState(0)
   const videoRef = useRef<HTMLVideoElement>(null)
   const attributionRef = useRef<Attribution>({})

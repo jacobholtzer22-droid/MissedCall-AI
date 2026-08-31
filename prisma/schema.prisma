@@ -612,6 +612,16 @@ model WebsiteLead {
   // /api/admin/funnel-variants. Reusing it would corrupt that report.
   funnelVariant String?
 
+  // Unguessable token for the "here is your demo" SMS link. Lets the lead come
+  // back to their unlocked video later. Random rather than the cuid id, because
+  // following this link identifies the visitor AS this lead and prefills their
+  // name and phone into the booking form.
+  resumeToken String? @unique
+
+  // Set once, when the lead-facing demo SMS actually dispatches. Guarantees the
+  // text is never sent twice for the same lead.
+  demoSmsSentAt DateTime?
+
   // Spam scoring (see lib/spam-score.ts). All nullable and additive: null means
   // the row predates scoring, which is why spamScore is not defaulted to 0.
   // A high score sets status='spam' and suppresses owner notification — it NEVER
