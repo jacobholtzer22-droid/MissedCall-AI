@@ -30,6 +30,7 @@ import {
 import { rateLimit, getClientIp } from '@/lib/rate-limit'
 import { sendLeadDemoSms, newResumeToken } from '@/lib/lead-sms'
 import { SEND_SMS_AT } from '@/app/book/constants'
+import { isTestPhone } from '@/lib/test-allowlist'
 import { GATE_COOKIE, GATE_COOKIE_MAX_AGE, NOT_AN_OWNER } from '@/app/book/constants'
 import { VARIANT_COOKIE, VISITOR_COOKIE } from '@/lib/variant'
 import { FUNNEL_VARIANT_COOKIE } from '@/lib/funnel-variant'
@@ -216,6 +217,10 @@ export async function POST(request: NextRequest) {
     // once (email on isNew, SMS on the stage) and the owner silently lost every
     // returning lead.
     const banked = body.stage === 'phone' || isNew
+
+    // TEST_PHONE_ALLOWLIST: my own handsets bypass BOTH send-once guards so a
+    // repeat walk still fires both channels. See lib/test-allowlist.ts.
+    const isTest = isTestPhone(phoneCheck.e164)
     const smsDue = SEND_SMS_AT === 'phone' ? banked : Boolean(email)
     if (smsDue && qualified) {
       const sms = await sendLeadDemoSms(lead.id, phoneCheck.e164, funnelVariant)
@@ -237,24 +242,36 @@ export async function POST(request: NextRequest) {
     // concurrent requests cannot both win it, and it is time-boxed rather than
     // once-ever: someone returning days later is a real signal worth an email,
     // while a refresh or double submit inside the window is not.
+    // Allowlisted test handsets skip the cooldown outright, so every walk from
+    // one of my own phones produces an email. Real numbers are unaffected.
     const notifyCutoff = new Date(Date.now() - OWNER_RENOTIFY_AFTER_MS)
-    const notifyClaim =
-      banked && qualified
-        ? await db.websiteLead.updateMany({
-            where: {
-              id: lead.id,
-              OR: [{ ownerNotifiedAt: null }, { ownerNotifiedAt: { lt: notifyCutoff } }],
-            },
-            data: { ownerNotifiedAt: new Date() },
-          })
-        : { count: 0 }
+    let notifyDue = false
+    if (banked && qualified) {
+      if (isTest) {
+        await db.websiteLead.updateMany({
+          where: { id: lead.id },
+          data: { ownerNotifiedAt: new Date() },
+        })
+        notifyDue = true
+      } else {
+        const notifyClaim = await db.websiteLead.updateMany({
+          where: {
+            id: lead.id,
+            OR: [{ ownerNotifiedAt: null }, { ownerNotifiedAt: { lt: notifyCutoff } }],
+          },
+          data: { ownerNotifiedAt: new Date() },
+        })
+        notifyDue = notifyClaim.count > 0
+      }
+    }
 
-    if (notifyClaim.count > 0) {
+    if (notifyDue) {
       console.log(
         `[demo-lead/wizard] owner-notify dispatch leadId=${lead.id} template=new_gate_lead ` +
-          `email=${process.env.YOUR_EMAIL ?? 'business fallback'} isNew=${isNew}`
+          `email=${process.env.YOUR_EMAIL ?? 'business fallback'} isNew=${isNew}${isTest ? ' test=true' : ''}`
       )
       await notifyOwnerOfMarketingEvent({
+        test: isTest,
         ownerEmailFallback: business.ownerEmail,
         ownerPhoneFallback: business.ownerPhone,
         subject: `Call now: ${displayName || phoneCheck.e164} (${trade})${funnelVariant ? ` [video ${funnelVariant}]` : ''}`,

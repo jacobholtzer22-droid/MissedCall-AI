@@ -18,6 +18,7 @@
 import Telnyx from 'telnyx'
 import { db } from '@/lib/db'
 import { normalizeToE164 } from '@/lib/phone-utils'
+import { isTestPhone } from '@/lib/test-allowlist'
 
 /** Unguessable, URL-safe. Following this link identifies someone AS this lead. */
 export function newResumeToken(): string {
@@ -57,26 +58,36 @@ export async function sendLeadDemoSms(leadId: string, phone: string, funnelVaria
   const from = process.env.MARKETING_TELNYX_NUMBER || null
   const to = normalizeToE164(phone)
 
+  // Allowlisted handsets skip the one-shot claim so every walk texts again.
+  const isTest = isTestPhone(to || phone)
+  const tag = isTest ? ' test=true' : ''
+
   if (!from || !process.env.TELNYX_API_KEY) {
     console.error(
       `[lead-sms] SKIP leadId=${leadId} reason=no_sender ` +
-        `MARKETING_TELNYX_NUMBER=${from ? 'set' : 'MISSING'} TELNYX_API_KEY=${process.env.TELNYX_API_KEY ? 'set' : 'MISSING'}`
+        `MARKETING_TELNYX_NUMBER=${from ? 'set' : 'MISSING'} TELNYX_API_KEY=${process.env.TELNYX_API_KEY ? 'set' : 'MISSING'}${tag}`
     )
     return { sent: false, reason: 'no_sender' }
   }
   if (!to) {
-    console.error(`[lead-sms] SKIP leadId=${leadId} reason=unusable_phone raw=${JSON.stringify(phone)}`)
+    console.error(`[lead-sms] SKIP leadId=${leadId} reason=unusable_phone raw=${JSON.stringify(phone)}${tag}`)
     return { sent: false, reason: 'unusable_phone' }
   }
 
   // One-shot claim. count === 0 means someone already sent it.
-  const claim = await db.websiteLead.updateMany({
-    where: { id: leadId, demoSmsSentAt: null },
-    data: { demoSmsSentAt: new Date() },
-  })
-  if (claim.count === 0) {
-    console.log(`[lead-sms] SKIP leadId=${leadId} reason=already_sent`)
-    return { sent: false, reason: 'already_sent' }
+  //
+  // Skipped entirely for allowlisted test handsets: the whole point of the
+  // allowlist is that a repeat walk texts again. The column is still stamped
+  // below on success so the row reflects the most recent send.
+  if (!isTest) {
+    const claim = await db.websiteLead.updateMany({
+      where: { id: leadId, demoSmsSentAt: null },
+      data: { demoSmsSentAt: new Date() },
+    })
+    if (claim.count === 0) {
+      console.log(`[lead-sms] SKIP leadId=${leadId} reason=already_sent`)
+      return { sent: false, reason: 'already_sent' }
+    }
   }
 
   try {
@@ -85,14 +96,22 @@ export async function sendLeadDemoSms(leadId: string, phone: string, funnelVaria
     const providerId = (res as { data?: { id?: string } })?.data?.id ?? 'unknown'
     console.log(
       `[lead-sms] SENT leadId=${leadId} template=lead_followup to=${to} from=${from} ` +
-        `video=${funnelVariant ?? 'none'} providerId=${providerId}`
+        `video=${funnelVariant ?? 'none'} providerId=${providerId}${tag}`
     )
+    // Test sends never claimed the column, so stamp it here. Keeps the row
+    // honest about when this lead was last texted without gating the next send.
+    if (isTest) {
+      await db.websiteLead.updateMany({ where: { id: leadId }, data: { demoSmsSentAt: new Date() } })
+    }
     return { sent: true, providerId }
   } catch (err) {
-    // Release the claim so a later wizard step can retry.
-    await db.websiteLead.updateMany({ where: { id: leadId }, data: { demoSmsSentAt: null } })
+    // Release the claim so a later wizard step can retry. Nothing to release
+    // for a test send, which never claimed.
+    if (!isTest) {
+      await db.websiteLead.updateMany({ where: { id: leadId }, data: { demoSmsSentAt: null } })
+    }
     const message = err instanceof Error ? err.message : String(err)
-    console.error(`[lead-sms] FAILED leadId=${leadId} template=lead_followup to=${to} from=${from} error=${message}`)
+    console.error(`[lead-sms] FAILED leadId=${leadId} template=lead_followup to=${to} from=${from} error=${message}${tag}`)
     return { sent: false, reason: message }
   }
 }

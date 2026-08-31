@@ -33,6 +33,8 @@ type OwnerNotifyParams = {
   ownerEmailFallback?: string | null
   /** Unused, kept for call-site compatibility. */
   ownerPhoneFallback?: string | null
+  /** Tags the log lines when the lead is on TEST_PHONE_ALLOWLIST. */
+  test?: boolean
 }
 
 /**
@@ -43,14 +45,16 @@ export async function notifyOwnerOfMarketingEvent({
   subject,
   html,
   ownerEmailFallback,
+  test,
 }: OwnerNotifyParams): Promise<void> {
   const ownerEmail = process.env.YOUR_EMAIL || ownerEmailFallback || 'jacob@alignandacquire.com'
+  const tag = test ? ' test=true' : ''
 
   if (!process.env.RESEND_API_KEY) {
-    console.error(`[owner-notify] SKIP email template=${subject.slice(0, 40)} reason=RESEND_API_KEY missing`)
+    console.error(`[owner-notify] SKIP email template=${subject.slice(0, 40)} reason=RESEND_API_KEY missing${tag}`)
   }
   if (!ownerEmail) {
-    console.error(`[owner-notify] SKIP email reason=no recipient (YOUR_EMAIL and business.ownerEmail both empty)`)
+    console.error(`[owner-notify] SKIP email reason=no recipient (YOUR_EMAIL and business.ownerEmail both empty)${tag}`)
   }
   if (process.env.RESEND_API_KEY && ownerEmail) {
     try {
@@ -73,12 +77,12 @@ export async function notifyOwnerOfMarketingEvent({
       })
       const payload = (await emailRes.json().catch(() => ({}))) as { id?: string; message?: string }
       if (emailRes.ok) {
-        console.log(`[owner-notify] SENT email to=${ownerEmail} template=${subject.slice(0, 48)} providerId=${payload.id ?? 'unknown'}`)
+        console.log(`[owner-notify] SENT email to=${ownerEmail} template=${subject.slice(0, 48)} providerId=${payload.id ?? 'unknown'}${tag}`)
       } else {
-        console.error(`[owner-notify] FAILED email to=${ownerEmail} status=${emailRes.status} error=${payload.message ?? 'unknown'}`)
+        console.error(`[owner-notify] FAILED email to=${ownerEmail} status=${emailRes.status} error=${payload.message ?? 'unknown'}${tag}`)
       }
     } catch (err) {
-      console.error(`[owner-notify] FAILED email to=${ownerEmail} error=${err instanceof Error ? err.message : String(err)}`)
+      console.error(`[owner-notify] FAILED email to=${ownerEmail} error=${err instanceof Error ? err.message : String(err)}${tag}`)
     }
   }
 
