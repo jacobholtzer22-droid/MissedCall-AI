@@ -55,3 +55,14 @@ export function formatPhoneInput(raw: string): string {
  * collide with the next one.
  */
 export const CALL_LENGTH_MINUTES = 15
+
+/**
+ * When the instant SMS goes out during the gate.
+ *   "phone"    fire as soon as the number is captured (default). Someone who
+ *              abandons on a later screen has still been texted and is callable.
+ *   "complete" hold until every screen is answered.
+ */
+export const SEND_SMS_AT: 'phone' | 'complete' = 'phone'
+
+/** sessionStorage key holding in-progress gate answers. */
+export const GATE_DRAFT_KEY = 'aa_gate_draft'
