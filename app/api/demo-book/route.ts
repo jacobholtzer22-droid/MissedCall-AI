@@ -106,8 +106,23 @@ export async function POST(request: NextRequest) {
       ? await db.websiteLead.findFirst({ where: { id: leadId, businessId: business.id } })
       : null
 
-    let name = lead?.name?.trim() ?? body.name?.trim() ?? ''
-    let phoneE164 = lead?.phone?.trim() ?? ''
+    const leadName = lead?.name?.trim() ?? ''
+    const leadPhone = lead?.phone?.trim() ?? ''
+
+    // A lead banked at the OTP step stores the PHONE NUMBER as its name until a
+    // later screen supplies a real one (see the wizard route: `name:
+    // displayName || phoneCheck.e164`). That placeholder must never end up as
+    // the name on a calendar invite, so it is treated as "no name" here.
+    const digits = (v: string) => v.replace(/\D/g, '').replace(/^1(?=\d{10}$)/, '')
+    const leadNameIsPlaceholder =
+      leadName !== '' && leadPhone !== '' && digits(leadName) === digits(leadPhone)
+
+    // `||` not `??`: an EMPTY lead name must fall through to what the visitor
+    // just typed. With `??` a blank-named lead pinned name to '' and the
+    // request was rejected with "Please enter your first name" even though they
+    // had entered one.
+    let name = (leadNameIsPlaceholder ? '' : leadName) || body.name?.trim() || ''
+    let phoneE164 = leadPhone
     let trade = body.trade?.trim() ?? ''
 
     if (!phoneE164) {
@@ -119,6 +134,12 @@ export async function POST(request: NextRequest) {
     }
     if (!name) {
       return NextResponse.json({ error: 'Please enter your first name.', field: 'name' }, { status: 400 })
+    }
+    // Redundant with the check above by construction, but a booking with no
+    // contact details is the one outcome that must be impossible: the invite
+    // and the confirmation text both depend on these.
+    if (!phoneE164) {
+      return NextResponse.json({ error: 'Please enter your mobile number.', field: 'phone' }, { status: 400 })
     }
     if (!trade && lead?.message) {
       const match = lead.message.match(/^Trade: (.+)$/m)

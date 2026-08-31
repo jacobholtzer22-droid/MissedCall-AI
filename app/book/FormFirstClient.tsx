@@ -264,7 +264,7 @@ export default function FormFirstClient({
           the whole point of a form-first arm. */}
       <main className="mx-auto max-w-6xl px-5 sm:px-8 py-5 md:py-8">
         {/* ── Hero: copy left, photo right ─────────────── */}
-        <section className="mb-6 lg:grid lg:grid-cols-[1.05fr_0.95fr] lg:gap-10 lg:items-center">
+        <section className="mb-4 lg:mb-6 lg:grid lg:grid-cols-[1.05fr_0.95fr] lg:gap-10 lg:items-center">
           <div>
             <div className="inline-flex items-center gap-2 font-mono text-[11px] font-semibold uppercase tracking-[0.28em] mb-2">
               <span className="inline-block h-2.5 w-2.5" style={{ background: '#EE6B1A' }} />
@@ -283,7 +283,7 @@ export default function FormFirstClient({
             <p className="font-mono text-[11px] font-bold uppercase tracking-[0.18em] mb-3" style={{ color: '#6E7681' }}>
               Here&apos;s the whole deal.
             </p>
-            <ul className="space-y-2.5 mb-2">
+            <ul className="space-y-2.5 mb-0">
               {[
                 'A website built for you, free with the system, built to convert and get found on Google and AI search.',
                 'A missed call system on your line: miss a call, the caller gets a text back in 8 seconds, the AI answers their questions and books the job on your calendar.',
@@ -293,24 +293,18 @@ export default function FormFirstClient({
                   <span className="text-[15px] leading-[1.55]" style={{ color: 'rgba(242,240,235,0.82)' }}>{line}</span>
                 </li>
               ))}
-              <li className="flex gap-3">
-                <span className="mt-[8px] h-2 w-2 shrink-0" style={{ background: '#EE6B1A' }} aria-hidden="true" />
-                <span className="text-[15px] font-bold leading-[1.55]" style={{ color: '#F2F0EB' }}>
-                  $250 a month plus a one-time setup. Month to month. 30-day money back. No contract.
-                </span>
-              </li>
             </ul>
           </div>
 
           {/* Photo: no border box, cropped toward the handshake rather than the
               sky, and height-capped so it stops dominating the fold. */}
-          <div className="mt-6 lg:mt-0">
+          <div className="mt-4 lg:mt-0">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               ref={photoRef}
               src={photoSrc}
               alt="Jacob shaking hands with Brett of Master Gardener LLC"
-              className="w-full rounded-xl object-cover max-h-[260px] lg:max-h-[420px]"
+              className="w-full rounded-xl object-cover max-h-[180px] lg:max-h-[420px]"
               style={{ objectPosition: 'center 42%' }}
               onError={() => setPhotoSrc(HANDSHAKE_FALLBACK)}
             />

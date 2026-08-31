@@ -98,6 +98,25 @@ export default function BookingWizard({
   const leadWritten = useRef(false)
   const firstInput = useRef<HTMLInputElement>(null)
 
+  // Seed from the prefill every time the wizard OPENS, not just on mount.
+  //
+  // This component is rendered with the page and merely returns null while
+  // closed, so its useState initialisers ran once, at page load, when the gate
+  // had not happened yet and the prefill was empty. Anyone who completed the
+  // gate in-session then hit a confirm screen with a blank name, cell, email
+  // and business: `steps` below correctly SKIPPED asking for them (the prefill
+  // had them by then) while the state behind them was still "".
+  //
+  // Only fills blanks, so a half-typed answer is never clobbered by a re-open.
+  useEffect(() => {
+    if (!open) return
+    setTrade((v) => v || prefill.trade || '')
+    setName((v) => v || prefill.name || '')
+    setPhone((v) => v || prefill.phone || '')
+    setEmail((v) => v || prefill.email || '')
+    setCompany((v) => v || prefill.company || '')
+  }, [open, prefill.trade, prefill.name, prefill.phone, prefill.email, prefill.company])
+
   // Only ask what is missing. Recomputed from the prefill, not from live state,
   // so typing a name does not make the name screen vanish under you.
   const steps = useMemo<StepKey[]>(() => {
@@ -198,6 +217,23 @@ export default function BookingWizard({
 
   async function submit() {
     setError('')
+
+    // Belt and braces with the server, which also rejects these. Catching it
+    // here sends them to the screen that can fix it instead of showing a
+    // failure on the last screen of the flow.
+    if (!name.trim()) {
+      setError('I need a name for the invite.')
+      const i = steps.indexOf('name')
+      if (i >= 0) setStepIndex(i)
+      return
+    }
+    if (!validateUsMobile(phone).ok) {
+      setError('I need a mobile number to text you the confirmation.')
+      const i = steps.indexOf('phone')
+      if (i >= 0) setStepIndex(i)
+      return
+    }
+
     setSubmitting(true)
     try {
       const res = await fetch('/api/demo-book', {
@@ -433,16 +469,21 @@ export default function BookingWizard({
               </h2>
               <CouponApplied state={coupon} />
               <dl className="border-2" style={{ borderColor: BORDER }}>
-                {[
+                {/* Every row is conditional. A summary that prints "Name:" with
+                    nothing after it tells the visitor we lost their details and
+                    is the visible half of the bug fixed above. */}
+                {([
                   ['Time', `${slot.dateLabel} at ${slot.display}`],
-                  ['Name', name],
-                  ['Cell', phone],
-                  ['Email', email],
-                  ...(company.trim() ? [['Company', company.trim()]] : []),
-                  ['Business', trade],
-                  ...(misses ? [['Missed calls', misses]] : []),
-                  ...(who ? [['Answers now', who]] : []),
-                ].map(([k, v]) => (
+                  ['Name', name.trim()],
+                  ['Cell', phone.trim()],
+                  ['Email', email.trim()],
+                  ['Company', company.trim()],
+                  ['Business', trade.trim()],
+                  ['Missed calls', misses.trim()],
+                  ['Answers now', who.trim()],
+                ] as [string, string][])
+                  .filter(([, v]) => v !== '')
+                  .map(([k, v]) => (
                   <div key={k} className="flex items-baseline justify-between gap-4 px-4 py-3">
                     <dt className="font-mono text-[10px] uppercase tracking-[0.16em] shrink-0" style={{ color: '#6E7681' }}>{k}</dt>
                     <dd className="text-[14px] leading-[1.5] text-right" style={{ color: '#F2F0EB' }}>{v}</dd>
