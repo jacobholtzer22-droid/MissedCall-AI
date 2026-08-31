@@ -61,7 +61,11 @@ export async function notifyOwnerOfMarketingEvent({
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          from: 'Align and Acquire <onboarding@resend.dev>',
+          // Verified domain, NOT onboarding@resend.dev. Resend's sandbox
+          // sender only delivers to the Resend account owner's own address, so
+          // the moment YOUR_EMAIL points at a team inbox the sandbox sender
+          // starts 403ing and the owner silently gets nothing.
+          from: 'Align and Acquire <notifications@alignandacquire.com>',
           to: ownerEmail,
           subject,
           html,

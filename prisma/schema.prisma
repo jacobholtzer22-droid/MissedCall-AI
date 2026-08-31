@@ -622,6 +622,13 @@ model WebsiteLead {
   // text is never sent twice for the same lead.
   demoSmsSentAt DateTime?
 
+  // Stamped when the owner alert for this lead is claimed. Deliberately a
+  // re-notify window, not a once-ever flag like demoSmsSentAt above: a prospect
+  // coming back days later is a real buying signal and the owner should hear
+  // about it, while a refresh or a double submit must not send twice. See
+  // OWNER_RENOTIFY_AFTER_MS in app/api/demo-lead/wizard/route.ts.
+  ownerNotifiedAt DateTime?
+
   // Spam scoring (see lib/spam-score.ts). All nullable and additive: null means
   // the row predates scoring, which is why spamScore is not defaulted to 0.
   // A high score sets status='spam' and suppresses owner notification — it NEVER

@@ -34,6 +34,15 @@ import { GATE_COOKIE, GATE_COOKIE_MAX_AGE, NOT_AN_OWNER } from '@/app/book/const
 import { VARIANT_COOKIE, VISITOR_COOKIE } from '@/lib/variant'
 import { FUNNEL_VARIANT_COOKIE } from '@/lib/funnel-variant'
 
+/**
+ * How long before the same lead can generate a second owner alert.
+ *
+ * Not once-ever: a prospect who comes back is worth an email. Not zero either,
+ * or a refresh would send twice. Six hours means at most one alert per lead per
+ * working half-day.
+ */
+const OWNER_RENOTIFY_AFTER_MS = 6 * 60 * 60 * 1000
+
 export const dynamic = 'force-dynamic'
 
 const LEAD_SOURCE = 'meta_demo_video'
@@ -202,7 +211,12 @@ export async function POST(request: NextRequest) {
     // Fires at the phone step by default (SEND_SMS_AT). sendLeadDemoSms claims
     // the send with a conditional DB update, so a retry, a second tab or a
     // later enrichment step can never double-text.
-    const smsDue = SEND_SMS_AT === 'phone' ? body.stage === 'phone' || isNew : Boolean(email)
+    // The lead has handed over a number on this request. Both the SMS and the
+    // owner alert hang off this ONE expression on purpose: they drifted apart
+    // once (email on isNew, SMS on the stage) and the owner silently lost every
+    // returning lead.
+    const banked = body.stage === 'phone' || isNew
+    const smsDue = SEND_SMS_AT === 'phone' ? banked : Boolean(email)
     if (smsDue && qualified) {
       const sms = await sendLeadDemoSms(lead.id, phoneCheck.e164, funnelVariant)
       if (!sms.sent && sms.reason !== 'already_sent') {
@@ -210,12 +224,35 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Owner is notified once, the moment the number lands, and only for a real
-    // business owner. Later enrichment steps must not re-notify.
-    if (isNew && qualified) {
+    // Owner is notified when the number lands, for a real business owner.
+    //
+    // This used to be gated on `isNew`, which meant a returning prospect was
+    // re-texted but generated NO owner alert: the row already existed, so the
+    // whole block including its own log line was skipped and the failure was
+    // invisible. Repeat visitors are the warmest traffic on this funnel, so
+    // that was backwards.
+    //
+    // The gate is now the same bank-path condition the SMS uses, plus a claim
+    // against ownerNotifiedAt. The claim is a conditional updateMany, so two
+    // concurrent requests cannot both win it, and it is time-boxed rather than
+    // once-ever: someone returning days later is a real signal worth an email,
+    // while a refresh or double submit inside the window is not.
+    const notifyCutoff = new Date(Date.now() - OWNER_RENOTIFY_AFTER_MS)
+    const notifyClaim =
+      banked && qualified
+        ? await db.websiteLead.updateMany({
+            where: {
+              id: lead.id,
+              OR: [{ ownerNotifiedAt: null }, { ownerNotifiedAt: { lt: notifyCutoff } }],
+            },
+            data: { ownerNotifiedAt: new Date() },
+          })
+        : { count: 0 }
+
+    if (notifyClaim.count > 0) {
       console.log(
         `[demo-lead/wizard] owner-notify dispatch leadId=${lead.id} template=new_gate_lead ` +
-          `email=${process.env.YOUR_EMAIL ?? 'business fallback'} phone=${process.env.OWNER_PHONE ?? 'business fallback'}`
+          `email=${process.env.YOUR_EMAIL ?? 'business fallback'} isNew=${isNew}`
       )
       await notifyOwnerOfMarketingEvent({
         ownerEmailFallback: business.ownerEmail,
