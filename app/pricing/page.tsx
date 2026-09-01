@@ -5,7 +5,7 @@ import { useState } from 'react'
 import {
   Check, ArrowRight, ShieldBan, PhoneMissed, Globe,
   BarChart3, Megaphone, CalendarCheck, LayoutDashboard,
-  Calculator,
+  Calculator, Search,
 } from 'lucide-react'
 import ScrollReveal from '../components/ScrollReveal'
 import BrandFooter from '../components/BrandFooter'
@@ -39,46 +39,28 @@ type AlaCarteService = {
 // ─────────────────────────────────────────────────────────
 const TIERS: Tier[] = [
   {
-    name: 'Found',
-    tagline: 'Get found before you worry about anything else.',
-    price: 250,
-    setup: 250,
-    popular: false,
-    includes: [
-      'Custom Website: built from scratch, mobile-first, unlimited same-day updates',
-      'SEO: on-page optimization, local keyword targeting, and technical setup so Google can actually rank you',
-      'Google Business Profile: claimed, filled out and optimized for local map results',
-      'Plain-English monthly report on rankings and traffic',
-    ],
-    notIncluded: [],
-    addOns: ['Upgrade to Catch any time to add MissedCall AI and the leads dashboard'],
-  },
-  {
     name: 'Catch',
     tagline: 'Stop losing the leads you already get.',
-    price: 300,
+    price: 250,
     setup: 400,
-    popular: false,
+    popular: true,
     includes: [
-      'MissedCall AI: every missed caller gets an instant text back',
       'Custom Website: built from scratch, ranks on Google, unlimited same-day updates',
-      'Leads Dashboard: all contacts from missed calls and website leads in one place',
+      'MissedCall AI: every missed caller gets an instant text back that captures the lead',
     ],
     notIncluded: [],
     addOns: ['Spam Call Screening available as add-on (+$75/mo)'],
   },
   {
     name: 'Grow',
-    tagline: 'Generate new leads and bring old ones back.',
-    price: 485,
+    tagline: 'Get found, then bring the new leads in.',
+    price: 400,
     setup: 500,
-    popular: true,
+    popular: false,
     includes: [
       'Everything in Catch',
-      'Calendar Integration: customers book appointments online',
+      'SEO Optimization: on-page work, local keyword targeting, and Google Business Profile so you show up without paying per click',
       'Google Ads Management: paid search, keyword research, bid optimization, A/B testing and plain-English monthly reports',
-      'Mass Email Sending: reach your whole contact list at once with open and click tracking',
-      'Mass SMS Sending: text your full contact list with response tracking',
       'Priority setup and support',
     ],
     notIncluded: [],
@@ -92,6 +74,9 @@ const TIERS: Tier[] = [
     popular: false,
     includes: [
       'Everything in Grow',
+      'Calendar Integration: customers book appointments online',
+      'Mass Email Sending: reach your whole contact list at once with open and click tracking',
+      'Mass SMS Sending: text your full contact list with response tracking',
       'AI Website Chatbot: answers visitor questions 24/7',
       'AI Email Responses: reads and replies to incoming email automatically',
       'AI Google Review Manager: monitors and posts review responses',
@@ -108,6 +93,7 @@ const TIERS: Tier[] = [
 const ALA_CARTE: AlaCarteService[] = [
   { id: 'missedcall', label: 'MissedCall AI',         icon: PhoneMissed,     monthlyPrice: 299, setupPrice: 299, description: 'Automatic text-back for every missed caller, lead capture, calendar booking' },
   { id: 'website',    label: 'Custom Website',         icon: Globe,           monthlyPrice: 169, setupPrice: 250, description: 'Built from scratch, shows up on Google, unlimited same-day updates' },
+  { id: 'seo',        label: 'SEO Optimization',       icon: Search,          monthlyPrice: 125, setupPrice: 150, description: 'On-page optimization, local keyword targeting and Google Business Profile so customers find you without paid clicks' },
   { id: 'ads',        label: 'Google Ads Management',  icon: BarChart3,       monthlyPrice: 199, setupPrice: 300, description: '' },
   { id: 'campaigns',  label: 'Email & SMS Campaigns',  icon: Megaphone,       monthlyPrice: 149, setupPrice: 150, description: 'Blast messages to your full contact list, unlimited campaigns' },
   { id: 'crm',        label: 'Leads Dashboard',        icon: LayoutDashboard, monthlyPrice: 109, setupPrice: 0,   description: 'All contacts from missed calls and website leads in one place' },
@@ -206,7 +192,7 @@ function NumbersSection() {
       </div>
 
       {/* Tier selector tabs */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 border-b-2" style={{ borderColor: 'rgba(110,118,129,0.25)' }}>
+      <div className="grid grid-cols-3 border-b-2" style={{ borderColor: 'rgba(110,118,129,0.25)' }}>
         {TIERS.map((t, i) => (
           <button
             key={i}
@@ -431,11 +417,11 @@ export default function PricingPage() {
                 <span style={{ color: '#EE6B1A' }}>System tiers</span>
               </div>
               <h2 className="text-[clamp(2rem,5vw,3.2rem)] font-black uppercase leading-[0.95] tracking-tight" style={{ color: '#16181C' }}>
-                Four levels of the system.
+                Three levels of the system.
               </h2>
             </div>
           </ScrollReveal>
-          <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-5 items-stretch">
+          <div className="grid sm:grid-cols-3 gap-5 items-stretch">
             {TIERS.map((tier, i) => (
               <ScrollReveal key={i} className="h-full">
                 <TierCard tier={tier} />

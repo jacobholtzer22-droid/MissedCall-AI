@@ -94,15 +94,6 @@ const projects: Project[] = [
     features: ['Custom Website Design', 'MissedCall AI Integration', 'SEO Optimization', 'Free Estimate Requests'],
   },
   {
-    title: 'Jaws Lawn & Snow',
-    category: 'Lawn Care & Snow Removal',
-    description: 'A year-round website for a Canton, Michigan crew that mows all summer and plows all winter. Seasonal service sections, a 5-star Google review showcase, and free-quote requests wired straight into the leads dashboard.',
-    image1: '/images/portfolio/jaws-lawn-snow-1.png',
-    image2: '/images/portfolio/jaws-lawn-snow-2.png',
-    url: 'https://www.jawslawnandsnow.com/',
-    features: ['Custom Website Design', 'Seasonal Service Sections', 'Google Reviews Showcase', 'Free Quote Requests'],
-  },
-  {
     title: 'Jaws Auto Detailing',
     category: 'Mobile Auto Detailing',
     description: 'A sharp, photo-led website for a mobile detailer who brings the full studio to the customer\u2019s driveway across Ann Arbor and Southeast Michigan. Service and pricing pages, a real-work gallery, and per-city service area pages that turn searches into booked details.',

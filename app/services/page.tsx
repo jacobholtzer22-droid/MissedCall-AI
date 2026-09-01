@@ -15,7 +15,7 @@ import type { Metadata } from 'next'
 export const metadata: Metadata = {
   title: 'Lead Capture & Marketing Services for Trades Businesses',
   description:
-    'One system for trades businesses: missed call text back, custom websites, Google Ads, email and SMS campaigns, spam screening, and calendar booking.',
+    'One system for trades businesses: missed call text back, custom websites, SEO, Google Ads, email and SMS campaigns, spam screening, and calendar booking.',
   alternates: { canonical: './' },
 }
 
@@ -142,6 +142,47 @@ function CampaignMockup() {
 // ─────────────────────────────────────────────────────────
 // Spam screening mockup
 // ─────────────────────────────────────────────────────────
+function SeoMockup() {
+  const results = [
+    { name: 'Master Gardener LLC', meta: 'Lawn Care · West Michigan', you: true },
+    { name: 'Greenline Yard Services', meta: 'Landscaper · 2.1 mi', you: false },
+    { name: 'Trimwell Lawn & Turf', meta: 'Lawn Care · 3.4 mi', you: false },
+  ]
+  return (
+    <div className="w-full max-w-[440px] mx-auto border-2 overflow-hidden" style={{ borderColor: 'rgba(110,118,129,0.35)', background: '#FFFFFF' }}>
+      {/* Search bar */}
+      <div className="flex items-center gap-2 px-4 py-3 border-b-2" style={{ borderColor: 'rgba(110,118,129,0.25)' }}>
+        <Search size={14} strokeWidth={2.5} style={{ color: '#6E7681' }} />
+        <span className="text-[12.5px]" style={{ color: '#16181C' }}>lawn care near me</span>
+      </div>
+      {/* Results */}
+      {results.map((r, i) => (
+        <div
+          key={i}
+          className="flex items-center justify-between gap-3 px-4 py-3.5 border-b last:border-b-0"
+          style={{ borderColor: 'rgba(110,118,129,0.18)', background: r.you ? 'rgba(238,107,26,0.08)' : '#FFFFFF' }}
+        >
+          <div className="min-w-0">
+            <div className="text-[13px] font-bold truncate" style={{ color: r.you ? '#16181C' : 'rgba(22,24,28,0.75)' }}>{r.name}</div>
+            <div className="font-mono text-[9.5px] uppercase tracking-[0.14em] mt-1" style={{ color: '#6E7681' }}>{r.meta}</div>
+          </div>
+          <span
+            className="shrink-0 font-mono text-[9px] font-bold uppercase tracking-widest px-2 py-1"
+            style={r.you
+              ? { background: '#EE6B1A', color: '#16181C' }
+              : { background: 'rgba(110,118,129,0.12)', color: '#6E7681' }}
+          >
+            {r.you ? 'You' : `#${i + 1}`}
+          </span>
+        </div>
+      ))}
+      <div className="px-4 py-3 font-mono text-[10px] uppercase tracking-widest text-center border-t-2" style={{ borderColor: 'rgba(110,118,129,0.25)', color: '#6E7681' }}>
+        Free traffic. No cost per click.
+      </div>
+    </div>
+  )
+}
+
 function SpamMockup() {
   const calls = [
     { label: 'Extended warranty scam', blocked: true, time: '8:02 AM' },
@@ -197,7 +238,7 @@ export default function ServicesPage() {
             <span style={{ color: '#EE6B1A' }}>All the tools.</span>
           </h1>
           <p className="text-[16px] sm:text-[18px] leading-relaxed max-w-2xl mx-auto mb-10" style={{ color: 'rgba(242,240,235,0.65)' }}>
-            From capturing every missed call to filling your Google results to re-engaging past customers. Built as one system, not sold as seven separate tools.
+            From capturing every missed call to filling your Google results to re-engaging past customers. Built as one system, not sold as eight separate tools.
           </p>
           <div className="flex flex-col items-center gap-3 sm:flex-row sm:justify-center">
             <Link href="/pricing" className="aa-btn inline-flex items-center gap-2 px-6 py-4 text-[15px] font-bold uppercase tracking-wide" style={{ background: '#EE6B1A', color: '#16181C' }}>
@@ -662,6 +703,57 @@ export default function ServicesPage() {
                   Customers only see what's actually free
                 </div>
               </div>
+            </ScrollReveal>
+          </div>
+        </div>
+      </section>
+
+      <Divider />
+
+      {/* ══════════════════════════════════════════════════
+          SERVICE 8 — SEO OPTIMIZATION
+          ══════════════════════════════════════════════════ */}
+      <section id="seo" className="aa-grid-bg">
+        <div className="mx-auto max-w-7xl px-5 py-16 sm:px-8 lg:py-24">
+          <div className="grid lg:grid-cols-2 gap-16 items-center">
+
+            {/* Demo */}
+            <ScrollReveal>
+              <SeoMockup />
+            </ScrollReveal>
+
+            {/* Copy */}
+            <ScrollReveal>
+              <div className="inline-flex items-center gap-2 font-mono text-[11px] font-bold uppercase tracking-[0.28em] mb-4" style={{ color: '#EE6B1A' }}>
+                <Search size={14} strokeWidth={2.5} style={{ color: '#EE6B1A' }} />
+                Service 08
+              </div>
+              <h2 className="text-[clamp(2.2rem,5vw,3.6rem)] font-black uppercase leading-[0.88] tracking-tight mb-3" style={{ color: '#F2F0EB' }}>
+                SEO Optimization
+              </h2>
+              <p className="text-[18px] font-semibold leading-snug mb-6" style={{ color: '#EE6B1A' }}>
+                Show up when someone in your area searches for what you do &mdash; without paying for the click.
+              </p>
+              <p className="text-[15px] leading-relaxed mb-8" style={{ color: 'rgba(242,240,235,0.7)' }}>
+                Ads stop the day you stop paying. Search rankings don&apos;t. This service is the ongoing work that gets your business in front of people already looking for you: the words on your pages, the way Google reads your site, your Google Business Profile, and the local terms your customers actually type. It builds slowly and then it keeps paying.
+              </p>
+              <ul className="space-y-3 mb-8">
+                {[
+                  'On-page optimization: titles, headings, and copy built around real local search terms',
+                  'Google Business Profile claimed, filled out, and optimized for the map results',
+                  'Technical setup so Google can crawl, read, and rank every page',
+                  'Service and service-area pages that target the towns you actually work in',
+                  'Plain-English monthly report on rankings and traffic, no jargon',
+                ].map((item, i) => (
+                  <li key={i} className="flex items-start gap-3 text-[14px]">
+                    <Check size={16} strokeWidth={3} className="shrink-0 mt-0.5" style={{ color: '#EE6B1A' }} />
+                    <span style={{ color: 'rgba(242,240,235,0.8)' }}>{item}</span>
+                  </li>
+                ))}
+              </ul>
+              <Link href="/pricing" className="aa-btn inline-flex items-center gap-2 px-5 py-3.5 text-[14px] font-bold uppercase tracking-wide" style={{ background: '#EE6B1A', color: '#16181C' }}>
+                See pricing <ArrowRight size={15} strokeWidth={2.5} />
+              </Link>
             </ScrollReveal>
           </div>
         </div>

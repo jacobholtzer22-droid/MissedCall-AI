@@ -1,6 +1,6 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
-import { ArrowRight, Quote } from 'lucide-react'
+import { ArrowRight, Quote, ExternalLink } from 'lucide-react'
 import ScrollReveal from '@/app/components/ScrollReveal'
 import BrandFooter from '@/app/components/BrandFooter'
 import GoogleReviewsCard from '@/app/components/GoogleReviewsCard'
@@ -90,6 +90,15 @@ export default function ReviewsPage() {
                   <div className="border-t-2 pt-6" style={{ borderColor: 'rgba(110,118,129,0.25)' }}>
                     <div className="font-bold text-[16px]" style={{ color: '#F2F0EB' }}>Master Gardener LLC</div>
                     <div className="font-mono text-[10px] uppercase tracking-widest mt-1" style={{ color: '#6E7681' }}>Lawn Care &amp; Landscaping · West Michigan</div>
+                    <a
+                      href="https://www.mastergardnerllc.com"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="mt-4 inline-flex items-center gap-2 border-2 px-4 py-2.5 text-[12px] font-bold uppercase tracking-wide transition-opacity hover:opacity-80"
+                      style={{ borderColor: '#EE6B1A', color: '#EE6B1A' }}
+                    >
+                      Visit the site we built them <ExternalLink size={14} strokeWidth={2.5} />
+                    </a>
                   </div>
                 </div>
               </div>
