@@ -39,6 +39,21 @@ type AlaCarteService = {
 // ─────────────────────────────────────────────────────────
 const TIERS: Tier[] = [
   {
+    name: 'Found',
+    tagline: 'Get found before you worry about anything else.',
+    price: 250,
+    setup: 250,
+    popular: false,
+    includes: [
+      'Custom Website: built from scratch, mobile-first, unlimited same-day updates',
+      'SEO: on-page optimization, local keyword targeting, and technical setup so Google can actually rank you',
+      'Google Business Profile: claimed, filled out and optimized for local map results',
+      'Plain-English monthly report on rankings and traffic',
+    ],
+    notIncluded: [],
+    addOns: ['Upgrade to Catch any time to add MissedCall AI and the leads dashboard'],
+  },
+  {
     name: 'Catch',
     tagline: 'Stop losing the leads you already get.',
     price: 300,
@@ -191,7 +206,7 @@ function NumbersSection() {
       </div>
 
       {/* Tier selector tabs */}
-      <div className="grid grid-cols-3 border-b-2" style={{ borderColor: 'rgba(110,118,129,0.25)' }}>
+      <div className="grid grid-cols-2 sm:grid-cols-4 border-b-2" style={{ borderColor: 'rgba(110,118,129,0.25)' }}>
         {TIERS.map((t, i) => (
           <button
             key={i}
@@ -416,11 +431,11 @@ export default function PricingPage() {
                 <span style={{ color: '#EE6B1A' }}>System tiers</span>
               </div>
               <h2 className="text-[clamp(2rem,5vw,3.2rem)] font-black uppercase leading-[0.95] tracking-tight" style={{ color: '#16181C' }}>
-                Three levels of the system.
+                Four levels of the system.
               </h2>
             </div>
           </ScrollReveal>
-          <div className="grid sm:grid-cols-3 gap-5 items-stretch">
+          <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-5 items-stretch">
             {TIERS.map((tier, i) => (
               <ScrollReveal key={i} className="h-full">
                 <TierCard tier={tier} />
@@ -432,10 +447,10 @@ export default function PricingPage() {
           <ScrollReveal>
             <div
               className="mt-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-2 p-6"
-              style={{ borderColor: 'rgba(110,118,129,0.35)', background: 'rgba(242,240,235,0.02)' }}
+              style={{ borderColor: 'rgba(110,118,129,0.35)', background: '#16181C' }}
             >
               <div className="flex items-start gap-4">
-                <span className="grid h-12 w-12 shrink-0 place-items-center" style={{ background: '#16181C' }}>
+                <span className="grid h-12 w-12 shrink-0 place-items-center" style={{ background: 'rgba(242,240,235,0.08)' }}>
                   <ShieldBan size={20} strokeWidth={2.25} style={{ color: '#EE6B1A' }} />
                 </span>
                 <div>
