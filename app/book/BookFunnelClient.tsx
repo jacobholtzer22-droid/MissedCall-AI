@@ -303,6 +303,11 @@ export default function BookFunnelClient({
           <h1 className="text-[clamp(1.5rem,5.2vw,2.6rem)] font-black uppercase leading-[1.1] tracking-tight mb-4">
             Missed calls, texted back in 8 seconds.
           </h1>
+          {/* Matches the promise the post-OTP text makes, word for word in
+              substance: no cold calls, 24 hours, or book yourself. */}
+          <p className="text-[clamp(0.95rem,2.2vw,1.05rem)] leading-[1.55] mb-4" style={{ color: 'rgba(242,240,235,0.72)' }}>
+            No cold calls. I&apos;ll reach out myself within 24 hours, or grab a time under the video.
+          </p>
           <a
             href="#step-2"
             className="aa-btn flex items-center justify-center gap-2 px-8 py-3.5 text-[15px] font-bold uppercase tracking-wide min-h-[52px] sm:inline-flex sm:w-auto"

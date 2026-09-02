@@ -53,18 +53,23 @@ function greeting(ctx?: LeadContext): string {
   return ` ${first}`
 }
 
+function bookingLink(): string {
+  const base = (process.env.NEXT_PUBLIC_APP_URL || 'https://www.alignandacquire.com').replace(/\/$/, '')
+  return `${base}/book`
+}
+
 function body(ctx?: LeadContext): string {
   const who = greeting(ctx)
   const biz = ctx?.businessName?.trim()
-  // Only name the business when we actually know it. "on 's line" is worse
-  // than the generic sentence.
+  // Same fallback as before: without a business name the sentence still reads,
+  // rather than rendering "on 's line".
   const line = biz ? `on ${biz}'s line` : 'on your line'
 
   return (
-    `Hey${who},` + ` Jacob here from Align & Acquire. ` +
-    `Demo's playing now. ` +
-    `If it makes sense, grab a time under the video and I'll set it up ${line}. ` +
-    `Nobody calls you unless you book.`
+    `Hey${who}, Jacob from Align & Acquire. ` +
+    `Thanks for checking out the demo. ` +
+    `I'll reach out myself within 24 hours. ` +
+    `If you'd rather skip the wait, grab a time here and I'll set it up ${line}: ${bookingLink()}`
   )
 }
 
