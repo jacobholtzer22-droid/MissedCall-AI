@@ -38,7 +38,7 @@ import { isTerminalTrade } from '@/app/book/constants'
 import { GATE_COOKIE, GATE_COOKIE_MAX_AGE, NOT_AN_OWNER } from '@/app/book/constants'
 import { VARIANT_COOKIE, VISITOR_COOKIE } from '@/lib/variant'
 import { FUNNEL_VARIANT_COOKIE } from '@/lib/funnel-variant'
-import { mintLeadToken } from '@/lib/lead-token'
+import { newCalendarToken } from '@/lib/lead-token'
 
 /**
  * How long before the same lead can generate a second owner alert.
@@ -318,7 +318,9 @@ export async function POST(request: NextRequest) {
           firstName,
           businessName: company,
           trade,
-          calendarToken: fresh?.calendarToken ?? mintLeadToken(lead.id),
+          // Null here just means the link goes to the bare /calendar page,
+          // which still books them — it only loses the prefill.
+          calendarToken: fresh?.calendarToken ?? null,
         })
         if (!sms.sent && sms.reason !== 'already_sent' && sms.reason !== 'test_allowlist') {
           console.error(`[demo-lead/wizard] lead SMS not sent leadId=${lead.id} reason=${sms.reason}`)
@@ -330,12 +332,13 @@ export async function POST(request: NextRequest) {
     // Both hang off banksLead, so they fire at exactly the moment the number
     // was proven and never on a later enrichment write.
     if (banksLead) {
-      // Signed /calendar link for every text we send this lead from here on.
-      // Stored so it can be revoked; the signature alone is what verifies.
+      // /calendar link for every text we send this lead from here on. Minted
+      // once: the where-clause keeps a re-verification from rotating a token
+      // that is already sitting in a text on someone's phone.
       await sideEffect('mint-calendar-token', () =>
         db.websiteLead.updateMany({
           where: { id: lead.id, calendarToken: null },
-          data: { calendarToken: mintLeadToken(lead.id) },
+          data: { calendarToken: newCalendarToken() },
         })
       )
 

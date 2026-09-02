@@ -1,69 +1,75 @@
 // ===========================================
-// SIGNED LEAD TOKEN for /calendar?l=…
+// LEAD TOKEN for /calendar?l=…
 // ===========================================
-// Identifies a lead in a link we text them. Self-verifying: `leadId.exp.sig`,
-// HMAC-SHA256 over `leadId.exp`, base64url. Nothing sensitive is encoded — the
-// signature is what stops someone incrementing an id and reading a stranger's
-// details.
+// A 16-character random token stored on the lead row and verified by LOOKUP.
 //
-// It is ALSO stored on the row so a token can be revoked by clearing the column,
-// but verification never depends on the lookup succeeding. Every failure mode
-// here — bad signature, expiry, unknown id, missing secret — degrades to direct
-// mode. A booking page must never show an error because a link went stale.
+// It was a signed `leadId.exp.hmac` string, which pushed the post-OTP text to
+// 334 characters — three SMS segments instead of two, on every lead text and
+// every follow-up. Since the token was already stored, the signature was
+// belt-and-braces: the row is the proof. 16 characters from a 62-character
+// alphabet is ~95 bits, so guessing one is not a threat model, and the column
+// is unique so a collision fails the write instead of aliasing two leads.
+//
+// Expiry rides on the lead's own verification time rather than a column of its
+// own: a link is good for LEAD_TOKEN_TTL_MS after the number was proven.
+//
+// Every failure — unknown token, expired, malformed, database error — resolves
+// to null and the page falls back to direct mode. A stale link must never show
+// an error to someone trying to give us money.
 
-import { createHmac, timingSafeEqual } from 'crypto'
+import { randomInt } from 'crypto'
+import { db } from '@/lib/db'
 
-/** Long enough to outlive the follow-up sequence, short enough to expire. */
 export const LEAD_TOKEN_TTL_MS = 30 * 24 * 60 * 60 * 1000
+const TOKEN_LENGTH = 16
+const ALPHABET = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
 
-function secret(): string | null {
-  // Reuses the OTP secret rather than adding another env var to keep in sync.
-  return process.env.OTP_SECRET?.trim() || process.env.QUICKBOOKS_STATE_SECRET?.trim() || null
+/** Cryptographically random, not Math.random. */
+export function newCalendarToken(): string {
+  let out = ''
+  for (let i = 0; i < TOKEN_LENGTH; i++) out += ALPHABET[randomInt(0, ALPHABET.length)]
+  return out
 }
 
-function sign(payload: string, key: string): string {
-  return createHmac('sha256', key).update(payload).digest('base64url')
-}
-
-/** Returns null when no secret is configured — callers then omit the link param. */
-export function mintLeadToken(leadId: string, now = Date.now()): string | null {
-  const key = secret()
-  if (!key) {
-    console.warn('[lead-token] no OTP_SECRET; /calendar links will be unprefilled')
-    return null
-  }
-  const exp = String(now + LEAD_TOKEN_TTL_MS)
-  const payload = `${leadId}.${exp}`
-  return `${payload}.${sign(payload, key)}`
-}
-
-export type TokenVerdict =
+export type TokenResolution =
   | { ok: true; leadId: string }
-  | { ok: false; reason: 'no_secret' | 'malformed' | 'bad_signature' | 'expired' }
+  | { ok: false; reason: 'missing' | 'not_found' | 'expired' | 'error' }
 
-export function verifyLeadToken(token: string | null | undefined, now = Date.now()): TokenVerdict {
-  if (!token) return { ok: false, reason: 'malformed' }
-  const key = secret()
-  if (!key) return { ok: false, reason: 'no_secret' }
+/**
+ * Resolve a token to its lead. Async by nature now: the lookup IS the check.
+ *
+ * Scoped to a businessId so a token can only ever resolve within the business
+ * that issued it.
+ */
+export async function resolveCalendarToken(
+  token: string | null | undefined,
+  businessId: string,
+  now = Date.now()
+): Promise<TokenResolution> {
+  const clean = typeof token === 'string' ? token.trim() : ''
+  // Length-checked before touching the database so a junk query string cannot
+  // turn every stale link into a round trip.
+  if (!clean || clean.length !== TOKEN_LENGTH) return { ok: false, reason: 'missing' }
 
-  const parts = token.split('.')
-  if (parts.length !== 3) return { ok: false, reason: 'malformed' }
-  const [leadId, exp, sig] = parts
-  if (!leadId || !exp || !sig) return { ok: false, reason: 'malformed' }
+  try {
+    const lead = await db.websiteLead.findFirst({
+      where: { calendarToken: clean, businessId },
+      select: { id: true, otpVerifiedAt: true, createdAt: true },
+    })
+    if (!lead) return { ok: false, reason: 'not_found' }
 
-  const expected = sign(`${leadId}.${exp}`, key)
-  const a = Buffer.from(expected, 'utf8')
-  const b = Buffer.from(sig, 'utf8')
-  // Length first: timingSafeEqual throws on a mismatch.
-  if (a.length !== b.length || !timingSafeEqual(a, b)) return { ok: false, reason: 'bad_signature' }
+    // Verification time when we have it, row creation otherwise.
+    const issuedAt = (lead.otpVerifiedAt ?? lead.createdAt).getTime()
+    if (now - issuedAt > LEAD_TOKEN_TTL_MS) return { ok: false, reason: 'expired' }
 
-  const expiresAt = Number(exp)
-  if (!Number.isFinite(expiresAt) || expiresAt < now) return { ok: false, reason: 'expired' }
-
-  return { ok: true, leadId }
+    return { ok: true, leadId: lead.id }
+  } catch (err) {
+    console.error('[lead-token] lookup failed, falling back to direct:', err)
+    return { ok: false, reason: 'error' }
+  }
 }
 
-/** The link we put in every text. Falls back to the bare page when unsigned. */
+/** The link we put in every text. Falls back to the bare page without a token. */
 export function calendarLink(token: string | null): string {
   const base = (process.env.NEXT_PUBLIC_APP_URL || 'https://www.alignandacquire.com').replace(/\/$/, '')
   return token ? `${base}/calendar?l=${encodeURIComponent(token)}` : `${base}/calendar`

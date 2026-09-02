@@ -38,7 +38,7 @@ import { FUNNEL_VARIANT_COOKIE } from '@/lib/funnel-variant'
 import { getClaimForVisitor, setupFeeLine, SETUP_FEE_DISCOUNTED } from '@/lib/coupon'
 import { sendCapiLead } from '@/lib/meta-capi'
 import { logArmSchedule } from '@/lib/arm-log'
-import { verifyLeadToken } from '@/lib/lead-token'
+import { resolveCalendarToken } from '@/lib/lead-token'
 
 export const dynamic = 'force-dynamic'
 
@@ -124,7 +124,7 @@ export async function POST(request: NextRequest) {
     // usually not the browser that walked the funnel.
     let tokenLeadId: string | null = null
     if (body.leadToken) {
-      const verdict = verifyLeadToken(body.leadToken)
+      const verdict = await resolveCalendarToken(body.leadToken, business.id)
       if (verdict.ok) tokenLeadId = verdict.leadId
       else console.warn(`[demo-book] lead token rejected reason=${verdict.reason}`)
     }
