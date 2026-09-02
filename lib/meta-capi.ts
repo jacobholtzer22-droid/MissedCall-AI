@@ -28,7 +28,11 @@ function hashPhone(e164: string): string {
   return digits ? createHash('sha256').update(digits).digest('hex') : ''
 }
 
+export type CapiEventName = 'Lead' | 'Schedule'
+
 export type CapiLead = {
+  /** Which standard event. Defaults to Lead. */
+  eventName?: CapiEventName
   /** MUST match the event_id the browser pixel fired. */
   eventId: string
   phone?: string | null
@@ -83,7 +87,7 @@ export async function sendCapiLead(input: CapiLead): Promise<CapiResult> {
   const payload = {
     data: [
       {
-        event_name: 'Lead',
+        event_name: input.eventName ?? 'Lead',
         event_time: Math.floor(Date.now() / 1000),
         // Same id the pixel used. This is what makes Meta dedupe the pair.
         event_id: input.eventId,
@@ -121,7 +125,7 @@ export async function sendCapiLead(input: CapiLead): Promise<CapiResult> {
       return { sent: false, reason: json.error?.message ?? `http_${res.status}` }
     }
     console.log(
-      `[capi] SENT event=Lead eventId=${input.eventId} received=${json.events_received ?? 0} trace=${json.fbtrace_id ?? 'n/a'}`
+      `[capi] SENT event=${input.eventName ?? 'Lead'} eventId=${input.eventId} received=${json.events_received ?? 0} trace=${json.fbtrace_id ?? 'n/a'}`
     )
     return { sent: true, eventsReceived: json.events_received ?? 0, fbTraceId: json.fbtrace_id }
   } catch (err) {

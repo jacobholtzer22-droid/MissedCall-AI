@@ -56,15 +56,27 @@ function greeting(ctx?: LeadContext): string {
 function body(ctx?: LeadContext): string {
   const who = greeting(ctx)
   const biz = ctx?.businessName?.trim()
-  const trade = ctx?.trade?.trim()
-  // One clause, and only when we actually know it. A half-filled template reads
-  // like a broken mail merge and costs more trust than personalisation buys.
-  const about = biz ? ` for ${biz}` : trade ? ` for your ${trade.toLowerCase()} business` : ''
+  // Only name the business when we actually know it. "on 's line" is worse
+  // than the generic sentence.
+  const line = biz ? `on ${biz}'s line` : 'on your line'
 
   return (
-    `Hey${who}, it's Jacob from Align & Acquire. Thanks for showing interest. ` +
-    `I'll personally reach out to you shortly${about}. ` +
-    `Questions in the meantime? Just reply here. ` +
+    `Hey${who},` + ` Jacob here from Align & Acquire. ` +
+    `Demo's playing now. ` +
+    `If it makes sense, grab a time under the video and I'll set it up ${line}. ` +
+    `Nobody calls you unless you book.`
+  )
+}
+
+/** 24h nudge, sent only when they never booked. */
+function followUpBody(ctx?: LeadContext): string {
+  const who = greeting(ctx)
+  const biz = ctx?.businessName?.trim()
+  const line = biz ? ` for ${biz}` : ''
+  return (
+    `Hey${who}, Jacob from Align & Acquire again. ` +
+    `You watched the demo yesterday but didn't grab a time. ` +
+    `If you want to see what it'd look like${line}, the calendar is still open on the page I sent. ` +
     `Reply STOP to opt out.`
   )
 }
@@ -85,9 +97,20 @@ export async function sendLeadDemoSms(
   const from = process.env.MARKETING_TELNYX_NUMBER || null
   const to = normalizeToE164(phone)
 
-  // Allowlisted handsets skip the one-shot claim so every walk texts again.
+  // TEST_PHONE_ALLOWLIST now SUPPRESSES marketing texts rather than bypassing
+  // the send-once guard.
+  //
+  // This reverses the earlier behaviour deliberately: the list is the friend
+  // and tester list, and those people should not receive sales SMS while
+  // walking the funnel. They still receive OTP codes, because without one the
+  // walk cannot be completed at all. Test a real send from a phone that is NOT
+  // on the list.
   const isTest = isTestPhone(to || phone)
   const tag = isTest ? ' test=true' : ''
+  if (isTest) {
+    console.log(`[lead-sms] SUPPRESSED leadId=${leadId} reason=test_allowlist to=${to}`)
+    return { sent: false, reason: 'test_allowlist' }
+  }
 
   if (!from || !process.env.TELNYX_API_KEY) {
     console.error(
@@ -106,15 +129,13 @@ export async function sendLeadDemoSms(
   // Skipped entirely for allowlisted test handsets: the whole point of the
   // allowlist is that a repeat walk texts again. The column is still stamped
   // below on success so the row reflects the most recent send.
-  if (!isTest) {
-    const claim = await db.websiteLead.updateMany({
-      where: { id: leadId, demoSmsSentAt: null },
-      data: { demoSmsSentAt: new Date() },
-    })
-    if (claim.count === 0) {
-      console.log(`[lead-sms] SKIP leadId=${leadId} reason=already_sent`)
-      return { sent: false, reason: 'already_sent' }
-    }
+  const claim = await db.websiteLead.updateMany({
+    where: { id: leadId, demoSmsSentAt: null },
+    data: { demoSmsSentAt: new Date() },
+  })
+  if (claim.count === 0) {
+    console.log(`[lead-sms] SKIP leadId=${leadId} reason=already_sent`)
+    return { sent: false, reason: 'already_sent' }
   }
 
   try {
@@ -127,18 +148,56 @@ export async function sendLeadDemoSms(
     )
     // Test sends never claimed the column, so stamp it here. Keeps the row
     // honest about when this lead was last texted without gating the next send.
-    if (isTest) {
-      await db.websiteLead.updateMany({ where: { id: leadId }, data: { demoSmsSentAt: new Date() } })
-    }
     return { sent: true, providerId }
   } catch (err) {
-    // Release the claim so a later wizard step can retry. Nothing to release
-    // for a test send, which never claimed.
-    if (!isTest) {
-      await db.websiteLead.updateMany({ where: { id: leadId }, data: { demoSmsSentAt: null } })
-    }
+    // Release the claim so a later wizard step can retry.
+    await db.websiteLead.updateMany({ where: { id: leadId }, data: { demoSmsSentAt: null } })
     const message = err instanceof Error ? err.message : String(err)
     console.error(`[lead-sms] FAILED leadId=${leadId} template=lead_followup to=${to} from=${from} error=${message}${tag}`)
+    return { sent: false, reason: message }
+  }
+}
+
+/**
+ * 24h follow-up for a lead that watched but never booked.
+ *
+ * Same sender, same one-shot claim discipline as the instant text, and the same
+ * allowlist suppression. Called only by the cron, which decides eligibility.
+ */
+export async function sendLeadFollowUpSms(
+  leadId: string,
+  phone: string,
+  ctx?: LeadContext
+): Promise<Result> {
+  const from = process.env.MARKETING_TELNYX_NUMBER || null
+  const to = normalizeToE164(phone)
+
+  if (isTestPhone(to || phone)) {
+    console.log(`[lead-followup] SUPPRESSED leadId=${leadId} reason=test_allowlist`)
+    return { sent: false, reason: 'test_allowlist' }
+  }
+  if (!from || !process.env.TELNYX_API_KEY) {
+    console.error(`[lead-followup] SKIP leadId=${leadId} reason=no_sender`)
+    return { sent: false, reason: 'no_sender' }
+  }
+  if (!to) return { sent: false, reason: 'unusable_phone' }
+
+  const claim = await db.websiteLead.updateMany({
+    where: { id: leadId, followUpSentAt: null },
+    data: { followUpSentAt: new Date() },
+  })
+  if (claim.count === 0) return { sent: false, reason: 'already_sent' }
+
+  try {
+    const telnyx = new Telnyx({ apiKey: process.env.TELNYX_API_KEY })
+    const res = await telnyx.messages.send({ from, to, text: followUpBody(ctx) })
+    const providerId = (res as { data?: { id?: string } })?.data?.id ?? 'unknown'
+    console.log(`[lead-followup] SENT leadId=${leadId} to=${to} from=${from} providerId=${providerId}`)
+    return { sent: true, providerId }
+  } catch (err) {
+    await db.websiteLead.updateMany({ where: { id: leadId }, data: { followUpSentAt: null } })
+    const message = err instanceof Error ? err.message : String(err)
+    console.error(`[lead-followup] FAILED leadId=${leadId} error=${message}`)
     return { sent: false, reason: message }
   }
 }

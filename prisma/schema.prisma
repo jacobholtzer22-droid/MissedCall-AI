@@ -629,6 +629,11 @@ model WebsiteLead {
   // OWNER_RENOTIFY_AFTER_MS in app/api/demo-lead/wizard/route.ts.
   ownerNotifiedAt DateTime?
 
+  /// Stamped when the 24h "still no booking" follow-up text is claimed.
+  /// Claimed the same conditional-update way as demoSmsSentAt, so overlapping
+  /// cron runs cannot double-text.
+  followUpSentAt DateTime?
+
   // Spam scoring (see lib/spam-score.ts). All nullable and additive: null means
   // the row predates scoring, which is why spamScore is not defaulted to 0.
   // A high score sets status='spam' and suppresses owner notification — it NEVER

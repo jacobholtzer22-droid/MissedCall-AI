@@ -19,6 +19,7 @@ import { recordMessageSent } from '@/lib/sms-cooldown'
 import { formatPhoneNumber } from '@/lib/utils'
 import { phonesMatch } from '@/lib/phone-utils'
 import { findOrCreateContact } from '@/lib/crm-utils'
+import { shouldRejectTelnyxWebhook } from '@/lib/telnyx-signature'
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY ?? '' })
 
@@ -176,7 +177,14 @@ function createTiming(): WebhookTiming & { now: () => string } {
 export async function POST(request: NextRequest) {
   const timing = createTiming()
   try {
-    const body = await request.json()
+    // Raw first, then parse. The Ed25519 signature covers the exact bytes
+    // Telnyx sent; JSON.stringify of the parsed object is a different string
+    // and would never verify.
+    const rawBody = await request.text()
+    if (shouldRejectTelnyxWebhook('sms', rawBody, request.headers)) {
+      return NextResponse.json({ error: 'Invalid signature' }, { status: 401 })
+    }
+    const body = JSON.parse(rawBody)
     const eventType = body.data?.event_type as string
     const payload = body.data?.payload
 

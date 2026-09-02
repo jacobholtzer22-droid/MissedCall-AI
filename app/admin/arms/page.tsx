@@ -8,16 +8,31 @@ export const dynamic = 'force-dynamic'
 const ARMS = ['A', 'B', 'C', 'unassigned'] as const
 
 function rollup(rows: { arm: string; type: string; _count: { _all: number } }[]) {
+  const get = (arm: string, type: string) =>
+    rows.find((r) => r.arm === arm && r.type === type)?._count._all ?? 0
+
   return ARMS.map((arm) => {
-    const views = rows.find((r) => r.arm === arm && r.type === 'view')?._count._all ?? 0
-    const verifiedLeads = rows.find((r) => r.arm === arm && r.type === 'verified_lead')?._count._all ?? 0
+    const views = get(arm, 'view')
+    const verifiedLeads = get(arm, 'verified_lead')
+    const bookings = get(arm, 'schedule')
+    const w25 = get(arm, 'video_25')
+    const w50 = get(arm, 'video_50')
+    const w75 = get(arm, 'video_75')
+    const w100 = get(arm, 'video_100')
+    // Watch-through is measured against people who actually STARTED the video
+    // (the 25% mark), not against page views. Dividing by views would mix in
+    // everyone who never pressed play and make every arm look broken.
+    const pct = (n: number) => (w25 > 0 ? Math.round((n / w25) * 1000) / 10 : null)
     return {
       arm,
       views,
       verifiedLeads,
+      bookings,
       verifiedRate: views > 0 ? Math.round((verifiedLeads / views) * 10000) / 100 : null,
+      watch: { started: w25, half: w50, threeQuarters: w75, complete: w100 },
+      watchThrough: { half: pct(w50), threeQuarters: pct(w75), complete: pct(w100) },
     }
-  }).filter((r) => r.views > 0 || r.verifiedLeads > 0)
+  }).filter((r) => r.views > 0 || r.verifiedLeads > 0 || r.watch.started > 0)
 }
 
 export default async function ArmsPage() {

@@ -45,6 +45,7 @@ import { isExistingContact, logContactSkip, isClientVoicemailContact } from '@/l
 import { findExistingContact } from '@/lib/crm-utils'
 import { normalizePhoneNumber, phonesMatch } from '@/lib/phone-utils'
 import { formatPhoneNumber } from '@/lib/utils'
+import { shouldRejectTelnyxWebhook } from '@/lib/telnyx-signature'
 
 const VOICE = 'AWS.Polly.Joanna'
 const DEFAULT_VOICE_MESSAGE =
@@ -77,7 +78,14 @@ export async function POST(request: NextRequest) {
   const timing: Record<string, string | number | undefined> = { webhookReceivedAt }
   try {
     console.log('⏱️ [VOICE] Webhook received at:', webhookReceivedAt)
-    const body = await request.json()
+    // Raw first, then parse. The Ed25519 signature covers the exact bytes
+    // Telnyx sent; JSON.stringify of the parsed object is a different string
+    // and would never verify.
+    const rawBody = await request.text()
+    if (shouldRejectTelnyxWebhook('voice', rawBody, request.headers)) {
+      return NextResponse.json({ error: 'Invalid signature' }, { status: 401 })
+    }
+    const body = JSON.parse(rawBody)
     const eventType = body.data?.event_type as string
     const payload = body.data?.payload
     const callControlId = payload?.call_control_id as string

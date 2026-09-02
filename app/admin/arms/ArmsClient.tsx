@@ -4,7 +4,10 @@ export type ArmRow = {
   arm: string
   views: number
   verifiedLeads: number
+  bookings: number
   verifiedRate: number | null
+  watch: { started: number; half: number; threeQuarters: number; complete: number }
+  watchThrough: { half: number | null; threeQuarters: number | null; complete: number | null }
 }
 
 export type ArmsData = {
@@ -33,7 +36,12 @@ function Table({ title, rows }: { title: string; rows: ArmRow[] }) {
                 <th className="py-2 pr-4 font-medium">Arm</th>
                 <th className="py-2 pr-4 font-medium text-right">Views</th>
                 <th className="py-2 pr-4 font-medium text-right">Verified leads</th>
-                <th className="py-2 font-medium text-right">Verified rate</th>
+                <th className="py-2 pr-4 font-medium text-right">Verified rate</th>
+                <th className="py-2 pr-4 font-medium text-right">Bookings</th>
+                <th className="py-2 pr-4 font-medium text-right">Started video</th>
+                <th className="py-2 pr-4 font-medium text-right">50%</th>
+                <th className="py-2 pr-4 font-medium text-right">75%</th>
+                <th className="py-2 font-medium text-right">Finished</th>
               </tr>
             </thead>
             <tbody>
@@ -42,10 +50,21 @@ function Table({ title, rows }: { title: string; rows: ArmRow[] }) {
                   <td className="py-2 pr-4 font-bold text-gray-100">{r.arm}</td>
                   <td className="py-2 pr-4 text-right tabular-nums text-gray-300">{r.views.toLocaleString()}</td>
                   <td className="py-2 pr-4 text-right tabular-nums text-gray-300">{r.verifiedLeads.toLocaleString()}</td>
-                  <td className="py-2 text-right tabular-nums font-semibold text-orange-400">
+                  <td className="py-2 pr-4 text-right tabular-nums font-semibold text-orange-400">
                     {/* An em dash, not 0%: no views means the rate is unknown,
                         which is a different fact from "nobody converted". */}
                     {r.verifiedRate === null ? '—' : `${r.verifiedRate}%`}
+                  </td>
+                  <td className="py-2 pr-4 text-right tabular-nums text-gray-300">{r.bookings.toLocaleString()}</td>
+                  <td className="py-2 pr-4 text-right tabular-nums text-gray-300">{r.watch.started.toLocaleString()}</td>
+                  <td className="py-2 pr-4 text-right tabular-nums text-gray-400">
+                    {r.watchThrough.half === null ? '—' : `${r.watchThrough.half}%`}
+                  </td>
+                  <td className="py-2 pr-4 text-right tabular-nums text-gray-400">
+                    {r.watchThrough.threeQuarters === null ? '—' : `${r.watchThrough.threeQuarters}%`}
+                  </td>
+                  <td className="py-2 text-right tabular-nums font-semibold text-orange-400">
+                    {r.watchThrough.complete === null ? '—' : `${r.watchThrough.complete}%`}
                   </td>
                 </tr>
               ))}
@@ -62,7 +81,8 @@ export default function ArmsClient({ data }: { data: ArmsData }) {
     <div className="p-6 md:p-8 max-w-4xl">
       <h1 className="text-2xl font-black uppercase tracking-tight mb-1">Funnel arms</h1>
       <p className="text-sm text-gray-500 mb-8">
-        A gate view and an OTP-verified lead, counted per arm. A verified lead row is written in
+        Views, OTP-verified leads, bookings and video watch-through, per arm. Watch-through is a
+        share of people who STARTED the video, not of page views. A verified lead row is written in
         the same request that fires the Meta Lead event, so this column and Events Manager are
         counting the same thing.
       </p>

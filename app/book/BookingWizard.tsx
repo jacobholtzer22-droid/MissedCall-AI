@@ -76,7 +76,7 @@ export default function BookingWizard({
   prefill: WizardPrefill
   attribution: Attribution
   onClose: () => void
-  onBooked: (r: { dateLabel: string; timeLabel: string; meetLink: string | null; couponLine: string | null }) => void
+  onBooked: (r: { dateLabel: string; timeLabel: string; meetLink: string | null; couponLine: string | null; scheduleEventId?: string }) => void
   onSlotTaken: () => void
   onLeadCaptured: (qualified: boolean) => void
   /** true in `nogate`: the lead has not been written yet, this wizard must do it. */
@@ -96,6 +96,13 @@ export default function BookingWizard({
   const [error, setError] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const leadWritten = useRef(false)
+  // Minted once per wizard. The server sends the SAME id to CAPI for Schedule,
+  // which is what makes Meta count one booking instead of two.
+  const scheduleEventId = useRef<string>(
+    typeof crypto !== 'undefined' && 'randomUUID' in crypto
+      ? crypto.randomUUID()
+      : `sched-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
+  )
   const firstInput = useRef<HTMLInputElement>(null)
 
   // Seed from the prefill every time the wizard OPENS, not just on mount.
@@ -248,6 +255,7 @@ export default function BookingWizard({
           name: name.trim(),
           phone,
           trade,
+          eventId: scheduleEventId.current,
           attribution,
           website: honeypot,
         }),
@@ -268,6 +276,7 @@ export default function BookingWizard({
         timeLabel: data?.appointment?.timeLabel ?? chosenSlot.display,
         meetLink: data?.appointment?.meetLink ?? null,
         couponLine: data?.appointment?.couponLine ?? null,
+              scheduleEventId: scheduleEventId.current,
       })
     } catch {
       setError('Network hiccup. Try again.')

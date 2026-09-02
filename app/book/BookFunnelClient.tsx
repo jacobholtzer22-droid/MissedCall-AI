@@ -77,6 +77,9 @@ export default function BookFunnelClient({
   // Lead is the ad optimization target. It must fire at most once per visitor,
   // whichever arm they are in.
   const leadFired = useRef(false)
+  // Quarter milestones, fired at most once each per page life. The server
+  // dedupes again per lead, so a refresh cannot double-count.
+  const milestonesSent = useRef<Set<number>>(new Set())
 
   const [days, setDays] = useState<ApiDay[]>([])
   const [slotsLoading, setSlotsLoading] = useState(true)
@@ -173,6 +176,9 @@ export default function BookFunnelClient({
     const v = videoRef.current
     if (!v) return
     setWatchedSeconds(v.currentTime)
+    // Watch-through reporting rides the existing tick rather than adding a
+    // second listener on the same element.
+    reportWatchMilestones()
     if (variant === 'gate' && !gate && GATE_AT_SECONDS > 0 && v.currentTime >= GATE_AT_SECONDS) {
       v.pause()
       setModalOpen(true)
@@ -249,6 +255,25 @@ export default function BookFunnelClient({
     }),
     [gate]
   )
+
+  /** 25/50/75/100% watch-through, to the arm ledger. */
+  const reportWatchMilestones = useCallback(() => {
+    const el = videoRef.current
+    if (!el || !el.duration || !Number.isFinite(el.duration)) return
+    const pct = (el.currentTime / el.duration) * 100
+    for (const m of [25, 50, 75, 100]) {
+      if (pct >= m && !milestonesSent.current.has(m)) {
+        milestonesSent.current.add(m)
+        trackCustomEvent(`VideoProgress${m}`, { content_name: 'demo_video' })
+        void fetch('/api/arm-event', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ type: `video_${m}` }),
+          keepalive: true,
+        }).catch(() => {})
+      }
+    }
+  }, [])
 
   const { src: videoSrc, poster: posterSrc } = demoVideo()
 
@@ -521,7 +546,12 @@ export default function BookFunnelClient({
           document.getElementById('step-2')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
         }}
         onBooked={(r) => {
-          trackStandard('Schedule', { content_name: 'demo_call' })
+          // Deduped against the server's CAPI Schedule via the shared id.
+          if (r.scheduleEventId) {
+            trackStandardWithId('Schedule', r.scheduleEventId, { content_name: 'demo_call' })
+          } else {
+            trackStandard('Schedule', { content_name: 'demo_call' })
+          }
           setWizardOpen(false)
           setBooked(r)
         }}

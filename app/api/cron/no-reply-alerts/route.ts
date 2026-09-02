@@ -77,6 +77,18 @@ async function runNoReplyAlerts(request: NextRequest) {
         noReplyAlertSentAt: null,
         callConnected: false,
         createdAt: { gte: oldest, lte: cutoff },
+        // Only conversations created BY A CALL are eligible.
+        //
+        // A manual dashboard send and a campaign send both create a
+        // Conversation with status 'active', callConnected false, one outbound
+        // message and no inbound — indistinguishable from an unanswered
+        // text-back under the old filter, so every manual text to a contact
+        // raised a "they never replied" alert at the owner an hour later.
+        // callSid is set only by the voice webhook, so it is the one field that
+        // separates a real missed call from an outbound-initiated thread.
+        callSid: { not: null },
+        // Belt and braces: the manual send path also sets this.
+        manualMode: false,
       },
       include: { messages: { orderBy: { createdAt: 'asc' }, select: { direction: true, createdAt: true } } },
     })

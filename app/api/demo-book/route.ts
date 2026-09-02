@@ -36,6 +36,8 @@ import { GATE_COOKIE, NOT_AN_OWNER, CALL_LENGTH_MINUTES } from '@/app/book/const
 import { VARIANT_COOKIE, VISITOR_COOKIE } from '@/lib/variant'
 import { FUNNEL_VARIANT_COOKIE } from '@/lib/funnel-variant'
 import { getClaimForVisitor, setupFeeLine, SETUP_FEE_DISCOUNTED } from '@/lib/coupon'
+import { sendCapiLead } from '@/lib/meta-capi'
+import { logArmSchedule } from '@/lib/arm-log'
 
 export const dynamic = 'force-dynamic'
 
@@ -60,6 +62,8 @@ type Payload = {
   trade?: string
   attribution?: unknown
   website?: string // honeypot
+  /** Pixel event_id for Schedule, minted client-side. Reused for CAPI dedup. */
+  eventId?: string
 }
 
 export async function POST(request: NextRequest) {
@@ -266,6 +270,38 @@ export async function POST(request: NextRequest) {
         variant,
         funnelVariant,
       },
+    })
+
+    // ── Schedule: server half of the deduped pair ───────────────────────────
+    // Same discipline as Lead: the browser fires Schedule with this exact
+    // event_id and Meta counts one conversion. Awaited because Vercel can
+    // freeze the lambda as soon as the response returns. Fails open.
+    if (body.eventId) {
+      await sendCapiLead({
+        eventName: 'Schedule',
+        eventId: body.eventId,
+        phone: phoneE164,
+        firstName: name,
+        trade,
+        businessName: companyName,
+        funnelArm: funnelVariant,
+        clientIp: getClientIp(request),
+        userAgent: request.headers.get('user-agent'),
+        fbp: request.cookies.get('_fbp')?.value ?? null,
+        fbc: request.cookies.get('_fbc')?.value ?? null,
+        eventSourceUrl: `${process.env.NEXT_PUBLIC_APP_URL ?? 'https://www.alignandacquire.com'}/book`,
+      })
+    } else {
+      console.warn('[capi] SKIP event=Schedule reason=no_event_id_from_client')
+    }
+
+    void logArmSchedule({
+      arm: funnelVariant,
+      trade,
+      businessName: companyName,
+      phone: phoneE164,
+      visitorId,
+      leadId: lead?.id ?? null,
     })
 
     // Mark the lead booked rather than creating a second record.

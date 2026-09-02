@@ -43,3 +43,29 @@ export async function logArmVerifiedLead(input: {
     console.error('[arm-log] verified_lead failed:', err)
   }
 }
+
+/** A confirmed booking, written in the same request that fires Schedule. */
+export async function logArmSchedule(input: {
+  arm: string | null
+  trade?: string | null
+  businessName?: string | null
+  phone?: string | null
+  visitorId?: string | null
+  leadId?: string | null
+}): Promise<void> {
+  try {
+    await db.armEvent.create({
+      data: {
+        type: 'schedule',
+        arm: input.arm || 'unassigned',
+        trade: input.trade ?? null,
+        businessName: input.businessName ?? null,
+        phone: input.phone ?? null,
+        visitorId: input.visitorId ?? null,
+        leadId: input.leadId ?? null,
+      },
+    })
+  } catch (err) {
+    console.error('[arm-log] schedule failed:', err)
+  }
+}
