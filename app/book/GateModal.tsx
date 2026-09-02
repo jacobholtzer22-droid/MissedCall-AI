@@ -282,9 +282,48 @@ export default function GateModal({
         })
       }
       logStep('otp')
-      const nextIndex = index + 1
-      persist(draft, nextIndex)
-      setIndex(nextIndex)
+
+      // OTP is the LAST screen since the gate was reordered, so advancing past
+      // it walked index off the end of STEPS: STEPS[5] is undefined and the
+      // render then read COPY[undefined].headline, which is the client-side
+      // exception every arm A visitor hit right after verifying.
+      //
+      // Verification is the finish line now, so complete here instead of
+      // advancing. Guarded on isLast rather than hardcoded, so putting a screen
+      // after OTP later does the sensible thing instead of silently skipping it.
+      const isLast = index === STEPS.length - 1
+      if (!isLast) {
+        const nextIndex = index + 1
+        persist(draft, nextIndex)
+        setIndex(nextIndex)
+        return
+      }
+
+      persist(draft, index)
+      setUnlocked(true)
+      void fetch('/api/funnel-event', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: 'video_unlocked', step: 'complete' }),
+        keepalive: true,
+      }).catch(() => {})
+      // Let the unlock line land before the video takes over.
+      setTimeout(() => {
+        try {
+          sessionStorage.removeItem(GATE_DRAFT_KEY)
+        } catch {
+          /* ignore */
+        }
+        onComplete({
+          leadId: leadIdRef.current,
+          name: draft.firstName,
+          phone: draft.phone,
+          trade: draft.trade,
+          company: draft.company,
+          email: '',
+          qualified: draft.trade !== NOT_AN_OWNER && !isTerminalTrade(draft.trade),
+        })
+      }, 900)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not save that. Try again.')
     } finally {
