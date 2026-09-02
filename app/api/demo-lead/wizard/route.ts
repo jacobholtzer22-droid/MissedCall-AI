@@ -321,6 +321,17 @@ export async function POST(request: NextRequest) {
     // ── Verified lead: arm ledger + server-side Lead event ───────────────────
     // Both hang off banksLead, so they fire at exactly the moment the number
     // was proven and never on a later enrichment write.
+    if (banksLead) {
+      // Proof of OTP, stamped on the row itself. The follow-up cron keys on
+      // this and nothing else.
+      await sideEffect('stamp-verified', () =>
+        db.websiteLead.updateMany({
+          where: { id: lead.id, otpVerifiedAt: null },
+          data: { otpVerifiedAt: new Date() },
+        })
+      )
+    }
+
     if (banksLead && qualified) {
       void logArmVerifiedLead({
         arm: funnelVariant,

@@ -186,11 +186,8 @@ export async function sendLeadFollowUpSms(
   }
   if (!to) return { sent: false, reason: 'unusable_phone' }
 
-  const claim = await db.websiteLead.updateMany({
-    where: { id: leadId, followUpSentAt: null },
-    data: { followUpSentAt: new Date() },
-  })
-  if (claim.count === 0) return { sent: false, reason: 'already_sent' }
+  // The claim lives in the cron, which takes it BEFORE calling this and
+  // releases it if the send fails. Claiming again here would always lose.
 
   try {
     const telnyx = new Telnyx({ apiKey: process.env.TELNYX_API_KEY })
@@ -199,7 +196,7 @@ export async function sendLeadFollowUpSms(
     console.log(`[lead-followup] SENT leadId=${leadId} to=${to} from=${from} providerId=${providerId}`)
     return { sent: true, providerId }
   } catch (err) {
-    await db.websiteLead.updateMany({ where: { id: leadId }, data: { followUpSentAt: null } })
+    // The cron releases the claim on a falsy result.
     const message = err instanceof Error ? err.message : String(err)
     console.error(`[lead-followup] FAILED leadId=${leadId} error=${message}`)
     return { sent: false, reason: message }

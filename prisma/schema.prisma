@@ -634,6 +634,12 @@ model WebsiteLead {
   /// cron runs cannot double-text.
   followUpSentAt DateTime?
 
+  /// When this lead's phone passed OTP. The follow-up cron keys on THIS, not on
+  /// createdAt and not on demoSmsSentAt: a row can exist before verification,
+  /// and keying on anything looser risks texting someone who never proved they
+  /// hold the number.
+  otpVerifiedAt DateTime?
+
   // Spam scoring (see lib/spam-score.ts). All nullable and additive: null means
   // the row predates scoring, which is why spamScore is not defaulted to 0.
   // A high score sets status='spam' and suppresses owner notification — it NEVER

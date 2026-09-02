@@ -20,6 +20,11 @@ import { formatPhoneNumber } from '@/lib/utils'
 import { phonesMatch } from '@/lib/phone-utils'
 import { findOrCreateContact } from '@/lib/crm-utils'
 import { shouldRejectTelnyxWebhook } from '@/lib/telnyx-signature'
+import {
+  leadFactsForPhone,
+  composeMarketingReply,
+  pingOwnerWithThread,
+} from '@/lib/marketing-reply'
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY ?? '' })
 
@@ -172,6 +177,18 @@ function createTiming(): WebhookTiming & { now: () => string } {
     webhookReceivedAt: received,
     now: () => new Date().toISOString(),
   }
+}
+
+/**
+ * Is this inbound landing on the /book funnel's own number?
+ *
+ * Matched on MARKETING_TELNYX_NUMBER rather than on the business id, because
+ * the marketing business also owns a tenant-style number and only ONE of them
+ * is the funnel line.
+ */
+function isMarketingLine(business: { id: string }, to: string): boolean {
+  const marketing = process.env.MARKETING_TELNYX_NUMBER?.trim()
+  return Boolean(marketing && phonesMatch(to, marketing))
 }
 
 export async function POST(request: NextRequest) {
@@ -383,6 +400,53 @@ export async function POST(request: NextRequest) {
       // Anthropic 400s on empty content blocks. Acknowledge and skip.
       if (!text || !text.trim()) {
         console.log('📭 Empty inbound SMS (no text body) — acknowledging without processing')
+        return new NextResponse('OK', { status: 200 })
+      }
+
+      // ── Marketing line ────────────────────────────────────────────────
+      // Replies to the /book funnel number are NOT tenant traffic. Falling
+      // through to the generic lead-capture AI made it answer a lead who asked
+      // to book with "someone from our team will call you" — the opposite of
+      // what the funnel promises. Handled here, before any of that runs.
+      //
+      // Placed after STOP/START so opt-out still wins, and before the
+      // conversation lookup so none of the tenant flow can touch it.
+      if (isMarketingLine(business, to)) {
+        try {
+          const facts = await leadFactsForPhone(business.id, from)
+          const convo = await db.conversation.findFirst({
+            where: { businessId: business.id, callerPhone: from },
+            orderBy: { lastMessageAt: 'desc' },
+            include: { messages: { orderBy: { createdAt: 'asc' }, select: { direction: true, content: true } } },
+          })
+          const thread = convo?.messages ?? []
+          const reply = await composeMarketingReply(facts, thread, text)
+
+          const conversationId =
+            convo?.id ??
+            (
+              await db.conversation.create({
+                data: { businessId: business.id, callerPhone: from, status: 'active', lastMessageAt: new Date() },
+                select: { id: true },
+              })
+            ).id
+
+          await db.message.create({
+            data: { conversationId, direction: 'inbound', content: text, telnyxSid: messageSid },
+          })
+          const sent = await sendSMSAndLog(business, conversationId, from, reply.text)
+          await db.conversation.update({
+            where: { id: conversationId },
+            data: { lastMessageAt: new Date(), status: 'active' },
+          })
+          console.log(
+            `[marketing-reply] handled from=${from} bookingHandoff=${reply.usedBookingHandoff} sent=${Boolean(sent)}`
+          )
+          // Never silent: Jacob sees every inbound on his own line.
+          await pingOwnerWithThread(business.ownerPhone, facts, from, text, reply.text)
+        } catch (err) {
+          console.error('[marketing-reply] FAILED:', err)
+        }
         return new NextResponse('OK', { status: 200 })
       }
 
