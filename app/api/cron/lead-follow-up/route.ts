@@ -57,7 +57,7 @@ export async function GET(request: NextRequest) {
       phone: { not: null },
       status: { not: 'spam' },
     },
-    select: { id: true, phone: true, name: true, message: true },
+    select: { id: true, phone: true, name: true, message: true, calendarToken: true },
     take: 100,
   })
 
@@ -100,7 +100,11 @@ export async function GET(request: NextRequest) {
       const firstName = (lead.message?.match(/^First name: (.+)$/m)?.[1] ?? lead.name ?? '').trim()
       const businessName = lead.message?.match(/^Company: (.+)$/m)?.[1]?.trim() ?? ''
 
-      const res = await sendLeadFollowUpSms(lead.id, lead.phone as string, { firstName, businessName })
+      const res = await sendLeadFollowUpSms(lead.id, lead.phone as string, {
+        firstName,
+        businessName,
+        calendarToken: lead.calendarToken,
+      })
       if (res.sent) {
         sent++
       } else {

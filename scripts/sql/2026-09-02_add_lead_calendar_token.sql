@@ -1,0 +1,1 @@
+ALTER TABLE "WebsiteLead" ADD COLUMN IF NOT EXISTS "calendarToken" TEXT;

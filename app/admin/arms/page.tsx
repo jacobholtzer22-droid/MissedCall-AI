@@ -7,6 +7,27 @@ export const dynamic = 'force-dynamic'
 
 const ARMS = ['A', 'B', 'C', 'unassigned'] as const
 
+
+/**
+ * Bookings split by the door they came through. Read from Appointment rather
+ * than the arm ledger: the ledger has no source, and mixing an ad booking with
+ * a cold /calendar booking would make every arm's conversion look better than
+ * it is.
+ */
+async function bookingsBySource(since?: Date) {
+  const rows = await db.appointment.groupBy({
+    by: ['source'],
+    where: { status: { not: 'cancelled' }, ...(since ? { createdAt: { gte: since } } : {}) },
+    _count: { _all: true },
+  })
+  const get = (s: string) => rows.find((r) => r.source === s)?._count._all ?? 0
+  return {
+    funnel: get('website') + get('sms'),
+    smsLink: get('sms_link'),
+    direct: get('direct'),
+  }
+}
+
 function rollup(rows: { arm: string; type: string; _count: { _all: number } }[]) {
   const get = (arm: string, type: string) =>
     rows.find((r) => r.arm === arm && r.type === type)?._count._all ?? 0
@@ -40,7 +61,7 @@ export default async function ArmsPage() {
   if (!userId || userId !== process.env.ADMIN_USER_ID) redirect('/dashboard')
 
   const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
-  const [lifetime, last7, recent] = await Promise.all([
+  const [lifetime, last7, recent, srcLifetime, src7] = await Promise.all([
     db.armEvent.groupBy({ by: ['arm', 'type'], _count: { _all: true } }),
     db.armEvent.groupBy({
       by: ['arm', 'type'],
@@ -53,9 +74,12 @@ export default async function ArmsPage() {
       take: 25,
       select: { createdAt: true, arm: true, trade: true, businessName: true, phone: true },
     }),
+    bookingsBySource(),
+    bookingsBySource(sevenDaysAgo),
   ])
 
   const data: ArmsData = {
+    bookingSources: { last7: src7, lifetime: srcLifetime },
     last7: rollup(last7),
     lifetime: rollup(lifetime),
     recentVerified: recent.map((r) => ({ ...r, createdAt: r.createdAt.toISOString() })),

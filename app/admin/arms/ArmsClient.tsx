@@ -10,7 +10,10 @@ export type ArmRow = {
   watchThrough: { half: number | null; threeQuarters: number | null; complete: number | null }
 }
 
+export type BookingSources = { funnel: number; smsLink: number; direct: number }
+
 export type ArmsData = {
+  bookingSources: { last7: BookingSources; lifetime: BookingSources }
   last7: ArmRow[]
   lifetime: ArmRow[]
   recentVerified: {
@@ -86,6 +89,40 @@ export default function ArmsClient({ data }: { data: ArmsData }) {
         the same request that fires the Meta Lead event, so this column and Events Manager are
         counting the same thing.
       </p>
+
+      <section className="mb-8">
+        <h2 className="text-sm font-bold uppercase tracking-widest text-gray-400 mb-3">
+          Bookings by source
+        </h2>
+        <p className="text-xs text-gray-600 mb-3">
+          Ad-driven and cold bookings counted apart. Funnel is /book, SMS link is a texted
+          /calendar link, Direct is someone who opened /calendar with no token.
+        </p>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-left text-gray-500 border-b border-gray-800">
+                <th className="py-2 pr-4 font-medium">Window</th>
+                <th className="py-2 pr-4 font-medium text-right">Funnel</th>
+                <th className="py-2 pr-4 font-medium text-right">SMS link</th>
+                <th className="py-2 font-medium text-right">Direct</th>
+              </tr>
+            </thead>
+            <tbody>
+              {([['Last 7 days', data.bookingSources.last7], ['Lifetime', data.bookingSources.lifetime]] as const).map(
+                ([label, s]) => (
+                  <tr key={label} className="border-b border-gray-900">
+                    <td className="py-2 pr-4 font-bold text-gray-100">{label}</td>
+                    <td className="py-2 pr-4 text-right tabular-nums text-gray-300">{s.funnel}</td>
+                    <td className="py-2 pr-4 text-right tabular-nums text-orange-400 font-semibold">{s.smsLink}</td>
+                    <td className="py-2 text-right tabular-nums text-gray-300">{s.direct}</td>
+                  </tr>
+                )
+              )}
+            </tbody>
+          </table>
+        </div>
+      </section>
 
       <Table title="Last 7 days" rows={data.last7} />
       <Table title="Lifetime" rows={data.lifetime} />

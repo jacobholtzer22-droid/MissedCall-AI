@@ -38,6 +38,7 @@ import { FUNNEL_VARIANT_COOKIE } from '@/lib/funnel-variant'
 import { getClaimForVisitor, setupFeeLine, SETUP_FEE_DISCOUNTED } from '@/lib/coupon'
 import { sendCapiLead } from '@/lib/meta-capi'
 import { logArmSchedule } from '@/lib/arm-log'
+import { verifyLeadToken } from '@/lib/lead-token'
 
 export const dynamic = 'force-dynamic'
 
@@ -64,6 +65,15 @@ type Payload = {
   website?: string // honeypot
   /** Pixel event_id for Schedule, minted client-side. Reused for CAPI dedup. */
   eventId?: string
+  /**
+   * Where the booking came from.
+   *   undefined  the /book funnel (unchanged behaviour, stored as 'website')
+   *   direct     someone typed /calendar with no token — cold, no ad attribution
+   *   sms_link   a /calendar?l=<token> link we texted a known lead
+   */
+  bookingSource?: 'direct' | 'sms_link'
+  /** Signed lead token, present only in sms_link mode. */
+  leadToken?: string
 }
 
 export async function POST(request: NextRequest) {
@@ -105,7 +115,21 @@ export async function POST(request: NextRequest) {
     const variant = request.cookies.get(VARIANT_COOKIE)?.value ?? null
     const funnelVariant = request.cookies.get(FUNNEL_VARIANT_COOKIE)?.value ?? null
     const visitorId = request.cookies.get(VISITOR_COOKIE)?.value ?? ''
-    const leadId = request.cookies.get(GATE_COOKIE)?.value ?? null
+    const bookingSource = body.bookingSource === 'direct' || body.bookingSource === 'sms_link'
+      ? body.bookingSource
+      : null
+
+    // /calendar identifies its lead by signed token, not by the gate cookie:
+    // the link is opened on whatever device the text was read on, which is
+    // usually not the browser that walked the funnel.
+    let tokenLeadId: string | null = null
+    if (body.leadToken) {
+      const verdict = verifyLeadToken(body.leadToken)
+      if (verdict.ok) tokenLeadId = verdict.leadId
+      else console.warn(`[demo-book] lead token rejected reason=${verdict.reason}`)
+    }
+
+    const leadId = tokenLeadId ?? request.cookies.get(GATE_COOKIE)?.value ?? null
     let lead = leadId
       ? await db.websiteLead.findFirst({ where: { id: leadId, businessId: business.id } })
       : null
@@ -263,12 +287,17 @@ export async function POST(request: NextRequest) {
           formatAttributionBlock(attribution),
         ].filter((l) => l !== null).join('\n'),
         status: 'confirmed',
-        source: 'website',
+        // 'website' is the funnel's historical value and is left alone so old
+        // rows and the owner-email label keep meaning the same thing.
+        source: bookingSource ?? 'website',
         googleCalendarEventId: googleEventId,
         googleMeetLink,
         calendarSyncFailed,
         variant,
-        funnelVariant,
+        // A /calendar booking has no funnel cookie of its own; the arm comes
+        // from the lead the token identified, so an ad-sourced booking is still
+        // attributed to the arm that produced it.
+        funnelVariant: funnelVariant ?? lead?.funnelVariant ?? null,
       },
     })
 
@@ -276,7 +305,9 @@ export async function POST(request: NextRequest) {
     // Same discipline as Lead: the browser fires Schedule with this exact
     // event_id and Meta counts one conversion. Awaited because Vercel can
     // freeze the lambda as soon as the response returns. Fails open.
-    if (body.eventId) {
+    // Direct /calendar traffic is cold and unattributed: firing Schedule for it
+    // would teach the ad account that cold bookings are ad conversions.
+    if (body.eventId && bookingSource !== 'direct') {
       await sendCapiLead({
         eventName: 'Schedule',
         eventId: body.eventId,
@@ -291,12 +322,14 @@ export async function POST(request: NextRequest) {
         fbc: request.cookies.get('_fbc')?.value ?? null,
         eventSourceUrl: `${process.env.NEXT_PUBLIC_APP_URL ?? 'https://www.alignandacquire.com'}/book`,
       })
+    } else if (bookingSource === 'direct') {
+      console.log('[capi] SKIP event=Schedule reason=direct_booking (no ad attribution)')
     } else {
       console.warn('[capi] SKIP event=Schedule reason=no_event_id_from_client')
     }
 
     void logArmSchedule({
-      arm: funnelVariant,
+      arm: funnelVariant ?? lead?.funnelVariant ?? null,
       trade,
       businessName: companyName,
       phone: phoneE164,

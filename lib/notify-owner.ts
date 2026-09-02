@@ -108,7 +108,16 @@ export async function notifyOwnerOnBookingCreated(
   const dateStr = formatDate(scheduledAt, tz)
   const timeStr = formatTime(scheduledAt, tz)
   const dashboardUrl = `${baseUrl}/dashboard/appointments`
-  const sourceLabel = appointment.source === 'sms' ? 'Missed Call' : 'Website'
+  // 'website' is the /book funnel's historical value; the two /calendar values
+  // are new. Spelled out so an owner alert says which door the booking came
+  // through — an ad booking and a cold-call booking are not the same lead.
+  const SOURCE_LABELS: Record<string, string> = {
+    sms: 'Missed Call',
+    website: 'Funnel (/book)',
+    sms_link: 'SMS link (/calendar)',
+    direct: 'Direct (/calendar)',
+  }
+  const sourceLabel = SOURCE_LABELS[appointment.source ?? ''] ?? 'Website'
   const notesTruncated = appointment.notes
     ? (appointment.notes.length > 100 ? appointment.notes.slice(0, 100) + '...' : appointment.notes)
     : ''

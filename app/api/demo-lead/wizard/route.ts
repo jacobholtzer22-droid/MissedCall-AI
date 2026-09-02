@@ -38,6 +38,7 @@ import { isTerminalTrade } from '@/app/book/constants'
 import { GATE_COOKIE, GATE_COOKIE_MAX_AGE, NOT_AN_OWNER } from '@/app/book/constants'
 import { VARIANT_COOKIE, VISITOR_COOKIE } from '@/lib/variant'
 import { FUNNEL_VARIANT_COOKIE } from '@/lib/funnel-variant'
+import { mintLeadToken } from '@/lib/lead-token'
 
 /**
  * How long before the same lead can generate a second owner alert.
@@ -307,10 +308,17 @@ export async function POST(request: NextRequest) {
     const smsDue = SEND_SMS_AT === 'phone' ? banked : Boolean(email)
     if (smsDue && qualified) {
       await sideEffect('lead-sms', async () => {
+        // Re-read: the token was minted moments ago in a side effect, and the
+        // in-memory `lead` predates it.
+        const fresh = await db.websiteLead.findUnique({
+          where: { id: lead.id },
+          select: { calendarToken: true },
+        })
         const sms = await sendLeadDemoSms(lead.id, phoneCheck.e164, funnelVariant, {
           firstName,
           businessName: company,
           trade,
+          calendarToken: fresh?.calendarToken ?? mintLeadToken(lead.id),
         })
         if (!sms.sent && sms.reason !== 'already_sent' && sms.reason !== 'test_allowlist') {
           console.error(`[demo-lead/wizard] lead SMS not sent leadId=${lead.id} reason=${sms.reason}`)
@@ -322,6 +330,15 @@ export async function POST(request: NextRequest) {
     // Both hang off banksLead, so they fire at exactly the moment the number
     // was proven and never on a later enrichment write.
     if (banksLead) {
+      // Signed /calendar link for every text we send this lead from here on.
+      // Stored so it can be revoked; the signature alone is what verifies.
+      await sideEffect('mint-calendar-token', () =>
+        db.websiteLead.updateMany({
+          where: { id: lead.id, calendarToken: null },
+          data: { calendarToken: mintLeadToken(lead.id) },
+        })
+      )
+
       // Proof of OTP, stamped on the row itself. The follow-up cron keys on
       // this and nothing else.
       await sideEffect('stamp-verified', () =>

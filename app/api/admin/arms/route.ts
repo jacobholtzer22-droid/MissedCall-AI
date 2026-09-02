@@ -14,6 +14,27 @@ export const dynamic = 'force-dynamic'
 const ARMS = ['A', 'B', 'C', 'unassigned'] as const
 
 // Row shape is inferred from rollup() so the API and the page cannot drift.
+
+/**
+ * Bookings split by the door they came through. Read from Appointment rather
+ * than the arm ledger: the ledger has no source, and mixing an ad booking with
+ * a cold /calendar booking would make every arm's conversion look better than
+ * it is.
+ */
+async function bookingsBySource(since?: Date) {
+  const rows = await db.appointment.groupBy({
+    by: ['source'],
+    where: { status: { not: 'cancelled' }, ...(since ? { createdAt: { gte: since } } : {}) },
+    _count: { _all: true },
+  })
+  const get = (s: string) => rows.find((r) => r.source === s)?._count._all ?? 0
+  return {
+    funnel: get('website') + get('sms'),
+    smsLink: get('sms_link'),
+    direct: get('direct'),
+  }
+}
+
 function rollup(rows: { arm: string; type: string; _count: { _all: number } }[]) {
   const get = (arm: string, type: string) =>
     rows.find((r) => r.arm === arm && r.type === type)?._count._all ?? 0

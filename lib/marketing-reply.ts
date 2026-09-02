@@ -17,6 +17,7 @@ import Telnyx from 'telnyx'
 import { db } from '@/lib/db'
 import { normalizeToE164 } from '@/lib/phone-utils'
 import { MONTHLY_FEE, SETUP_FEE_FULL } from '@/lib/coupon'
+import { calendarLink } from '@/lib/lead-token'
 
 const MODEL = 'claude-haiku-4-5-20251001'
 
@@ -25,6 +26,8 @@ export type LeadFacts = {
   firstName: string
   businessName: string
   trade: string
+  /** Signed token so the link opens prefilled rather than re-asking. */
+  calendarToken: string | null
 }
 
 /** Pull what we already know so the reply never asks for it again. */
@@ -33,14 +36,15 @@ export async function leadFactsForPhone(businessId: string, phone: string): Prom
   const lead = await db.websiteLead.findFirst({
     where: { businessId, phone: e164 },
     orderBy: { createdAt: 'desc' },
-    select: { id: true, name: true, message: true },
+    select: { id: true, name: true, message: true, calendarToken: true },
   })
-  if (!lead) return { leadId: null, firstName: '', businessName: '', trade: '' }
+  if (!lead) return { leadId: null, firstName: '', businessName: '', trade: '', calendarToken: null }
   return {
     leadId: lead.id,
     firstName: (lead.message?.match(/^First name: (.+)$/m)?.[1] ?? lead.name ?? '').trim(),
     businessName: lead.message?.match(/^Company: (.+)$/m)?.[1]?.trim() ?? '',
     trade: lead.message?.match(/^Trade: (.+)$/m)?.[1]?.trim() ?? '',
+    calendarToken: lead.calendarToken ?? null,
   }
 }
 
@@ -55,18 +59,18 @@ export function looksLikeBookingIntent(text: string): boolean {
 }
 
 /** The next two genuinely open slots, via the same endpoint the page uses. */
-export async function nextTwoSlots(): Promise<string[]> {
+export async function nextTwoSlots(): Promise<{ label: string; iso: string }[]> {
   const base = (process.env.NEXT_PUBLIC_APP_URL || 'https://www.alignandacquire.com').replace(/\/$/, '')
   try {
     const res = await fetch(`${base}/api/marketing-bookings`, { cache: 'no-store' })
     if (!res.ok) return []
     const data = (await res.json()) as {
-      days?: { label: string; slots: { display: string }[] }[]
+      days?: { label: string; slots: { display: string; iso: string }[] }[]
     }
-    const out: string[] = []
+    const out: { label: string; iso: string }[] = []
     for (const day of data.days ?? []) {
       for (const slot of day.slots) {
-        out.push(`${day.label} at ${slot.display}`)
+        out.push({ label: `${day.label} at ${slot.display}`, iso: slot.iso })
         if (out.length === 2) return out
       }
     }
@@ -77,8 +81,14 @@ export async function nextTwoSlots(): Promise<string[]> {
   }
 }
 
-function bookingLink(): string {
-  return `${(process.env.NEXT_PUBLIC_APP_URL || 'https://www.alignandacquire.com').replace(/\/$/, '')}/book`
+function bookingLink(facts?: LeadFacts): string {
+  return calendarLink(facts?.calendarToken ?? null)
+}
+
+/** Deep link straight to one slot, so "or 2:00 PM" is one tap not two. */
+function slotLink(facts: LeadFacts, iso: string): string {
+  const sep = bookingLink(facts).includes('?') ? '&' : '?'
+  return `${bookingLink(facts)}${sep}slot=${encodeURIComponent(iso)}`
 }
 
 function systemPrompt(facts: LeadFacts): string {
@@ -127,13 +137,15 @@ export async function composeMarketingReply(
     // "I'll have someone reach out" or a hallucinated time.
     const slots = await nextTwoSlots()
     const name = facts.firstName ? ` ${facts.firstName}` : ''
+    // Each slot is its own deep link: tapping one lands on that exact time
+    // rather than making them find it again in the picker.
     const when = slots.length
-      ? ` Next two open: ${slots.join(' or ')}.`
+      ? ` Next two open — ${slots.map((s) => `${s.label}: ${slotLink(facts, s.iso)}`).join('  or  ')}.`
       : ''
     return {
       usedBookingHandoff: true,
       text:
-        `Yes${name} — grab whatever time works here and it's locked in: ${bookingLink()}.` +
+        `Yes${name} — grab whatever time works here and it's locked in: ${bookingLink(facts)}.` +
         `${when} It's 15 minutes, me personally.`,
     }
   }
@@ -141,7 +153,7 @@ export async function composeMarketingReply(
   if (!process.env.ANTHROPIC_API_KEY) {
     return {
       usedBookingHandoff: true,
-      text: `Good question — easiest is to grab a time and I'll walk you through it: ${bookingLink()}`,
+      text: `Good question — easiest is to grab a time and I'll walk you through it: ${bookingLink(facts)}`,
     }
   }
 
@@ -170,11 +182,11 @@ export async function composeMarketingReply(
     console.warn('[marketing-reply] model produced a callback promise, replaced')
     return {
       usedBookingHandoff: true,
-      text: `Happy to get into it — grab a time and I'll show you live: ${bookingLink()}`,
+      text: `Happy to get into it — grab a time and I'll show you live: ${bookingLink(facts)}`,
     }
   }
 
-  return { text: text || `Grab a time and I'll walk you through it: ${bookingLink()}`, usedBookingHandoff: false }
+  return { text: text || `Grab a time and I'll walk you through it: ${bookingLink(facts)}`, usedBookingHandoff: false }
 }
 
 /** Ping Jacob with the thread so no inbound reply is silent. */

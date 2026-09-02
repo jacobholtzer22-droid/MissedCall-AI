@@ -634,6 +634,11 @@ model WebsiteLead {
   /// cron runs cannot double-text.
   followUpSentAt DateTime?
 
+  /// Signed token embedded in every /calendar link we text this lead. Stored so
+  /// it can be looked up and revoked; the signature alone is enough to verify,
+  /// so a lost row degrades to direct mode rather than an error.
+  calendarToken String?
+
   /// When this lead's phone passed OTP. The follow-up cron keys on THIS, not on
   /// createdAt and not on demoSmsSentAt: a row can exist before verification,
   /// and keying on anything looser risks texting someone who never proved they

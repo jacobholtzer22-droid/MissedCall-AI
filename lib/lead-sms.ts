@@ -19,6 +19,7 @@ import Telnyx from 'telnyx'
 import { db } from '@/lib/db'
 import { normalizeToE164 } from '@/lib/phone-utils'
 import { isTestPhone } from '@/lib/test-allowlist'
+import { calendarLink } from '@/lib/lead-token'
 
 /** Unguessable, URL-safe. Following this link identifies someone AS this lead. */
 export function newResumeToken(): string {
@@ -42,6 +43,8 @@ export type LeadContext = {
   firstName?: string | null
   businessName?: string | null
   trade?: string | null
+  /** Signed token for the /calendar link. Null falls back to the bare page. */
+  calendarToken?: string | null
 }
 
 /** "Marcus" from "Marcus Vandenberg". Empty when we have nothing usable. */
@@ -53,12 +56,17 @@ function greeting(ctx?: LeadContext): string {
   return ` ${first}`
 }
 
-function bookingLink(): string {
-  const base = (process.env.NEXT_PUBLIC_APP_URL || 'https://www.alignandacquire.com').replace(/\/$/, '')
-  return `${base}/book`
+/**
+ * Link we text. /calendar with the lead's signed token, so the page opens
+ * prefilled on whatever handset read the message — /book would have re-gated
+ * them, and the gate cookie does not follow a text to a different device.
+ */
+function bookingLink(token: string | null): string {
+  return calendarLink(token)
 }
 
 function body(ctx?: LeadContext): string {
+  const link = bookingLink(ctx?.calendarToken ?? null)
   const who = greeting(ctx)
   const biz = ctx?.businessName?.trim()
   // Same fallback as before: without a business name the sentence still reads,
@@ -69,19 +77,20 @@ function body(ctx?: LeadContext): string {
     `Hey${who}, Jacob from Align & Acquire. ` +
     `Thanks for checking out the demo. ` +
     `I'll reach out myself within 24 hours. ` +
-    `If you'd rather skip the wait, grab a time here and I'll set it up ${line}: ${bookingLink()}`
+    `If you'd rather skip the wait, grab a time here and I'll set it up ${line}: ${link}`
   )
 }
 
 /** 24h nudge, sent only when they never booked. */
 function followUpBody(ctx?: LeadContext): string {
+  const link = bookingLink(ctx?.calendarToken ?? null)
   const who = greeting(ctx)
   const biz = ctx?.businessName?.trim()
   const line = biz ? ` for ${biz}` : ''
   return (
     `Hey${who}, Jacob from Align & Acquire again. ` +
     `You watched the demo yesterday but didn't grab a time. ` +
-    `If you want to see what it'd look like${line}, the calendar is still open on the page I sent. ` +
+    `If you want to see what it'd look like${line}, grab a time here: ${link}. ` +
     `Reply STOP to opt out.`
   )
 }

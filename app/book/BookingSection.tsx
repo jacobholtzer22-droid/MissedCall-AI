@@ -28,6 +28,8 @@ export default function BookingSection({
   coupon,
   heading,
   bare = false,
+  onSlotChosen,
+  preselectIso,
 }: {
   prefill: WizardPrefill
   attribution: Record<string, string>
@@ -35,6 +37,18 @@ export default function BookingSection({
   heading: string
   /** Drop the bordered box. /book/thanks has no card-in-card. */
   bare?: boolean
+  /**
+   * When supplied, picking a slot calls this INSTEAD of opening BookingWizard.
+   * /calendar asks four fields, not the funnel's eight, so it supplies its own
+   * form rather than forking the slot picker.
+   */
+  onSlotChosen?: (slot: ChosenSlot) => void
+  /**
+   * Pick this slot automatically once the day list loads. Validated against the
+   * live slots first: a deep link texted an hour ago may point at a time that
+   * has since gone, and silently selecting it would book a taken slot.
+   */
+  preselectIso?: string
 }) {
   const [days, setDays] = useState<ApiDay[]>([])
   const [loading, setLoading] = useState(true)
@@ -78,6 +92,24 @@ export default function BookingSection({
       cancelled = true
     }
   }, [])
+
+  useEffect(() => {
+    if (!preselectIso || !days.length || slot) return
+    for (const day of days) {
+      const match = day.slots.find((s) => s.iso === preselectIso)
+      if (match) {
+        const chosen = { iso: match.iso, display: match.display, dateLabel: day.label }
+        setSelectedDate(day.date)
+        setSlot(chosen)
+        if (onSlotChosen) onSlotChosen(chosen)
+        else setWizardOpen(true)
+        return
+      }
+    }
+    // Not found: the slot is gone. Leave them on the picker rather than
+    // pretending, and say so.
+    setTakenNote('That time has been taken. Here is what is still open.')
+  }, [preselectIso, days, slot, onSlotChosen])
 
   const daySlots = days.find((d) => d.date === selectedDate)?.slots ?? []
 
@@ -169,8 +201,14 @@ export default function BookingSection({
                   <button key={s.iso} type="button"
                     onClick={() => {
                       setTakenNote('')
-                      setSlot({ iso: s.iso, display: s.display, dateLabel: days.find((d) => d.date === selectedDate)?.label ?? '' })
-                      setWizardOpen(true)
+                      const chosen = {
+                        iso: s.iso,
+                        display: s.display,
+                        dateLabel: days.find((d) => d.date === selectedDate)?.label ?? '',
+                      }
+                      setSlot(chosen)
+                      if (onSlotChosen) onSlotChosen(chosen)
+                      else setWizardOpen(true)
                     }}
                     className="px-4 py-3 border-2 text-[14px] font-semibold min-h-[52px]"
                     style={{ borderColor: BORDER, color: '#F2F0EB' }}>
