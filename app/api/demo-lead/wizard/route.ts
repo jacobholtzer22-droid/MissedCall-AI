@@ -342,14 +342,22 @@ export async function POST(request: NextRequest) {
     // one of my own phones produces an email. Real numbers are unaffected.
     const notifyCutoff = new Date(Date.now() - OWNER_RENOTIFY_AFTER_MS)
     let notifyDue = false
-    if (banked && qualified) {
-      if (isTest) {
+    if (qualified) {
+      if (banksLead) {
+        // EVERY OTP-verified lead alerts, with no cooldown and no allowlist
+        // suppression — including my own test walks, which is the point: a test
+        // that produces no alert is indistinguishable from a broken funnel.
+        //
+        // Safe to skip the claim here because banksLead means a single-use
+        // verification ticket was just consumed. That ticket already guarantees
+        // exactly one alert per verification; the time-boxed claim below is for
+        // the path that has no ticket to lean on.
         await db.websiteLead.updateMany({
           where: { id: lead.id },
           data: { ownerNotifiedAt: new Date() },
         })
         notifyDue = true
-      } else {
+      } else if (banked) {
         const notifyClaim = await db.websiteLead.updateMany({
           where: {
             id: lead.id,
@@ -366,26 +374,37 @@ export async function POST(request: NextRequest) {
         `[demo-lead/wizard] owner-notify dispatch leadId=${lead.id} template=new_gate_lead ` +
           `email=${process.env.YOUR_EMAIL ?? 'business fallback'} isNew=${isNew}${isTest ? ' test=true' : ''}`
       )
+      const appUrl = (process.env.NEXT_PUBLIC_APP_URL || 'https://www.alignandacquire.com').replace(/\/$/, '')
+      // No per-lead admin page exists yet, so this deep-links to the leads list
+      // and carries the id for a browser find. Better than no link at all.
+      const leadLink = `${appUrl}/dashboard/leads?tab=website&lead=${lead.id}`
+      const armLabel = funnelVariant ?? 'unassigned'
+      const tradeLabel = trade || 'not asked (arm B/C)'
+
       await notifyOwnerOfMarketingEvent({
         test: isTest,
         ownerEmailFallback: business.ownerEmail,
         ownerPhoneFallback: business.ownerPhone,
-        // Arm B never asks for a trade, so `(${trade})` rendered as an empty
-        // "()" in the subject line. Fall back to the business name, which is
-        // the thing arm B actually knows about them.
-        subject: `Call now: ${displayName || phoneCheck.e164} (${trade || company || 'no trade given'})${funnelVariant ? ` [arm ${funnelVariant}]` : ''}`,
+        subject: `Call now: ${displayName || phoneCheck.e164} (${trade || company || 'no trade given'}) [arm ${armLabel}]`,
         html: `
-          <h2>New gated demo lead</h2>
-          <p>They gave their number at the gate. Call while they are still on the page.</p>
-          <p><strong>Name:</strong> ${escapeHtml(displayName || 'not given yet')}</p>
-          <p><strong>Mobile:</strong> ${escapeHtml(phoneCheck.e164)}</p>
-          <p><strong>Trade:</strong> ${escapeHtml(trade || 'not given')}</p>
-          <p><strong>Company:</strong> ${escapeHtml(company || 'not given yet')}</p>
-          <p><strong>Email:</strong> ${escapeHtml(email || 'not given yet')}</p>
-          <p><strong>Funnel arm:</strong> ${escapeHtml(funnelVariant ?? 'unassigned')}</p>
+          <h2>New verified demo lead</h2>
+          <p>Their number is verified. Call while they are still on the page.</p>
+          <p><strong>First name:</strong> ${escapeHtml(firstName || displayName || 'not given')}</p>
+          <p><strong>Business:</strong> ${escapeHtml(company || 'not given')}</p>
+          <p><strong>Trade:</strong> ${escapeHtml(tradeLabel)}</p>
+          <p><strong>Phone:</strong> <a href="tel:${escapeHtml(phoneCheck.e164)}">${escapeHtml(phoneCheck.e164)}</a></p>
+          <p><strong>Funnel arm:</strong> ${escapeHtml(armLabel)}</p>
+          <p><a href="${escapeHtml(leadLink)}">Open this lead</a><br>
+             <span style="color:#666;font-size:12px">Lead id: ${escapeHtml(lead.id)}</span></p>
           <pre style="font-family:inherit;white-space:pre-wrap;margin:0">${escapeHtml(formatAttributionBlock(attribution))}</pre>
         `,
-        smsText: `Call now. ${displayName || 'Someone'} (${trade || 'trade n/a'}) gave their number on /book.\nMobile: ${phoneCheck.e164}\nVideo: ${funnelVariant ?? 'n/a'}\n${formatAttributionLine(attribution)}`,
+        smsText:
+          `Call now: ${displayName || 'lead'}` +
+          `${company ? ` (${company})` : ''}\n` +
+          `Trade: ${tradeLabel}\n` +
+          `${phoneCheck.e164}\n` +
+          `Arm ${armLabel}\n` +
+          leadLink,
       })
     }
 
