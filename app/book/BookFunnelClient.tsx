@@ -10,7 +10,7 @@ import { parseAttribution, type Attribution } from '@/lib/attribution'
 import type { Variant } from '@/lib/variant'
 import type { CouponState } from '@/lib/coupon'
 import { MONTHLY_FEE } from '@/lib/coupon'
-import { trackStandard, trackCustomEvent, setPixelVariant, setPixelFunnelVariant } from './pixel'
+import { trackStandard, trackStandardWithId, trackCustomEvent, setPixelVariant, setPixelFunnelVariant } from './pixel'
 import GateModal, { type GateResult } from './GateModal'
 import BookingWizard, { type ChosenSlot, type WizardPrefill } from './BookingWizard'
 import BrettTestimonial from './BrettTestimonial'
@@ -179,12 +179,32 @@ export default function BookFunnelClient({
     }
   }
 
-  const fireLeadOnce = useCallback((qualified: boolean) => {
-    if (leadFired.current) return
-    leadFired.current = true
-    if (qualified) trackStandard('Lead', { content_name: 'demo_video_gate' })
-    else trackCustomEvent('UnqualifiedLead', { content_name: 'demo_video_gate' })
-  }, [])
+  /**
+   * Lead fires HERE and nowhere else: once, at OTP success, for a verified
+   * number belonging to a real business. It is the ad optimisation target, so
+   * it has to mean exactly one thing.
+   *
+   * eventId is the id the server already sent to CAPI for this same lead.
+   * Passing it here is the entire deduplication mechanism.
+   */
+  const fireLeadOnce = useCallback(
+    (p: { qualified: boolean; eventId?: string; trade?: string; businessName?: string }) => {
+      if (leadFired.current) return
+      leadFired.current = true
+      const params = {
+        content_name: 'demo_video_gate',
+        ...(p.trade ? { trade: p.trade } : {}),
+        ...(p.businessName ? { business_name: p.businessName } : {}),
+      }
+      if (!p.qualified) {
+        trackCustomEvent('UnqualifiedLead', params)
+        return
+      }
+      if (p.eventId) trackStandardWithId('Lead', p.eventId, params)
+      else trackStandard('Lead', params)
+    },
+    []
+  )
 
   function handleGateComplete(result: GateResult) {
     setGate({
@@ -198,7 +218,11 @@ export default function BookFunnelClient({
     // Lead already fired when the phone screen banked the record. fireLeadOnce
     // is idempotent, so this is only a safety net for the SEND_SMS_AT
     // "complete" path where no banking happened earlier.
-    fireLeadOnce(result.qualified)
+    fireLeadOnce({
+      qualified: result.qualified,
+      trade: result.trade,
+      businessName: result.company,
+    })
     setModalOpen(false)
     startPlayback()
   }
@@ -476,7 +500,7 @@ export default function BookFunnelClient({
           attribution={attributionRef.current as Record<string, string>}
           funnelVariant={funnelVariant}
           onClose={() => setModalOpen(false)}
-          onLeadBanked={(qualified) => fireLeadOnce(qualified)}
+          onLeadBanked={(p) => fireLeadOnce(p)}
           onStepCompleted={(step) => trackCustomEvent('gate_step_completed', { step })}
           onComplete={handleGateComplete}
         />
@@ -490,7 +514,7 @@ export default function BookFunnelClient({
         needsLeadWrite={!gate}
         coupon={coupon}
         onClose={() => setWizardOpen(false)}
-        onLeadCaptured={(qualified) => fireLeadOnce(qualified)}
+        onLeadCaptured={(qualified) => fireLeadOnce({ qualified })}
         onSlotTaken={() => {
           setWizardOpen(false)
           setSlotTakenNote('That time just got taken. Pick another and I kept everything else you entered.')

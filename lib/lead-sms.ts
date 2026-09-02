@@ -38,10 +38,32 @@ export function resumeLink(token: string): string {
   return `${base}/api/demo-resume?t=${token}`
 }
 
-function body(): string {
+export type LeadContext = {
+  firstName?: string | null
+  businessName?: string | null
+  trade?: string | null
+}
+
+/** "Marcus" from "Marcus Vandenberg". Empty when we have nothing usable. */
+function greeting(ctx?: LeadContext): string {
+  const first = ctx?.firstName?.trim().split(/\s+/)[0] ?? ''
+  // Guard against the banked-lead placeholder, where the stored "name" is the
+  // phone number. "Hey +16165551234," is worse than no name at all.
+  if (!first || first.length < 2 || /\d/.test(first)) return ''
+  return ` ${first}`
+}
+
+function body(ctx?: LeadContext): string {
+  const who = greeting(ctx)
+  const biz = ctx?.businessName?.trim()
+  const trade = ctx?.trade?.trim()
+  // One clause, and only when we actually know it. A half-filled template reads
+  // like a broken mail merge and costs more trust than personalisation buys.
+  const about = biz ? ` for ${biz}` : trade ? ` for your ${trade.toLowerCase()} business` : ''
+
   return (
-    `Hey, it's Jacob from Align & Acquire. Thanks for showing interest. ` +
-    `I'll personally reach out to you shortly. ` +
+    `Hey${who}, it's Jacob from Align & Acquire. Thanks for showing interest. ` +
+    `I'll personally reach out to you shortly${about}. ` +
     `Questions in the meantime? Just reply here. ` +
     `Reply STOP to opt out.`
   )
@@ -54,7 +76,12 @@ type Result = { sent: boolean; reason?: string; providerId?: string }
  * two concurrent requests cannot both text the same person. On dispatch failure
  * the claim is released so a later step can retry.
  */
-export async function sendLeadDemoSms(leadId: string, phone: string, funnelVariant: string | null): Promise<Result> {
+export async function sendLeadDemoSms(
+  leadId: string,
+  phone: string,
+  funnelVariant: string | null,
+  ctx?: LeadContext
+): Promise<Result> {
   const from = process.env.MARKETING_TELNYX_NUMBER || null
   const to = normalizeToE164(phone)
 
@@ -92,7 +119,7 @@ export async function sendLeadDemoSms(leadId: string, phone: string, funnelVaria
 
   try {
     const telnyx = new Telnyx({ apiKey: process.env.TELNYX_API_KEY })
-    const res = await telnyx.messages.send({ from, to, text: body() })
+    const res = await telnyx.messages.send({ from, to, text: body(ctx) })
     const providerId = (res as { data?: { id?: string } })?.data?.id ?? 'unknown'
     console.log(
       `[lead-sms] SENT leadId=${leadId} template=lead_followup to=${to} from=${from} ` +

@@ -73,3 +73,36 @@ export const GATE_DRAFT_KEY = 'aa_gate_draft'
  * import it without pulling server-only code into the browser bundle.
  */
 export const OTP_MAX_RESENDS = 2
+
+// ── Gate trade picker (arm A) ────────────────────────────────────────────────
+// Replaces TRADES above for the gate. TRADES is still used by the booking
+// wizard, which is out of scope here, so the two lists are deliberately
+// separate rather than one being mutated under the other.
+
+/** Answers that end the funnel politely instead of continuing to the video. */
+export const HOMEOWNER = "I'm a homeowner"
+export const JUST_LOOKING = 'Just looking'
+
+export const GATE_TRADES = [
+  'Landscaping',
+  'Lawn care',
+  'Tree service',
+  'HVAC',
+  'Plumbing',
+  'Electrical',
+  'Junk removal',
+  'Other home service',
+  HOMEOWNER,
+  JUST_LOOKING,
+] as const
+
+/**
+ * These never reach OTP, never create a lead and never fire Lead. They are not
+ * failures — they are people telling us the truth early, and the kindest thing
+ * is to stop asking rather than walk them through a demo gate they cannot use.
+ */
+export const TERMINAL_TRADES: string[] = [HOMEOWNER, JUST_LOOKING]
+
+export function isTerminalTrade(trade: string): boolean {
+  return TERMINAL_TRADES.includes(trade.trim())
+}

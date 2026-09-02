@@ -16,7 +16,7 @@
 // the booking wizard where trade, name and phone have all been given. Same
 // definition, different moment.
 
-import { fbTrack, fbTrackCustom } from '@/lib/meta-pixel'
+import { fbTrack, fbTrackCustom, fbTrackWithId } from '@/lib/meta-pixel'
 
 let currentVariant: string | null = null
 let currentFunnelVariant: string | null = null
@@ -44,7 +44,14 @@ function withVariant(params?: Record<string, unknown>): Record<string, unknown> 
   return {
     ...(params ?? {}),
     ...(currentVariant ? { variant: currentVariant } : {}),
-    ...(currentFunnelVariant ? { funnel_variant: currentFunnelVariant } : {}),
+    ...(currentFunnelVariant
+      ? {
+          funnel_variant: currentFunnelVariant,
+          // funnel_arm is the name the ad account reports on. funnel_variant is
+          // kept alongside it so historical breakdowns do not go blank.
+          funnel_arm: currentFunnelVariant,
+        }
+      : {}),
   }
 }
 
@@ -58,6 +65,24 @@ export function trackStandard(event: string, params?: Record<string, unknown>) {
   const merged = withVariant(params)
   log('track', event, merged)
   fbTrack(event, merged)
+}
+
+/**
+ * Fire a standard event carrying an explicit event_id.
+ *
+ * Meta dedupes a browser event against a server (CAPI) event only when BOTH
+ * carry the same event_name AND the same event_id. Every Lead on this funnel
+ * goes through here so that pairing is never left to chance — without it the
+ * same conversion is counted twice.
+ */
+export function trackStandardWithId(
+  event: string,
+  eventId: string,
+  params?: Record<string, unknown>
+) {
+  const merged = withVariant(params)
+  log('track', event, { ...merged, eventID: eventId })
+  fbTrackWithId(event, eventId, merged)
 }
 
 export function trackCustomEvent(event: string, params?: Record<string, unknown>) {

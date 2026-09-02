@@ -76,3 +76,21 @@ export function fbTrackCustom(eventName: string, params?: Record<string, unknown
     fbq('trackCustom', eventName)
   }
 }
+
+/**
+ * Fire a standard event with an explicit event_id for CAPI deduplication.
+ *
+ * fbq's 4th argument is an options object whose `eventID` key (that exact
+ * casing) is what Meta matches against the server event's `event_id`. Spelling
+ * it `event_id` here silently disables dedup and double-counts every
+ * conversion, which is why it is written once, here, and never at a call site.
+ */
+export function fbTrackWithId(
+  eventName: string,
+  eventId: string,
+  params?: Record<string, unknown>
+): void {
+  const fbq = ensureFbq()
+  if (!fbq) return
+  fbq('track', eventName, params ?? {}, { eventID: eventId })
+}

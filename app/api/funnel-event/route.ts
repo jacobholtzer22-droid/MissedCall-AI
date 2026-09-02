@@ -13,6 +13,7 @@ import { db } from '@/lib/db'
 import { rateLimit, getClientIp } from '@/lib/rate-limit'
 import { VARIANT_COOKIE, VISITOR_COOKIE } from '@/lib/variant'
 import { FUNNEL_VARIANT_COOKIE } from '@/lib/funnel-variant'
+import { logArmView } from '@/lib/arm-log'
 
 export const dynamic = 'force-dynamic'
 
@@ -25,6 +26,7 @@ const ALLOWED_NAMES = [
   'gate_step_completed', 'gate_opened', 'gate_abandoned', 'video_unlocked', 'honeypot_blocked',
   'otp_sent', 'otp_verified', 'otp_failed',
   'form_submitted', 'thanks_view',
+  'gate_exit_not_a_fit',
 ]
 const ALLOWED_STEPS = [
   'landing',
@@ -48,6 +50,16 @@ export async function POST(request: NextRequest) {
     const step = typeof body.step === 'string' && ALLOWED_STEPS.includes(body.step.trim())
       ? body.step.trim()
       : null
+
+    if (name === 'landing_view') {
+      // The arm ledger is what /admin/arms divides by. Written here rather than
+      // in the page so it counts real browser loads, not prefetches or bots
+      // that never execute JS.
+      void logArmView({
+        arm: request.cookies.get(FUNNEL_VARIANT_COOKIE)?.value ?? null,
+        visitorId: request.cookies.get(VISITOR_COOKIE)?.value ?? null,
+      })
+    }
 
     await db.funnelEvent.create({
       data: {

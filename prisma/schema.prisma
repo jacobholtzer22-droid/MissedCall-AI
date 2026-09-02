@@ -781,6 +781,39 @@ model PhoneVerification {
   @@index([createdAt])
 }
 
+/// Arm attribution ledger for /book.
+///
+/// Deliberately separate from FunnelEvent, which is PII-free per-screen
+/// analytics. This table exists to answer one question — "how does each arm
+/// convert?" — and to do it needs the identifying fields FunnelEvent must not
+/// hold. Two row types only:
+///
+///   view           a gate page load, one per ViewContent
+///   verified_lead  an OTP-verified lead, written at the same moment the Lead
+///                  event fires, so the two can never disagree
+///
+/// The rate in /admin/arms is verified_lead / view per arm.
+model ArmEvent {
+  id String @id @default(cuid())
+
+  type String // "view" | "verified_lead"
+  arm  String // A | B | C, or "unassigned" when the cookie was missing
+
+  // Null on view rows. Populated on verified_lead rows.
+  trade        String?
+  businessName String?
+  phone        String? // E.164
+
+  visitorId String?
+  leadId    String?
+
+  createdAt DateTime @default(now())
+
+  // Serves the per-arm rollups and the 7-day window in one index.
+  @@index([arm, type, createdAt])
+  @@index([createdAt])
+}
+
 model FunnelEvent {
   id String @id @default(cuid())
 

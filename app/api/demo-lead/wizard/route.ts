@@ -32,6 +32,9 @@ import { sendLeadDemoSms, newResumeToken } from '@/lib/lead-sms'
 import { SEND_SMS_AT } from '@/app/book/constants'
 import { isTestPhone } from '@/lib/test-allowlist'
 import { consumeVerification } from '@/lib/otp'
+import { sendCapiLead } from '@/lib/meta-capi'
+import { logArmVerifiedLead } from '@/lib/arm-log'
+import { isTerminalTrade } from '@/app/book/constants'
 import { GATE_COOKIE, GATE_COOKIE_MAX_AGE, NOT_AN_OWNER } from '@/app/book/constants'
 import { VARIANT_COOKIE, VISITOR_COOKIE } from '@/lib/variant'
 import { FUNNEL_VARIANT_COOKIE } from '@/lib/funnel-variant'
@@ -64,6 +67,8 @@ type Payload = {
   stage?: 'phone' | 'form' | 'update'
   /** Single-use ticket from /api/otp/verify. Required to BANK a lead. */
   verificationId?: string
+  /** Pixel event_id, minted client-side. Reused verbatim for CAPI dedup. */
+  eventId?: string
   /** Arm B sends one name field and a business name. */
   fullName?: string
   businessName?: string
@@ -166,8 +171,13 @@ export async function POST(request: NextRequest) {
     // filled in a business name. Falling through to the arm A rule would make
     // every arm B lead unqualified, which silently suppresses BOTH the instant
     // SMS and the owner email.
+    // "I'm a homeowner" and "Just looking" never reach here — the gate ends
+    // before OTP — but they are excluded explicitly so a replayed or hand-made
+    // request cannot mint a qualified lead out of them.
     const qualified =
-      body.stage === 'form' ? company !== '' : trade !== NOT_AN_OWNER && trade !== ''
+      body.stage === 'form'
+        ? company !== ''
+        : trade !== NOT_AN_OWNER && trade !== '' && !isTerminalTrade(trade)
 
     const variant = request.cookies.get(VARIANT_COOKIE)?.value ?? null
     const funnelVariant = request.cookies.get(FUNNEL_VARIANT_COOKIE)?.value ?? null
@@ -270,9 +280,48 @@ export async function POST(request: NextRequest) {
     const isTest = isTestPhone(phoneCheck.e164)
     const smsDue = SEND_SMS_AT === 'phone' ? banked : Boolean(email)
     if (smsDue && qualified) {
-      const sms = await sendLeadDemoSms(lead.id, phoneCheck.e164, funnelVariant)
+      const sms = await sendLeadDemoSms(lead.id, phoneCheck.e164, funnelVariant, {
+        firstName,
+        businessName: company,
+        trade,
+      })
       if (!sms.sent && sms.reason !== 'already_sent') {
         console.error(`[demo-lead/wizard] lead SMS not sent leadId=${lead.id} reason=${sms.reason}`)
+      }
+    }
+
+    // ── Verified lead: arm ledger + server-side Lead event ───────────────────
+    // Both hang off banksLead, so they fire at exactly the moment the number
+    // was proven and never on a later enrichment write.
+    if (banksLead && qualified) {
+      void logArmVerifiedLead({
+        arm: funnelVariant,
+        trade,
+        businessName: company,
+        phone: phoneCheck.e164,
+        visitorId,
+        leadId: lead.id,
+      })
+
+      // Awaited, not fire-and-forget: on Vercel the lambda can be frozen the
+      // moment the response is returned, which would drop an un-awaited fetch.
+      // It fails open, so a CAPI outage cannot fail the lead write above.
+      if (body.eventId) {
+        await sendCapiLead({
+          eventId: body.eventId,
+          phone: phoneCheck.e164,
+          firstName,
+          trade,
+          businessName: company,
+          funnelArm: funnelVariant,
+          clientIp: getClientIp(request),
+          userAgent: request.headers.get('user-agent'),
+          fbp: request.cookies.get('_fbp')?.value ?? null,
+          fbc: request.cookies.get('_fbc')?.value ?? null,
+          eventSourceUrl: `${process.env.NEXT_PUBLIC_APP_URL ?? 'https://www.alignandacquire.com'}${landingPath}`,
+        })
+      } else {
+        console.warn(`[capi] SKIP leadId=${lead.id} reason=no_event_id_from_client`)
       }
     }
 
