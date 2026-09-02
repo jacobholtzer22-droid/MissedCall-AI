@@ -110,6 +110,30 @@ function buildMessage(p: {
   ].filter((l) => l !== null).join('\n')
 }
 
+/**
+ * Run a post-lead side effect so that it can never break the response.
+ *
+ * Once the lead row exists and the gate cookie is set, the visitor has earned
+ * their video. Everything after that — the SMS, the pixel, the owner alert — is
+ * bookkeeping. A throw in any of it used to surface as an error screen on a
+ * walk that had actually SUCCEEDED: lead written, owner alerted, and the person
+ * staring at "something went wrong".
+ *
+ * The timeout matters as much as the catch. A hung Telnyx or Resend call does
+ * not throw, it just never settles, and an awaited one holds the response until
+ * the platform kills the invocation — same error screen, no stack trace.
+ */
+async function sideEffect(label: string, work: () => Promise<unknown>, timeoutMs = 8000): Promise<void> {
+  try {
+    await Promise.race([
+      work(),
+      new Promise((_, reject) => setTimeout(() => reject(new Error(`timed out after ${timeoutMs}ms`)), timeoutMs)),
+    ])
+  } catch (err) {
+    console.error(`[demo-lead/wizard] side-effect FAILED step=${label} error=${err instanceof Error ? err.message : String(err)}`)
+  }
+}
+
 export async function POST(request: NextRequest) {
   try {
     const limit = rateLimit(`demo-lead-wizard:${getClientIp(request)}`, 20, 60_000)
@@ -250,19 +274,21 @@ export async function POST(request: NextRequest) {
         })
 
     // CRM record. Contact carries a real source column.
-    await findOrCreateContact({
-      businessId: business.id,
-      phoneNumber: phoneCheck.e164,
-      name: displayName || undefined,
-      email: email || undefined,
-      source: LEAD_SOURCE,
-      notes: `${trade}${qualified ? '' : ' (not an owner)'}`,
-    }).catch((err) => console.error('[demo-lead/wizard] findOrCreateContact failed:', err))
+    await sideEffect('crm', () =>
+      findOrCreateContact({
+        businessId: business.id,
+        phoneNumber: phoneCheck.e164,
+        name: displayName || undefined,
+        email: email || undefined,
+        source: LEAD_SOURCE,
+        notes: `${trade}${qualified ? '' : ' (not an owner)'}`,
+      })
+    )
 
     if (visitorId) {
-      await db.couponClaim
-        .updateMany({ where: { visitorId, leadId: null }, data: { leadId: lead.id } })
-        .catch((err) => console.error('[demo-lead/wizard] coupon bind failed:', err))
+      await sideEffect('coupon-bind', () =>
+        db.couponClaim.updateMany({ where: { visitorId, leadId: null }, data: { leadId: lead.id } })
+      )
     }
 
     // ── Lead-facing demo SMS ────────────────────────────────────────────────
@@ -280,14 +306,16 @@ export async function POST(request: NextRequest) {
     const isTest = isTestPhone(phoneCheck.e164)
     const smsDue = SEND_SMS_AT === 'phone' ? banked : Boolean(email)
     if (smsDue && qualified) {
-      const sms = await sendLeadDemoSms(lead.id, phoneCheck.e164, funnelVariant, {
-        firstName,
-        businessName: company,
-        trade,
+      await sideEffect('lead-sms', async () => {
+        const sms = await sendLeadDemoSms(lead.id, phoneCheck.e164, funnelVariant, {
+          firstName,
+          businessName: company,
+          trade,
+        })
+        if (!sms.sent && sms.reason !== 'already_sent' && sms.reason !== 'test_allowlist') {
+          console.error(`[demo-lead/wizard] lead SMS not sent leadId=${lead.id} reason=${sms.reason}`)
+        }
       })
-      if (!sms.sent && sms.reason !== 'already_sent') {
-        console.error(`[demo-lead/wizard] lead SMS not sent leadId=${lead.id} reason=${sms.reason}`)
-      }
     }
 
     // ── Verified lead: arm ledger + server-side Lead event ───────────────────
@@ -306,9 +334,12 @@ export async function POST(request: NextRequest) {
       // Awaited, not fire-and-forget: on Vercel the lambda can be frozen the
       // moment the response is returned, which would drop an un-awaited fetch.
       // It fails open, so a CAPI outage cannot fail the lead write above.
-      if (body.eventId) {
-        await sendCapiLead({
-          eventId: body.eventId,
+      // Captured before the closure: TS cannot narrow body.eventId inside one.
+      const capiEventId = body.eventId
+      if (capiEventId) {
+        await sideEffect('capi-lead', () =>
+          sendCapiLead({
+            eventId: capiEventId,
           phone: phoneCheck.e164,
           firstName,
           trade,
@@ -318,8 +349,9 @@ export async function POST(request: NextRequest) {
           userAgent: request.headers.get('user-agent'),
           fbp: request.cookies.get('_fbp')?.value ?? null,
           fbc: request.cookies.get('_fbc')?.value ?? null,
-          eventSourceUrl: `${process.env.NEXT_PUBLIC_APP_URL ?? 'https://www.alignandacquire.com'}${landingPath}`,
-        })
+            eventSourceUrl: `${process.env.NEXT_PUBLIC_APP_URL ?? 'https://www.alignandacquire.com'}${landingPath}`,
+          })
+        )
       } else {
         console.warn(`[capi] SKIP leadId=${lead.id} reason=no_event_id_from_client`)
       }
@@ -381,7 +413,8 @@ export async function POST(request: NextRequest) {
       const armLabel = funnelVariant ?? 'unassigned'
       const tradeLabel = trade || 'not asked (arm B/C)'
 
-      await notifyOwnerOfMarketingEvent({
+      await sideEffect('owner-notify', () =>
+        notifyOwnerOfMarketingEvent({
         test: isTest,
         ownerEmailFallback: business.ownerEmail,
         ownerPhoneFallback: business.ownerPhone,
@@ -405,7 +438,8 @@ export async function POST(request: NextRequest) {
           `${phoneCheck.e164}\n` +
           `Arm ${armLabel}\n` +
           leadLink,
-      })
+        })
+      )
     }
 
     console.log(

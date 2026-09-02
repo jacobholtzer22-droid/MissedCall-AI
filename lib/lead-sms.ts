@@ -97,20 +97,14 @@ export async function sendLeadDemoSms(
   const from = process.env.MARKETING_TELNYX_NUMBER || null
   const to = normalizeToE164(phone)
 
-  // TEST_PHONE_ALLOWLIST now SUPPRESSES marketing texts rather than bypassing
-  // the send-once guard.
+  // TEST_PHONE_ALLOWLIST numbers DO receive the lead SMS, and bypass the
+  // send-once claim so a repeat test walk texts again.
   //
-  // This reverses the earlier behaviour deliberately: the list is the friend
-  // and tester list, and those people should not receive sales SMS while
-  // walking the funnel. They still receive OTP codes, because without one the
-  // walk cannot be completed at all. Test a real send from a phone that is NOT
-  // on the list.
+  // This reverses the suppression added yesterday. Suppressing it meant a test
+  // walk could not prove the send path worked end to end — the thing most worth
+  // testing was the one thing testing could not reach.
   const isTest = isTestPhone(to || phone)
   const tag = isTest ? ' test=true' : ''
-  if (isTest) {
-    console.log(`[lead-sms] SUPPRESSED leadId=${leadId} reason=test_allowlist to=${to}`)
-    return { sent: false, reason: 'test_allowlist' }
-  }
 
   if (!from || !process.env.TELNYX_API_KEY) {
     console.error(
@@ -129,13 +123,17 @@ export async function sendLeadDemoSms(
   // Skipped entirely for allowlisted test handsets: the whole point of the
   // allowlist is that a repeat walk texts again. The column is still stamped
   // below on success so the row reflects the most recent send.
-  const claim = await db.websiteLead.updateMany({
-    where: { id: leadId, demoSmsSentAt: null },
-    data: { demoSmsSentAt: new Date() },
-  })
-  if (claim.count === 0) {
-    console.log(`[lead-sms] SKIP leadId=${leadId} reason=already_sent`)
-    return { sent: false, reason: 'already_sent' }
+  // Allowlisted handsets skip the claim so repeat walks re-text; the column is
+  // still stamped after a successful send so the row stays honest.
+  if (!isTest) {
+    const claim = await db.websiteLead.updateMany({
+      where: { id: leadId, demoSmsSentAt: null },
+      data: { demoSmsSentAt: new Date() },
+    })
+    if (claim.count === 0) {
+      console.log(`[lead-sms] SKIP leadId=${leadId} reason=already_sent`)
+      return { sent: false, reason: 'already_sent' }
+    }
   }
 
   try {
@@ -144,14 +142,20 @@ export async function sendLeadDemoSms(
     const providerId = (res as { data?: { id?: string } })?.data?.id ?? 'unknown'
     console.log(
       `[lead-sms] SENT leadId=${leadId} template=lead_followup to=${to} from=${from} ` +
-        `video=${funnelVariant ?? 'none'} providerId=${providerId}${tag}`
+        `arm=${funnelVariant ?? 'none'} providerId=${providerId}${tag}`
     )
+    if (isTest) {
+      await db.websiteLead.updateMany({ where: { id: leadId }, data: { demoSmsSentAt: new Date() } })
+    }
     // Test sends never claimed the column, so stamp it here. Keeps the row
     // honest about when this lead was last texted without gating the next send.
     return { sent: true, providerId }
   } catch (err) {
-    // Release the claim so a later wizard step can retry.
-    await db.websiteLead.updateMany({ where: { id: leadId }, data: { demoSmsSentAt: null } })
+    // Release the claim so a later wizard step can retry. Nothing to release
+    // for a test send, which never claimed.
+    if (!isTest) {
+      await db.websiteLead.updateMany({ where: { id: leadId }, data: { demoSmsSentAt: null } })
+    }
     const message = err instanceof Error ? err.message : String(err)
     console.error(`[lead-sms] FAILED leadId=${leadId} template=lead_followup to=${to} from=${from} error=${message}${tag}`)
     return { sent: false, reason: message }
