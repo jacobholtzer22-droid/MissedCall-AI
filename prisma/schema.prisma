@@ -825,6 +825,12 @@ model ArmEvent {
   visitorId String?
   leadId    String?
 
+  /// Which video the visitor was actually served on this watch_view. Recorded
+  /// per row rather than read from env at report time: the env var can change
+  /// between the view and the report, and an A/B test whose arms cannot be
+  /// tied to the file that played is not a test.
+  videoUrl String?
+
   createdAt DateTime @default(now())
 
   // Serves the per-arm rollups and the 7-day window in one index.

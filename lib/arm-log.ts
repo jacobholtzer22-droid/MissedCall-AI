@@ -71,10 +71,19 @@ export async function logArmSchedule(input: {
 }
 
 /** A /book/watch load. Server-side so it counts real page loads, not prefetches. */
-export async function logArmWatchView(input: { arm: string | null; leadId?: string | null }): Promise<void> {
+export async function logArmWatchView(input: {
+  arm: string | null
+  leadId?: string | null
+  videoUrl?: string | null
+}): Promise<void> {
   try {
     await db.armEvent.create({
-      data: { type: 'watch_view', arm: input.arm || 'unassigned', leadId: input.leadId ?? null },
+      data: {
+        type: 'watch_view',
+        arm: input.arm || 'unassigned',
+        leadId: input.leadId ?? null,
+        videoUrl: input.videoUrl ?? null,
+      },
     })
   } catch (err) {
     console.error('[arm-log] watch_view failed:', err)

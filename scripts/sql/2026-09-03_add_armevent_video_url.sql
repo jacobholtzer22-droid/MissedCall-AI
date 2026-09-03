@@ -1,0 +1,1 @@
+ALTER TABLE "ArmEvent" ADD COLUMN IF NOT EXISTS "videoUrl" TEXT;

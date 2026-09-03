@@ -46,8 +46,11 @@ export default async function WatchPage({ searchParams }: { searchParams: { t?: 
     console.error('[book/watch] prefill failed:', err)
   }
 
-  // Server-side so it counts real page loads, with the arm and the lead.
-  void logArmWatchView({ arm: claim.arm, leadId: claim.leadId })
+  const video = videoFor(claim.arm)
 
-  return <WatchClient arm={claim.arm} video={videoFor(claim.arm)} prefill={prefill} />
+  // Server-side so it counts real page loads, with the arm, the lead, and the
+  // file that actually played.
+  void logArmWatchView({ arm: claim.arm, leadId: claim.leadId, videoUrl: video.src || null })
+
+  return <WatchClient arm={claim.arm} video={video} prefill={prefill} />
 }

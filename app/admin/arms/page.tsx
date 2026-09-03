@@ -2,6 +2,7 @@ import { auth } from '@clerk/nextjs/server'
 import { redirect } from 'next/navigation'
 import { db } from '@/lib/db'
 import ArmsClient, { type ArmsData } from './ArmsClient'
+import { FUNNEL_VIDEOS, armsMissingVideo } from '@/lib/funnel-videos'
 
 export const dynamic = 'force-dynamic'
 
@@ -79,7 +80,24 @@ export default async function ArmsPage() {
     bookingsBySource(sevenDaysAgo),
   ])
 
+  // Configured source per arm, plus what the ledger actually recorded serving.
+  // They should agree; if they do not, the env changed mid-test.
+  const servedRows = await db.armEvent.groupBy({
+    by: ['arm', 'videoUrl'],
+    where: { type: 'watch_view', videoUrl: { not: null } },
+    _count: { _all: true },
+  })
+
   const data: ArmsData = {
+    videos: (['A', 'B'] as const).map((arm) => ({
+      arm,
+      configured: FUNNEL_VIDEOS[arm].src,
+      served: servedRows
+        .filter((r) => r.arm === arm)
+        .sort((a, b) => b._count._all - a._count._all)
+        .map((r) => ({ url: r.videoUrl as string, count: r._count._all })),
+    })),
+    missingVideo: armsMissingVideo(),
     bookingSources: { last7: src7, lifetime: srcLifetime },
     last7: rollup(last7),
     lifetime: rollup(lifetime),

@@ -13,7 +13,15 @@ export type ArmRow = {
 
 export type BookingSources = { funnel: number; smsLink: number; direct: number }
 
+export type ArmVideo = {
+  arm: string
+  configured: string
+  served: { url: string; count: number }[]
+}
+
 export type ArmsData = {
+  videos: ArmVideo[]
+  missingVideo: string[]
   bookingSources: { last7: BookingSources; lifetime: BookingSources }
   last7: ArmRow[]
   lifetime: ArmRow[]
@@ -92,6 +100,47 @@ export default function ArmsClient({ data }: { data: ArmsData }) {
         the same request that fires the Meta Lead event, so this column and Events Manager are
         counting the same thing.
       </p>
+
+      <section className="mb-8">
+        <h2 className="text-sm font-bold uppercase tracking-widest text-gray-400 mb-3">Video per arm</h2>
+        {data.missingVideo.length > 0 && (
+          <p className="mb-3 rounded border border-red-800 bg-red-950 px-3 py-2 text-sm font-semibold text-red-300">
+            Arm {data.missingVideo.join(' and ')} has NO VIDEO configured. Set
+            NEXT_PUBLIC_FUNNEL_VIDEO_B. It is deliberately not falling back to arm A — that would
+            collapse the test into one arm without anything looking broken.
+          </p>
+        )}
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-gray-800 text-left text-gray-500">
+                <th className="py-2 pr-4 font-medium">Arm</th>
+                <th className="py-2 pr-4 font-medium">Configured now</th>
+                <th className="py-2 font-medium">Actually served (watch views)</th>
+              </tr>
+            </thead>
+            <tbody>
+              {data.videos.map((v) => (
+                <tr key={v.arm} className="border-b border-gray-900 align-top">
+                  <td className="py-2 pr-4 font-bold text-gray-100">{v.arm}</td>
+                  <td className="py-2 pr-4 break-all text-gray-300">
+                    {v.configured || <span className="font-semibold text-red-400">NOT SET</span>}
+                  </td>
+                  <td className="py-2 break-all text-gray-400">
+                    {v.served.length === 0
+                      ? '—'
+                      : v.served.map((s) => (
+                          <div key={s.url}>
+                            {s.url.split('/').pop()} <span className="text-gray-600">×{s.count}</span>
+                          </div>
+                        ))}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
 
       <section className="mb-8">
         <h2 className="text-sm font-bold uppercase tracking-widest text-gray-400 mb-3">

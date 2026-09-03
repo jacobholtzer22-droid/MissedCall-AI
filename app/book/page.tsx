@@ -27,5 +27,8 @@ export default async function BookPage({ searchParams }: { searchParams: { varia
     funnelVariantFromQuery(searchParams?.variant) ??
     (isFunnelVariant(fromCookie) ? fromCookie : assignFunnelVariant())
 
-  return <VslLanding arm={arm} video={videoFor(arm)} />
+  // Only the POSTER, which is shared. Handing the landing page the arm's video
+  // URL would ship the one variable under test into a page that never plays it,
+  // and leave the two arms' payloads differing for no reason.
+  return <VslLanding arm={arm} poster={videoFor(arm).poster} />
 }

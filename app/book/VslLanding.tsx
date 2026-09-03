@@ -9,10 +9,9 @@ import FunnelHeadline from './FunnelHeadline'
 import { BannerCard, FunnelButton } from './FunnelCard'
 import { trackStandard, trackStandardWithId, trackCustomEvent, setPixelFunnelVariant } from './pixel'
 import type { FunnelVariant } from '@/lib/funnel-variant'
-import type { FunnelVideo } from '@/lib/funnel-videos'
 
 
-export default function VslLanding({ arm, video }: { arm: FunnelVariant; video: FunnelVideo }) {
+export default function VslLanding({ arm, poster }: { arm: FunnelVariant; poster: string }) {
   const router = useRouter()
   const [open, setOpen] = useState(false)
   const viewFired = useRef(false)
@@ -56,7 +55,7 @@ export default function VslLanding({ arm, video }: { arm: FunnelVariant; video: 
           style={{ aspectRatio: '16 / 9' }}
         >
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={video.poster} alt="" className="absolute inset-0 h-full w-full object-cover" />
+          <img src={poster} alt="" className="absolute inset-0 h-full w-full object-cover" />
           <span className="absolute inset-0 grid place-items-center" style={{ background: 'rgba(0,0,0,0.18)' }}>
             <span className="grid h-[68px] w-[68px] place-items-center rounded-full shadow-lg"
               style={{ background: 'var(--funnel-banner)' }}>
