@@ -379,7 +379,7 @@ export async function POST(request: NextRequest) {
           to: phoneE164,
           text: `You are booked with Align and Acquire for ${dateLabel} at ${timeLabel} ET. I will show you the system running on real client accounts.${
             googleMeetLink ? `\nJoin here: ${googleMeetLink}` : ''
-          }\n${WATCH_BEFORE_LINE} ${getDemoVideoAbsoluteUrl()}\nReply STOP to opt out.`,
+          }\nReply STOP to opt out.`,
         })
       } catch (err) {
         console.error('[demo-book] confirmation SMS failed:', err)

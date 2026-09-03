@@ -533,7 +533,7 @@ export async function POST(request: NextRequest) {
         await telnyx.messages.send({
           from: process.env.MARKETING_TELNYX_NUMBER,
           to: phoneCheck.e164,
-          text: `You are booked with Align and Acquire for ${dateLabel} at ${timeLabel} ET. I will show you the system running on real client accounts.${googleMeetLink ? `\nJoin here: ${googleMeetLink}` : ''}\n${WATCH_BEFORE_LINE} ${getDemoVideoAbsoluteUrl()}\nReply STOP to opt out.`,
+          text: `You are booked with Align and Acquire for ${dateLabel} at ${timeLabel} ET. I will show you the system running on real client accounts.${googleMeetLink ? `\nJoin here: ${googleMeetLink}` : ''}\nReply STOP to opt out.`,
         })
       } catch (err) {
         console.error('Failed to send customer confirmation SMS via Telnyx:', err)
