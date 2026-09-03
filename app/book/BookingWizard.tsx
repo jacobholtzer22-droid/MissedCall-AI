@@ -4,9 +4,6 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { X, ArrowLeft, Loader2, Check, Calendar } from 'lucide-react'
 import { validateUsMobile } from '@/lib/phone-utils'
 import type { Attribution } from '@/lib/attribution'
-import type { CouponState } from '@/lib/coupon'
-import { CouponApplied } from './CouponBanner'
-import ProgressBar from './ProgressBar'
 import {
   TRADES,
   NOT_AN_OWNER,
@@ -69,19 +66,25 @@ export default function BookingWizard({
   onSlotTaken,
   onLeadCaptured,
   needsLeadWrite,
-  coupon,
+  light = false,
 }: {
   open: boolean
   slot: ChosenSlot | null
   prefill: WizardPrefill
   attribution: Attribution
   onClose: () => void
-  onBooked: (r: { dateLabel: string; timeLabel: string; meetLink: string | null; couponLine: string | null; scheduleEventId?: string }) => void
+  onBooked: (r: {
+    dateLabel: string
+    timeLabel: string
+    meetLink: string | null
+    scheduleEventId?: string
+  }) => void
   onSlotTaken: () => void
   onLeadCaptured: (qualified: boolean) => void
   /** true in `nogate`: the lead has not been written yet, this wizard must do it. */
   needsLeadWrite: boolean
-  coupon: CouponState
+  /** White ground, for the VSL pages. */
+  light?: boolean
 }) {
   const [trade, setTrade] = useState(prefill.trade ?? '')
   const [name, setName] = useState(prefill.name ?? '')
@@ -275,7 +278,6 @@ export default function BookingWizard({
         dateLabel: data?.appointment?.dateLabel ?? chosenSlot.dateLabel,
         timeLabel: data?.appointment?.timeLabel ?? chosenSlot.display,
         meetLink: data?.appointment?.meetLink ?? null,
-        couponLine: data?.appointment?.couponLine ?? null,
               scheduleEventId: scheduleEventId.current,
       })
     } catch {
@@ -332,7 +334,6 @@ export default function BookingWizard({
         </div>
 
         {/* Starts at 50%: picking a time already counted as real progress. */}
-        <ProgressBar pct={50 + (stepIndex / Math.max(1, steps.length - 1)) * 50} label={LABELS[step]} min={50} />
 
         {/* Chosen time stays visible the whole way through. */}
         <div className="mx-5 sm:mx-7 mt-4 border-2 px-4 py-3 flex items-center gap-2.5"
@@ -476,7 +477,6 @@ export default function BookingWizard({
               <h2 className="text-[clamp(1.4rem,4.6vw,1.9rem)] font-black uppercase leading-[1.15] tracking-tight mb-5">
                 Look right?
               </h2>
-              <CouponApplied state={coupon} />
               <dl className="border-2" style={{ borderColor: BORDER }}>
                 {/* Every row is conditional. A summary that prints "Name:" with
                     nothing after it tells the visitor we lost their details and

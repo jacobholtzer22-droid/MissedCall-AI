@@ -4,6 +4,7 @@ export type ArmRow = {
   arm: string
   views: number
   verifiedLeads: number
+  watchViews: number
   bookings: number
   verifiedRate: number | null
   watch: { started: number; half: number; threeQuarters: number; complete: number }
@@ -39,6 +40,7 @@ function Table({ title, rows }: { title: string; rows: ArmRow[] }) {
                 <th className="py-2 pr-4 font-medium">Arm</th>
                 <th className="py-2 pr-4 font-medium text-right">Views</th>
                 <th className="py-2 pr-4 font-medium text-right">Verified leads</th>
+                <th className="py-2 pr-4 font-medium text-right">Watch views</th>
                 <th className="py-2 pr-4 font-medium text-right">Verified rate</th>
                 <th className="py-2 pr-4 font-medium text-right">Bookings</th>
                 <th className="py-2 pr-4 font-medium text-right">Started video</th>
@@ -53,6 +55,7 @@ function Table({ title, rows }: { title: string; rows: ArmRow[] }) {
                   <td className="py-2 pr-4 font-bold text-gray-100">{r.arm}</td>
                   <td className="py-2 pr-4 text-right tabular-nums text-gray-300">{r.views.toLocaleString()}</td>
                   <td className="py-2 pr-4 text-right tabular-nums text-gray-300">{r.verifiedLeads.toLocaleString()}</td>
+                  <td className="py-2 pr-4 text-right tabular-nums text-gray-300">{r.watchViews.toLocaleString()}</td>
                   <td className="py-2 pr-4 text-right tabular-nums font-semibold text-orange-400">
                     {/* An em dash, not 0%: no views means the rate is unknown,
                         which is a different fact from "nobody converted". */}

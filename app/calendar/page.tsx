@@ -19,7 +19,6 @@ import CalendarClient, { type CalendarPrefill } from './CalendarClient'
 import { resolveCalendarToken } from '@/lib/lead-token'
 import { getMarketingBusiness } from '@/lib/marketing-funnel'
 import { VISITOR_COOKIE } from '@/lib/variant'
-import { getClaimForVisitor, toState, type CouponState } from '@/lib/coupon'
 
 export const dynamic = 'force-dynamic'
 
@@ -35,7 +34,6 @@ export default async function CalendarPage({
   searchParams: { l?: string; slot?: string }
 }) {
   let prefill: CalendarPrefill = { mode: 'direct', firstName: '', businessName: '', phone: '', email: '' }
-  let coupon: CouponState = { status: 'none' }
 
   // One lookup: resolving the token already proves the lead exists, so the
   // page reads the row it just found rather than querying twice.
@@ -67,18 +65,5 @@ export default async function CalendarPage({
     console.error('[calendar] token resolution failed, falling back to direct:', err)
   }
 
-  // Coupon only in prefilled mode: a direct visitor has no 24h window running,
-  // and inventing one here would make the countdown mean nothing.
-  if (prefill.mode === 'prefilled') {
-    const visitorId = (await cookies()).get(VISITOR_COOKIE)?.value
-    if (visitorId) {
-      try {
-        coupon = toState(await getClaimForVisitor(visitorId))
-      } catch (err) {
-        console.error('[calendar] coupon read failed:', err)
-      }
-    }
-  }
-
-  return <CalendarClient prefill={prefill} coupon={coupon} preselectIso={searchParams?.slot ?? null} />
+  return <CalendarClient prefill={prefill} preselectIso={searchParams?.slot ?? null} />
 }

@@ -20,6 +20,7 @@ import { db } from '@/lib/db'
 import { normalizeToE164 } from '@/lib/phone-utils'
 import { isTestPhone } from '@/lib/test-allowlist'
 import { calendarLink } from '@/lib/lead-token'
+import { watchLink } from '@/lib/watch-token'
 
 /** Unguessable, URL-safe. Following this link identifies someone AS this lead. */
 export function newResumeToken(): string {
@@ -43,8 +44,10 @@ export type LeadContext = {
   firstName?: string | null
   businessName?: string | null
   trade?: string | null
-  /** Signed token for the /calendar link. Null falls back to the bare page. */
+  /** Token for the /calendar link. Null falls back to the bare page. */
   calendarToken?: string | null
+  /** Watch-page token. Preferred: it lands them on the video AND the calendar. */
+  watchUrl?: string | null
 }
 
 /** "Marcus" from "Marcus Vandenberg". Empty when we have nothing usable. */
@@ -61,12 +64,15 @@ function greeting(ctx?: LeadContext): string {
  * prefilled on whatever handset read the message — /book would have re-gated
  * them, and the gate cookie does not follow a text to a different device.
  */
-function bookingLink(token: string | null): string {
-  return calendarLink(token)
+function bookingLink(ctx?: LeadContext): string {
+  // The watch page has the video and the booking widget on it, so it is the
+  // better destination when we have a token for it. /calendar is the fallback.
+  if (ctx?.watchUrl) return watchLink(ctx.watchUrl)
+  return calendarLink(ctx?.calendarToken ?? null)
 }
 
 function body(ctx?: LeadContext): string {
-  const link = bookingLink(ctx?.calendarToken ?? null)
+  const link = bookingLink(ctx)
   const who = greeting(ctx)
   const biz = ctx?.businessName?.trim()
   // Same fallback as before: without a business name the sentence still reads,
@@ -83,7 +89,7 @@ function body(ctx?: LeadContext): string {
 
 /** 24h nudge, sent only when they never booked. */
 function followUpBody(ctx?: LeadContext): string {
-  const link = bookingLink(ctx?.calendarToken ?? null)
+  const link = bookingLink(ctx)
   const who = greeting(ctx)
   const biz = ctx?.businessName?.trim()
   const line = biz ? ` for ${biz}` : ''

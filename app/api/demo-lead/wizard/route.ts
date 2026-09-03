@@ -39,6 +39,7 @@ import { GATE_COOKIE, GATE_COOKIE_MAX_AGE, NOT_AN_OWNER } from '@/app/book/const
 import { VARIANT_COOKIE, VISITOR_COOKIE } from '@/lib/variant'
 import { FUNNEL_VARIANT_COOKIE } from '@/lib/funnel-variant'
 import { newCalendarToken } from '@/lib/lead-token'
+import { mintWatchToken, watchPath } from '@/lib/watch-token'
 
 /**
  * How long before the same lead can generate a second owner alert.
@@ -287,9 +288,6 @@ export async function POST(request: NextRequest) {
     )
 
     if (visitorId) {
-      await sideEffect('coupon-bind', () =>
-        db.couponClaim.updateMany({ where: { visitorId, leadId: null }, data: { leadId: lead.id } })
-      )
     }
 
     // ── Lead-facing demo SMS ────────────────────────────────────────────────
@@ -321,6 +319,7 @@ export async function POST(request: NextRequest) {
           // Null here just means the link goes to the bare /calendar page,
           // which still books them — it only loses the prefill.
           calendarToken: fresh?.calendarToken ?? null,
+          watchUrl: mintWatchToken(lead.id, funnelVariant === 'B' ? 'B' : 'A'),
         })
         if (!sms.sent && sms.reason !== 'already_sent' && sms.reason !== 'test_allowlist') {
           console.error(`[demo-lead/wizard] lead SMS not sent leadId=${lead.id} reason=${sms.reason}`)
@@ -478,7 +477,18 @@ export async function POST(request: NextRequest) {
         `qualified=${qualified} arm=${funnelVariant ?? 'none'} phone=${phoneCheck.e164}`
     )
 
-    const res = NextResponse.json({ success: true, leadId: lead.id, qualified, isNew })
+    // The VSL flow redirects here on OTP success, and the same link rides in
+    // the post-OTP SMS so the lead can get back to the video from their texts.
+    const armForWatch = funnelVariant === 'B' ? 'B' : 'A'
+    const watchToken = banksLead ? mintWatchToken(lead.id, armForWatch) : null
+
+    const res = NextResponse.json({
+      success: true,
+      leadId: lead.id,
+      qualified,
+      isNew,
+      watchUrl: watchPath(watchToken),
+    })
     res.cookies.set(GATE_COOKIE, lead.id, {
       httpOnly: true,
       sameSite: 'lax',

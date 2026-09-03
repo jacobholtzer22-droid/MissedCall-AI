@@ -5,9 +5,7 @@ import Link from 'next/link'
 import { ArrowLeft, Check, Loader2 } from 'lucide-react'
 import { Logo } from '@/app/components/Logo'
 import BookingSection from '@/app/book/BookingSection'
-import { CouponApplied } from '@/app/book/CouponBanner'
 import type { ChosenSlot } from '@/app/book/BookingWizard'
-import type { CouponState } from '@/lib/coupon'
 import { validateUsMobile } from '@/lib/phone-utils'
 import { formatPhoneInput } from '@/app/book/constants'
 import { trackStandardWithId } from '@/app/book/pixel'
@@ -59,11 +57,9 @@ function validate(field: Field, v: string): string {
 
 export default function CalendarClient({
   prefill,
-  coupon,
   preselectIso,
 }: {
   prefill: CalendarPrefill
-  coupon: CouponState
   /** From ?slot= on a deep link the AI texted. Confirmed against live slots. */
   preselectIso?: string | null
 }) {
@@ -196,8 +192,6 @@ export default function CalendarClient({
               {prefill.mode === 'prefilled' && prefill.firstName ? ` Good to see you again, ${prefill.firstName}.` : ''}
             </p>
 
-            {prefill.mode === 'prefilled' && <CouponApplied state={coupon} />}
-
             {/* Slots first, always. Asking for details before showing whether a
                 time even works is how booking pages lose people. */}
             <div className="mb-6">
@@ -207,7 +201,6 @@ export default function CalendarClient({
                 heading={slot ? 'Change time' : 'Pick a time'}
                 prefill={{}}
                 attribution={{}}
-                coupon={coupon}
                 onSlotChosen={(s) => {
                   setSlot(s)
                   setFormError('')

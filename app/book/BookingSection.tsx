@@ -4,7 +4,6 @@ import { useEffect, useMemo, useState } from 'react'
 import { Calendar, Clock, Check, Loader2 } from 'lucide-react'
 import BookingWizard, { type ChosenSlot, type WizardPrefill } from './BookingWizard'
 import type { Attribution } from '@/lib/attribution'
-import type { CouponState } from '@/lib/coupon'
 
 // ─────────────────────────────────────────────────────────
 // Self-contained slot picker + booking wizard.
@@ -16,8 +15,10 @@ import type { CouponState } from '@/lib/coupon'
 // that is not. The markup and tokens here match it so the two read the same.
 // ─────────────────────────────────────────────────────────
 
-const BORDER = 'rgba(110,118,129,0.35)'
-const CARD = 'rgba(242,240,235,0.03)'
+const BORDER_DARK = 'rgba(110,118,129,0.35)'
+const CARD_DARK = 'rgba(242,240,235,0.03)'
+const BORDER_LIGHT = '#E5E5E5'
+const CARD_LIGHT = '#FFFFFF'
 
 type ApiSlot = { iso: string; display: string }
 type ApiDay = { date: string; label: string; isToday: boolean; slots: ApiSlot[] }
@@ -25,18 +26,20 @@ type ApiDay = { date: string; label: string; isToday: boolean; slots: ApiSlot[] 
 export default function BookingSection({
   prefill,
   attribution,
-  coupon,
   heading,
   bare = false,
+  light = false,
   onSlotChosen,
   preselectIso,
+  onBooked,
 }: {
   prefill: WizardPrefill
   attribution: Record<string, string>
-  coupon: CouponState
   heading: string
-  /** Drop the bordered box. /book/thanks has no card-in-card. */
+  /** Drop the bordered box. */
   bare?: boolean
+  /** White ground and dark text, for the VSL pages. */
+  light?: boolean
   /**
    * When supplied, picking a slot calls this INSTEAD of opening BookingWizard.
    * /calendar asks four fields, not the funnel's eight, so it supplies its own
@@ -49,6 +52,16 @@ export default function BookingSection({
    * has since gone, and silently selecting it would book a taken slot.
    */
   preselectIso?: string
+  /**
+   * Observer fired alongside this component's own confirmation state. The VSL
+   * watch page uses it to fire Schedule with the id the server deduped on.
+   */
+  onBooked?: (r: {
+    dateLabel: string
+    timeLabel: string
+    meetLink: string | null
+    scheduleEventId?: string
+  }) => void
 }) {
   const [days, setDays] = useState<ApiDay[]>([])
   const [loading, setLoading] = useState(true)
@@ -58,6 +71,11 @@ export default function BookingSection({
   const [wizardOpen, setWizardOpen] = useState(false)
   const [takenNote, setTakenNote] = useState('')
   const [booked, setBooked] = useState<{ dateLabel: string; timeLabel: string; meetLink: string | null } | null>(null)
+
+  const BORDER = light ? BORDER_LIGHT : BORDER_DARK
+  const CARD = light ? CARD_LIGHT : CARD_DARK
+  const TEXT = light ? '#171717' : '#F2F0EB'
+  const MUTED = light ? '#737373' : '#6E7681'
 
   const timezoneLabel = useMemo(() => {
     try {
@@ -122,7 +140,7 @@ export default function BookingSection({
         <h3 className="text-[clamp(1.8rem,5vw,2.6rem)] font-black uppercase leading-[1.1] tracking-tight mb-4">Locked in.</h3>
         <p className="text-[16px] font-bold leading-[1.5] mb-2">
           {booked.dateLabel} at {booked.timeLabel}
-          <span className="ml-2 text-[13px] font-normal" style={{ color: '#6E7681' }}>({timezoneLabel})</span>
+          <span className="ml-2 text-[13px] font-normal" style={{ color: MUTED }}>({timezoneLabel})</span>
         </p>
         {booked.meetLink && (
           <p className="text-[14px] leading-[1.6] mb-4">
@@ -145,11 +163,11 @@ export default function BookingSection({
         style={bare ? undefined : { borderColor: BORDER, background: CARD }}
       >
         <div className="flex items-center justify-between mb-4">
-          <span className="inline-flex items-center gap-2 font-mono text-[11px] uppercase tracking-[0.18em]" style={{ color: '#6E7681' }}>
+          <span className="inline-flex items-center gap-2 font-mono text-[11px] uppercase tracking-[0.18em]" style={{ color: MUTED }}>
             <Calendar size={14} strokeWidth={2.25} style={{ color: '#EE6B1A' }} />
             {heading}
           </span>
-          <span className="font-mono text-[10px] uppercase tracking-widest" style={{ color: '#6E7681' }}>{timezoneLabel}</span>
+          <span className="font-mono text-[10px] uppercase tracking-widest" style={{ color: MUTED }}>{timezoneLabel}</span>
         </div>
 
         {takenNote && (
@@ -157,7 +175,7 @@ export default function BookingSection({
         )}
 
         {loading ? (
-          <div className="flex items-center gap-2 py-6" style={{ color: '#6E7681' }}>
+          <div className="flex items-center gap-2 py-6" style={{ color: MUTED }}>
             <Loader2 size={18} className="motion-safe:animate-spin" style={{ color: '#EE6B1A' }} />
             <span className="font-mono text-[11px] uppercase tracking-widest">Loading times</span>
           </div>
@@ -182,7 +200,7 @@ export default function BookingSection({
                     <div className="font-bold uppercase tracking-wide text-[11px] leading-[1.4]">
                       {d.isToday ? 'Today' : d.label.split(' ')[0]}
                     </div>
-                    <div className="text-[11px] leading-[1.5] mt-0.5" style={{ color: '#6E7681' }}>
+                    <div className="text-[11px] leading-[1.5] mt-0.5" style={{ color: MUTED }}>
                       {d.isToday ? d.label : d.label.split(' ').slice(1).join(' ')}
                     </div>
                     <div className="mt-1.5 font-mono text-[10px] uppercase tracking-widest" style={{ color: open ? '#EE6B1A' : 'rgba(110,118,129,0.4)' }}>
@@ -194,7 +212,7 @@ export default function BookingSection({
             </div>
 
             {daySlots.length === 0 ? (
-              <p className="text-[14px] leading-[1.6]" style={{ color: '#6E7681' }}>Nothing left that day. Try another.</p>
+              <p className="text-[14px] leading-[1.6]" style={{ color: MUTED }}>Nothing left that day. Try another.</p>
             ) : (
               <div className="flex flex-wrap gap-2">
                 {daySlots.map((s) => (
@@ -211,7 +229,7 @@ export default function BookingSection({
                       else setWizardOpen(true)
                     }}
                     className="px-4 py-3 border-2 text-[14px] font-semibold min-h-[52px]"
-                    style={{ borderColor: BORDER, color: '#F2F0EB' }}>
+                    style={{ borderColor: BORDER, color: TEXT }}>
                     <Clock size={13} strokeWidth={2.25} className="inline mr-1.5 -mt-0.5" style={{ color: '#EE6B1A' }} />
                     {s.display}
                   </button>
@@ -223,6 +241,7 @@ export default function BookingSection({
       </div>
 
       <BookingWizard
+        light={light}
         open={wizardOpen}
         slot={slot}
         prefill={prefill}
@@ -230,7 +249,6 @@ export default function BookingSection({
         // The lead already exists and is verified: this booking must enrich it,
         // not write a second unverified row.
         needsLeadWrite={false}
-        coupon={coupon}
         onClose={() => setWizardOpen(false)}
         onLeadCaptured={() => {}}
         onSlotTaken={() => {

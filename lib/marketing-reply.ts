@@ -16,7 +16,7 @@ import Anthropic from '@anthropic-ai/sdk'
 import Telnyx from 'telnyx'
 import { db } from '@/lib/db'
 import { normalizeToE164 } from '@/lib/phone-utils'
-import { MONTHLY_FEE, SETUP_FEE_FULL } from '@/lib/coupon'
+import { MONTHLY_FEE, SETUP_FEE_FULL } from '@/lib/pricing'
 import { calendarLink } from '@/lib/lead-token'
 
 const MODEL = 'claude-haiku-4-5-20251001'

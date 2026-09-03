@@ -1,14 +1,17 @@
 import type { Metadata } from 'next'
 
-// Metadata for the /book marketing wizard (page.tsx is a client component).
-// The tenant /book/[businessSlug] segment overrides title/description/canonical below it.
+// Bare wrapper: no site header, no footer links, white ground. The root layout
+// paints dark, so the funnel repaints white here rather than in every child.
+//
+// The site NavBar already opts out of /book (see ConditionalNavBar).
+
 export const metadata: Metadata = {
   title: 'Book a Free Demo',
   description:
-    "Book a free strategy call with Align and Acquire. A couple quick questions to see if we're a fit, then grab a time that works. No pitch, no pressure.",
+    'Watch a 3-minute demo of the missed-call text-back system running on a live account, then grab a time with Jacob.',
   alternates: { canonical: './' },
 }
 
 export default function BookIndexLayout({ children }: { children: React.ReactNode }) {
-  return <>{children}</>
+  return <div className="min-h-dvh bg-white text-neutral-900">{children}</div>
 }
