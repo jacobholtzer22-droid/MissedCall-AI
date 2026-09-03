@@ -3,9 +3,9 @@
 import { useEffect, useRef, useState } from 'react'
 import Image from 'next/image'
 import SocialProof from '../SocialProof'
-import DateCalendar from '../DateCalendar'
+import DateCalendar, { type Booked } from '../DateCalendar'
 import FunnelHeadline from '../FunnelHeadline'
-import { BannerCard, FunnelButton } from '../FunnelCard'
+import { BannerCard } from '../FunnelCard'
 import { CALL_LENGTH_MINUTES } from '../constants'
 import { trackStandard, trackStandardWithId, setPixelFunnelVariant } from '../pixel'
 import type { FunnelVariant } from '@/lib/funnel-variant'
@@ -22,8 +22,20 @@ export default function WatchClient({
   prefill: { firstName: string; phone: string; email: string; trade: string }
 }) {
   const [playing, setPlaying] = useState(false)
+  // Lifted so BOTH calendars close on a booking made in either one. A second
+  // instance still offering times for a call already on the books is the
+  // obvious way a page with two calendars goes wrong.
+  const [booked, setBooked] = useState<Booked | null>(null)
+  // Schedule is an ad conversion: two instances must never both fire it.
+  const scheduleFired = useRef(false)
   const videoRef = useRef<HTMLVideoElement>(null)
-  const bookingRef = useRef<HTMLDivElement>(null)
+
+  function handleBooked(r: Booked & { scheduleEventId: string }) {
+    setBooked({ dateLabel: r.dateLabel, timeLabel: r.timeLabel, meetLink: r.meetLink })
+    if (scheduleFired.current) return
+    scheduleFired.current = true
+    trackStandardWithId('Schedule', r.scheduleEventId, { content_name: 'vsl_watch' })
+  }
   const milestones = useRef<Set<number>>(new Set())
 
   useEffect(() => {
@@ -95,14 +107,13 @@ export default function WatchClient({
 
       {/* The only calendar on the page. The button below scrolls back to this
           one rather than mounting a second. */}
-      <div ref={bookingRef} className="mb-12 scroll-mt-6">
+      <div className="mb-12">
         <BannerCard banner="Step 2: Book a call">
           <DateCalendar
             durationMinutes={CALL_LENGTH_MINUTES}
             prefill={prefill}
-            onBooked={(r) => {
-              trackStandardWithId('Schedule', r.scheduleEventId, { content_name: 'vsl_watch' })
-            }}
+            booked={booked}
+            onBooked={handleBooked}
           />
         </BannerCard>
       </div>
@@ -113,13 +124,16 @@ export default function WatchClient({
 
       <div className="mb-12">
         <BannerCard banner="Step 2: Book a call">
-          <div className="p-4">
-            <FunnelButton
-              onClick={() => bookingRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
-            >
-              Pick a Time
-            </FunnelButton>
-          </div>
+          {/* A SECOND, COMPLETE calendar, not a scroll link. Someone who read
+              the reviews should be able to book where they are standing.
+              Independent state by construction: DateCalendar keeps everything
+              in component state, so two mounts share nothing. */}
+          <DateCalendar
+            durationMinutes={CALL_LENGTH_MINUTES}
+            prefill={prefill}
+            booked={booked}
+            onBooked={handleBooked}
+          />
         </BannerCard>
       </div>
 

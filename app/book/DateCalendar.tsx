@@ -13,6 +13,9 @@ type ApiDay = { date: string; label: string; isToday: boolean; slots: ApiSlot[] 
 
 const DOW = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 
+/** Slots shown before "More times". Keeps a busy day off a scroll marathon. */
+const SLOT_PAGE = 8
+
 /** A short, real list. Everything else is reachable by the visitor's own zone. */
 const ZONES = [
   'America/New_York', 'America/Detroit', 'America/Chicago', 'America/Denver',
@@ -40,18 +43,48 @@ function monthMatrix(year: number, month: number): (Date | null)[] {
   return cells
 }
 
+/**
+ * "Thursday, September 4" from a YYYY-MM-DD key.
+ *
+ * Formatted here rather than in /api/marketing-bookings: that endpoint's short
+ * label ("Thu, Sep 3") is what the other booking surfaces render, and widening
+ * it there would change them all to satisfy this page.
+ *
+ * Parts are passed to the Date constructor rather than parsing the string,
+ * because `new Date('2026-09-03')` is treated as UTC midnight and renders as
+ * the previous day for anyone west of Greenwich.
+ */
+function longDayLabel(dateKey: string): string {
+  const [y, m, d] = dateKey.split('-').map(Number)
+  if (!y || !m || !d) return dateKey
+  return new Date(y, m - 1, d).toLocaleDateString('en-US', {
+    weekday: 'long',
+    month: 'long',
+    day: 'numeric',
+  })
+}
+
 function ymd(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
+
+export type Booked = { dateLabel: string; timeLabel: string; meetLink: string | null }
 
 export default function DateCalendar({
   durationMinutes,
   prefill,
   onBooked,
+  booked,
 }: {
   durationMinutes: number
   prefill: { firstName: string; phone: string; email: string; trade: string }
-  onBooked: (r: { dateLabel: string; timeLabel: string; meetLink: string | null; scheduleEventId: string }) => void
+  onBooked: (r: Booked & { scheduleEventId: string }) => void
+  /**
+   * Lifted to the page. Two calendars render on the watch page, and a booking
+   * made in one has to close the other — otherwise the second instance still
+   * offers times for a call that is already on the books.
+   */
+  booked: Booked | null
 }) {
   const [days, setDays] = useState<ApiDay[]>([])
   const [loading, setLoading] = useState(true)
@@ -66,13 +99,14 @@ export default function DateCalendar({
     }
   })
   const [zoneOpen, setZoneOpen] = useState(false)
+  // Long days would otherwise push the page into a scroll marathon on a phone.
+  const [showAllSlots, setShowAllSlots] = useState(false)
   const [now, setNow] = useState(() => new Date())
 
   const [slot, setSlot] = useState<ApiSlot | null>(null)
   const [company, setCompany] = useState('')
   const [formError, setFormError] = useState('')
   const [busy, setBusy] = useState(false)
-  const [booked, setBooked] = useState<{ dateLabel: string; timeLabel: string; meetLink: string | null } | null>(null)
 
   const slotsRef = useRef<HTMLDivElement>(null)
   const scheduleEventId = useRef(
@@ -148,13 +182,12 @@ export default function DateCalendar({
         setFormError(data?.error || 'Could not book that. Try again.')
         return
       }
-      const result = {
+      onBooked({
         dateLabel: data?.appointment?.dateLabel ?? selectedDay?.label ?? '',
         timeLabel: data?.appointment?.timeLabel ?? timeIn(slot.iso, tz),
         meetLink: data?.appointment?.meetLink ?? null,
-      }
-      setBooked(result)
-      onBooked({ ...result, scheduleEventId: scheduleEventId.current })
+        scheduleEventId: scheduleEventId.current,
+      })
     } catch {
       setFormError('Network hiccup. Try again.')
     } finally {
@@ -188,20 +221,20 @@ export default function DateCalendar({
   if (slot) {
     return (
       <div className="p-5">
-        <p className="mb-4 text-[16px] font-bold" style={{ color: 'var(--funnel-ink)' }}>
-          {selectedDay?.label} at {timeIn(slot.iso, tz)} ({tz})
+        <p className="mb-4 text-[18px] font-bold leading-[1.35]" style={{ color: 'var(--funnel-ink)' }}>
+          {selected ? longDayLabel(selected) : ''} at {timeIn(slot.iso, tz)} ({tz})
         </p>
-        <dl className="mb-4 space-y-1.5 text-[14px] text-neutral-700">
+        <dl className="mb-5 space-y-2 text-[16px] text-neutral-700">
           {([['Name', prefill.firstName], ['Phone', prefill.phone], ['Email', prefill.email]] as const)
             .filter(([, v]) => v)
             .map(([k, v]) => (
               <div key={k} className="flex gap-2">
-                <dt className="w-14 shrink-0 text-neutral-500">{k}</dt>
+                <dt className="w-16 shrink-0 text-neutral-500">{k}</dt>
                 <dd className="font-medium">{v}</dd>
               </div>
             ))}
         </dl>
-        <label htmlFor="cal-company" className="mb-1.5 block text-[13px] font-semibold text-neutral-700">
+        <label htmlFor="cal-company" className="mb-1.5 block text-[14px] font-semibold text-neutral-700">
           Company name
         </label>
         <input
@@ -212,7 +245,7 @@ export default function DateCalendar({
             setFormError('')
           }}
           autoComplete="organization"
-          className="mb-4 w-full rounded-lg border px-4 py-3.5 text-[16px] outline-none focus:border-neutral-900"
+          className="mb-4 h-[48px] w-full rounded-lg border px-4 text-[16px] outline-none focus:border-neutral-900"
           style={{ borderColor: formError ? 'var(--funnel-banner)' : 'var(--funnel-border)' }}
         />
         {formError && (
@@ -227,7 +260,7 @@ export default function DateCalendar({
             setSlot(null)
             setFormError('')
           }}
-          className="mt-3 text-[14px] font-semibold text-neutral-500"
+          className="mt-3 min-h-[44px] text-[16px] font-semibold text-neutral-500"
         >
           ← Back
         </button>
@@ -246,7 +279,7 @@ export default function DateCalendar({
         <button
           type="button"
           onClick={() => setZoneOpen((o) => !o)}
-          className="flex w-full items-center gap-2 rounded-full border px-3 py-2 text-[13px]"
+          className="flex min-h-[44px] w-full items-center gap-2 rounded-full border px-4 text-[16px]"
           style={{ borderColor: 'var(--funnel-border)' }}
           aria-expanded={zoneOpen}
         >
@@ -270,7 +303,7 @@ export default function DateCalendar({
                     setTz(z)
                     setZoneOpen(false)
                   }}
-                  className="w-full px-3 py-2.5 text-left text-[14px] hover:bg-neutral-50"
+                  className="min-h-[44px] w-full px-4 text-left text-[16px] hover:bg-neutral-50"
                   style={z === tz ? { fontWeight: 700 } : undefined}
                 >
                   {z}
@@ -292,18 +325,18 @@ export default function DateCalendar({
             <div className="mb-3 flex items-center justify-between">
               <button type="button" aria-label="Previous month"
                 onClick={() => setCursor((c) => new Date(c.getFullYear(), c.getMonth() - 1, 1))}
-                className="grid h-9 w-9 place-items-center text-neutral-600">‹</button>
-              <span className="text-[15px] font-bold">
+                className="grid h-11 w-11 place-items-center text-[22px] text-neutral-600">‹</button>
+              <span className="text-[17px] font-bold">
                 {cursor.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
               </span>
               <button type="button" aria-label="Next month"
                 onClick={() => setCursor((c) => new Date(c.getFullYear(), c.getMonth() + 1, 1))}
-                className="grid h-9 w-9 place-items-center text-neutral-600">›</button>
+                className="grid h-11 w-11 place-items-center text-[22px] text-neutral-600">›</button>
             </div>
 
             <div className="grid grid-cols-7 gap-1 text-center">
               {DOW.map((d) => (
-                <div key={d} className="py-1 text-[11px] font-semibold text-neutral-400">{d}</div>
+                <div key={d} className="py-1 text-[12px] font-semibold text-neutral-400">{d}</div>
               ))}
               {cells.map((d, i) => {
                 if (!d) return <div key={`x${i}`} />
@@ -318,12 +351,15 @@ export default function DateCalendar({
                     disabled={!open}
                     onClick={() => {
                       setSelected(key)
-                      // Mobile: the slot list is below the grid, so bring it up.
+                      setShowAllSlots(false)
+                      // Mobile: the slot list is below the grid, so bring the
+                      // day label up rather than leaving them on the grid
+                      // wondering whether the tap registered.
                       if (window.matchMedia('(max-width: 767px)').matches) {
                         setTimeout(() => slotsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 60)
                       }
                     }}
-                    className="mx-auto grid h-10 w-10 place-items-center rounded-full text-[14px]"
+                    className="mx-auto grid h-11 w-11 place-items-center rounded-full text-[16px]"
                     style={
                       isSel
                         ? { background: 'var(--funnel-banner)', color: '#FFFFFF', fontWeight: 700 }
@@ -341,24 +377,34 @@ export default function DateCalendar({
 
           {/* Slots */}
           <div ref={slotsRef} className="mt-6 md:mt-0 md:w-1/2 md:max-h-[360px] md:overflow-y-auto scroll-mt-4">
-            <p className="mb-3 text-[15px] font-bold" style={{ color: 'var(--funnel-ink)' }}>
-              {selectedDay?.label ?? 'Pick a day'}
+            <p className="mb-3 text-[18px] font-bold" style={{ color: 'var(--funnel-ink)' }}>
+              {selected ? longDayLabel(selected) : 'Pick a day'}
             </p>
             {!selectedDay || selectedDay.slots.length === 0 ? (
               <p className="text-[14px] text-neutral-500">Nothing open that day. Try another.</p>
             ) : (
-              <div className="space-y-2">
-                {selectedDay.slots.map((s) => (
+              <div className="space-y-2.5">
+                {(showAllSlots ? selectedDay.slots : selectedDay.slots.slice(0, SLOT_PAGE)).map((s) => (
                   <button
                     key={s.iso}
                     type="button"
                     onClick={() => setSlot(s)}
-                    className="w-full rounded-lg border-2 bg-white py-3 text-[15px] font-semibold"
+                    className="h-[52px] w-full rounded-lg border-2 bg-white text-[17px] font-semibold"
                     style={{ borderColor: 'var(--funnel-banner)', color: 'var(--funnel-banner)' }}
                   >
                     {timeIn(s.iso, tz)}
                   </button>
                 ))}
+                {!showAllSlots && selectedDay.slots.length > SLOT_PAGE && (
+                  <button
+                    type="button"
+                    onClick={() => setShowAllSlots(true)}
+                    className="h-[52px] w-full rounded-lg border-2 border-dashed bg-white text-[16px] font-semibold text-neutral-600"
+                    style={{ borderColor: 'var(--funnel-border)' }}
+                  >
+                    More times ({selectedDay.slots.length - SLOT_PAGE})
+                  </button>
+                )}
               </div>
             )}
           </div>
