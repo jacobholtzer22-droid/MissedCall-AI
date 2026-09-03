@@ -40,12 +40,9 @@ export function assignFunnelVariant(): FunnelVariant {
   return Math.random() < 0.5 ? 'A' : 'B'
 }
 
-/** `?variant=B` forces an arm for QA. Case-insensitive, so ?variant=b works. */
-export function funnelVariantFromQuery(value: string | null | undefined): FunnelVariant | null {
-  if (typeof value !== 'string') return null
-  const upper = value.trim().toUpperCase()
-  return isFunnelVariant(upper) ? upper : null
-}
+// The ?variant= override is gone. /book/a and /book/b ARE the override now:
+// an arm you can link to, bookmark and read off an ad URL beats a query
+// parameter that silently rewrote a cookie.
 
 /**
  * The demo video. ONE film, both arms: arm A gates it, arm B shows it on the

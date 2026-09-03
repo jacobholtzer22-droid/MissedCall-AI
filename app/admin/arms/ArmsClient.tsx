@@ -15,6 +15,7 @@ export type BookingSources = { funnel: number; smsLink: number; direct: number }
 
 export type ArmVideo = {
   arm: string
+  path: string
   configured: string
   served: { url: string; count: number }[]
 }
@@ -115,6 +116,7 @@ export default function ArmsClient({ data }: { data: ArmsData }) {
             <thead>
               <tr className="border-b border-gray-800 text-left text-gray-500">
                 <th className="py-2 pr-4 font-medium">Arm</th>
+                <th className="py-2 pr-4 font-medium">Path</th>
                 <th className="py-2 pr-4 font-medium">Configured now</th>
                 <th className="py-2 font-medium">Actually served (watch views)</th>
               </tr>
@@ -123,6 +125,7 @@ export default function ArmsClient({ data }: { data: ArmsData }) {
               {data.videos.map((v) => (
                 <tr key={v.arm} className="border-b border-gray-900 align-top">
                   <td className="py-2 pr-4 font-bold text-gray-100">{v.arm}</td>
+                  <td className="py-2 pr-4 font-mono text-gray-400">{v.path}</td>
                   <td className="py-2 pr-4 break-all text-gray-300">
                     {v.configured || <span className="font-semibold text-red-400">NOT SET</span>}
                   </td>

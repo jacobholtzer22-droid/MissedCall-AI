@@ -320,6 +320,7 @@ export async function POST(request: NextRequest) {
           // which still books them — it only loses the prefill.
           calendarToken: fresh?.calendarToken ?? null,
           watchUrl: mintWatchToken(lead.id, funnelVariant === 'B' ? 'B' : 'A'),
+          watchArm: funnelVariant === 'B' ? 'B' : 'A',
         })
         if (!sms.sent && sms.reason !== 'already_sent' && sms.reason !== 'test_allowlist') {
           console.error(`[demo-lead/wizard] lead SMS not sent leadId=${lead.id} reason=${sms.reason}`)
@@ -487,7 +488,7 @@ export async function POST(request: NextRequest) {
       leadId: lead.id,
       qualified,
       isNew,
-      watchUrl: watchPath(watchToken),
+      watchUrl: watchPath(watchToken, armForWatch),
     })
     res.cookies.set(GATE_COOKIE, lead.id, {
       httpOnly: true,

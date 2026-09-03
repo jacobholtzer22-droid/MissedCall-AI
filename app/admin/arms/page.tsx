@@ -91,6 +91,7 @@ export default async function ArmsPage() {
   const data: ArmsData = {
     videos: (['A', 'B'] as const).map((arm) => ({
       arm,
+      path: `/book/${arm.toLowerCase()}`,
       configured: FUNNEL_VIDEOS[arm].src,
       served: servedRows
         .filter((r) => r.arm === arm)

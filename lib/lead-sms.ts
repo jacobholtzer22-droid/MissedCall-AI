@@ -48,6 +48,8 @@ export type LeadContext = {
   calendarToken?: string | null
   /** Watch-page token. Preferred: it lands them on the video AND the calendar. */
   watchUrl?: string | null
+  /** Which arm's watch page that token belongs to. */
+  watchArm?: 'A' | 'B' | null
 }
 
 /** "Marcus" from "Marcus Vandenberg". Empty when we have nothing usable. */
@@ -67,7 +69,7 @@ function greeting(ctx?: LeadContext): string {
 function bookingLink(ctx?: LeadContext): string {
   // The watch page has the video and the booking widget on it, so it is the
   // better destination when we have a token for it. /calendar is the fallback.
-  if (ctx?.watchUrl) return watchLink(ctx.watchUrl)
+  if (ctx?.watchUrl) return watchLink(ctx.watchUrl, ctx.watchArm ?? 'A')
   return calendarLink(ctx?.calendarToken ?? null)
 }
 

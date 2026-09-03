@@ -65,11 +65,12 @@ export function verifyWatchToken(token: string | null | undefined, now = Date.no
  * SMS only: pushing an absolute NEXT_PUBLIC_APP_URL from the client sends a
  * local or preview visitor to production mid-funnel.
  */
-export function watchPath(token: string | null): string {
-  return token ? `/book/watch?t=${encodeURIComponent(token)}` : '/book'
+export function watchPath(token: string | null, arm: FunnelVariant): string {
+  const dir = arm.toLowerCase()
+  return token ? `/book/${dir}/watch?t=${encodeURIComponent(token)}` : `/book/${dir}`
 }
 
-export function watchLink(token: string | null): string {
+export function watchLink(token: string | null, arm: FunnelVariant): string {
   const base = (process.env.NEXT_PUBLIC_APP_URL || 'https://www.alignandacquire.com').replace(/\/$/, '')
-  return token ? `${base}/book/watch?t=${encodeURIComponent(token)}` : `${base}/book`
+  return `${base}${watchPath(token, arm)}`
 }
