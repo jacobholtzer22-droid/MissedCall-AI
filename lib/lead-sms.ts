@@ -80,7 +80,7 @@ function body(ctx?: LeadContext): string {
   const line = biz ? `on ${biz}'s line` : 'on your line'
 
   return (
-    `Hey${who}, Jacob from Align & Acquire. ` +
+    `Hey${who}, Jacob from Align and Acquire. ` +
     `Thanks for checking out the demo. ` +
     `I'll reach out myself within 24 hours. ` +
     `If you'd rather skip the wait, grab a time here and I'll set it up ${line}: ${link}`
@@ -94,7 +94,7 @@ function followUpBody(ctx?: LeadContext): string {
   const biz = ctx?.businessName?.trim()
   const line = biz ? ` for ${biz}` : ''
   return (
-    `Hey${who}, Jacob from Align & Acquire again. ` +
+    `Hey${who}, Jacob from Align and Acquire again. ` +
     `You watched the demo yesterday but didn't grab a time. ` +
     `If you want to see what it'd look like${line}, grab a time here: ${link}. ` +
     `Reply STOP to opt out.`

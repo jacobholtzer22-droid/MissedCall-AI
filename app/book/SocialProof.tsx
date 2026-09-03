@@ -41,7 +41,7 @@ export default function SocialProof() {
             <Stars />
           </div>
           <p className="mt-1.5 text-[14px] font-semibold" style={{ color: 'var(--funnel-ink)' }}>
-            Brett, Fraaza Enterprises
+            Brett, Master Gardner LLC
           </p>
         </figcaption>
       </figure>

@@ -298,7 +298,7 @@ export async function POST(request: NextRequest) {
         // business's own Telnyx number. Deliberately a local send: sendSMS() is scoped
         // to tenant conversations and must stay untouched.
         const ackText = isStop
-          ? "You've been opted out of Align & Acquire lead alerts by text. Reply START to turn them back on."
+          ? "You've been opted out of Align and Acquire lead alerts by text. Reply START to turn them back on."
           : 'Lead alerts by text are back on.'
         try {
           const telnyxClient = new Telnyx({ apiKey: process.env.TELNYX_API_KEY! })

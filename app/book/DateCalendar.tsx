@@ -239,7 +239,7 @@ export default function DateCalendar({
   return (
     <div className="p-4 sm:p-5">
       <p className="mb-3 text-[16px] font-bold" style={{ color: 'var(--funnel-ink)' }}>
-        Demo Call - Align &amp; Acquire ({durationMinutes} Min)
+        Demo Call - Align and Acquire ({durationMinutes} Min)
       </p>
 
       <div className="relative mb-4">

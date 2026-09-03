@@ -30,7 +30,7 @@ export const dynamic = 'force-dynamic'
 const MIN_FORM_FILL_MS = 2000
 
 function codeMessage(code: string): string {
-  return `${code} is your Align & Acquire verification code. It expires in 10 minutes.`
+  return `${code} is your Align and Acquire verification code. It expires in 10 minutes.`
 }
 
 export async function POST(request: NextRequest) {

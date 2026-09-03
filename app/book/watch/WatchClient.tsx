@@ -6,7 +6,7 @@ import SocialProof from '../SocialProof'
 import DateCalendar from '../DateCalendar'
 import FunnelHeadline from '../FunnelHeadline'
 import { BannerCard, FunnelButton } from '../FunnelCard'
-import { SLOT_MINUTES } from '@/lib/marketing-slots'
+import { CALL_LENGTH_MINUTES } from '../constants'
 import { trackStandard, trackStandardWithId, setPixelFunnelVariant } from '../pixel'
 import type { FunnelVariant } from '@/lib/funnel-variant'
 import type { FunnelVideo } from '@/lib/funnel-videos'
@@ -98,7 +98,7 @@ export default function WatchClient({
       <div ref={bookingRef} className="mb-12 scroll-mt-6">
         <BannerCard banner="Step 2: Book a call">
           <DateCalendar
-            durationMinutes={SLOT_MINUTES}
+            durationMinutes={CALL_LENGTH_MINUTES}
             prefill={prefill}
             onBooked={(r) => {
               trackStandardWithId('Schedule', r.scheduleEventId, { content_name: 'vsl_watch' })
@@ -124,7 +124,7 @@ export default function WatchClient({
       </div>
 
       <footer className="mt-auto pt-6 text-center text-[13px] text-neutral-500">
-        © 2026 Align &amp; Acquire. All rights reserved.
+        © 2026 Align and Acquire. All rights reserved.
       </footer>
     </main>
   )

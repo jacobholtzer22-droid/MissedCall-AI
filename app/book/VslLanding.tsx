@@ -76,7 +76,7 @@ export default function VslLanding({ arm, poster }: { arm: FunnelVariant; poster
       </div>
 
       <footer className="mt-auto pt-6 text-center text-[13px] text-neutral-500">
-        © 2026 Align &amp; Acquire. All rights reserved.
+        © 2026 Align and Acquire. All rights reserved.
       </footer>
 
       <WizardModal
