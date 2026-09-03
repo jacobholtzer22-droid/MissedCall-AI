@@ -6,7 +6,9 @@ import Image from 'next/image'
 import SocialProof from './SocialProof'
 import WizardModal from './WizardModal'
 import FunnelHeadline from './FunnelHeadline'
+import DateCalendar, { type Booked } from './DateCalendar'
 import { BannerCard, FunnelButton } from './FunnelCard'
+import { CALL_LENGTH_MINUTES } from './constants'
 import { trackStandard, trackStandardWithId, trackCustomEvent, setPixelFunnelVariant } from './pixel'
 import type { FunnelVariant } from '@/lib/funnel-variant'
 
@@ -14,8 +16,19 @@ import type { FunnelVariant } from '@/lib/funnel-variant'
 export default function VslLanding({ arm, poster }: { arm: FunnelVariant; poster: string }) {
   const router = useRouter()
   const [open, setOpen] = useState(false)
+  // Someone who books here never reaches the watch page, so this page owns the
+  // booked state and the Schedule event for that booking.
+  const [booked, setBooked] = useState<Booked | null>(null)
   const viewFired = useRef(false)
   const leadFired = useRef(false)
+  const scheduleFired = useRef(false)
+
+  function handleBooked(r: Booked & { scheduleEventId: string }) {
+    setBooked({ dateLabel: r.dateLabel, timeLabel: r.timeLabel, meetLink: r.meetLink })
+    if (scheduleFired.current) return
+    scheduleFired.current = true
+    trackStandardWithId('Schedule', r.scheduleEventId, { content_name: 'vsl_landing' })
+  }
 
   useEffect(() => {
     setPixelFunnelVariant(arm)
@@ -69,6 +82,22 @@ export default function VslLanding({ arm, poster }: { arm: FunnelVariant; poster
 
       <div className="mb-12">
         <FunnelButton onClick={() => setOpen(true)}>Click to See How It Works</FunnelButton>
+      </div>
+
+      {/* The same calendar the watch page uses. Watching first is still the
+          path this page is built to push, but someone who is already sold
+          should not have to sit through a video to get on the books. Nobody
+          here has been through the gate, so the confirm step asks for the name,
+          number and email itself — see DateCalendar. */}
+      <div className="mb-12">
+        <BannerCard banner="Ready now? Book your call">
+          <DateCalendar
+            durationMinutes={CALL_LENGTH_MINUTES}
+            prefill={{ firstName: '', phone: '', email: '', trade: '' }}
+            booked={booked}
+            onBooked={handleBooked}
+          />
+        </BannerCard>
       </div>
 
       <div className="mb-12">

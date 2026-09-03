@@ -2,6 +2,8 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { FunnelButton } from './FunnelCard'
+import { formatPhoneInput } from './constants'
+import { validateUsMobile } from '@/lib/phone-utils'
 
 // Date-first booking. Only the UI changed: availability, booking creation, the
 // Google event with its Meet link, the confirmation SMS, the Schedule event and
@@ -70,6 +72,48 @@ function ymd(d: Date): string {
 
 export type Booked = { dateLabel: string; timeLabel: string; meetLink: string | null }
 
+/**
+ * The contact details a booking cannot be made without.
+ *
+ * On the watch page every one of these arrives prefilled from the verified
+ * lead, so the confirm step only asks for the company. On the landing page
+ * nobody has been through the gate yet, so the same step asks for whatever is
+ * missing. The rule is the same on both: a booking with no name, number or
+ * email must be impossible, because the calendar invite and the confirmation
+ * text both depend on them.
+ */
+type ContactField = 'firstName' | 'phone' | 'email'
+const CONTACT_FIELDS: ContactField[] = ['firstName', 'phone', 'email']
+const CONTACT_LABELS: Record<ContactField, string> = {
+  firstName: 'First name',
+  phone: 'Cell number',
+  email: 'Email',
+}
+const CONTACT_PLACEHOLDERS: Record<ContactField, string> = {
+  firstName: 'First name',
+  phone: '(555) 123-4567',
+  email: 'you@company.com',
+}
+const CONTACT_AUTOCOMPLETE: Record<ContactField, string> = {
+  firstName: 'given-name',
+  phone: 'tel',
+  email: 'email',
+}
+
+function validateContact(field: ContactField, value: string): string {
+  const v = value.trim()
+  switch (field) {
+    case 'firstName':
+      return v.length >= 2 ? '' : 'Please enter your first name.'
+    case 'phone': {
+      const check = validateUsMobile(v)
+      return check.ok ? '' : check.reason
+    }
+    case 'email':
+      return /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v) ? '' : 'That does not look like an email address.'
+  }
+}
+
 export default function DateCalendar({
   durationMinutes,
   prefill,
@@ -105,8 +149,15 @@ export default function DateCalendar({
 
   const [slot, setSlot] = useState<ApiSlot | null>(null)
   const [company, setCompany] = useState('')
+  // Only the fields the prefill did not supply are ever shown or typed into.
+  const [contact, setContact] = useState({ firstName: '', phone: '', email: '' })
+  const [contactErrors, setContactErrors] = useState<Partial<Record<ContactField, string>>>({})
   const [formError, setFormError] = useState('')
   const [busy, setBusy] = useState(false)
+
+  const asked = CONTACT_FIELDS.filter((f) => !prefill[f].trim())
+  /** What actually gets sent: the lead's value when there is one, else typed. */
+  const contactValue = (f: ContactField) => prefill[f].trim() || contact[f].trim()
 
   const slotsRef = useRef<HTMLDivElement>(null)
   const scheduleEventId = useRef(
@@ -155,6 +206,19 @@ export default function DateCalendar({
 
   async function confirm() {
     if (!slot) return
+    // Validate every value being SENT, not just the ones on screen, so a blank
+    // carried in from the lead row cannot slip past as an empty booking.
+    const next: Partial<Record<ContactField, string>> = {}
+    for (const f of CONTACT_FIELDS) {
+      const problem = validateContact(f, contactValue(f))
+      if (problem) next[f] = problem
+    }
+    setContactErrors(next)
+    if (Object.keys(next).length) {
+      return setFormError(
+        asked.length ? 'Check the highlighted fields.' : 'We are missing your contact details.'
+      )
+    }
     if (company.trim().length < 2) return setFormError('Please enter your company name.')
     setBusy(true)
     setFormError('')
@@ -164,9 +228,9 @@ export default function DateCalendar({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           slotStart: slot.iso,
-          name: prefill.firstName,
-          phone: prefill.phone,
-          email: prefill.email,
+          name: contactValue('firstName'),
+          phone: contactValue('phone'),
+          email: contactValue('email'),
           trade: prefill.trade,
           companyName: company.trim(),
           eventId: scheduleEventId.current,
@@ -224,6 +288,7 @@ export default function DateCalendar({
         <p className="mb-4 text-[18px] font-bold leading-[1.35]" style={{ color: 'var(--funnel-ink)' }}>
           {selected ? longDayLabel(selected) : ''} at {timeIn(slot.iso, tz)} ({tz})
         </p>
+        {/* Known from the gate: shown, not re-asked. */}
         <dl className="mb-5 space-y-2 text-[16px] text-neutral-700">
           {([['Name', prefill.firstName], ['Phone', prefill.phone], ['Email', prefill.email]] as const)
             .filter(([, v]) => v)
@@ -234,6 +299,38 @@ export default function DateCalendar({
               </div>
             ))}
         </dl>
+
+        {/* Missing from the gate: asked for here. On the watch page this list
+            is empty and the step looks exactly as it did before. */}
+        {asked.map((f) => (
+          <div key={f} className="mb-4">
+            <label htmlFor={`cal-${f}`} className="mb-1.5 block text-[14px] font-semibold text-neutral-700">
+              {CONTACT_LABELS[f]}
+            </label>
+            <input
+              id={`cal-${f}`}
+              value={contact[f]}
+              onChange={(e) => {
+                const raw = e.target.value
+                setContact((c) => ({ ...c, [f]: f === 'phone' ? formatPhoneInput(raw) : raw }))
+                setContactErrors((prev) => ({ ...prev, [f]: '' }))
+                setFormError('')
+              }}
+              type={f === 'phone' ? 'tel' : f === 'email' ? 'email' : 'text'}
+              inputMode={f === 'phone' ? 'tel' : f === 'email' ? 'email' : 'text'}
+              autoComplete={CONTACT_AUTOCOMPLETE[f]}
+              placeholder={CONTACT_PLACEHOLDERS[f]}
+              className="h-[48px] w-full rounded-lg border px-4 text-[16px] outline-none focus:border-neutral-900"
+              style={{ borderColor: contactErrors[f] ? 'var(--funnel-banner)' : 'var(--funnel-border)' }}
+            />
+            {contactErrors[f] && (
+              <p className="mt-1.5 text-[13px] font-medium" style={{ color: 'var(--funnel-banner)' }}>
+                {contactErrors[f]}
+              </p>
+            )}
+          </div>
+        ))}
+
         <label htmlFor="cal-company" className="mb-1.5 block text-[14px] font-semibold text-neutral-700">
           Company name
         </label>
