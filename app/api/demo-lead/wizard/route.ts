@@ -192,7 +192,11 @@ export async function POST(request: NextRequest) {
     const lastName = body.lastName?.trim() || nameParts.slice(1).join(' ') || ''
     const company = body.company?.trim() || body.businessName?.trim() || ''
     const email = body.email?.trim() ?? ''
-    const landingPath = body.landingPath?.trim().slice(0, 300) ?? '/book'
+    // 1000, not 300: a Meta fbclid alone runs past 250 characters, so the old
+    // cap sliced the query in half and took utm_term with it on 9 of the 14
+    // tagged leads captured before this. utm_term is the AD name — the one
+    // field that says which creative actually worked.
+    const landingPath = body.landingPath?.trim().slice(0, 1000) ?? '/book'
     const attribution = sanitizeAttribution(body.attribution)
 
     // Server decides qualification. Never trust a client boolean.

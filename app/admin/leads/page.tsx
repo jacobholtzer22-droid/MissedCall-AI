@@ -21,6 +21,7 @@ type Touch = {
   campaign?: string
   content?: string
   term?: string
+  utmId?: string
   fbclid?: string
   referrer?: string
   arm?: string
@@ -108,6 +109,68 @@ function TouchBlock({ label, touch }: { label: string; touch: Touch | null }) {
           ))}
         </dl>
       )}
+    </div>
+  )
+}
+
+/** Which video an arm serves. A is pt.3, B is pt.2 — see lib/funnel-videos.ts. */
+const ARM_VIDEO: Record<string, string> = { A: 'pt.3', B: 'pt.2' }
+
+const CHANNEL_LABELS: Record<string, string> = {
+  facebook_referral: 'Facebook',
+  instagram_referral: 'Instagram',
+  google_organic: 'Google search',
+  direct: 'Direct / no referrer',
+}
+
+/**
+ * The block Jacob reads. Every line resolves to something concrete: an untagged
+ * lead falls back to the referrer class rather than printing "none", which is
+ * the whole reason this page exists.
+ */
+function CameFrom({ lead }: { lead: Lead }) {
+  const t = lead.first ?? lead.last
+  const referrer = t?.referrer ? CHANNEL_LABELS[t.referrer] ?? t.referrer : 'Direct / no referrer'
+  const tagged = Boolean(t?.term || t?.content || t?.campaign || t?.utmId || t?.source)
+
+  const rows: [string, React.ReactNode][] = [
+    ['Ad', t?.term ?? (tagged ? 'not in the link' : referrer)],
+    ['Ad set', t?.content ?? (tagged ? 'not in the link' : referrer)],
+    [
+      'Campaign',
+      t?.campaign ? (
+        <>
+          {t.campaign}
+          {t.utmId && <span style={{ color: MUTED }}> · {t.utmId}</span>}
+        </>
+      ) : t?.utmId ? (
+        t.utmId
+      ) : tagged ? (
+        'not in the link'
+      ) : (
+        referrer
+      ),
+    ],
+    ['Click ID', lead.hasFbclid ? 'yes' : 'no'],
+    ['Referrer', referrer],
+    ['Arm', lead.arm ?? 'unassigned'],
+    ['Video', lead.arm ? ARM_VIDEO[lead.arm] ?? 'unknown' : 'unassigned'],
+    ['Booked from', lead.bookingSurface ?? 'not booked'],
+  ]
+
+  return (
+    <div className="rounded border p-3" style={{ borderColor: BORDER }}>
+      <div className="mb-2 font-mono text-[10px] uppercase tracking-wider" style={{ color: MUTED }}>
+        Came from
+      </div>
+      <dl className="space-y-1.5">
+        {rows.map(([k, v]) => (
+          <div key={k} className="flex gap-3 text-[14px]">
+            <dt className="w-24 shrink-0" style={{ color: MUTED }}>{k}</dt>
+            <dd className="break-all" style={{ color: INK }}>{v}</dd>
+          </div>
+        ))}
+      </dl>
     </div>
   )
 }
@@ -256,14 +319,11 @@ export default function AdminLeadsPage() {
                   <TouchBlock label="Last touch" touch={selected.last} />
                 </div>
 
+                <CameFrom lead={selected} />
+
                 <div className="flex flex-wrap gap-1.5">
-                  <Pill tone={selected.hasFbclid ? 'on' : 'off'}>fbclid {selected.hasFbclid ? 'yes' : 'no'}</Pill>
                   <Pill tone={selected.hasFbp ? 'on' : 'off'}>_fbp {selected.hasFbp ? 'yes' : 'no'}</Pill>
                   <Pill tone={selected.hasFbc ? 'on' : 'off'}>_fbc {selected.hasFbc ? 'yes' : 'no'}</Pill>
-                  <Pill tone={selected.arm ? 'on' : 'off'}>arm {selected.arm ?? 'unassigned'}</Pill>
-                  <Pill tone={selected.bookingSurface ? 'on' : 'off'}>
-                    booked from {selected.bookingSurface ?? 'not booked'}
-                  </Pill>
                   <Pill tone={selected.verified ? 'on' : 'off'}>
                     {selected.verified ? 'phone verified' : 'unverified'}
                   </Pill>

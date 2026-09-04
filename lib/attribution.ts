@@ -142,6 +142,8 @@ export type AttributionTouch = {
   campaign?: string
   content?: string
   term?: string
+  /** utm_id — Meta's numeric campaign id. Survives a campaign rename. */
+  utmId?: string
   fbclid?: string
   /** Output of classifyReferrer. Always set, "direct" when there was none. */
   referrer?: string
@@ -154,7 +156,7 @@ export type AttributionTouch = {
 }
 
 const TOUCH_KEYS: (keyof AttributionTouch)[] = [
-  'source', 'medium', 'campaign', 'content', 'term',
+  'source', 'medium', 'campaign', 'content', 'term', 'utmId',
   'fbclid', 'referrer', 'arm', 'path', 'ts',
 ]
 
@@ -186,6 +188,7 @@ export function buildTouch(input: {
     campaign: clean(params.get('utm_campaign')),
     content: clean(params.get('utm_content')),
     term: clean(params.get('utm_term')),
+    utmId: clean(params.get('utm_id')),
     fbclid: clean(params.get('fbclid')),
     referrer: classifyReferrer(input.referrer),
     arm: clean(input.arm) ?? undefined,
@@ -208,7 +211,7 @@ export function touchHasSignal(t: AttributionTouch | null | undefined): boolean 
   if (!t) return false
   if (t.medium === RETURN_MEDIUM) return false // our own SMS, never a first touch
   return Boolean(
-    t.source || t.medium || t.campaign || t.content || t.term || t.fbclid ||
+    t.source || t.medium || t.campaign || t.content || t.term || t.utmId || t.fbclid ||
       (t.referrer && t.referrer !== REFERRER_DIRECT)
   )
 }

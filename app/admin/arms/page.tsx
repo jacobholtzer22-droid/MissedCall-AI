@@ -3,6 +3,8 @@ import { redirect } from 'next/navigation'
 import { db } from '@/lib/db'
 import ArmsClient, { type ArmsData } from './ArmsClient'
 import { FUNNEL_VIDEOS, armsMissingVideo } from '@/lib/funnel-videos'
+import { getMarketingBusiness } from '@/lib/marketing-funnel'
+import { sanitizeTouch } from '@/lib/attribution'
 
 export const dynamic = 'force-dynamic'
 
@@ -58,6 +60,45 @@ function rollup(rows: { arm: string; type: string; _count: { _all: number } }[])
   }).filter((r) => r.views > 0 || r.verifiedLeads > 0 || r.watch.started > 0 || r.watchViews > 0)
 }
 
+/**
+ * Leads and bookings per arm, broken down by the AD that produced them
+ * (utm_term). Aggregated in JS rather than SQL because the touch is a JSON
+ * column and the row counts here are in the dozens — a groupBy would need a raw
+ * query for no benefit at this size.
+ *
+ * Rows whose ad name is absent are bucketed under "(no ad in link)" rather than
+ * dropped: those leads are real, and hiding them would make the tagged ads look
+ * like they produced all the traffic.
+ */
+async function adBreakdown(businessId: string, since?: Date) {
+  const [leads, appts] = await Promise.all([
+    db.websiteLead.findMany({
+      where: { businessId, status: { not: 'spam' }, ...(since ? { createdAt: { gte: since } } : {}) },
+      select: { funnelVariant: true, attributionFirst: true },
+    }),
+    db.appointment.findMany({
+      where: { businessId, status: { not: 'cancelled' }, ...(since ? { createdAt: { gte: since } } : {}) },
+      select: { funnelVariant: true, attributionFirst: true },
+    }),
+  ])
+
+  const NO_AD = '(no ad in link)'
+  const rows = new Map<string, { arm: string; ad: string; leads: number; bookings: number }>()
+  const bump = (arm: string | null, touch: unknown, field: 'leads' | 'bookings') => {
+    const t = sanitizeTouch(touch)
+    const key = `${arm ?? 'unassigned'}|${t?.term ?? NO_AD}`
+    const row = rows.get(key) ?? { arm: arm ?? 'unassigned', ad: t?.term ?? NO_AD, leads: 0, bookings: 0 }
+    row[field]++
+    rows.set(key, row)
+  }
+  for (const l of leads) bump(l.funnelVariant, l.attributionFirst, 'leads')
+  for (const a of appts) bump(a.funnelVariant, a.attributionFirst, 'bookings')
+
+  return Array.from(rows.values()).sort(
+    (x, y) => x.arm.localeCompare(y.arm) || y.leads - x.leads || y.bookings - x.bookings
+  )
+}
+
 export default async function ArmsPage() {
   const { userId } = await auth()
   if (!userId || userId !== process.env.ADMIN_USER_ID) redirect('/dashboard')
@@ -80,6 +121,11 @@ export default async function ArmsPage() {
     bookingsBySource(sevenDaysAgo),
   ])
 
+  const marketing = await getMarketingBusiness()
+  const [adsLifetime, ads7] = marketing
+    ? await Promise.all([adBreakdown(marketing.id), adBreakdown(marketing.id, sevenDaysAgo)])
+    : [[], []]
+
   // Configured source per arm, plus what the ledger actually recorded serving.
   // They should agree; if they do not, the env changed mid-test.
   const servedRows = await db.armEvent.groupBy({
@@ -100,6 +146,7 @@ export default async function ArmsPage() {
     })),
     missingVideo: armsMissingVideo(),
     bookingSources: { last7: src7, lifetime: srcLifetime },
+    ads: { last7: ads7, lifetime: adsLifetime },
     last7: rollup(last7),
     lifetime: rollup(lifetime),
     recentVerified: recent.map((r) => ({ ...r, createdAt: r.createdAt.toISOString() })),
