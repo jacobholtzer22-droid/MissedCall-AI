@@ -119,6 +119,7 @@ export default function DateCalendar({
   prefill,
   onBooked,
   booked,
+  surface,
 }: {
   durationMinutes: number
   prefill: { firstName: string; phone: string; email: string; trade: string }
@@ -129,6 +130,8 @@ export default function DateCalendar({
    * offers times for a call that is already on the books.
    */
   booked: Booked | null
+  /** Which calendar this is, stamped on the booking. See demo-book. */
+  surface: 'landing' | 'watch'
 }) {
   const [days, setDays] = useState<ApiDay[]>([])
   const [loading, setLoading] = useState(true)
@@ -233,6 +236,7 @@ export default function DateCalendar({
           email: contactValue('email'),
           trade: prefill.trade,
           companyName: company.trim(),
+          bookingSurface: surface,
           eventId: scheduleEventId.current,
         }),
       })

@@ -26,7 +26,11 @@ import {
   sanitizeAttribution,
   formatAttributionBlock,
   formatAttributionLine,
+  buildFbc,
+  describeTouch,
+  type AttributionPair,
 } from '@/lib/attribution'
+import { ATTRIBUTION_COOKIE, parseAttributionCookie } from '@/lib/attribution-cookie'
 import { rateLimit, getClientIp } from '@/lib/rate-limit'
 import { sendLeadDemoSms, newResumeToken } from '@/lib/lead-sms'
 import { SEND_SMS_AT } from '@/app/book/constants'
@@ -209,6 +213,21 @@ export async function POST(request: NextRequest) {
     const funnelVariant = request.cookies.get(FUNNEL_VARIANT_COOKIE)?.value ?? null
     const visitorId = request.cookies.get(VISITOR_COOKIE)?.value ?? ''
 
+    // ── Attribution ─────────────────────────────────────────────────────────
+    // Written by the browser on the landing view and re-sanitised here, because
+    // it arrives from a cookie the visitor can edit.
+    const touches: AttributionPair = parseAttributionCookie(
+      request.cookies.get(ATTRIBUTION_COOKIE)?.value
+    )
+    // _fbc is what Meta matches a click against. Their cookie is only set when
+    // the pixel loaded on the click landing, which ad blockers routinely stop,
+    // so it is rebuilt from the fbclid we captured ourselves when missing.
+    const fbp = request.cookies.get('_fbp')?.value ?? null
+    const fbc =
+      request.cookies.get('_fbc')?.value ??
+      buildFbc(touches.first?.fbclid ?? touches.last?.fbclid) ??
+      null
+
     // ── Verification gate ───────────────────────────────────────────────────
     // Banking a lead fires the instant SMS and the "call now" owner email, so
     // it may only happen for a number someone proved they hold. The ticket is
@@ -259,6 +278,13 @@ export async function POST(request: NextRequest) {
             message,
             variant,
             funnelVariant,
+            // First touch is written once and never again: `??` keeps whatever
+            // the row already holds, so a returning lead cannot overwrite the
+            // ad that originally found them with today's direct visit.
+            ...(touches.first ? { attributionFirst: existing.attributionFirst ?? touches.first } : {}),
+            ...(touches.last ? { attributionLast: touches.last } : {}),
+            ...(fbp ? { fbp } : {}),
+            ...(fbc ? { fbc } : {}),
           },
         })
       : await db.websiteLead.create({
@@ -272,6 +298,10 @@ export async function POST(request: NextRequest) {
             variant,
             funnelVariant,
             resumeToken: newResumeToken(),
+            ...(touches.first ? { attributionFirst: touches.first } : {}),
+            ...(touches.last ? { attributionLast: touches.last } : {}),
+            ...(fbp ? { fbp } : {}),
+            ...(fbc ? { fbc } : {}),
           },
         })
 
@@ -376,6 +406,9 @@ export async function POST(request: NextRequest) {
           trade,
           businessName: company,
           funnelArm: funnelVariant,
+          referrerClass: touches.last?.referrer ?? touches.first?.referrer ?? null,
+          firstTouchSource: touches.first?.source ?? touches.first?.referrer ?? null,
+          firstTouchCampaign: touches.first?.campaign ?? null,
           clientIp: getClientIp(request),
           userAgent: request.headers.get('user-agent'),
           fbp: request.cookies.get('_fbp')?.value ?? null,

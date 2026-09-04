@@ -41,6 +41,15 @@ export type CapiLead = {
   trade?: string | null
   businessName?: string | null
   funnelArm?: string | null
+  /**
+   * Where they actually came from, as classified on the landing view.
+   * Sent so Meta's reporting can separate paid clicks from the organic and
+   * referral traffic the pixel would otherwise lump into one bucket.
+   */
+  referrerClass?: string | null
+  /** First touch, not last: the touch that earned the lead. */
+  firstTouchSource?: string | null
+  firstTouchCampaign?: string | null
   /** From the incoming request, so Meta can match the browser session. */
   clientIp?: string | null
   userAgent?: string | null
@@ -98,6 +107,9 @@ export async function sendCapiLead(input: CapiLead): Promise<CapiResult> {
           ...(input.trade ? { trade: input.trade } : {}),
           ...(input.businessName ? { business_name: input.businessName } : {}),
           ...(input.funnelArm ? { funnel_arm: input.funnelArm } : {}),
+          ...(input.referrerClass ? { referrer_class: input.referrerClass } : {}),
+          ...(input.firstTouchSource ? { first_touch_source: input.firstTouchSource } : {}),
+          ...(input.firstTouchCampaign ? { first_touch_campaign: input.firstTouchCampaign } : {}),
         },
       },
     ],

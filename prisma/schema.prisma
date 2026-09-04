@@ -392,6 +392,16 @@ model Appointment {
   // Funnel VIDEO A/B: "A" | "B". Separate from `variant` for the same reason.
   funnelVariant String?
 
+  /// Same first/last touch pair as WebsiteLead, stamped at confirm. Kept on the
+  /// booking too, not just the lead, because a booking can happen with no lead
+  /// row at all — the landing calendar takes people who never hit the gate.
+  attributionFirst Json?
+  attributionLast  Json?
+
+  /// "landing" | "watch" | "calendar". Finer than `source`, which only knows
+  /// website / sms_link / direct.
+  bookingSurface String?
+
   reminderNightBeforeSentAt DateTime?
   reminderHourBeforeSentAt  DateTime?
 
@@ -647,6 +657,28 @@ model WebsiteLead {
   /// hold the number.
   otpVerifiedAt DateTime?
 
+  /// Ad attribution, first and last touch. JSON rather than a column per field
+  /// because they are read as a pair and displayed, never filtered on: nine
+  /// columns times two touches would be eighteen nullable columns nobody
+  /// queries. Shape is AttributionTouch in lib/attribution.ts.
+  ///
+  /// firstTouch is written ONCE, on the first visit carrying any signal, and is
+  /// never overwritten — that is the whole point of keeping both.
+  attributionFirst Json?
+  attributionLast  Json?
+
+  /// _fbp / _fbc as they were on the browser at OTP. Stored because CAPI match
+  /// quality collapses without them and the cookies are gone by the time
+  /// anyone looks at the row. _fbc is derived from fbclid when Meta's own
+  /// cookie is missing (see buildFbc).
+  fbp String?
+  fbc String?
+
+  /// Which calendar the booking came off: "landing" | "watch" | "calendar".
+  /// Stamped on the lead as well as the appointment so the lead list can answer
+  /// "did they book before or after the video" without a join.
+  bookingSurface String?
+
   // Spam scoring (see lib/spam-score.ts). All nullable and additive: null means
   // the row predates scoring, which is why spamScore is not defaulted to 0.
   // A high score sets status='spam' and suppresses owner notification — it NEVER
@@ -778,8 +810,8 @@ model PhoneVerification {
   phone    String // E.164, always +1XXXXXXXXXX
   codeHash String // sha256(code + phone + pepper). Never the code itself.
 
-  expiresAt DateTime
-  attempts  Int      @default(0) // verify attempts against THIS row, max 3
+  expiresAt  DateTime
+  attempts   Int       @default(0) // verify attempts against THIS row, max 3
   verifiedAt DateTime?
   consumedAt DateTime? // set when a lead redeems it, so a ticket works once
 

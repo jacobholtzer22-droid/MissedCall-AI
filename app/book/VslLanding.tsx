@@ -10,6 +10,7 @@ import DateCalendar, { type Booked } from './DateCalendar'
 import { BannerCard, FunnelButton } from './FunnelCard'
 import { CALL_LENGTH_MINUTES } from './constants'
 import { trackStandard, trackStandardWithId, trackCustomEvent, setPixelFunnelVariant } from './pixel'
+import { captureAttribution } from '@/lib/attribution-cookie'
 import type { FunnelVariant } from '@/lib/funnel-variant'
 
 
@@ -32,6 +33,9 @@ export default function VslLanding({ arm, poster }: { arm: FunnelVariant; poster
 
   useEffect(() => {
     setPixelFunnelVariant(arm)
+    // Before anything else on the page: document.referrer is only trustworthy
+    // on the landing view, and this is the visit an ad click arrives on.
+    captureAttribution(arm)
     if (viewFired.current) return
     viewFired.current = true
     trackStandard('ViewContent', { content_name: 'vsl_landing' })
@@ -95,6 +99,7 @@ export default function VslLanding({ arm, poster }: { arm: FunnelVariant; poster
             durationMinutes={CALL_LENGTH_MINUTES}
             prefill={{ firstName: '', phone: '', email: '', trade: '' }}
             booked={booked}
+            surface="landing"
             onBooked={handleBooked}
           />
         </BannerCard>

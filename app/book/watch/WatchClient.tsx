@@ -8,6 +8,7 @@ import FunnelHeadline from '../FunnelHeadline'
 import { BannerCard } from '../FunnelCard'
 import { CALL_LENGTH_MINUTES } from '../constants'
 import { trackStandard, trackStandardWithId, setPixelFunnelVariant } from '../pixel'
+import { captureAttribution } from '@/lib/attribution-cookie'
 import type { FunnelVariant } from '@/lib/funnel-variant'
 import type { FunnelVideo } from '@/lib/funnel-videos'
 
@@ -40,6 +41,10 @@ export default function WatchClient({
 
   useEffect(() => {
     setPixelFunnelVariant(arm)
+    // The watch link we text is UTM-tagged, so this landing is a real last
+    // touch. It can never become the FIRST touch: touchHasSignal() refuses any
+    // visit whose medium is our own funnel_return.
+    captureAttribution(arm)
     trackStandard('ViewContent', { content_name: 'vsl_watch' })
   }, [arm])
 
@@ -114,6 +119,7 @@ export default function WatchClient({
             prefill={prefill}
             booked={booked}
             onBooked={handleBooked}
+            surface="watch"
           />
         </BannerCard>
       </div>
@@ -133,6 +139,7 @@ export default function WatchClient({
             prefill={prefill}
             booked={booked}
             onBooked={handleBooked}
+            surface="watch"
           />
         </BannerCard>
       </div>

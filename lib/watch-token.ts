@@ -10,6 +10,7 @@
 // rather than adding a second secret to keep in sync.
 
 import { createHmac, timingSafeEqual } from 'crypto'
+import { withSmsUtms } from '@/lib/attribution'
 import type { FunnelVariant } from '@/lib/funnel-variant'
 
 export const WATCH_TOKEN_TTL_MS = 7 * 24 * 60 * 60 * 1000
@@ -70,7 +71,11 @@ export function watchPath(token: string | null, arm: FunnelVariant): string {
   return token ? `/book/${dir}/watch?t=${encodeURIComponent(token)}` : `/book/${dir}`
 }
 
+/**
+ * Absolute link for the SMS. Carries the return UTMs; watchPath (the in-app
+ * redirect) deliberately does not, because that navigation is not a text.
+ */
 export function watchLink(token: string | null, arm: FunnelVariant): string {
   const base = (process.env.NEXT_PUBLIC_APP_URL || 'https://www.alignandacquire.com').replace(/\/$/, '')
-  return `${base}${watchPath(token, arm)}`
+  return withSmsUtms(`${base}${watchPath(token, arm)}`, arm)
 }

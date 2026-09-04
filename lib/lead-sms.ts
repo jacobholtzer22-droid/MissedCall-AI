@@ -70,7 +70,7 @@ function bookingLink(ctx?: LeadContext): string {
   // The watch page has the video and the booking widget on it, so it is the
   // better destination when we have a token for it. /calendar is the fallback.
   if (ctx?.watchUrl) return watchLink(ctx.watchUrl, ctx.watchArm ?? 'A')
-  return calendarLink(ctx?.calendarToken ?? null)
+  return calendarLink(ctx?.calendarToken ?? null, ctx?.watchArm ?? null)
 }
 
 function body(ctx?: LeadContext): string {

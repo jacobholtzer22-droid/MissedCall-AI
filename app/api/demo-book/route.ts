@@ -20,7 +20,12 @@ import {
   sanitizeAttribution,
   formatAttributionBlock,
   formatAttributionLine,
+  buildFbc,
+  describeJourney,
+  sanitizeTouch,
+  type AttributionPair,
 } from '@/lib/attribution'
+import { ATTRIBUTION_COOKIE, parseAttributionCookie } from '@/lib/attribution-cookie'
 import { rateLimit, getClientIp } from '@/lib/rate-limit'
 import {
   TIMEZONE,
@@ -73,6 +78,12 @@ type Payload = {
   bookingSource?: 'direct' | 'sms_link'
   /** Signed lead token, present only in sms_link mode. */
   leadToken?: string
+  /**
+   * Which calendar took the booking: 'landing' | 'watch' | 'calendar'.
+   * Finer than bookingSource, which only knows the door (funnel / sms / direct)
+   * and cannot tell a booking made before the video from one made after it.
+   */
+  bookingSurface?: string
 }
 
 export async function POST(request: NextRequest) {
@@ -117,6 +128,17 @@ export async function POST(request: NextRequest) {
     const bookingSource = body.bookingSource === 'direct' || body.bookingSource === 'sms_link'
       ? body.bookingSource
       : null
+    const bookingSurface =
+      body.bookingSurface === 'landing' || body.bookingSurface === 'watch' || body.bookingSurface === 'calendar'
+        ? body.bookingSurface
+        : bookingSource
+        ? 'calendar'
+        : null
+
+    // Re-sanitised: this arrives from a cookie the visitor can edit.
+    const touches: AttributionPair = parseAttributionCookie(
+      request.cookies.get(ATTRIBUTION_COOKIE)?.value
+    )
 
     // /calendar identifies its lead by signed token, not by the gate cookie:
     // the link is opened on whatever device the text was read on, which is
@@ -283,6 +305,23 @@ export async function POST(request: NextRequest) {
         // 'website' is the funnel's historical value and is left alone so old
         // rows and the owner-email label keep meaning the same thing.
         source: bookingSource ?? 'website',
+        // Stamped on the booking as well as the lead, because a booking can
+        // exist with no lead row at all: the landing calendar takes people who
+        // never went through the gate.
+        //
+        // A lead's stored first touch beats the cookie's. The cookie is this
+        // browser's; the lead row is the person's, and someone who first met us
+        // on their phone and booked on a laptop must not be re-attributed to
+        // whatever the laptop's first visit happened to be.
+        ...(() => {
+          // sanitizeTouch also narrows Prisma's JsonValue (which includes null)
+          // to a plain object or undefined, which is what a nullable Json
+          // column will accept on write.
+          const first = sanitizeTouch(lead?.attributionFirst) ?? touches.first
+          const last = touches.last ?? sanitizeTouch(lead?.attributionLast)
+          return { ...(first ? { attributionFirst: first } : {}), ...(last ? { attributionLast: last } : {}) }
+        })(),
+        bookingSurface,
         googleCalendarEventId: googleEventId,
         googleMeetLink,
         calendarSyncFailed,
@@ -309,10 +348,17 @@ export async function POST(request: NextRequest) {
         trade,
         businessName: companyName,
         funnelArm: funnelVariant,
+        referrerClass: touches.last?.referrer ?? touches.first?.referrer ?? null,
+        firstTouchSource: touches.first?.source ?? touches.first?.referrer ?? null,
+        firstTouchCampaign: touches.first?.campaign ?? null,
         clientIp: getClientIp(request),
         userAgent: request.headers.get('user-agent'),
-        fbp: request.cookies.get('_fbp')?.value ?? null,
-        fbc: request.cookies.get('_fbc')?.value ?? null,
+        fbp: request.cookies.get('_fbp')?.value ?? lead?.fbp ?? null,
+        fbc:
+          request.cookies.get('_fbc')?.value ??
+          lead?.fbc ??
+          buildFbc(touches.first?.fbclid ?? touches.last?.fbclid) ??
+          null,
         eventSourceUrl: `${process.env.NEXT_PUBLIC_APP_URL ?? 'https://www.alignandacquire.com'}/book`,
       })
     } else if (bookingSource === 'direct') {
@@ -338,6 +384,9 @@ export async function POST(request: NextRequest) {
           data: {
             status: 'converted',
             email,
+            bookingSurface,
+            ...(lead.attributionFirst ? {} : touches.first ? { attributionFirst: touches.first } : {}),
+            ...(touches.last ? { attributionLast: touches.last } : {}),
             message: `${lead.message ?? ''}\n\nBOOKED ${dateLabel} at ${timeLabel} ET.${
               missesPerWeek ? `\nMissed calls per week: ${missesPerWeek}` : ''
             }${whoAnswers ? `\nWho answers now: ${whoAnswers}` : ''}`.trim(),
@@ -365,6 +414,7 @@ export async function POST(request: NextRequest) {
         ${googleEventLink ? `<p><strong>Calendar:</strong> <a href="${escapeHtml(googleEventLink)}">Open the event</a></p>` : ''}
         ${googleMeetLink ? `<p><strong>Meet:</strong> <a href="${escapeHtml(googleMeetLink)}">${escapeHtml(googleMeetLink)}</a></p>` : ''}
         ${calendarSyncFailed ? '<p style="color:#b00"><strong>Calendar sync FAILED. No Meet link. Fix before the call.</strong></p>' : ''}
+        <p><strong>How they got here:</strong> ${escapeHtml(describeJourney(touches, bookingSurface))}</p>
         <pre style="font-family:inherit;white-space:pre-wrap;margin:0">${escapeHtml(formatAttributionBlock(attribution))}</pre>
       `,
     })

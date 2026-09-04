@@ -2,14 +2,14 @@
 
 import { useState, useRef, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { ChevronDown, RefreshCw, Download, RotateCcw, ShieldAlert, MessageSquare, BarChart3 } from 'lucide-react'
+import { ChevronDown, RefreshCw, Download, RotateCcw, ShieldAlert, MessageSquare, BarChart3, Users } from 'lucide-react'
 
 interface Props {
   onToast: (message: string, type: 'success' | 'error') => void
   onRefresh: () => Promise<void>
 }
 
-type ActionKey = 'telnyx' | 'ads' | 'sheets' | 'export' | 'refresh' | 'spam' | 'marketing-line' | 'arms'
+type ActionKey = 'telnyx' | 'ads' | 'sheets' | 'export' | 'refresh' | 'spam' | 'marketing-line' | 'arms' | 'funnel-leads'
 
 export function AdminTools({ onToast, onRefresh }: Props) {
   const router = useRouter()
@@ -122,6 +122,12 @@ export function AdminTools({ onToast, onRefresh }: Props) {
       label: 'Funnel arms',
       icon: BarChart3,
       action: () => router.push('/admin/arms'),
+    },
+    {
+      key: 'funnel-leads',
+      label: 'Funnel leads / attribution',
+      icon: Users,
+      action: () => router.push('/admin/leads'),
     },
   ]
 

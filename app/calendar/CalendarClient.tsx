@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { ArrowLeft, Check, Loader2 } from 'lucide-react'
 import { Logo } from '@/app/components/Logo'
@@ -9,6 +9,7 @@ import type { ChosenSlot } from '@/app/book/BookingWizard'
 import { validateUsMobile } from '@/lib/phone-utils'
 import { formatPhoneInput } from '@/app/book/constants'
 import { trackStandardWithId } from '@/app/book/pixel'
+import { captureAttribution } from '@/lib/attribution-cookie'
 
 export type CalendarPrefill = {
   mode: 'direct' | 'prefilled'
@@ -75,6 +76,13 @@ export default function CalendarClient({
   const [busy, setBusy] = useState(false)
   const [booked, setBooked] = useState<{ dateLabel: string; timeLabel: string; meetLink: string | null } | null>(null)
 
+  // The /calendar link we text is UTM-tagged too. Recorded as a last touch so
+  // "how did this booking happen" has an answer; it cannot become a first touch
+  // (funnel_return is refused), and a cold /calendar visit stays cold.
+  useEffect(() => {
+    captureAttribution(null)
+  }, [])
+
   // In prefilled mode we only ask for what the lead row is missing.
   const asked: Field[] =
     prefill.mode === 'prefilled'
@@ -118,6 +126,7 @@ export default function CalendarClient({
           phone: form.phone,
           email: form.email.trim(),
           bookingSource: prefill.mode === 'prefilled' ? 'sms_link' : 'direct',
+          bookingSurface: 'calendar',
           ...(prefill.leadToken ? { leadToken: prefill.leadToken } : {}),
           ...(eventId ? { eventId } : {}),
         }),

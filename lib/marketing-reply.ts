@@ -28,6 +28,8 @@ export type LeadFacts = {
   trade: string
   /** Signed token so the link opens prefilled rather than re-asking. */
   calendarToken: string | null
+  /** Funnel arm, only so the texted link's utm_campaign matches the others. */
+  arm: string | null
 }
 
 /** Pull what we already know so the reply never asks for it again. */
@@ -36,15 +38,16 @@ export async function leadFactsForPhone(businessId: string, phone: string): Prom
   const lead = await db.websiteLead.findFirst({
     where: { businessId, phone: e164 },
     orderBy: { createdAt: 'desc' },
-    select: { id: true, name: true, message: true, calendarToken: true },
+    select: { id: true, name: true, message: true, calendarToken: true, funnelVariant: true },
   })
-  if (!lead) return { leadId: null, firstName: '', businessName: '', trade: '', calendarToken: null }
+  if (!lead) return { leadId: null, firstName: '', businessName: '', trade: '', calendarToken: null, arm: null }
   return {
     leadId: lead.id,
     firstName: (lead.message?.match(/^First name: (.+)$/m)?.[1] ?? lead.name ?? '').trim(),
     businessName: lead.message?.match(/^Company: (.+)$/m)?.[1]?.trim() ?? '',
     trade: lead.message?.match(/^Trade: (.+)$/m)?.[1]?.trim() ?? '',
     calendarToken: lead.calendarToken ?? null,
+    arm: lead.funnelVariant ?? null,
   }
 }
 
@@ -82,7 +85,7 @@ export async function nextTwoSlots(): Promise<{ label: string; iso: string }[]> 
 }
 
 function bookingLink(facts?: LeadFacts): string {
-  return calendarLink(facts?.calendarToken ?? null)
+  return calendarLink(facts?.calendarToken ?? null, facts?.arm ?? null)
 }
 
 /** Deep link straight to one slot, so "or 2:00 PM" is one tap not two. */
