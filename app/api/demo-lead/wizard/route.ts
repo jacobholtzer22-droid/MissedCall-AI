@@ -217,6 +217,12 @@ export async function POST(request: NextRequest) {
     const funnelVariant = request.cookies.get(FUNNEL_VARIANT_COOKIE)?.value ?? null
     const visitorId = request.cookies.get(VISITOR_COOKIE)?.value ?? ''
 
+    // What the wizard saved screen by screen. Used only to fill gaps: the
+    // client's own payload wins, because that is what the person can see.
+    const draft = visitorId
+      ? await db.gateDraft.findUnique({ where: { visitorId } }).catch(() => null)
+      : null
+
     // ── Attribution ─────────────────────────────────────────────────────────
     // Written by the browser on the landing view and re-sanitised here, because
     // it arrives from a cookie the visitor can edit.
@@ -262,14 +268,21 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Lead capture unavailable' }, { status: 503 })
     }
 
+    // Gaps filled from the draft. In practice the client sends everything; this
+    // matters for a resumed session, where the browser's own state is gone but
+    // the visitor cookie — and therefore the draft — is not.
+    const finalTrade = trade || draft?.trade || ''
+    const finalFirstName = firstName || draft?.firstName || ''
+    const finalEmail = email || draft?.email || ''
+
     const message = buildMessage({
-      trade, qualified, firstName, lastName, company, email,
-      landingPath, variant, funnelVariant, attribution,
+      trade: finalTrade, qualified, firstName: finalFirstName, lastName, company,
+      email: finalEmail, landingPath, variant, funnelVariant, attribution,
     })
     // The lead is keyed on phone, so later screens enrich the same row.
     const existing = await findPartialLeadByPhone(business.id, phoneCheck.e164)
     const isNew = !existing
-    const displayName = [firstName, lastName].filter(Boolean).join(' ').trim()
+    const displayName = [finalFirstName, lastName].filter(Boolean).join(' ').trim()
 
     const lead = existing
       ? await db.websiteLead.update({
@@ -277,7 +290,7 @@ export async function POST(request: NextRequest) {
           data: {
             // Never blank out a name we already banked with a later empty step.
             ...(displayName ? { name: displayName } : {}),
-            ...(email ? { email } : {}),
+            ...(finalEmail ? { email: finalEmail } : {}),
             phone: phoneCheck.e164,
             message,
             variant,
@@ -296,7 +309,7 @@ export async function POST(request: NextRequest) {
             businessId: business.id,
             name: displayName || phoneCheck.e164,
             phone: phoneCheck.e164,
-            email: email || null,
+            email: finalEmail || null,
             message,
             status: 'partial',
             variant,
@@ -308,6 +321,18 @@ export async function POST(request: NextRequest) {
             ...(fbc ? { fbc } : {}),
           },
         })
+
+    // The draft has done its job: this browser now has a real lead. Marked
+    // rather than deleted, so an abandonment report can tell "never finished"
+    // from "finished, row lives elsewhere".
+    if (draft && !draft.promotedAt) {
+      void db.gateDraft
+        .update({
+          where: { id: draft.id },
+          data: { promotedLeadId: lead.id, promotedAt: new Date() },
+        })
+        .catch((err) => console.error('[demo-lead/wizard] could not mark draft promoted:', err))
+    }
 
     // CRM record. Contact carries a real source column.
     await sideEffect('crm', () =>

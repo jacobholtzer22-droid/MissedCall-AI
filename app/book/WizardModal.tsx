@@ -290,6 +290,23 @@ export default function WizardModal({
     // "typed something into it".
     logStep('gate_step_completed', step)
 
+    // Persist what they have typed so far. Fire and forget: if this never
+    // arrives the wizard carries on exactly as before, and if it does, a dead
+    // end at the code step still has all four answers.
+    void fetch('/api/gate-draft', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        step,
+        trade: next.trade,
+        firstName: next.firstName,
+        phone: next.phone,
+        email: next.email,
+        landingPath: typeof window !== 'undefined' ? window.location.pathname + window.location.search : undefined,
+      }),
+      keepalive: true,
+    }).catch(() => {})
+
     // The email screen is the last before the code, so the text goes out here.
     if (step === 'email') {
       setBusy(true)

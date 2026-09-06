@@ -40,6 +40,9 @@ const REASON_LABELS: Record<GateFailReason, string> = {
   call_failed: 'voice call could not be placed',
 }
 
+const visitorIdOf = (request: NextRequest): string | null =>
+  request.cookies.get(VISITOR_COOKIE)?.value ?? null
+
 function escapeHtml(v: string): string {
   return v
     .replace(/&/g, '&amp;')
@@ -68,10 +71,20 @@ export async function POST(request: NextRequest) {
       : null
     if (!reason) return NextResponse.json({ error: 'unknown reason' }, { status: 400 })
 
-    // A number is the whole point of the row: it is what Jacob will ring.
-    const check = validateUsMobile(body.phone)
-    if (!check.ok) return NextResponse.json({ error: 'no usable number' }, { status: 400 })
-    const phone = check.e164
+    // What the visitor typed, screen by screen. The client sends what it has;
+    // this is the backstop for the paths where it does not — a closed tab, a
+    // reload, a browser that dropped the keepalive. It only fills gaps.
+    const visitorId = visitorIdOf(request)
+    const draft = visitorId
+      ? await db.gateDraft.findUnique({ where: { visitorId } }).catch(() => null)
+      : null
+
+    // A number is the whole point of the row: it is what Jacob will ring. If the
+    // body has none, the draft may.
+    const fromBody = validateUsMobile(body.phone)
+    const fromDraft = draft?.phone ? validateUsMobile(draft.phone) : null
+    const phone = fromBody.ok ? fromBody.e164 : fromDraft?.ok ? fromDraft.e164 : null
+    if (!phone) return NextResponse.json({ error: 'no usable number' }, { status: 400 })
 
     const business = await getMarketingBusiness()
     if (!business) {
@@ -79,12 +92,11 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ ok: false }, { status: 503 })
     }
 
-    const firstName = body.firstName?.trim().slice(0, 80) ?? ''
-    const trade = body.trade?.trim().slice(0, 80) ?? ''
-    const email = body.email?.trim().slice(0, 160) ?? ''
-    const arm = request.cookies.get(FUNNEL_VARIANT_COOKIE)?.value ?? null
+    const firstName = body.firstName?.trim().slice(0, 80) || draft?.firstName || ''
+    const trade = body.trade?.trim().slice(0, 80) || draft?.trade || ''
+    const email = body.email?.trim().slice(0, 160) || draft?.email || ''
+    const arm = request.cookies.get(FUNNEL_VARIANT_COOKIE)?.value ?? draft?.arm ?? null
     const variant = request.cookies.get(VARIANT_COOKIE)?.value ?? null
-    const visitorId = request.cookies.get(VISITOR_COOKIE)?.value ?? null
     const touches = parseAttributionCookie(request.cookies.get(ATTRIBUTION_COOKIE)?.value)
     const isTest = isTestPhone(phone)
 
@@ -96,6 +108,8 @@ export async function POST(request: NextRequest) {
       `Email: ${email || 'not given'}`,
       `Funnel arm: ${arm ?? 'unassigned'}`,
       `Source: meta_demo_video`,
+      `Landing path: ${draft?.landingPath ?? 'not captured'}`,
+      `Screens completed: ${draft?.lastStep ? `through ${draft.lastStep}` : 'not recorded'}`,
       '',
       describeJourney(touches, null),
     ].join('\n')

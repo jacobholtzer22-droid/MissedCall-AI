@@ -904,6 +904,59 @@ model ArmEvent {
   @@index([createdAt])
 }
 
+/// What someone typed into the gate, saved screen by screen.
+///
+/// The gate only ever wrote a WebsiteLead AFTER the phone was verified, so
+/// anyone who died at a later step — a landline that could not receive the
+/// code, five wrong digits, an expired code — vanished with everything they
+/// had entered. Four real people were lost that way in the first four days,
+/// and all that survived them was a phone number on a PhoneVerification row.
+///
+/// Deliberately its own table rather than a WebsiteLead with status='draft':
+///
+///   - WebsiteLead has no visitorId, and "upsert by visitor" is the whole
+///     point — the phone is not known until screen three.
+///   - Half a dozen client-facing surfaces read WebsiteLead (the leads list,
+///     analytics, the spam audit, findPartialLeadByPhone). Every one of them
+///     would need a new exclusion, and the first one anybody forgot would put
+///     half-typed strangers in a client's dashboard.
+///
+/// Rows are keyed to a browser, not a person, and hold PII by design. They are
+/// promoted, not copied: promotedLeadId points at the real lead once the phone
+/// is verified, which is also what stops a promoted draft being counted as an
+/// abandonment.
+model GateDraft {
+  id String @id @default(cuid())
+
+  /// The visitor cookie. Unique so each browser has exactly one live draft.
+  visitorId String @unique
+
+  trade     String?
+  firstName String?
+  phone     String?
+  email     String?
+
+  /// Last screen completed, so "how far did they get" survives the session.
+  lastStep String?
+
+  arm         String?
+  variant     String?
+  landingPath String? @db.Text
+
+  attributionFirst Json?
+  attributionLast  Json?
+
+  /// Set when the phone is verified and this becomes a real lead.
+  promotedLeadId String?
+  promotedAt     DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([createdAt])
+  @@index([phone])
+}
+
 model FunnelEvent {
   id String @id @default(cuid())
 
