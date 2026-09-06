@@ -19,6 +19,7 @@ import {
   OTP_TTL_MS, OTP_GLOBAL_ALERT_AT,
 } from '@/lib/otp'
 import { logFunnelEvent } from '@/lib/funnel-log'
+import { lookupLineType, canReceiveSms } from '@/lib/line-type'
 
 export const dynamic = 'force-dynamic'
 
@@ -105,6 +106,13 @@ export async function POST(request: NextRequest) {
     const isTest = isTestPhone(phone)
     const tag = isTest ? ' test=true' : ''
 
+    // Can this number receive a text at all? 40001 is asynchronous — Telnyx
+    // accepts the message and only the receipt minutes later says it never
+    // arrived — so without this the visitor waits for a code that cannot come.
+    // Fails open: 'unknown' is treated as sendable.
+    const lineType = await lookupLineType(phone)
+    const smsCapable = canReceiveSms(lineType)
+
     const code = generateCode()
     const row = await db.phoneVerification.create({
       data: {
@@ -112,8 +120,28 @@ export async function POST(request: NextRequest) {
         codeHash: hashCode(code, phone),
         expiresAt: new Date(Date.now() + OTP_TTL_MS),
         visitorId, variant, funnelVariant, ip,
+        lineType,
+        // The row is created either way. The code has to exist for the voice
+        // fallback to have something to read out.
+        ...(smsCapable ? {} : { deliveryStatus: 'not_routable', deliveryError: '40001-prechecked' }),
       },
     })
+
+    if (!smsCapable) {
+      console.log(`[otp] NOT ROUTABLE phone=${phone} lineType=${lineType} verificationId=${row.id}`)
+      void logFunnelEvent({
+        name: 'otp_not_routable', step: 'otp_sent', visitorId, variant, funnelVariant,
+        metadata: { lineType },
+      })
+      // 200, not an error: nothing went wrong and the visitor has a way
+      // forward. The gate reads notRoutable and offers the phone call.
+      return NextResponse.json({
+        verificationId: row.id,
+        notRoutable: true,
+        lineType,
+        error: "That number can't receive texts. Enter a cell number, or tap Call me with the code.",
+      })
+    }
 
     const from = process.env.MARKETING_TELNYX_NUMBER || null
     if (!from || !process.env.TELNYX_API_KEY) {

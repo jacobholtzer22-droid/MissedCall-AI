@@ -61,6 +61,13 @@ const HOLD_MESSAGE_PAYLOAD =
   'We are connecting you. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . Please stay on the line. . . . . . . . . . . . . . . . . . . . . . . . . . . .'
 
 interface ClientState {
+  /**
+   * Set on the outbound leg placed by /api/otp/call. Only the row id travels
+   * through Telnyx — the code itself is read from the database when the call
+   * is answered, so it never enters client_state or any webhook log.
+   */
+  otpVerificationId?: string
+
   businessId?: string
   callerPhone?: string
   connectionId?: string
@@ -104,6 +111,64 @@ export async function POST(request: NextRequest) {
       try {
         state = JSON.parse(Buffer.from(rawClientState, 'base64').toString())
       } catch {}
+    }
+
+    // =============================================
+    // OUTBOUND: READ AN OTP CODE ALOUD
+    // =============================================
+    // The recovery path for a landline. Placed by /api/otp/call, identified by
+    // client_state alone, and handled before anything below because this leg is
+    // outbound and belongs to no tenant — findBusiness() would not match it.
+    if (state.otpVerificationId) {
+      if (eventType === 'call.answered') {
+        const row = await db.phoneVerification.findUnique({
+          where: { id: state.otpVerificationId },
+          select: { id: true, voiceCode: true },
+        })
+        if (!row?.voiceCode) {
+          // Already spoken, or the row is gone. Hang up rather than sit silent.
+          console.warn(`[otp-call] answered with no code to read verificationId=${state.otpVerificationId}`)
+          await telnyx.calls.actions.hangup(callControlId, {}).catch(() => {})
+          return NextResponse.json({ received: true })
+        }
+
+        // Digits spaced and comma-separated so Polly reads them one at a time
+        // instead of as "four hundred and twenty one thousand". Said twice, with
+        // a pause, because this is someone writing it down off a phone call.
+        const spoken = row.voiceCode.split('').join(', ')
+        await telnyx.calls.actions.speak(callControlId, {
+          payload:
+            `Hello. This is your Align and Acquire verification code. ` +
+            `${spoken}. Once again. ${spoken}. ` +
+            `Enter it on the page to continue. Goodbye.`,
+          voice: VOICE,
+          language: 'en-US',
+          client_state: toB64({ otpVerificationId: row.id, otpSpoken: true } as ClientState),
+        })
+
+        // Cleared as soon as it has been handed to Telnyx to say: the column
+        // exists for the length of one call, not for the length of the row.
+        await db.phoneVerification
+          .update({ where: { id: row.id }, data: { voiceCode: null } })
+          .catch((err) => console.error('[otp-call] could not clear voiceCode:', err))
+
+        console.log(`[otp-call] SPEAKING verificationId=${row.id}`)
+        return NextResponse.json({ received: true })
+      }
+
+      if (eventType === 'call.speak.ended') {
+        await telnyx.calls.actions.hangup(callControlId, {}).catch(() => {})
+        return NextResponse.json({ received: true })
+      }
+
+      if (eventType === 'call.hangup') {
+        // Nothing to clean up: voiceCode was cleared when it was spoken, and a
+        // call that was never answered leaves it for the retry.
+        console.log(`[otp-call] ENDED verificationId=${state.otpVerificationId}`)
+        return NextResponse.json({ received: true })
+      }
+
+      return NextResponse.json({ received: true })
     }
 
     // =============================================

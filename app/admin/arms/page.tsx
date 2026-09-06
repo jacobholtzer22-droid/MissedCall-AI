@@ -115,8 +115,11 @@ async function stepFunnel(since?: Date): Promise<StepRow[][]> {
   const [armEvents, funnelEvents, otps] = await Promise.all([
     db.armEvent.groupBy({ by: ['arm', 'type'], where: when, _count: { _all: true } }),
     db.funnelEvent.findMany({
-      where: { ...when, name: { in: ['gate_opened', 'gate_step_completed', 'gate_exit_not_a_fit'] } },
-      select: { name: true, step: true, funnelVariant: true },
+      where: {
+        ...when,
+        name: { in: ['gate_opened', 'gate_step_completed', 'gate_exit_not_a_fit', 'gate_failed', 'otp_not_routable'] },
+      },
+      select: { name: true, step: true, funnelVariant: true, metadata: true },
     }),
     db.phoneVerification.findMany({
       where: when,
@@ -137,6 +140,15 @@ async function stepFunnel(since?: Date): Promise<StepRow[][]> {
 
   const armCount = (arm: string, type: string) =>
     armEvents.find((e) => e.arm === arm && e.type === type)?._count._all ?? 0
+  /** gate_failed rows carry their reason in metadata. */
+  const failCount = (arm: string, reason: string) =>
+    funnelEvents.filter(
+      (e) =>
+        armOf(e.funnelVariant) === arm &&
+        e.name === 'gate_failed' &&
+        (e.metadata as { reason?: string } | null)?.reason === reason
+    ).length
+
   const feCount = (arm: string, name: string, step?: string) =>
     funnelEvents.filter(
       (e) => armOf(e.funnelVariant) === arm && e.name === name && (step ? e.step === step : true)
@@ -155,6 +167,13 @@ async function stepFunnel(since?: Date): Promise<StepRow[][]> {
       ['OTP sent', mine.length, 'PhoneVerification'],
       ['OTP delivered', mine.filter((o) => o.deliveryStatus === 'delivered').length, 'Telnyx'],
       ['OTP verified', mine.filter((o) => o.verifiedAt).length, 'PhoneVerification'],
+      // Gate failures, by reason. Branch rows: a person who fails is not a
+      // stage everyone passes through, and counting them in the main chain
+      // would make the step below look like it lost people it never had.
+      ['— failed: not routable', failCount(arm, 'not_routable'), 'FunnelEvent'],
+      ['— failed: lockout', failCount(arm, 'lockout'), 'FunnelEvent'],
+      ['— failed: expired', failCount(arm, 'expired'), 'FunnelEvent'],
+      ['— failed: other', failCount(arm, 'resend_cap') + failCount(arm, 'call_failed'), 'FunnelEvent'],
       ['Watch views', armCount(arm, 'watch_view'), 'ArmEvent'],
       ['Bookings', armCount(arm, 'schedule'), 'ArmEvent'],
     ]
@@ -164,7 +183,7 @@ async function stepFunnel(since?: Date): Promise<StepRow[][]> {
       // Disqualified is a branch off the trade screen, not a stage everyone
       // passes through, so it neither takes a percentage nor becomes the
       // denominator for OTP sent.
-      const isBranch = label === 'Disqualified'
+      const isBranch = label === 'Disqualified' || label.startsWith('— failed:')
       const row: StepRow = {
         arm,
         label,

@@ -23,7 +23,10 @@ import { isTestPhone } from '@/lib/test-allowlist'
 
 export const OTP_LENGTH = 6
 export const OTP_TTL_MS = 10 * 60 * 1000 // 10 minutes
-export const OTP_MAX_ATTEMPTS = 3
+// 5, not 3. A code read aloud over a phone line is easy to mishear, and a
+// lockout on this funnel does not mean "attacker" — it means a real contractor
+// who now has to be called by hand.
+export const OTP_MAX_ATTEMPTS = 5
 export const OTP_MAX_SENDS_PER_PHONE_HOUR = 3 // 1 initial + 2 resends
 export const OTP_MAX_SENDS_PER_IP_HOUR = 10
 export const OTP_GLOBAL_DAILY_CAP = 200

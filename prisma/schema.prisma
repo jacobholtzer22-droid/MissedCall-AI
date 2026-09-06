@@ -830,8 +830,29 @@ model PhoneVerification {
   /// and the bare error code when it failed (40001 is a landline). Filled by
   /// scripts/sync-otp-delivery.ts, never on the send path — a delivery receipt
   /// arrives seconds to minutes after the send returns.
+  ///
+  /// Also set synchronously to "not_routable" by the pre-send line-type check,
+  /// which is the only way this is knowable before spending a send.
   deliveryStatus String?
   deliveryError  String?
+
+  /// Telnyx line type from the pre-send lookup: mobile | voip | fixed line |
+  /// other. Recorded on every send so the "which line types actually fail"
+  /// question has data behind it rather than one afternoon's sample.
+  lineType String?
+
+  /// PLAINTEXT code, set ONLY while a voice delivery is in flight and cleared
+  /// the moment it has been read out.
+  ///
+  /// Everything else here stores codeHash and never the code, deliberately.
+  /// A spoken code cannot be hashed: the webhook has to say the digits. The
+  /// alternative was carrying it in Telnyx client_state, which is worse — that
+  /// field is echoed back through webhooks and lands in logs. Scoped instead
+  /// to one row, one call, and a ten minute TTL.
+  voiceCode String?
+
+  /// When the voice call was placed, so a second tap does not dial twice.
+  voiceCalledAt DateTime?
 
   createdAt DateTime @default(now())
 
