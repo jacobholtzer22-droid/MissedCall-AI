@@ -1,7 +1,7 @@
 import { auth } from '@clerk/nextjs/server'
 import { redirect } from 'next/navigation'
 import { db } from '@/lib/db'
-import ArmsClient, { type ArmsData } from './ArmsClient'
+import ArmsClient, { type ArmsData, type StepRow } from './ArmsClient'
 import { FUNNEL_VIDEOS, armsMissingVideo } from '@/lib/funnel-videos'
 import { getMarketingBusiness } from '@/lib/marketing-funnel'
 import { sanitizeTouch } from '@/lib/attribution'
@@ -99,6 +99,85 @@ async function adBreakdown(businessId: string, since?: Date) {
   )
 }
 
+/**
+ * The funnel as steps, per arm.
+ *
+ * Each step is a count and a share of the step ABOVE it, because that is where
+ * the leak shows: 767 landing views against 16 OTP sends is invisible in a
+ * table of totals and obvious in a table of ratios.
+ *
+ * Sources differ per step by necessity — ArmEvent for page-level events,
+ * FunnelEvent for wizard screens, PhoneVerification for the OTP leg — so each
+ * row names where it came from in the UI rather than pretending to one table.
+ */
+async function stepFunnel(since?: Date): Promise<StepRow[][]> {
+  const when = since ? { createdAt: { gte: since } } : {}
+  const [armEvents, funnelEvents, otps] = await Promise.all([
+    db.armEvent.groupBy({ by: ['arm', 'type'], where: when, _count: { _all: true } }),
+    db.funnelEvent.findMany({
+      where: { ...when, name: { in: ['gate_opened', 'gate_step_completed', 'gate_exit_not_a_fit'] } },
+      select: { name: true, step: true, funnelVariant: true },
+    }),
+    db.phoneVerification.findMany({
+      where: when,
+      select: { funnelVariant: true, verifiedAt: true, deliveryStatus: true },
+    }),
+  ])
+
+  const armOf = (a: string | null | undefined) => a ?? 'unassigned'
+  const arms = Array.from(
+    new Set([
+      'A',
+      'B',
+      ...armEvents.map((e) => e.arm),
+      ...funnelEvents.map((e) => armOf(e.funnelVariant)),
+      ...otps.map((o) => armOf(o.funnelVariant)),
+    ])
+  ).sort()
+
+  const armCount = (arm: string, type: string) =>
+    armEvents.find((e) => e.arm === arm && e.type === type)?._count._all ?? 0
+  const feCount = (arm: string, name: string, step?: string) =>
+    funnelEvents.filter(
+      (e) => armOf(e.funnelVariant) === arm && e.name === name && (step ? e.step === step : true)
+    ).length
+
+  return arms.map((arm) => {
+    const mine = otps.filter((o) => armOf(o.funnelVariant) === arm)
+    const steps: [string, number, string][] = [
+      ['Landing views', armCount(arm, 'view'), 'ArmEvent'],
+      ['Modal opens', feCount(arm, 'gate_opened'), 'FunnelEvent'],
+      ['1. Trade', feCount(arm, 'gate_step_completed', 'trade'), 'FunnelEvent'],
+      ['2. First name', feCount(arm, 'gate_step_completed', 'firstName'), 'FunnelEvent'],
+      ['3. Cell', feCount(arm, 'gate_step_completed', 'phone'), 'FunnelEvent'],
+      ['4. Email', feCount(arm, 'gate_step_completed', 'email'), 'FunnelEvent'],
+      ['Disqualified', feCount(arm, 'gate_exit_not_a_fit'), 'FunnelEvent'],
+      ['OTP sent', mine.length, 'PhoneVerification'],
+      ['OTP delivered', mine.filter((o) => o.deliveryStatus === 'delivered').length, 'Telnyx'],
+      ['OTP verified', mine.filter((o) => o.verifiedAt).length, 'PhoneVerification'],
+      ['Watch views', armCount(arm, 'watch_view'), 'ArmEvent'],
+      ['Bookings', armCount(arm, 'schedule'), 'ArmEvent'],
+    ]
+
+    let prev: number | null = null
+    return steps.map(([label, count, source]) => {
+      // Disqualified is a branch off the trade screen, not a stage everyone
+      // passes through, so it neither takes a percentage nor becomes the
+      // denominator for OTP sent.
+      const isBranch = label === 'Disqualified'
+      const row: StepRow = {
+        arm,
+        label,
+        count,
+        source,
+        pctOfPrev: isBranch || prev === null || prev === 0 ? null : Math.round((count / prev) * 1000) / 10,
+      }
+      if (!isBranch) prev = count
+      return row
+    })
+  })
+}
+
 export default async function ArmsPage() {
   const { userId } = await auth()
   if (!userId || userId !== process.env.ADMIN_USER_ID) redirect('/dashboard')
@@ -120,6 +199,8 @@ export default async function ArmsPage() {
     bookingsBySource(),
     bookingsBySource(sevenDaysAgo),
   ])
+
+  const [stepsLifetime, steps7] = await Promise.all([stepFunnel(), stepFunnel(sevenDaysAgo)])
 
   const marketing = await getMarketingBusiness()
   const [adsLifetime, ads7] = marketing
@@ -147,6 +228,7 @@ export default async function ArmsPage() {
     missingVideo: armsMissingVideo(),
     bookingSources: { last7: src7, lifetime: srcLifetime },
     ads: { last7: ads7, lifetime: adsLifetime },
+    steps: { last7: steps7, lifetime: stepsLifetime },
     last7: rollup(last7),
     lifetime: rollup(lifetime),
     recentVerified: recent.map((r) => ({ ...r, createdAt: r.createdAt.toISOString() })),

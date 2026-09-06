@@ -132,6 +132,14 @@ export async function POST(request: NextRequest) {
         const res = await telnyx.messages.send({ from, to: phone, text: codeMessage(code) })
         const providerId = (res as { data?: { id?: string } })?.data?.id ?? 'unknown'
         console.log(`[otp] SENT phone=${phone} verificationId=${row.id} providerId=${providerId}${tag}`)
+        // Kept so delivery can be resolved by id rather than by matching phone
+        // and timestamp against the detail records. Not awaited: a failure to
+        // record the id must not fail a code that already went out.
+        if (providerId !== 'unknown') {
+          void db.phoneVerification
+            .update({ where: { id: row.id }, data: { providerMessageId: providerId } })
+            .catch((err) => console.error('[otp] could not store providerMessageId:', err))
+        }
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err)
         console.error(`[otp] FAILED phone=${phone} verificationId=${row.id} error=${message}${tag}`)

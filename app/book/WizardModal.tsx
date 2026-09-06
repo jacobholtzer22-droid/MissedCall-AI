@@ -80,6 +80,19 @@ export default function WizardModal({
 
   const step = STEPS[index]
 
+  /**
+   * Fire-and-forget step logging. The arm and the visitor id are read from
+   * cookies server-side, so nothing identifying is sent from here.
+   */
+  const logStep = useCallback((name: string, step?: string, metadata?: object) => {
+    void fetch('/api/funnel-event', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, step, metadata }),
+      keepalive: true,
+    }).catch(() => {})
+  }, [])
+
   useEffect(() => {
     if (!open) return
     const prev = document.body.style.overflow
@@ -94,6 +107,13 @@ export default function WizardModal({
     const t = setTimeout(() => inputRef.current?.focus(), 130)
     return () => clearTimeout(t)
   }, [open, index, exited])
+
+  // Modal opens. The denominator for every screen below it: landing views that
+  // never became an open are a headline problem, not a wizard problem.
+  useEffect(() => {
+    if (!open) return
+    logStep('gate_opened', 'trade')
+  }, [open, logStep])
 
   useEffect(() => {
     if (!open) return
@@ -140,15 +160,17 @@ export default function WizardModal({
 
     // Homeowners and browsers stop here: no OTP, no lead, no Lead event.
     if (step === 'trade' && isTerminalTrade(value)) {
-      void fetch('/api/funnel-event', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: 'gate_exit_not_a_fit', step: 'trade', metadata: { answer: value } }),
-        keepalive: true,
-      }).catch(() => {})
+      // The answer is logged so homeowner and just-looking can be separated in
+      // the step table; it is a fixed menu choice, not typed input.
+      logStep('gate_exit_not_a_fit', 'trade', { answer: value })
       setExited(true)
       return
     }
+
+    // Screen cleared. Logged AFTER validation and after the disqualifying exit
+    // above, so the count means "answered this screen and moved on" rather than
+    // "typed something into it".
+    logStep('gate_step_completed', step)
 
     // The email screen is the last before the code, so the text goes out here.
     if (step === 'email') {

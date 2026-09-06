@@ -820,6 +820,19 @@ model PhoneVerification {
   funnelVariant String?
   ip            String?
 
+  /// Telnyx message id for the code text. Stored so delivery can be resolved
+  /// by id later; before this it was only written to the console, which meant
+  /// "did the code actually arrive" could only be answered by matching phone
+  /// and timestamp against the detail records.
+  providerMessageId String?
+
+  /// Last known Telnyx delivery status: delivered | failed | sending | ...
+  /// and the bare error code when it failed (40001 is a landline). Filled by
+  /// scripts/sync-otp-delivery.ts, never on the send path — a delivery receipt
+  /// arrives seconds to minutes after the send returns.
+  deliveryStatus String?
+  deliveryError  String?
+
   createdAt DateTime @default(now())
 
   // Per-phone send caps and "find the active code for this number".
