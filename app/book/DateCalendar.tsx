@@ -485,13 +485,18 @@ export default function DateCalendar({
               <p className="text-[14px] text-neutral-500">Nothing open that day. Try another.</p>
             ) : (
               <div className="space-y-2.5">
+                {/* Slot labels are primary, not accent: 17px text on white, and
+                    the accent magenta only reaches 3.7:1 against it while the
+                    purple measures 6.2:1. The selected day below keeps the
+                    accent, where it is a fill behind white text rather than
+                    text on white itself. */}
                 {(showAllSlots ? selectedDay.slots : selectedDay.slots.slice(0, SLOT_PAGE)).map((s) => (
                   <button
                     key={s.iso}
                     type="button"
                     onClick={() => setSlot(s)}
                     className="h-[52px] w-full rounded-lg border-2 bg-white text-[17px] font-semibold"
-                    style={{ borderColor: 'var(--funnel-accent)', color: 'var(--funnel-accent)' }}
+                    style={{ borderColor: 'var(--funnel-primary)', color: 'var(--funnel-primary)' }}
                   >
                     {timeIn(s.iso, tz)}
                   </button>
