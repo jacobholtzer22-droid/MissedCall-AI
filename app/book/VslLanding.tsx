@@ -60,32 +60,34 @@ export default function VslLanding({ arm, poster }: { arm: FunnelVariant; poster
 
       {/* A still with a play overlay, NOT a player: the landing page must not
           pull a video file on a phone before anyone has asked for it. */}
-      <BannerCard
-        className="mb-6"
-        banner="Step 1: Watch the 3-minute demo of a live account to see exactly how it works"
-      >
+      <BannerCard className="mb-6" framed banner="First: Watch the 3-minute demo of a live account">
         <button
           type="button"
           onClick={() => setOpen(true)}
-          aria-label="Watch the demo"
+          aria-label="Watch the 3-minute demo"
           className="relative block w-full"
           style={{ aspectRatio: '16 / 9' }}
         >
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src={poster} alt="" className="absolute inset-0 h-full w-full object-cover" />
-          <span className="absolute inset-0 grid place-items-center" style={{ background: 'rgba(0,0,0,0.18)' }}>
-            <span className="grid h-[68px] w-[68px] place-items-center rounded-full shadow-lg"
-              style={{ background: 'var(--funnel-banner)' }}>
-              <svg width="26" height="26" viewBox="0 0 24 24" fill="#fff" aria-hidden="true">
-                <path d="M8 5v14l11-7z" />
-              </svg>
-            </span>
+          {/* A labelled pill in the corner rather than a disc in the middle:
+              the disc covered the part of the still worth seeing, which is the
+              dashboard the video is about. */}
+          <span className="pointer-events-none absolute inset-0" style={{ background: 'rgba(0,0,0,0.10)' }} />
+          <span
+            className="absolute bottom-3 left-3 inline-flex items-center gap-2 rounded-full px-4 py-2.5 shadow-lg"
+            style={{ background: 'var(--funnel-accent)' }}
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="#fff" aria-hidden="true">
+              <path d="M8 5v14l11-7z" />
+            </svg>
+            <span className="text-[14px] font-bold text-white">Watch the 3-minute demo</span>
           </span>
         </button>
       </BannerCard>
 
       <div className="mb-12">
-        <FunnelButton onClick={() => setOpen(true)}>Click to See How It Works</FunnelButton>
+        <FunnelButton onClick={() => setOpen(true)}>Watch the Demo</FunnelButton>
       </div>
 
       {/* The same calendar the watch page uses. Watching first is still the

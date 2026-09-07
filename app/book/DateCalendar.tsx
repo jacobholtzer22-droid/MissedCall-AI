@@ -273,7 +273,7 @@ export default function DateCalendar({
         {booked.meetLink && (
           <p className="mb-3 text-[14px]">
             <a href={booked.meetLink} target="_blank" rel="noopener noreferrer"
-              className="underline underline-offset-4" style={{ color: 'var(--funnel-banner)' }}>
+              className="underline underline-offset-4" style={{ color: 'var(--funnel-accent)' }}>
               Join on Google Meet
             </a>
           </p>
@@ -325,10 +325,10 @@ export default function DateCalendar({
               autoComplete={CONTACT_AUTOCOMPLETE[f]}
               placeholder={CONTACT_PLACEHOLDERS[f]}
               className="h-[48px] w-full rounded-lg border px-4 text-[16px] outline-none focus:border-neutral-900"
-              style={{ borderColor: contactErrors[f] ? 'var(--funnel-banner)' : 'var(--funnel-border)' }}
+              style={{ borderColor: contactErrors[f] ? 'var(--funnel-accent)' : 'var(--funnel-border)' }}
             />
             {contactErrors[f] && (
-              <p className="mt-1.5 text-[13px] font-medium" style={{ color: 'var(--funnel-banner)' }}>
+              <p className="mt-1.5 text-[13px] font-medium" style={{ color: 'var(--funnel-accent)' }}>
                 {contactErrors[f]}
               </p>
             )}
@@ -347,10 +347,10 @@ export default function DateCalendar({
           }}
           autoComplete="organization"
           className="mb-4 h-[48px] w-full rounded-lg border px-4 text-[16px] outline-none focus:border-neutral-900"
-          style={{ borderColor: formError ? 'var(--funnel-banner)' : 'var(--funnel-border)' }}
+          style={{ borderColor: formError ? 'var(--funnel-accent)' : 'var(--funnel-border)' }}
         />
         {formError && (
-          <p className="mb-3 text-[13px] font-medium" style={{ color: 'var(--funnel-banner)' }}>{formError}</p>
+          <p className="mb-3 text-[13px] font-medium" style={{ color: 'var(--funnel-accent)' }}>{formError}</p>
         )}
         <FunnelButton onClick={() => void confirm()} disabled={busy}>
           {busy ? 'Booking…' : 'Confirm Booking'}
@@ -418,7 +418,7 @@ export default function DateCalendar({
       {loading ? (
         <p className="py-6 text-[14px] text-neutral-500">Loading times…</p>
       ) : error ? (
-        <p className="py-6 text-[14px]" style={{ color: 'var(--funnel-banner)' }}>{error}</p>
+        <p className="py-6 text-[14px]" style={{ color: 'var(--funnel-accent)' }}>{error}</p>
       ) : (
         <div className="md:flex md:gap-6">
           {/* Calendar */}
@@ -463,9 +463,9 @@ export default function DateCalendar({
                     className="mx-auto grid h-11 w-11 place-items-center rounded-full text-[16px]"
                     style={
                       isSel
-                        ? { background: 'var(--funnel-banner)', color: '#FFFFFF', fontWeight: 700 }
+                        ? { background: 'var(--funnel-accent)', color: '#FFFFFF', fontWeight: 700 }
                         : open
-                        ? { background: 'rgba(255,0,0,0.10)', color: 'var(--funnel-banner)', fontWeight: 600 }
+                        ? { background: 'rgba(219,57,218,0.12)', color: 'var(--funnel-accent)', fontWeight: 600 }
                         : { color: '#BDBDBD', cursor: 'not-allowed' }
                     }
                   >
@@ -491,7 +491,7 @@ export default function DateCalendar({
                     type="button"
                     onClick={() => setSlot(s)}
                     className="h-[52px] w-full rounded-lg border-2 bg-white text-[17px] font-semibold"
-                    style={{ borderColor: 'var(--funnel-banner)', color: 'var(--funnel-banner)' }}
+                    style={{ borderColor: 'var(--funnel-accent)', color: 'var(--funnel-accent)' }}
                   >
                     {timeIn(s.iso, tz)}
                   </button>

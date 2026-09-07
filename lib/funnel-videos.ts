@@ -12,11 +12,20 @@ import type { FunnelVariant } from '@/lib/funnel-variant'
 
 export type FunnelVideo = { src: string; poster: string }
 
-/** Shared still. Both arms use the existing poster frame. */
+/**
+ * Shared still. Both arms use the same frame, so the landing page is identical
+ * whichever video the coin flip picked.
+ *
+ * A frame of the MissedCall AI dashboard, not of a client's website: the old
+ * still was a hydroseeding homepage, which sold the wrong thing — someone
+ * landing here is being shown the SYSTEM, and the first image they see should
+ * be the system. Pulled from the pt.2 demo at 0:20 and cropped to the app,
+ * dropping the browser chrome and the screen-recorder bar.
+ */
 function poster(): string {
   return (
     process.env.NEXT_PUBLIC_DEMO_POSTER_URL?.trim() ||
-    '/images/demo-poster.jpg'
+    '/images/demo-poster-dashboard.jpg'
   )
 }
 

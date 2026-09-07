@@ -74,7 +74,7 @@ export default function WatchClient({
 
       <FunnelHeadline />
 
-      <BannerCard className="mb-12" banner="Step 1: Watch this video">
+      <BannerCard className="mb-12" framed banner="First: Watch the demo">
         <div className="relative w-full" style={{ aspectRatio: '16 / 9' }}>
           <video
             ref={videoRef}
@@ -95,15 +95,18 @@ export default function WatchClient({
                 setPlaying(true)
                 void videoRef.current?.play()
               }}
-              aria-label="Play the demo"
-              className="absolute inset-0 grid place-items-center"
-              style={{ background: 'rgba(0,0,0,0.18)' }}
+              aria-label="Watch the 3-minute demo"
+              className="absolute inset-0"
+              style={{ background: 'rgba(0,0,0,0.10)' }}
             >
-              <span className="grid h-[68px] w-[68px] place-items-center rounded-full shadow-lg"
-                style={{ background: 'var(--funnel-banner)' }}>
-                <svg width="26" height="26" viewBox="0 0 24 24" fill="#fff" aria-hidden="true">
+              <span
+                className="absolute bottom-3 left-3 inline-flex items-center gap-2 rounded-full px-4 py-2.5 shadow-lg"
+                style={{ background: 'var(--funnel-accent)' }}
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="#fff" aria-hidden="true">
                   <path d="M8 5v14l11-7z" />
                 </svg>
+                <span className="text-[14px] font-bold text-white">Watch the 3-minute demo</span>
               </span>
             </button>
           )}
@@ -113,7 +116,7 @@ export default function WatchClient({
       {/* The only calendar on the page. The button below scrolls back to this
           one rather than mounting a second. */}
       <div className="mb-12">
-        <BannerCard banner="Step 2: Book a call">
+        <BannerCard banner="Then: Grab a time">
           <DateCalendar
             durationMinutes={CALL_LENGTH_MINUTES}
             prefill={prefill}
@@ -129,7 +132,7 @@ export default function WatchClient({
       </div>
 
       <div className="mb-12">
-        <BannerCard banner="Step 2: Book a call">
+        <BannerCard banner="Then: Grab a time">
           {/* A SECOND, COMPLETE calendar, not a scroll link. Someone who read
               the reviews should be able to book where they are standing.
               Independent state by construction: DateCalendar keeps everything

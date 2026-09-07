@@ -22,7 +22,7 @@ export default function FunnelProgressBar({ pct, label }: { pct: number; label: 
         >
           <div
             className="h-full rounded-full transition-[width] duration-500 ease-out motion-reduce:transition-none"
-            style={{ width: `${clamped}%`, background: 'var(--funnel-banner)' }}
+            style={{ width: `${clamped}%`, background: 'var(--funnel-accent)' }}
           />
         </div>
 
@@ -34,7 +34,7 @@ export default function FunnelProgressBar({ pct, label }: { pct: number; label: 
           style={{
             left: `max(2.6rem, ${clamped}%)`,
             transform: 'translate(-100%, -50%)',
-            background: 'var(--funnel-banner)',
+            background: 'var(--funnel-accent)',
             color: '#FFFFFF',
             boxShadow: '0 0 0 2px #FFFFFF',
           }}

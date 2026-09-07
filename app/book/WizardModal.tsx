@@ -510,7 +510,7 @@ export default function WizardModal({
                   }}
                   aria-label="What do you do?"
                   className={`${inputCls} appearance-none bg-white`}
-                  style={{ borderColor: error ? 'var(--funnel-banner)' : 'var(--funnel-border)' }}
+                  style={{ borderColor: error ? 'var(--funnel-accent)' : 'var(--funnel-border)' }}
                 >
                   <option value="" disabled>
                     Select one
@@ -551,7 +551,7 @@ export default function WizardModal({
                   enterKeyHint={step === 'otp' ? 'done' : 'next'}
                   aria-label={COPY[step].headline}
                   className={`${inputCls} ${step === 'otp' ? 'text-center text-[24px] font-bold tracking-[0.4em]' : ''}`}
-                  style={{ borderColor: error ? 'var(--funnel-banner)' : 'var(--funnel-border)' }}
+                  style={{ borderColor: error ? 'var(--funnel-accent)' : 'var(--funnel-border)' }}
                 />
               )}
 
@@ -559,7 +559,7 @@ export default function WizardModal({
                 <p className="mt-2.5 text-[13px] leading-[1.5] text-neutral-500">{COPY[step].hint}</p>
               )}
               {error && (
-                <p className="mt-2.5 text-[13px] font-medium" style={{ color: 'var(--funnel-banner)' }}>
+                <p className="mt-2.5 text-[13px] font-medium" style={{ color: 'var(--funnel-accent)' }}>
                   {error}
                 </p>
               )}
@@ -584,7 +584,7 @@ export default function WizardModal({
                   onClick={() => void callWithCode()}
                   disabled={calling || !verificationId}
                   className="min-h-[48px] w-full rounded-lg py-3 text-[16px] font-bold text-white disabled:opacity-50"
-                  style={{ background: 'var(--funnel-banner)' }}
+                  style={{ background: 'var(--funnel-accent)' }}
                 >
                   {calling ? 'Calling you…' : 'Call me with the code'}
                 </button>
@@ -602,7 +602,7 @@ export default function WizardModal({
                   onClick={() => void callWithCode()}
                   disabled={calling || !verificationId}
                   className="min-h-[48px] w-full rounded-lg py-3 text-[16px] font-bold text-white disabled:opacity-50"
-                  style={{ background: 'var(--funnel-banner)' }}
+                  style={{ background: 'var(--funnel-accent)' }}
                 >
                   {calling ? 'Calling you…' : 'Call me with the code'}
                 </button>
@@ -628,7 +628,7 @@ export default function WizardModal({
                 onClick={() => void resend()}
                 disabled={busy || resends >= 2}
                 className="mt-3 text-[14px] font-semibold underline underline-offset-4 disabled:opacity-40"
-                style={{ color: 'var(--funnel-banner)' }}
+                style={{ color: 'var(--funnel-accent)' }}
               >
                 Resend code
               </button>
