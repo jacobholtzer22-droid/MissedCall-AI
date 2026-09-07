@@ -7,7 +7,7 @@ import SocialProof from './SocialProof'
 import WizardModal from './WizardModal'
 import FunnelHeadline from './FunnelHeadline'
 import DateCalendar, { type Booked } from './DateCalendar'
-import { BannerCard, FunnelButton } from './FunnelCard'
+import { BannerCard, FunnelButton, PlayDisc } from './FunnelCard'
 import { CALL_LENGTH_MINUTES } from './constants'
 import { trackStandard, trackStandardWithId, trackCustomEvent, setPixelFunnelVariant } from './pixel'
 import { captureAttribution } from '@/lib/attribution-cookie'
@@ -70,19 +70,8 @@ export default function VslLanding({ arm, poster }: { arm: FunnelVariant; poster
         >
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src={poster} alt="" className="absolute inset-0 h-full w-full object-cover" />
-          {/* A labelled pill in the corner rather than a disc in the middle:
-              the disc covered the part of the still worth seeing, which is the
-              dashboard the video is about. */}
           <span className="pointer-events-none absolute inset-0" style={{ background: 'rgba(0,0,0,0.10)' }} />
-          <span
-            className="absolute bottom-3 left-3 inline-flex items-center gap-2 rounded-full px-4 py-2.5 shadow-lg"
-            style={{ background: 'var(--funnel-accent)' }}
-          >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="#fff" aria-hidden="true">
-              <path d="M8 5v14l11-7z" />
-            </svg>
-            <span className="text-[14px] font-bold text-white">Watch the 3-minute demo</span>
-          </span>
+          <PlayDisc />
         </button>
       </BannerCard>
 

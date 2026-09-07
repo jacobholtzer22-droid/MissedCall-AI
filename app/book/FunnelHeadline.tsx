@@ -12,7 +12,7 @@ export default function FunnelHeadline() {
           fontWeight: 800,
         }}
       >
-        Speed to Lead, Done for You. A Smart Website and a Missed Call System That Texts Back in 8 Seconds and Puts the Job on Your Calendar, for Just
+        We Help Contractors Catch More Jobs With Speed to Lead: Missed Call Text-Back and a Smart Website, for Just
       </h1>
       {/* Its own line and larger than the sentence above it: the price is the
           thing the ad promised, so it outranks the sentence introducing it.

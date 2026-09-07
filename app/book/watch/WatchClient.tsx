@@ -5,7 +5,7 @@ import Image from 'next/image'
 import SocialProof from '../SocialProof'
 import DateCalendar, { type Booked } from '../DateCalendar'
 import FunnelHeadline from '../FunnelHeadline'
-import { BannerCard } from '../FunnelCard'
+import { BannerCard, PlayDisc } from '../FunnelCard'
 import { CALL_LENGTH_MINUTES } from '../constants'
 import { trackStandard, trackStandardWithId, setPixelFunnelVariant } from '../pixel'
 import { captureAttribution } from '@/lib/attribution-cookie'
@@ -99,15 +99,7 @@ export default function WatchClient({
               className="absolute inset-0"
               style={{ background: 'rgba(0,0,0,0.10)' }}
             >
-              <span
-                className="absolute bottom-3 left-3 inline-flex items-center gap-2 rounded-full px-4 py-2.5 shadow-lg"
-                style={{ background: 'var(--funnel-accent)' }}
-              >
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="#fff" aria-hidden="true">
-                  <path d="M8 5v14l11-7z" />
-                </svg>
-                <span className="text-[14px] font-bold text-white">Watch the 3-minute demo</span>
-              </span>
+              <PlayDisc />
             </button>
           )}
         </div>

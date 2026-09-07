@@ -73,3 +73,29 @@ export function FunnelButton({
     </button>
   )
 }
+
+/**
+ * The play control, shared by the landing thumbnail and the watch-page player
+ * so the two cannot drift.
+ *
+ * Positioned absolutely: both callers render it inside a relatively-positioned
+ * 16:9 box. The triangle is nudged right by a pixel or two because a play glyph
+ * is optically off-centre when its bounding box is centred.
+ */
+export function PlayDisc() {
+  return (
+    <span
+      className="pointer-events-none absolute left-1/2 top-1/2 grid h-[72px] w-[72px] -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full md:h-[88px] md:w-[88px]"
+      style={{ background: 'var(--funnel-accent)', boxShadow: '0 6px 24px rgba(0,0,0,0.30)' }}
+    >
+      <svg
+        viewBox="0 0 24 24"
+        fill="#fff"
+        aria-hidden="true"
+        className="ml-[3px] h-7 w-7 md:ml-1 md:h-9 md:w-9"
+      >
+        <path d="M8 5v14l11-7z" />
+      </svg>
+    </span>
+  )
+}
