@@ -10,6 +10,7 @@
 // clock), d7/d14/d30 = now minus N days, h48 = now minus 48 hours.
 
 import { db } from '@/lib/db'
+import { computeAlerts, computeHealth } from '@/lib/admin-health'
 import type { AdminBusiness, AdminStats } from '@/app/admin/types'
 
 const SCREENING_STATUSES = ['screening', 'screening_blocked']
@@ -389,6 +390,9 @@ export async function getAdminBusinesses(): Promise<AdminBusiness[]> {
         : null,
     }
 
+    const alerts = computeAlerts({ ...biz, stats }, now)
+    const health = computeHealth(alerts, biz.subscriptionStatus)
+
     return {
       ...biz,
       createdAt: biz.createdAt.toISOString(),
@@ -403,6 +407,8 @@ export async function getAdminBusinesses(): Promise<AdminBusiness[]> {
       conversationsAllTime: biz._count.conversations,
       leadsAllTime: allTimeLeadsMap.get(biz.id) ?? 0,
       stats,
+      health,
+      alerts,
     }
   }) as AdminBusiness[]
 }

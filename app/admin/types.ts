@@ -1,3 +1,7 @@
+import type { AdminHealth, AdminAlert } from '@/lib/admin-health'
+
+export type { AdminHealth, AdminAlert, AdminAlertCode } from '@/lib/admin-health'
+
 // Per-business stats computed in lib/admin-stats.ts. Windows are UTC:
 // "Month" = current calendar month, "7d"/"30d" = trailing days. Dates are ISO
 // strings or null; counts are never undefined.
@@ -102,6 +106,8 @@ export interface AdminBusiness {
   conversationsAllTime: number
   leadsAllTime: number
 
-  // Stats layer (lib/admin-stats.ts)
+  // Stats layer (lib/admin-stats.ts) + health rules (lib/admin-health.ts)
   stats: AdminStats
+  health: AdminHealth
+  alerts: AdminAlert[]
 }
