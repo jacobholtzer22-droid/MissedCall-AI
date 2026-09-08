@@ -1151,7 +1151,7 @@ async function sendSMS(business, to, text)
 | `/api/admin/usage/export` | GET | Export usage to Excel. Query: `preset?`, `startDate?`, `endDate?` |
 | `/api/admin/usage/sheets-sync` | POST | Sync usage data to Google Sheets |
 | `/api/admin/telnyx-test` | GET | Debug: test Telnyx MDR/CDR API fetch |
-| `/api/admin/view-as` | GET | Set `adminViewAs` cookie (24-hour maxAge) to view dashboard as a client |
+| `/api/admin/view-as` | GET | `?businessId=` sets `adminViewAs` cookie (24-hour maxAge) and redirects to `/dashboard`. `?exit=1` clears it and redirects to `/admin`, or to `/dashboard` with `&next=dashboard` (only those two `next` values; anything else → `/admin`). |
 | `/api/admin/google-ads/sync` | POST | Sync Google Ads data. Body: `{ businessId? }`. Syncs one or all enabled businesses. Returns `{ synced, errors }` |
 
 ### Dashboard Google Ads
@@ -1593,7 +1593,7 @@ plainTextToEmailHtml(text: string): string
 ### Dashboard Pages (all require Clerk auth + business)
 
 **`app/(dashboard)/layout.tsx`** — Dashboard shell
-- `DashboardShellClient`: sidebar navigation, user menu, "View as Client" admin toggle
+- `DashboardShellClient`: sidebar navigation, user menu, "Viewing as client" banner with exit link, and an "Admin" nav item (→ `/admin`) rendered only when the layout passes `isAdmin` (Clerk user is `ADMIN_USER_ID`)
 - Nav items built via `getBusinessFeatures(business)` — current structure:
   - Always: Overview, Conversations, Outreach, Analytics, Contacts, Jobs, Settings
   - `hasMissedCallAi`: Website Leads, Scheduled Quotes
@@ -1794,6 +1794,8 @@ const isPublicApiRoute = createRouteMatcher([
 **Matcher config:** Excludes `_next` static files, `book/` path segment, and all static file extensions. Applies to all `/api/(.*)` routes.
 
 **Admin check:** Not done in middleware. Individual admin routes check `userId == process.env.ADMIN_USER_ID` in the route handler.
+
+**View-as cookie (`adminViewAs`):** set by `GET /api/admin/view-as?businessId=<id>` (24 h, `path=/`, `sameSite=lax`, then redirect `/dashboard`) and read by `getBusinessForDashboard()` only when `userId === ADMIN_USER_ID`. Cleared by `GET /api/admin/view-as?exit=1`, which takes an optional `next` param allowlisted to exactly two values: `admin` (default → redirect `/admin`) and `dashboard` (→ redirect `/dashboard`); anything else falls back to `admin`. The `← Dashboard` link in the admin header uses `exit=1&next=dashboard` so leaving `/admin` never strands a stale cookie; the dashboard's "Exit view" banner uses plain `exit=1`. The dashboard layout also computes `isAdmin = userId === ADMIN_USER_ID` server-side and passes it to `DashboardShellClient`, which renders an extra "Admin" nav item → `/admin` for that user only.
 
 **Dashboard API auth:** Each dashboard route calls `requireDashboardBusiness()` which does:
 1. `auth()` → get Clerk userId
@@ -2107,6 +2109,10 @@ syncAllBusinessAds(): Promise<{ synced, errors }>
 Super-admin panel at `/admin` — only accessible when `userId == ADMIN_USER_ID`. Provides a bird's-eye view of all client businesses plus a slide-out detail panel for managing each client.
 
 **Access:** Clerk auth required. Route handler checks `userId !== ADMIN_USER_ID → 403`. Not in middleware — check is per-route.
+
+**Reaching `/admin` and leaving it (Sept 2026):** the client dashboard sidebar shows an "Admin" item (lucide `ShieldCheck`, after Settings) only when the signed-in Clerk user is `ADMIN_USER_ID` — `isAdmin` is computed in `app/(dashboard)/layout.tsx` and passed to `DashboardShellClient`. The admin header's `← Dashboard` link is `/api/admin/view-as?exit=1&next=dashboard`, so it clears any `adminViewAs` cookie on the way out (see §11).
+
+**The admin User row points at Align and Acquire.** `User.clerkId = ADMIN_USER_ID` (jacobholtzer22@gmail.com) has `businessId = cmmpd4fya0000jl04w8brdpvb` ("Align and Acquire", the `MARKETING_BUSINESS_ID` row that receives every alignandacquire.com website lead, marketing-line conversation, and `/book` appointment). Repointed 2026-09-08 from "Test Business" (`cmlztu4yc0000i6040it1mtrb`), so signing in as the admin lands on the real business at `/dashboard` without view-as. **Test Business is intentionally orphaned** (zero Users): its row was not modified and must not be deleted — it still hosts a live public `/book/test-business-1771890470291` link. Align and Acquire has two Users: this one and jacob@alignandacquire.com.
 
 **Mobile:** The admin dashboard is designed to be used on a phone. All components are responsive — see mobile notes below.
 
