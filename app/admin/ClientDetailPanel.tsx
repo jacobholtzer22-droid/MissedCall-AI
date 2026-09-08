@@ -2,29 +2,41 @@
 
 import { useEffect, useState } from 'react'
 import { X } from 'lucide-react'
+import { HealthTab } from './ClientDetailPanel/HealthTab'
 import { TogglesTab } from './ClientDetailPanel/TogglesTab'
 import { SettingsTab } from './ClientDetailPanel/SettingsTab'
 import { ToolsTab } from './ClientDetailPanel/ToolsTab'
 import type { AdminBusiness } from './types'
-import { StatusPill } from './ui'
+import { StatusPill, HealthDot } from './ui'
 
-type Tab = 'toggles' | 'settings' | 'tools'
+type Tab = 'health' | 'toggles' | 'settings' | 'tools'
+
+const TABS: { key: Tab; label: string }[] = [
+  { key: 'health', label: 'Health' },
+  { key: 'toggles', label: 'Toggles' },
+  { key: 'settings', label: 'Settings' },
+  { key: 'tools', label: 'Tools' },
+]
 
 interface Props {
   business: AdminBusiness
+  /** Bumped by the parent on every open so re-opening the same client resets to Health. */
+  openKey?: number
+  showRevenue: boolean
   onClose: () => void
   onUpdateBusiness: (updated: AdminBusiness) => void
   onToast: (message: string, type: 'success' | 'error') => void
 }
 
-export function ClientDetailPanel({ business, onClose, onUpdateBusiness, onToast }: Props) {
-  const [tab, setTab] = useState<Tab>('toggles')
+export function ClientDetailPanel({ business, openKey = 0, showRevenue, onClose, onUpdateBusiness, onToast }: Props) {
+  const [tab, setTab] = useState<Tab>('health')
 
-  // Reset to Toggles tab when switching to a different business
-  const [prevId, setPrevId] = useState(business.id)
-  if (prevId !== business.id) {
-    setPrevId(business.id)
-    setTab('toggles')
+  // Reset to Health when switching business or re-opening
+  const [prevKey, setPrevKey] = useState(`${business.id}:${openKey}`)
+  const key = `${business.id}:${openKey}`
+  if (prevKey !== key) {
+    setPrevKey(key)
+    setTab('health')
   }
 
   useEffect(() => {
@@ -38,72 +50,73 @@ export function ClientDetailPanel({ business, onClose, onUpdateBusiness, onToast
   return (
     <>
       {/* Dimming backdrop */}
-      <div
-        className="fixed inset-0 bg-black/40 z-40"
-        onClick={onClose}
-        aria-hidden
-      />
+      <div className="fixed inset-0 bg-black/40 z-40" onClick={onClose} aria-hidden />
 
       {/* Slide-in panel */}
-      <div className="fixed top-0 right-0 h-full w-full sm:w-[520px] lg:w-[600px] bg-gray-900 border-l border-gray-800 z-50 flex flex-col shadow-2xl">
-        {/* Panel header */}
-        <div className="flex items-center justify-between px-4 sm:px-6 py-4 border-b border-gray-800 shrink-0 gap-2">
-          <div className="flex items-center gap-2 min-w-0">
-            <span className="font-bold text-white truncate text-sm sm:text-base">{business.name}</span>
-            <StatusPill status={business.subscriptionStatus} className="shrink-0" />
-          </div>
-          <div className="flex items-center gap-2 shrink-0">
-            <a
-              href={`/api/admin/view-as?businessId=${business.id}`}
-              className="text-xs px-2.5 py-1.5 bg-amber-600 hover:bg-amber-700 rounded-lg font-medium transition whitespace-nowrap"
-            >
-              View as Client
-            </a>
-            <button
-              onClick={onClose}
-              className="text-gray-400 hover:text-white transition p-1 rounded"
-            >
-              <X className="h-5 w-5" />
-            </button>
+      <div
+        role="dialog"
+        aria-label={`${business.name} details`}
+        className="fixed top-0 right-0 h-full w-full sm:w-[520px] lg:w-[600px] bg-gray-900 border-l border-gray-800 z-50 flex flex-col"
+      >
+        {/* Panel header: name on its own line, controls on the next */}
+        <div className="px-4 sm:px-6 pt-4 pb-3 border-b border-gray-800 shrink-0">
+          <p className="flex items-start gap-2 text-base font-semibold text-gray-100 leading-6">
+            <HealthDot health={business.health} className="mt-[7px]" />
+            <span className="min-w-0 flex-1">{business.name}</span>
+          </p>
+          <div className="mt-1 flex items-center justify-between gap-2 pl-[18px]">
+            <StatusPill status={business.subscriptionStatus} />
+            <div className="flex items-center gap-1">
+              <a
+                href={`/api/admin/view-as?businessId=${business.id}`}
+                className="inline-flex items-center text-sm px-3 min-h-[44px] rounded-lg text-amber-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 whitespace-nowrap"
+              >
+                View as client
+              </a>
+              <button
+                type="button"
+                onClick={onClose}
+                aria-label="Close"
+                className="inline-flex items-center justify-center min-h-[44px] min-w-[44px] rounded-lg text-gray-400 hover:text-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
           </div>
         </div>
 
         {/* Tab bar */}
-        <div className="flex border-b border-gray-800 shrink-0">
-          {(['toggles', 'settings', 'tools'] as Tab[]).map(t => (
+        <div role="tablist" className="flex border-b border-gray-800 shrink-0 overflow-x-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+          {TABS.map(t => (
             <button
-              key={t}
-              onClick={() => setTab(t)}
-              className={`px-5 py-3 text-sm font-medium capitalize transition border-b-2 -mb-px ${
-                tab === t
-                  ? 'border-blue-500 text-white'
-                  : 'border-transparent text-gray-500 hover:text-gray-300'
+              key={t.key}
+              role="tab"
+              aria-selected={tab === t.key}
+              onClick={() => setTab(t.key)}
+              className={`px-4 sm:px-5 min-h-[44px] text-sm font-medium whitespace-nowrap border-b-2 -mb-px focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500 ${
+                tab === t.key ? 'border-blue-500 text-gray-100' : 'border-transparent text-gray-500'
               }`}
             >
-              {t}
+              {t.label}
             </button>
           ))}
         </div>
 
         {/* Tab content — scrollable */}
         <div className="flex-1 overflow-y-auto">
+          {tab === 'health' && <HealthTab business={business} showRevenue={showRevenue} />}
           {tab === 'toggles' && (
-            <TogglesTab
-              business={business}
-              onUpdateBusiness={onUpdateBusiness}
-              onToast={onToast}
-            />
+            <TogglesTab business={business} onUpdateBusiness={onUpdateBusiness} onToast={onToast} />
           )}
           {tab === 'settings' && (
             <SettingsTab
               business={business}
+              showRevenue={showRevenue}
               onUpdateBusiness={onUpdateBusiness}
               onToast={onToast}
             />
           )}
-          {tab === 'tools' && (
-            <ToolsTab business={business} onToast={onToast} />
-          )}
+          {tab === 'tools' && <ToolsTab business={business} onToast={onToast} />}
         </div>
       </div>
     </>

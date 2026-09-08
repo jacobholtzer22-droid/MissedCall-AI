@@ -7,6 +7,7 @@ import type { AdminBusiness } from '../types'
 
 interface Props {
   business: AdminBusiness
+  showRevenue: boolean
   onUpdateBusiness: (updated: AdminBusiness) => void
   onToast: (message: string, type: 'success' | 'error') => void
 }
@@ -82,7 +83,7 @@ function initForm(b: AdminBusiness) {
   }
 }
 
-export function SettingsTab({ business, onUpdateBusiness, onToast }: Props) {
+export function SettingsTab({ business, showRevenue, onUpdateBusiness, onToast }: Props) {
   const [form, setForm] = useState(() => initForm(business))
   const [saving, setSaving] = useState(false)
   const prevIdRef = useRef(business.id)
@@ -240,14 +241,18 @@ export function SettingsTab({ business, onUpdateBusiness, onToast }: Props) {
               <option value="canceled">Canceled</option>
             </select>
           </Field>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <Field label="Setup Fee ($)">
-              <input type="number" className={INPUT} value={form.setupFee} onChange={e => set('setupFee', e.target.value)} placeholder="400" />
-            </Field>
-            <Field label="Monthly Fee ($)">
-              <input type="number" className={INPUT} value={form.monthlyFee} onChange={e => set('monthlyFee', e.target.value)} placeholder="290" />
-            </Field>
-          </div>
+          {showRevenue ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <Field label="Setup Fee ($)">
+                <input type="number" className={INPUT} value={form.setupFee} onChange={e => set('setupFee', e.target.value)} placeholder="400" />
+              </Field>
+              <Field label="Monthly Fee ($)">
+                <input type="number" className={INPUT} value={form.monthlyFee} onChange={e => set('monthlyFee', e.target.value)} placeholder="290" />
+              </Field>
+            </div>
+          ) : (
+            <p className="text-sm text-gray-500">Revenue hidden. Use the eye icon in the header to show it.</p>
+          )}
         </div>
       </div>
 

@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useCallback, useMemo } from 'react'
+import { Eye, EyeOff } from 'lucide-react'
 import { AlertsPanel, FleetLine } from './AlertsPanel'
 import { AdminTools } from './AdminTools'
 import { ClientGrid } from './ClientGrid'
@@ -43,20 +44,49 @@ export interface Toast {
   type: 'success' | 'error'
 }
 
+const REVENUE_COOKIE = 'adminShowRevenue'
+
 interface Props {
   initialBusinesses: AdminBusiness[]
+  /** From the adminShowRevenue cookie, read server-side in page.tsx. Default off. */
+  initialShowRevenue?: boolean
 }
 
-export function AdminClient({ initialBusinesses }: Props) {
+export function AdminClient({ initialBusinesses, initialShowRevenue = false }: Props) {
   const [businesses, setBusinesses] = useState<AdminBusiness[]>(initialBusinesses)
   const [selectedBusiness, setSelectedBusiness] = useState<AdminBusiness | null>(null)
+  const [openKey, setOpenKey] = useState(0)
   const [search, setSearch] = useState('')
   const [chip, setChip] = useState<Chip>('all')
   const [sortKey, setSortKey] = useState<SortKey>('health')
   const [showCanceled, setShowCanceled] = useState(false)
-  const [showRevenue] = useState(false)
+  const [showRevenue, setShowRevenue] = useState(initialShowRevenue)
   const [toasts, setToasts] = useState<Toast[]>([])
   const [refreshing, setRefreshing] = useState(false)
+
+  const openPanel = useCallback((b: AdminBusiness) => {
+    setSelectedBusiness(b)
+    setOpenKey(k => k + 1)
+  }, [])
+
+  const toggleRevenue = useCallback(() => {
+    setShowRevenue(prev => {
+      const next = !prev
+      document.cookie = next
+        ? `${REVENUE_COOKIE}=1; path=/; max-age=31536000; samesite=lax`
+        : `${REVENUE_COOKIE}=; path=/; max-age=0; samesite=lax`
+      return next
+    })
+  }, [])
+
+  // Same formula as the old KPI strip: active + past_due monthly fees.
+  const mrr = useMemo(
+    () =>
+      businesses
+        .filter(b => b.subscriptionStatus === 'active' || b.subscriptionStatus === 'past_due')
+        .reduce((sum, b) => sum + (b.monthlyFee ?? 0), 0),
+    [businesses]
+  )
 
   const addToast = useCallback((message: string, type: 'success' | 'error') => {
     const id = Math.random().toString(36).slice(2)
@@ -151,6 +181,21 @@ export function AdminClient({ initialBusinesses }: Props) {
             {refreshing && <span className="ml-2 text-sm font-normal text-gray-500">Refreshing</span>}
           </h1>
           <div className="flex items-center gap-2">
+            {showRevenue && (
+              <span className="text-sm text-gray-400 tabular-nums whitespace-nowrap">
+                MRR ${mrr.toLocaleString('en-US', { maximumFractionDigits: 0 })}
+              </span>
+            )}
+            <button
+              type="button"
+              onClick={toggleRevenue}
+              aria-pressed={showRevenue}
+              aria-label={showRevenue ? 'Hide revenue' : 'Show revenue'}
+              title={showRevenue ? 'Hide revenue' : 'Show revenue'}
+              className="inline-flex items-center justify-center min-h-[44px] min-w-[44px] rounded-lg text-gray-400 hover:text-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+            >
+              {showRevenue ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+            </button>
             <AdminTools onToast={addToast} onRefresh={refreshBusinesses} />
             <a
               href="/dashboard"
@@ -163,7 +208,7 @@ export function AdminClient({ initialBusinesses }: Props) {
       </header>
 
       <main className="max-w-screen-2xl mx-auto px-3 sm:px-6 py-4 sm:py-6 space-y-5">
-        <AlertsPanel businesses={businesses} onSelect={setSelectedBusiness} />
+        <AlertsPanel businesses={businesses} onSelect={openPanel} />
         <FleetLine businesses={businesses} />
 
         {/* Controls */}
@@ -235,7 +280,7 @@ export function AdminClient({ initialBusinesses }: Props) {
           businesses={filtered}
           selectedId={selectedBusiness?.id}
           showRevenue={showRevenue}
-          onSelect={setSelectedBusiness}
+          onSelect={openPanel}
           onClearFilter={clearFilter}
         />
       </main>
@@ -244,6 +289,8 @@ export function AdminClient({ initialBusinesses }: Props) {
       {selectedBusiness && (
         <ClientDetailPanel
           business={selectedBusiness}
+          openKey={openKey}
+          showRevenue={showRevenue}
           onClose={() => setSelectedBusiness(null)}
           onUpdateBusiness={updateBusiness}
           onToast={addToast}
