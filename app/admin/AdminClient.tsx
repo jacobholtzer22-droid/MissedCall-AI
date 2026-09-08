@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useCallback, useMemo } from 'react'
-import { HeaderKPIs } from './HeaderKPIs'
+import { AlertsPanel, FleetLine } from './AlertsPanel'
 import { AdminTools } from './AdminTools'
 import { ClientTable } from './ClientTable'
 import { ClientDetailPanel } from './ClientDetailPanel'
@@ -104,7 +104,8 @@ export function AdminClient({ initialBusinesses }: Props) {
       </div>
 
       <div className="max-w-screen-2xl mx-auto px-3 sm:px-6 py-4 sm:py-6 space-y-4 sm:space-y-6">
-        <HeaderKPIs businesses={businesses} />
+        <AlertsPanel businesses={businesses} onSelect={setSelectedBusiness} />
+        <FleetLine businesses={businesses} />
 
         {/* Controls bar */}
         <div className="flex items-center gap-2 flex-wrap">
