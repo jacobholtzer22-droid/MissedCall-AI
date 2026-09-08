@@ -91,12 +91,16 @@ export default async function DashboardLayout({ children }: { children: React.Re
 
   const navigation = getNavigation(business)
   const userLabel = user?.firstName || user?.email || 'Admin'
+  // Only the super-admin gets the "Admin" nav item. Computed server-side so the
+  // client shell never has to know ADMIN_USER_ID.
+  const isAdmin = Boolean(process.env.ADMIN_USER_ID) && userId === process.env.ADMIN_USER_ID
 
   return (
     <DashboardShellClient
       navigation={navigation}
       businessName={business.name}
       isAdminViewAs={isAdminViewAs}
+      isAdmin={isAdmin}
       userLabel={userLabel}
     >
       {children}

@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import { UserButton } from '@clerk/nextjs'
-import { Menu, X, LayoutDashboard, MessageSquare, MessageCircle, MessagesSquare, Calendar, Settings, PhoneOff, Mail, Users, Briefcase, Mailbox, BarChart3, Megaphone, Send, Globe } from 'lucide-react'
+import { Menu, X, LayoutDashboard, MessageSquare, MessageCircle, MessagesSquare, Calendar, Settings, PhoneOff, Mail, Users, Briefcase, Mailbox, BarChart3, Megaphone, Send, Globe, ShieldCheck } from 'lucide-react'
 import { Logo } from '@/app/components/Logo'
 
 const ICON_MAP: Record<string, React.ComponentType<{ className?: string }>> = {
@@ -31,12 +31,15 @@ export function DashboardShellClient({
   navigation,
   businessName,
   isAdminViewAs,
+  isAdmin,
   userLabel,
 }: {
   children: React.ReactNode
   navigation: NavItem[]
   businessName: string
   isAdminViewAs?: boolean
+  /** Super-admin only: adds an "Admin" nav item linking to /admin. */
+  isAdmin?: boolean
   userLabel?: string
 }) {
   const [sidebarOpen, setSidebarOpen] = useState(false)
@@ -66,6 +69,16 @@ export function DashboardShellClient({
             </Link>
           )
         })}
+        {isAdmin && (
+          <Link
+            href="/admin"
+            onClick={() => setSidebarOpen(false)}
+            className="flex items-center space-x-3 px-3 py-2.5 text-gray-700 rounded-lg hover:bg-gray-100 transition min-h-[44px]"
+          >
+            <ShieldCheck className="h-5 w-5 shrink-0" />
+            <span>Admin</span>
+          </Link>
+        )}
       </nav>
       <div className="absolute bottom-0 left-0 right-0 p-4 border-t border-gray-200">
         <div className="flex items-center space-x-3">
