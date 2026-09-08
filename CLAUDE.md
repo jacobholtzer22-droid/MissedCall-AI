@@ -2178,6 +2178,33 @@ Each toggle calls `patch(field, !currentValue, label)` which:
 
 The `callScreenerMessage` and `forwardingNumber` have inline edit flows (text input + Save/Cancel) rather than simple toggles.
 
+### Stats layer — `lib/admin-stats.ts` (Sept 2026, `admin-stats-layer` branch)
+
+`getAdminBusinesses(): Promise<AdminBusiness[]>` is the **single source** for the admin business list. Both `app/admin/page.tsx` (initial SSR) and `GET /api/admin/businesses` (manual "Refresh Table") call it; the two inline copies that used to live in each are gone. It returns every raw Business column (with `createdAt`/`updatedAt` serialized to ISO strings), the legacy computed fields (`conversationsThisMonth`, `conversationsLastMonth`, `leadsThisMonth`, `conversationsAllTime`, `leadsAllTime`, `_count.blockedCalls30d` — unchanged), plus `stats: AdminStats`, `health: AdminHealth`, `alerts: AdminAlert[]`.
+
+- **Query cost is constant in N.** Every stat is one cross-tenant `groupBy` (or one `$queryRaw` for the SMS join, since `Message` has no `businessId`), all inside a single `Promise.all`. Measured 2026-09-07: 21 businesses → **23 SQL statements, ~740 ms** against Neon. Never add a per-business loop here.
+- **Windows are UTC, computed once at the top:** `monthStart` = first of the current calendar month (`Date.UTC`), `d7`/`d30` = now − N days, `h48` = now − 48 h. Business timezone is deliberately not applied (a per-row TZ groupBy would need raw SQL).
+- **Definitions that matter:** a *missed call* is `callSid NOT NULL AND callConnected=false AND status NOT IN (screening, screening_blocked)`; `textbacksMonth` counts *conversations* with an outbound message (campaign and manual sends reuse the missed-call conversation row, so counting messages would overstate); `failedSms7d` keys on `telnyxStatus='delivery_failed'` (the value Telnyx actually writes — `'failed'` never appears); `webLeadsMonth`/`lastWebLeadAt` exclude `status IN ('spam','partial')`; `stalled` mirrors `lib/conversation-buckets.ts` (closed first, then inbound-exists, then 48 h) and is capped at 30 days; `ads30d` reads existing `GoogleAdsSnapshot` rows only. Missing groupBy rows are `0` / `null`, never `undefined`.
+- `AdminStats` lives in `app/admin/types.ts`; `AdminHealth`/`AdminAlert` are re-exported there from `lib/admin-health.ts`. `TogglesTab`/`SettingsTab` merge-back spreads preserve `stats`/`health`/`alerts` (they spread the original row before the PATCH response).
+
+### Health rules — `lib/admin-health.ts`
+
+Pure functions, no DB, no imports from `app/`. `computeAlerts(row, now)` → `AdminAlert[]`; `computeHealth(alerts, subscriptionStatus)` → `'green' | 'yellow' | 'red' | 'gray'`. Called at the end of `getAdminBusinesses()`.
+
+Derived flags (internal): `hasPhone = Boolean(telnyxPhoneNumber)`; `isPhoneClient = hasPhone && (missedCallAiEnabled !== false || callScreenerEnabled || spamFilterEnabled)`; `isWebOnly = !hasPhone`. **Never gate on `missedCallAiEnabled` alone** — its default is `true`, so every web-only row has it on. `subscriptionStatus === 'canceled'` → no alerts, health `'gray'`.
+
+| Code | Severity | Fires when |
+|---|---|---|
+| `sms_failing` | red | `hasPhone && failedSms7d >= smsFailMin && failedSms7d >= smsFailRate × finalizedSms7d` |
+| `past_due` | red | `subscriptionStatus === 'past_due'` |
+| `calendar_disconnected` | yellow | `calendarEnabled && !googleCalendarConnected` |
+| `no_owner_contact` | yellow | `isPhoneClient && missedCallAiEnabled !== false && !ownerPhone && !forwardingNumber && !ownerEmail` |
+| `inactive` | yellow | `subscriptionStatus === 'active'` AND (`isPhoneClient` with `lastActivityAt` null or > `inactivePhoneDays`) OR (`isWebOnly` with `lastWebLeadAt` null or > `inactiveWebDays`). Trialing rows never fire this. |
+| `human_needed` | yellow | `stats.humanNeeded > 0` |
+| `usage_stale` | yellow | `hasPhone && (telnyxLastRecordAt null OR > usageStaleDays)` |
+
+Health: any red → `red`; else any yellow → `yellow`; else `green`. `HEALTH_THRESHOLDS = { smsFailMin: 2, smsFailRate: 0.5, inactivePhoneDays: 14, inactiveWebDays: 30, usageStaleDays: 3 }` — tune there, not in the rules. Messages are short and specific (`"3 of 4 texts failed in 7d"`, `"No calls or texts in 21 days"`). As of 2026-09-07 the UI does not yet render `stats`/`health`/`alerts`; that is Phase 1B.
+
 ---
 
 ## 16. SEO Architecture
