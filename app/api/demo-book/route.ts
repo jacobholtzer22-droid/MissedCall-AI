@@ -15,7 +15,11 @@ import { db } from '@/lib/db'
 import { validateUsMobile } from '@/lib/phone-utils'
 import { createMarketingCalendarEvent, getBusyTimes } from '@/lib/google-calendar'
 import { getDemoVideoAbsoluteUrl, WATCH_BEFORE_LINE } from '@/lib/demo-video'
-import { getMarketingBusiness, notifyOwnerOfMarketingEvent } from '@/lib/marketing-funnel'
+import {
+  getMarketingBusiness,
+  notifyOwnerOfMarketingEvent,
+  findPartialLeadByPhone,
+} from '@/lib/marketing-funnel'
 import {
   sanitizeAttribution,
   formatAttributionBlock,
@@ -376,7 +380,22 @@ export async function POST(request: NextRequest) {
       leadId: lead?.id ?? null,
     })
 
-    // Mark the lead booked rather than creating a second record.
+    // ── The lead row ────────────────────────────────────────────────────────
+    // Every booking gets one. Until now only bookings that had come through the
+    // gate did: the landing calendar takes people who never hit the gate at
+    // all, so those bookings existed as an Appointment and nothing else — absent
+    // from /admin/leads, with no attribution attached to a name.
+    //
+    // Keyed on phone, like every other funnel write, so a booking never spawns a
+    // second row for someone the funnel already knows.
+    const bookedNote = `BOOKED ${dateLabel} at ${timeLabel} ET.${
+      missesPerWeek ? `\nMissed calls per week: ${missesPerWeek}` : ''
+    }${whoAnswers ? `\nWho answers now: ${whoAnswers}` : ''}`.trim()
+
+    const fbpCookie = request.cookies.get('_fbp')?.value ?? null
+    const fbcCookie =
+      request.cookies.get('_fbc')?.value ?? buildFbc(touches.first?.fbclid ?? touches.last?.fbclid) ?? null
+
     if (lead) {
       await db.websiteLead
         .update({
@@ -387,12 +406,77 @@ export async function POST(request: NextRequest) {
             bookingSurface,
             ...(lead.attributionFirst ? {} : touches.first ? { attributionFirst: touches.first } : {}),
             ...(touches.last ? { attributionLast: touches.last } : {}),
-            message: `${lead.message ?? ''}\n\nBOOKED ${dateLabel} at ${timeLabel} ET.${
-              missesPerWeek ? `\nMissed calls per week: ${missesPerWeek}` : ''
-            }${whoAnswers ? `\nWho answers now: ${whoAnswers}` : ''}`.trim(),
+            ...(lead.fbp ? {} : fbpCookie ? { fbp: fbpCookie } : {}),
+            ...(lead.fbc ? {} : fbcCookie ? { fbc: fbcCookie } : {}),
+            message: `${lead.message ?? ''}\n\n${bookedNote}`.trim(),
           },
         })
         .catch((err) => console.error('[demo-book] lead update failed:', err))
+    } else {
+      // No gate cookie and no token: a landing-calendar booking. Everything the
+      // booking form collected is here, so the row is built from that rather
+      // than left to say "none".
+      const existing = await findPartialLeadByPhone(business.id, phoneE164)
+      const message = [
+        bookingSurface === 'landing'
+          ? 'Booked straight from the landing calendar (no gate).'
+          : 'Booked from the funnel.',
+        '',
+        `Trade: ${trade || 'not collected on this path'}`,
+        `First name: ${name}`,
+        `Phone: ${phoneE164}`,
+        `Email: ${email}`,
+        companyName ? `Company: ${companyName}` : null,
+        `Funnel arm: ${funnelVariant ?? 'unassigned'}`,
+        `Booking surface: ${bookingSurface ?? 'unknown'}`,
+        `Source: meta_demo_video`,
+        touches.first?.path ? `Landing path: ${touches.first.path}` : null,
+        '',
+        describeJourney(touches, bookingSurface),
+        '',
+        bookedNote,
+      ]
+        .filter((l) => l !== null)
+        .join('\n')
+
+      const shared = {
+        status: 'converted',
+        name,
+        phone: phoneE164,
+        email,
+        message,
+        variant,
+        funnelVariant,
+        bookingSurface,
+        ...(touches.last ? { attributionLast: touches.last } : {}),
+        ...(fbpCookie ? { fbp: fbpCookie } : {}),
+        ...(fbcCookie ? { fbc: fbcCookie } : {}),
+      }
+
+      try {
+        const row = existing
+          ? await db.websiteLead.update({
+              where: { id: existing.id },
+              data: {
+                ...shared,
+                // A first touch already on the row was captured closer to the
+                // click than this one; it wins.
+                ...(existing.attributionFirst ? {} : touches.first ? { attributionFirst: touches.first } : {}),
+              },
+            })
+          : await db.websiteLead.create({
+              data: {
+                businessId: business.id,
+                ...shared,
+                ...(touches.first ? { attributionFirst: touches.first } : {}),
+              },
+            })
+        console.log(`[demo-book] LEAD ${existing ? 'linked' : 'created'} ${row.id} surface=${bookingSurface ?? '-'}`)
+      } catch (err) {
+        // The appointment is already booked and the owner already notified. A
+        // missing lead row is a reporting gap, not a lost booking.
+        console.error('[demo-book] lead write failed:', err)
+      }
     }
 
     await notifyOwnerOfMarketingEvent({
