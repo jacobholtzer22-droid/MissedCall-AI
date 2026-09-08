@@ -1,35 +1,8 @@
 'use client'
 
-import { Eye, MessageSquare, Settings, MessageCircle, Calendar, Megaphone, Globe, Shield } from 'lucide-react'
+import { Eye, MessageSquare, Settings } from 'lucide-react'
 import type { AdminBusiness } from './types'
-
-const STATUS_COLORS: Record<string, string> = {
-  active: 'bg-green-500/10 text-green-400 border-green-500/20',
-  trialing: 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20',
-  past_due: 'bg-orange-500/10 text-orange-400 border-orange-500/20',
-  canceled: 'bg-gray-500/10 text-gray-400 border-gray-500/20',
-}
-
-const STATUS_LABELS: Record<string, string> = {
-  active: 'Active',
-  trialing: 'Trialing',
-  past_due: 'Past Due',
-  canceled: 'Canceled',
-}
-
-interface FeatureIconProps {
-  active: boolean
-  title: string
-  icon: React.ComponentType<{ className?: string }>
-}
-
-function FeatureIcon({ active, title, icon: Icon }: FeatureIconProps) {
-  return (
-    <span title={title} className={active ? 'text-blue-400' : 'text-gray-700'}>
-      <Icon className="h-3.5 w-3.5" />
-    </span>
-  )
-}
+import { STATUS_COLORS, STATUS_LABELS, FeatureIcons } from './ui'
 
 function SkeletonRow() {
   return (
@@ -54,52 +27,6 @@ function TableHead() {
       <th className="px-4 py-2.5 text-xs font-medium text-gray-500 uppercase tracking-wide">Leads</th>
       <th className="px-4 py-2.5 text-xs font-medium text-gray-500 uppercase tracking-wide">Actions</th>
     </tr>
-  )
-}
-
-function FeatureIcons({ biz }: { biz: AdminBusiness }) {
-  return (
-    <div className="flex items-center gap-1.5">
-      <FeatureIcon
-        active={biz.callScreenerEnabled || biz.spamFilterEnabled}
-        title={
-          biz.callScreenerEnabled && biz.spamFilterEnabled
-            ? 'Call Screener + Spam Filter'
-            : biz.callScreenerEnabled
-            ? 'Call Screener'
-            : biz.spamFilterEnabled
-            ? 'Spam Filter'
-            : 'No screening'
-        }
-        icon={Shield}
-      />
-      <FeatureIcon
-        active={biz.missedCallAiEnabled}
-        title={biz.missedCallAiEnabled ? 'MissedCall AI on' : 'MissedCall AI off'}
-        icon={MessageCircle}
-      />
-      <FeatureIcon
-        active={biz.calendarEnabled && biz.googleCalendarConnected}
-        title={
-          biz.calendarEnabled && biz.googleCalendarConnected
-            ? 'Calendar connected'
-            : biz.calendarEnabled
-            ? 'Calendar enabled, not connected'
-            : 'Calendar off'
-        }
-        icon={Calendar}
-      />
-      <FeatureIcon
-        active={biz.googleAdsEnabled}
-        title={biz.googleAdsEnabled ? 'Google Ads on' : 'Google Ads off'}
-        icon={Megaphone}
-      />
-      <FeatureIcon
-        active={biz.calendarEnabled}
-        title={biz.calendarEnabled ? 'Online booking on' : 'Online booking off'}
-        icon={Globe}
-      />
-    </div>
   )
 }
 

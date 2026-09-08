@@ -6,22 +6,9 @@ import { TogglesTab } from './ClientDetailPanel/TogglesTab'
 import { SettingsTab } from './ClientDetailPanel/SettingsTab'
 import { ToolsTab } from './ClientDetailPanel/ToolsTab'
 import type { AdminBusiness } from './types'
+import { StatusPill } from './ui'
 
 type Tab = 'toggles' | 'settings' | 'tools'
-
-const STATUS_COLORS: Record<string, string> = {
-  active: 'bg-green-500/10 text-green-400 border-green-500/20',
-  trialing: 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20',
-  past_due: 'bg-orange-500/10 text-orange-400 border-orange-500/20',
-  canceled: 'bg-gray-500/10 text-gray-400 border-gray-500/20',
-}
-
-const STATUS_LABELS: Record<string, string> = {
-  active: 'Active',
-  trialing: 'Trialing',
-  past_due: 'Past Due',
-  canceled: 'Canceled',
-}
 
 interface Props {
   business: AdminBusiness
@@ -63,13 +50,7 @@ export function ClientDetailPanel({ business, onClose, onUpdateBusiness, onToast
         <div className="flex items-center justify-between px-4 sm:px-6 py-4 border-b border-gray-800 shrink-0 gap-2">
           <div className="flex items-center gap-2 min-w-0">
             <span className="font-bold text-white truncate text-sm sm:text-base">{business.name}</span>
-            <span
-              className={`shrink-0 text-xs px-2 py-0.5 rounded-full border ${
-                STATUS_COLORS[business.subscriptionStatus] ?? STATUS_COLORS.canceled
-              }`}
-            >
-              {STATUS_LABELS[business.subscriptionStatus] ?? business.subscriptionStatus}
-            </span>
+            <StatusPill status={business.subscriptionStatus} className="shrink-0" />
           </div>
           <div className="flex items-center gap-2 shrink-0">
             <a
