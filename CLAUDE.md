@@ -2112,19 +2112,29 @@ Super-admin panel at `/admin` — only accessible when `userId == ADMIN_USER_ID`
 
 ### Files
 
+Reorganized Sept 2026 (`admin-ui-reorg` branch, on top of the `admin-stats-layer` data work). The page answers "which accounts need me today" first: an alerts list, a fleet line, then health-sorted client cards. Presentation only — every number comes from `getAdminBusinesses()` (`stats` / `health` / `alerts`, see "Stats layer" below); the UI adds no queries. Deleted in the reorg: `HeaderKPIs.tsx` (KPI strip) and `ClientTable.tsx` (desktop table + mobile list).
+
 | File | Purpose |
 |---|---|
-| `app/admin/page.tsx` | Lean server shell: auth check, fetch all businesses, render `<AdminClient />` |
-| `app/admin/AdminClient.tsx` | Main client component: `<HeaderKPIs>` + `<ClientTable>` + `<ClientDetailPanel>` slide-out. Header is `flex-wrap`; search input grows on mobile. |
-| `app/admin/ClientTable.tsx` | **Mobile:** card list (`md:hidden divide-y`) per business. **Desktop:** dense table (`hidden md:table`). `FeatureIcons` defined at module scope. Columns: Name, Status, MRR, Features, Convos (this month / all-time stacked), Leads (this month / all-time stacked), Actions |
-| `app/admin/ClientDetailPanel.tsx` | Slide-out panel triggered by row click. `w-full sm:w-[520px] lg:w-[600px]` — full-width on phones. Three tabs: Toggles, Settings, Tools |
-| `app/admin/HeaderKPIs.tsx` | Top KPI strip: `grid-cols-1 sm:grid-cols-3` — stacks on mobile |
-| `app/admin/AdminTools.tsx` | Admin-level tools dropdown (Telnyx usage sync, Excel export, **Spam / scored leads** → `/admin/spam`) |
+| `app/admin/page.tsx` | Server shell: auth check, reads the `adminShowRevenue` cookie, calls `getAdminBusinesses()`, renders `<AdminClient initialBusinesses initialShowRevenue />` |
+| `app/admin/AdminClient.tsx` | Main client component. Header: "Admin", revenue eye toggle (+ "MRR $x" beside it only when on), `<AdminTools>`, `← Dashboard`. Body: `<AlertsPanel>`, `<FleetLine>`, controls (search on name/phone/businessType; sort Health / Last activity / Name / Missed calls / Web leads; chips All / Needs attention / Phone / Web only / Ads; "Show canceled" checkbox, canceled hidden by default), `<ClientGrid>`, `<ClientDetailPanel>`, toast stack. Health sort = red, yellow, green, gray, then `lastActivityAt` desc with nulls last. `openPanel()` bumps `openKey` so re-opening a client resets the panel to the Health tab. |
+| `app/admin/ui.tsx` | Shared module-scope primitives: `STATUS_COLORS`, `STATUS_LABELS`, `StatusPill`, `HealthDot` (emerald-400 / amber-400 / red-500 / gray-500), `FeatureIcons` (**active features only**; renders nothing for a web-only client), `Age` (compact relative age `now/12m/3h/2d/5w/3mo/never`, full timestamp in `title`), `Stat` (number + label pair used in every funnel row), `formatAge()`. |
+| `app/admin/AlertsPanel.tsx` | `AlertsPanel`: zero fleet alerts → one line "All clients healthy"; else "N need attention" + a list sorted red, yellow, then name. Each row = health dot, name, every alert message on its own line; tapping opens the detail panel on Health. Canceled businesses excluded. `FleetLine`: client count + this month's `missedCallsMonth` / `textbacksMonth` / `capturedMonth` / `webLeadsMonth` totals, no card chrome. |
+| `app/admin/ClientCard.tsx` | One card for all widths. Rows appear only when relevant (`hasPhone = Boolean(telnyxPhoneNumber)`, `features = getBusinessFeatures(biz)`; never gated on `missedCallAiEnabled` alone): header (dot, wrapping name, status pill, `Age` of `lastActivityAt` + `lastActivityKind` icon); identity (mono phone or "Web only", `FeatureIcons`); funnel Missed/Texted/Replied/Captured when `hasPhone && hasMissedCallAi` (+ red "n failed" when `failedSms7d > 0`); Blocked/Passed when `hasAnyScreening`; "n web leads, last {age}" when web-only or `webLeadsMonth > 0`; Booked when `hasCalendar` or any booking; ads row when `googleAdsEnabled` (spend only with revenue on, else clicks); amber "n need a human, n went quiet"; 44px View-as (Eye) + Conversations (MessageSquare) buttons with `stopPropagation`; `$fee/mo` bottom-right only with revenue on. Whole card is a `role="button"` (Enter/Space open the panel). |
+| `app/admin/ClientGrid.tsx` | `grid-cols-1 md:grid-cols-2 xl:grid-cols-3`. Empty filter result: "No clients match. Clear the filter." with a clear button. |
+| `app/admin/ClientDetailPanel.tsx` | Slide-out, `w-full sm:w-[520px] lg:w-[600px]`. Header stacks: name on its own line (wraps, no truncate), then status pill + "View as client" + close, all 44px. Four tabs, **Health first and default**: Health, Toggles, Settings, Tools. Threads `showRevenue` to Health and Settings. |
+| `app/admin/ClientDetailPanel/HealthTab.tsx` | Read-only, props only, no fetch. Sections: Alerts (or "No alerts"), Activity (last call / screened call / message / web lead as `Age`), This month (funnel + screening with the card's gating, web leads, Booked split website/text, need-a-human/went-quiet), Skipped texts (cooldown / existing contact / blocked), Delivery last 7 days ("n failed of m finalized"), Telnyx (cost this month — revenue-gated — and last usage record age), Ads last 30 days ("Google Ads not enabled" / "No ad data in 30 days" / spend-clicks-conversions-last synced; spend revenue-gated). |
+| `app/admin/ClientDetailPanel/TogglesTab.tsx` | Toggle rows for all feature flags: MissedCall AI, known-contact voicemail, No-Reply Alerts (+ minutes), Call Screener (+ IVR message), Spam Filter, Online Booking, SMS Auto-Booking, Google Calendar (read-only status), Google Ads, Notify by SMS/Email, Mass Outreach. `px-4 sm:px-6` padding. Unchanged in the reorg. |
+| `app/admin/ClientDetailPanel/SettingsTab.tsx` | Editable fields: fees, Telnyx number, notification sender, forwarding number, AI config, timezone, booking copy, `ownerGroupId` (Admin Only section — blank clears the group). Takes `showRevenue`; the Setup Fee / Monthly Fee inputs render only when it is on, otherwise "Revenue hidden. Use the eye icon in the header to show it." |
+| `app/admin/ClientDetailPanel/ToolsTab.tsx` | Per-business tools: conversations link, screened-calls summary, bulk import contacts, blocked numbers, voicemails via view-as. `px-4 sm:px-6` padding. Unchanged in the reorg. |
+| `app/admin/AdminTools.tsx` | Admin-level tools dropdown (Refresh table, Telnyx usage sync, Google Ads sync, Sheets sync, Excel export, and links to `/admin/spam`, `/admin/marketing`, `/admin/arms`, `/admin/leads`) |
 | `app/admin/spam/page.tsx` | Cross-tenant scored-submission audit view. **Read only, no mutations.** See §17 |
-| `app/admin/types.ts` | `AdminBusiness` interface — includes all Business fields plus `_count` (conversations, appointments, users, screenedCalls, blockedCalls30d) and computed `conversationsThisMonth`, `conversationsLastMonth`, `leadsThisMonth`, `conversationsAllTime`, `leadsAllTime` |
-| `app/admin/ClientDetailPanel/TogglesTab.tsx` | Toggle rows for all feature flags: MissedCall AI, Call Screener, Spam Filter, Online Booking, Google Calendar (read-only status), Google Ads, Notify by SMS/Email, Mass Outreach (massMessagingEnabled). `px-4 sm:px-6` padding. |
-| `app/admin/ClientDetailPanel/SettingsTab.tsx` | Editable fields: fees, Telnyx number, forwarding number, AI config, timezone, `ownerGroupId` (Admin Only section — blank clears the group). All `grid-cols-2` form rows are `grid-cols-1 sm:grid-cols-2`. `px-4 sm:px-6` padding. |
-| `app/admin/ClientDetailPanel/ToolsTab.tsx` | Per-business tools: bulk import contacts, view conversations, etc. `px-4 sm:px-6` padding. |
+| `app/admin/types.ts` | `AdminBusiness` — all Business fields plus `_count`, the legacy computed fields, and `stats: AdminStats`, `health: AdminHealth`, `alerts: AdminAlert[]`. `AdminStats` is declared here; `AdminHealth` / `AdminAlert` / `AdminAlertCode` are re-exported from `lib/admin-health.ts`. |
+| `app/admin/components/CallScreenerCard.tsx` | Imported nowhere (dead); left untouched. |
+
+**Revenue toggle.** Every dollar figure under `app/admin` is behind `showRevenue`, default **off**. State lives in `AdminClient`; persisted in the cookie `adminShowRevenue=1` (`path=/; max-age=31536000`, cleared with `max-age=0`) and read server-side in `page.tsx` so the first paint is already correct. When on: header "MRR $x" (active + past_due `monthlyFee` sum), card fee, Health-tab Telnyx cost and ad spend, Settings-tab fee inputs. When off none of those render — `grep -rn '\$' app/admin --include='*.tsx'` should show no unguarded dollar render.
+
+**Design rules (keep):** dark shell only (`bg-gray-950`, `bg-gray-900` surfaces with `border-gray-800`, blue-500 focus/active), containers `rounded-lg`, pills `rounded-full`, no shadows/gradients/entrance animations, no all-caps eyebrow labels, no middle-dot data strings (use commas or separate lines), numbers in Inter with `tabular-nums` (mono is for the phone number only), every mobile tap target ≥ 44px with a visible `focus-visible` ring.
 
 ### `app/api/admin/businesses/route.ts` — enriched list
 
@@ -2340,9 +2350,9 @@ The following dashboards are fully mobile-optimized (tested at < 640px):
 
 | Area | Pattern |
 |---|---|
-| `/admin` main table | Mobile card list (`md:hidden`) + desktop table (`hidden md:table`) |
-| `/admin` slide-out panel | `w-full sm:w-[520px] lg:w-[600px]` |
-| `/admin` KPI strip | `grid-cols-1 sm:grid-cols-3` |
+| `/admin` client grid | One `ClientCard` for all widths; `grid-cols-1 md:grid-cols-2 xl:grid-cols-3` (Sept 2026 reorg) |
+| `/admin` slide-out panel | `w-full sm:w-[520px] lg:w-[600px]`; header stacks name / controls on phones |
+| `/admin` alerts + fleet line | Plain list and a wrapping flex row, no grid |
 | `/admin` settings forms | `grid-cols-1 sm:grid-cols-2` on all two-column grids |
 | `/dashboard` shell | Hamburger menu → slide-in sidebar (already done before May 2026) |
 | `/dashboard/conversations` | `mobileChatOpen` toggle, scrollable tab bar |
