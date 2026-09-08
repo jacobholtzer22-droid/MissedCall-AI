@@ -1,3 +1,20 @@
+// Per-business stats computed in lib/admin-stats.ts. Windows are UTC:
+// "Month" = current calendar month, "7d"/"30d" = trailing days. Dates are ISO
+// strings or null; counts are never undefined.
+export interface AdminStats {
+  missedCallsMonth: number; textbacksMonth: number; repliedMonth: number; capturedMonth: number
+  bookedMonth: { website: number; sms: number }
+  webLeadsMonth: number; lastWebLeadAt: string | null
+  lastCallAt: string | null; lastScreenedAt: string | null; lastConversationAt: string | null
+  lastActivityAt: string | null; lastActivityKind: 'call' | 'screened' | 'message' | 'web_lead' | null
+  failedSms7d: number; finalizedSms7d: number
+  humanNeeded: number; stalled: number
+  spamBlockedMonth: number; spamPassedMonth: number
+  skipsMonth: { cooldown: number; existing_contact: number; blocked: number }
+  telnyxCostMonth: number; telnyxLastRecordAt: string | null
+  ads30d: { spend: number; clicks: number; conversions: number; lastSyncAt: string | null } | null
+}
+
 export interface AdminBusiness {
   id: string
   name: string
@@ -84,4 +101,7 @@ export interface AdminBusiness {
   leadsThisMonth: number
   conversationsAllTime: number
   leadsAllTime: number
+
+  // Stats layer (lib/admin-stats.ts)
+  stats: AdminStats
 }
