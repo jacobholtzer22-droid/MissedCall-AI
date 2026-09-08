@@ -12,10 +12,8 @@ export async function GET() {
   if (authResult instanceof NextResponse) return authResult
   const { business } = authResult
 
-  if (!business.missedCallAiEnabled) {
-    return NextResponse.json({ error: 'Feature not available' }, { status: 403 })
-  }
-
+  // Ungated on purpose: website leads come from the client's own contact form,
+  // not from the MissedCall AI, so web-only clients must see them too.
   const group = await getOwnerGroupBusinesses(business)
 
   const leads = await db.websiteLead.findMany({

@@ -92,6 +92,9 @@ export function CombinedLeadsList({
   const [conversations, setConversations] = useState<ConversationRow[]>([])
   const [websiteLeads, setWebsiteLeads] = useState<WebsiteLeadRow[]>([])
   const [isGroup, setIsGroup] = useState(false)
+  // false when /api/dashboard/conversations answered 403 (MissedCall AI off for
+  // this business): the page still works, it just has no missed-call leads.
+  const [hasAiLeads, setHasAiLeads] = useState(true)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [filter, setFilter] = useState<SourceFilter>('all')
@@ -107,10 +110,15 @@ export function CombinedLeadsList({
           fetch('/api/dashboard/conversations'),
           fetch('/api/dashboard/website-leads'),
         ])
-        if (!cRes.ok || !wRes.ok) throw new Error('Failed to load')
-        const cData = await cRes.json()
+        // Website leads are required. Conversations are optional: a 403 means
+        // MissedCall AI is off for this business, so treat it as an empty list.
+        if (!wRes.ok) throw new Error('Failed to load')
+        const aiEnabled = cRes.status !== 403
+        if (!cRes.ok && aiEnabled) throw new Error('Failed to load')
+        const cData = aiEnabled ? await cRes.json() : { conversations: [] }
         const wData = await wRes.json()
         if (cancelled) return
+        setHasAiLeads(aiEnabled)
         setConversations(cData.conversations || [])
         setWebsiteLeads(wData.leads || [])
         setIsGroup(wData.isGroup === true)
@@ -235,8 +243,17 @@ export function CombinedLeadsList({
           </div>
         ) : visible.length === 0 ? (
           <div className="p-10 text-center text-gray-500">
-            <p className="font-medium text-gray-700">No leads yet</p>
-            <p className="text-sm mt-1">Missed-call and website leads will show up here.</p>
+            {hasAiLeads ? (
+              <>
+                <p className="font-medium text-gray-700">No leads yet</p>
+                <p className="text-sm mt-1">Missed-call and website leads will show up here.</p>
+              </>
+            ) : (
+              <>
+                <p className="font-medium text-gray-700">No website leads yet.</p>
+                <p className="text-sm mt-1">Leads from your website&apos;s contact form show up here.</p>
+              </>
+            )}
           </div>
         ) : (
           <ul className="divide-y divide-gray-100">

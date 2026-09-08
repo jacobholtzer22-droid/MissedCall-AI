@@ -115,7 +115,7 @@ This document is the single source of truth for understanding, debugging, and mo
 │   │       ├── blocked-calls/    # Spam-screened call list
 │   │       │   └── page.tsx
 │   │       ├── leads/            # Unified Leads (missed-call + website) — NEW
-│   │       │   ├── page.tsx      # FeatureGate(missedCallAiEnabled) → LeadsClient
+│   │       │   ├── page.tsx      # Ungated (no FeatureGate) → LeadsClient
 │   │       │   ├── LeadsClient.tsx
 │   │       │   └── CombinedLeadsList.tsx  # merges /conversations + /website-leads client-side
 │   │       ├── website-leads/    # Legacy → redirect('/dashboard/leads?tab=website')
@@ -167,7 +167,7 @@ This document is the single source of truth for understanding, debugging, and mo
 │   │   │   ├── contacts/import/           # POST: bulk import from Excel/CSV
 │   │   │   ├── voicemails/                # GET: list voicemails
 │   │   │   ├── screened-calls/            # GET: list blocked spam calls
-│   │   │   ├── website-leads/             # GET: website leads, owner-group-aware (403 if !missedCallAiEnabled)
+│   │   │   ├── website-leads/             # GET: website leads, owner-group-aware (ungated; no missedCallAiEnabled check)
 │   │   │   ├── analytics/                 # GET: usage analytics data
 │   │   │   ├── tags/                      # GET/POST: contact tags
 │   │   │   ├── jobs/route.ts              # GET/POST: jobs for contacts
@@ -1121,7 +1121,7 @@ async function sendSMS(business, to, text)
 | `/api/dashboard/voicemails` | GET | Conversations with `recordingUrl != null` |
 | `/api/dashboard/voicemails/[id]` | DELETE | Clear `recordingUrl` + `voicemailTranscription` on conversation (soft-delete voicemail). Returns `{ success: true }`. 404 if not found or no recording. |
 | `/api/dashboard/screened-calls` | GET | ScreenedCall records |
-| `/api/dashboard/website-leads` | GET | WebsiteLead records, newest first. 403 if primary's `!missedCallAiEnabled` (sibling flags never gate). Owner groups: leads for ALL group businesses, each lead carries `businessName`, response adds `isGroup: true`. Ungrouped: today's exact `{ leads }` shape, no new fields. The PATCH (lead status) lookup is also group-scoped. |
+| `/api/dashboard/website-leads` | GET | WebsiteLead records, newest first. **Ungated** — no `missedCallAiEnabled` check (web-only clients must see their contact-form leads). Owner groups: leads for ALL group businesses, each lead carries `businessName`, response adds `isGroup: true`. Ungrouped: today's exact `{ leads }` shape, no new fields. The PATCH (lead status) lookup is also group-scoped. |
 | `/api/dashboard/analytics` | GET | Feature-aware analytics. Period: today/week/month/all. Response includes `features` (BusinessFeatures) and `totalCallsMode` ('screened' or 'calls') so the client can show/hide cards. `totalCalls` source depends on `totalCallsMode`: 'screened' → ScreenedCall count; 'calls' → Conversation WHERE callSid IS NOT NULL. |
 | `/api/dashboard/tags` | GET/POST | List / create tags |
 | `/api/dashboard/jobs` | GET/POST | List / create jobs |
@@ -1596,7 +1596,8 @@ plainTextToEmailHtml(text: string): string
 - `DashboardShellClient`: sidebar navigation, user menu, "Viewing as client" banner with exit link, and an "Admin" nav item (→ `/admin`) rendered only when the layout passes `isAdmin` (Clerk user is `ADMIN_USER_ID`)
 - Nav items built via `getBusinessFeatures(business)` — current structure:
   - Always: Overview, Conversations, Outreach, Analytics, Contacts, Jobs, Settings
-  - `hasMissedCallAi`: Website Leads, Scheduled Quotes
+  - Always (regardless of AI flag): Leads (the unified page; see below)
+  - `hasMissedCallAi`: Conversations, Scheduled Quotes
   - `!hasMissedCallAi && hasAnyScreening`: Blocked Calls (screening-only clients only — NOT for AI clients who also happen to have a screener)
   - `!hasMissedCallAi`: Voicemails
   - `googleAdsEnabled`: Google Ads (label from `googleAdsTabLabel` or "Google Ads")
@@ -1698,7 +1699,7 @@ plainTextToEmailHtml(text: string): string
 - Shows caller phone, date, result
 
 **`app/(dashboard)/dashboard/leads/page.tsx`** — `LeadsClient` → `CombinedLeadsList` (the unified Leads page)
-- FeatureGate `locked` (mode='locked', `enabled = business.missedCallAiEnabled !== false`, feature "Leads")
+- **Ungated** (no FeatureGate, Sept 2026): the page renders for every client, and when MissedCall AI is off the 403 from `/api/dashboard/conversations` is tolerated client-side in `CombinedLeadsList` (`hasAiLeads=false`, empty conversation list, empty-state copy "No website leads yet. Leads from your website's contact form show up here."); a non-OK `/api/dashboard/website-leads` response still shows the error state.
 - `CombinedLeadsList` fetches BOTH `/api/dashboard/conversations` and `/api/dashboard/website-leads` client-side and merges them into one list with a source filter (All / Missed Call / Website). Missed-call rows reuse the conversation buckets/labels; website rows use WebsiteLead status. No dedicated `/api/dashboard/leads` route exists.
 - **Owner groups:** when the website-leads response has `isGroup: true`, website rows show a gray site pill (`lead.businessName`) next to the status badge. Missed-call rows never get a pill — `/api/dashboard/conversations` stays primary-scoped, so on a grouped dashboard the All tab deliberately mixes group-wide website leads with primary-only missed-call leads (accepted as spec).
 
