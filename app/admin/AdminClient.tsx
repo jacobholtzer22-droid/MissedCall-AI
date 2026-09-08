@@ -198,7 +198,7 @@ export function AdminClient({ initialBusinesses, initialShowRevenue = false }: P
             </button>
             <AdminTools onToast={addToast} onRefresh={refreshBusinesses} />
             <a
-              href="/dashboard"
+              href="/api/admin/view-as?exit=1&next=dashboard"
               className="inline-flex items-center text-sm text-gray-400 hover:text-gray-100 whitespace-nowrap min-h-[44px] px-2 rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
             >
               ← Dashboard
