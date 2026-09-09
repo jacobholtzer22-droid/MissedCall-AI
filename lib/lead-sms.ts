@@ -128,6 +128,19 @@ export async function sendLeadDemoSms(
   const isTest = isTestPhone(to || phone)
   const tag = isTest ? ' test=true' : ''
 
+  // Marked by hand in /admin as not a contractor. First check in the function,
+  // ahead of the sender and phone guards, so the decision never depends on how
+  // Telnyx happens to be configured. Checked here rather than at each call site
+  // because this function is the single door every automated lead-facing text
+  // goes through, present and future.
+  const flagged = await db.websiteLead
+    .findUnique({ where: { id: leadId }, select: { junk: true } })
+    .catch(() => null)
+  if (flagged?.junk) {
+    console.log(`[lead-sms] SKIP leadId=${leadId} reason=junk${tag}`)
+    return { sent: false, reason: 'junk' }
+  }
+
   if (!from || !process.env.TELNYX_API_KEY) {
     console.error(
       `[lead-sms] SKIP leadId=${leadId} reason=no_sender ` +
@@ -139,6 +152,7 @@ export async function sendLeadDemoSms(
     console.error(`[lead-sms] SKIP leadId=${leadId} reason=unusable_phone raw=${JSON.stringify(phone)}${tag}`)
     return { sent: false, reason: 'unusable_phone' }
   }
+
 
   // One-shot claim. count === 0 means someone already sent it.
   //

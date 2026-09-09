@@ -44,6 +44,7 @@ export async function GET(request: Request) {
         id: true, name: true, phone: true, email: true, message: true, status: true,
         funnelVariant: true, bookingSurface: true, otpVerifiedAt: true, createdAt: true,
         attributionFirst: true, attributionLast: true, fbp: true, fbc: true,
+        businessName: true, tradeOther: true, junk: true,
       },
     })
 
@@ -69,8 +70,13 @@ export async function GET(request: Request) {
       return {
         id: l.id,
         name: (l.message?.match(/^First name: (.+)$/m)?.[1] ?? l.name ?? '').trim(),
-        company: l.message?.match(/^Company: (.+)$/m)?.[1]?.trim() ?? '',
+        // Column first, message block second: the column only exists for leads
+        // captured after the gate started asking, and the text block is how
+        // every earlier lead still shows a company.
+        company: l.businessName ?? l.message?.match(/^Company: (.+)$/m)?.[1]?.trim() ?? '',
         trade: l.message?.match(/^Trade: (.+)$/m)?.[1]?.trim() ?? '',
+        tradeOther: l.tradeOther ?? l.message?.match(/^Work: (.+)$/m)?.[1]?.trim() ?? '',
+        junk: l.junk,
         phone: l.phone,
         email: l.email,
         status: l.status,

@@ -50,6 +50,8 @@ type Lead = {
   bookingSurface: string | null
   bookedAt: string | null
   journey: string
+  tradeOther: string
+  junk: boolean
 }
 
 const INK = '#F2F0EB'
@@ -184,6 +186,34 @@ export default function AdminLeadsPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
 
+  const [junkBusy, setJunkBusy] = useState(false)
+
+  /**
+   * Mark a verified lead as not a contractor. Optimistic: the row flips at once
+   * and reverts if the write fails, because the whole value of this control is
+   * clearing a list quickly.
+   */
+  const toggleJunk = useCallback(async (lead: Lead) => {
+    const next = !lead.junk
+    setJunkBusy(true)
+    setLeads((rows) => rows.map((r) => (r.id === lead.id ? { ...r, junk: next } : r)))
+    setSelected((cur) => (cur && cur.id === lead.id ? { ...cur, junk: next } : cur))
+    try {
+      const res = await fetch('/api/admin/funnel-leads/junk', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ leadId: lead.id, junk: next }),
+      })
+      if (!res.ok) throw new Error('failed')
+    } catch {
+      setLeads((rows) => rows.map((r) => (r.id === lead.id ? { ...r, junk: !next } : r)))
+      setSelected((cur) => (cur && cur.id === lead.id ? { ...cur, junk: !next } : cur))
+      setError('Could not update that lead.')
+    } finally {
+      setJunkBusy(false)
+    }
+  }, [])
+
   const load = useCallback(async () => {
     setLoading(true)
     setError('')
@@ -268,6 +298,11 @@ export default function AdminLeadsPage() {
                         <span className="shrink-0 text-[11px]" style={{ color: MUTED }}>{day(l.createdAt)}</span>
                       </div>
                       {/* The whole point of this page: a source on every row. */}
+                      {l.company && (
+                        <div className="mt-0.5 truncate text-[13px]" style={{ color: INK }}>
+                          {l.company}
+                        </div>
+                      )}
                       <div className="mt-1 truncate text-[13px]" style={{ color: ACCENT }}>
                         {l.firstLabel ?? 'no signal captured'}
                       </div>
@@ -275,6 +310,7 @@ export default function AdminLeadsPage() {
                         <Pill tone={l.arm ? 'on' : 'off'}>arm {l.arm ?? '—'}</Pill>
                         {l.bookingSurface && <Pill tone="on">booked · {l.bookingSurface}</Pill>}
                         {!l.verified && <Pill tone="off">unverified</Pill>}
+                        {l.junk && <Pill tone="off">junk</Pill>}
                       </div>
                     </button>
                   </li>
@@ -327,6 +363,34 @@ export default function AdminLeadsPage() {
                   <Pill tone={selected.verified ? 'on' : 'off'}>
                     {selected.verified ? 'phone verified' : 'unverified'}
                   </Pill>
+                </div>
+
+                {/* Internal only. Suppresses the follow-up cron and every
+                    automated text, and removes the row from the arm counts.
+                    Nothing is sent to Meta either way. */}
+                <div
+                  className="flex items-center justify-between gap-3 rounded border p-3"
+                  style={{ borderColor: selected.junk ? ACCENT : BORDER }}
+                >
+                  <div>
+                    <div className="text-[15px] font-semibold">Not a contractor</div>
+                    <div className="text-[13px]" style={{ color: MUTED }}>
+                      Stops the follow-up text and drops this lead from the arm counts.
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => void toggleJunk(selected)}
+                    disabled={junkBusy}
+                    className="min-h-[44px] shrink-0 rounded px-4 text-[14px] font-semibold disabled:opacity-50"
+                    style={
+                      selected.junk
+                        ? { background: 'rgba(238,107,26,0.15)', color: ACCENT }
+                        : { background: 'rgba(242,240,235,0.07)', color: INK }
+                    }
+                  >
+                    {selected.junk ? 'Marked junk' : 'Mark junk'}
+                  </button>
                 </div>
               </div>
             )}

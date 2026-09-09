@@ -56,6 +56,9 @@ export async function GET(request: NextRequest) {
       followUpSentAt: null,
       phone: { not: null },
       status: { not: 'spam' },
+      // Marked by hand in /admin as not a contractor. No automated text goes to
+      // a lead Jacob has already decided is junk.
+      junk: false,
     },
     select: { id: true, phone: true, name: true, message: true, calendarToken: true },
     take: 100,

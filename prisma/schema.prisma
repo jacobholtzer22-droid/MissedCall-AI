@@ -679,6 +679,24 @@ model WebsiteLead {
   /// "did they book before or after the video" without a join.
   bookingSurface String?
 
+  /// Company name, asked on gate step 1. Previously it lived only inside the
+  /// `message` text block, which meant it could not be shown in a list column
+  /// or searched. Deliberately NEVER sent to Meta: a business name is
+  /// PII-adjacent and carries no optimisation value.
+  businessName String?
+
+  /// Free text from "Other home service" — what kind of work they actually do.
+  /// Kept because the keyword block that reads it will have false positives,
+  /// and auditing them needs the words the person typed.
+  tradeOther String?
+
+  /// Marked by hand in /admin when a verified lead turns out not to be a
+  /// contractor. Suppresses the follow-up cron and any future automated
+  /// lead-facing SMS, and removes the row from the /admin/arms funnel counts.
+  /// Internal only — it never touches the pixel, because Meta has already
+  /// counted the conversion and a retraction is not something this sends.
+  junk Boolean @default(false)
+
   // Spam scoring (see lib/spam-score.ts). All nullable and additive: null means
   // the row predates scoring, which is why spamScore is not defaulted to 0.
   // A high score sets status='spam' and suppresses owner notification — it NEVER
@@ -932,7 +950,10 @@ model GateDraft {
   visitorId String @unique
 
   trade     String?
-  firstName String?
+  /// Free text from "Other home service".
+  tradeOther   String?
+  firstName    String?
+  businessName String?
   phone     String?
   email     String?
 

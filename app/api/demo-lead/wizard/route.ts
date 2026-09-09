@@ -39,6 +39,9 @@ import { consumeVerification } from '@/lib/otp'
 import { sendCapiLead } from '@/lib/meta-capi'
 import { logArmVerifiedLead } from '@/lib/arm-log'
 import { isTerminalTrade } from '@/app/book/constants'
+import { matchBlockedKeyword, OTHER_TRADE, TRADE_OTHER_MAX } from '@/lib/gate-filters'
+import { logFunnelEvent } from '@/lib/funnel-log'
+import { buildOwnerSms } from '@/lib/owner-sms'
 import { GATE_COOKIE, GATE_COOKIE_MAX_AGE, NOT_AN_OWNER } from '@/app/book/constants'
 import { VARIANT_COOKIE, VISITOR_COOKIE } from '@/lib/variant'
 import { FUNNEL_VARIANT_COOKIE } from '@/lib/funnel-variant'
@@ -79,6 +82,7 @@ type Payload = {
   fullName?: string
   businessName?: string
   trade?: string
+  tradeOther?: string
   phone?: string
   firstName?: string
   lastName?: string
@@ -93,7 +97,7 @@ type Payload = {
 /** Everything captured so far, rendered into the lead body. */
 function buildMessage(p: {
   trade: string; qualified: boolean; firstName: string; lastName: string
-  company: string; email: string; landingPath: string
+  company: string; tradeOther: string; email: string; landingPath: string
   variant: string | null; funnelVariant: string | null; attribution: ReturnType<typeof sanitizeAttribution>
 }) {
   return [
@@ -102,6 +106,7 @@ function buildMessage(p: {
       : 'Gate lead from /book. NOT a service business owner.',
     '',
     `Trade: ${p.trade}`,
+    p.tradeOther ? `Work: ${p.tradeOther}` : null,
     `Qualified: ${p.qualified ? 'yes' : 'no'}`,
     p.firstName ? `First name: ${p.firstName}` : null,
     p.lastName ? `Last name: ${p.lastName}` : null,
@@ -182,6 +187,7 @@ export async function POST(request: NextRequest) {
     }
 
     const trade = body.trade?.trim() ?? ''
+    const tradeOther = body.tradeOther?.trim().slice(0, TRADE_OTHER_MAX) ?? ''
 
     // Arm B collects one name field and a business name. Split it here so the
     // rest of this route, the CRM record and the owner email are identical for
@@ -212,6 +218,29 @@ export async function POST(request: NextRequest) {
       body.stage === 'form'
         ? company !== ''
         : trade !== NOT_AN_OWNER && trade !== '' && !isTerminalTrade(trade)
+
+    // The modal dead-ends these before OTP, but the modal is the one component
+    // a determined agency can bypass with a hand-made request. Same list, same
+    // regex, enforced where it cannot be edited: no lead, no Lead event, no
+    // owner alert. 200 rather than 4xx — a blocked submitter learns nothing.
+    const blockedWord = trade === OTHER_TRADE ? matchBlockedKeyword(tradeOther) : null
+    if (isTerminalTrade(trade) || blockedWord) {
+      console.log(
+        `[demo-lead/wizard] BLOCKED trade=${trade || 'none'}` +
+          `${blockedWord ? ` keyword=${blockedWord} text=${JSON.stringify(tradeOther)}` : ''}`
+      )
+      void logFunnelEvent({
+        name: 'gate_exit_not_a_fit',
+        step: 'trade',
+        visitorId: request.cookies.get(VISITOR_COOKIE)?.value ?? null,
+        variant: request.cookies.get(VARIANT_COOKIE)?.value ?? null,
+        funnelVariant: request.cookies.get(FUNNEL_VARIANT_COOKIE)?.value ?? null,
+        metadata: blockedWord
+          ? { answer: 'agency', reason: 'keyword', text: tradeOther, matched: blockedWord, server: true }
+          : { answer: trade, reason: 'server', server: true },
+      })
+      return NextResponse.json({ error: 'Not a fit.', notAFit: true }, { status: 200 })
+    }
 
     const variant = request.cookies.get(VARIANT_COOKIE)?.value ?? null
     const funnelVariant = request.cookies.get(FUNNEL_VARIANT_COOKIE)?.value ?? null
@@ -272,11 +301,14 @@ export async function POST(request: NextRequest) {
     // matters for a resumed session, where the browser's own state is gone but
     // the visitor cookie — and therefore the draft — is not.
     const finalTrade = trade || draft?.trade || ''
+    const finalTradeOther = tradeOther || draft?.tradeOther || ''
+    const finalCompany = company || draft?.businessName || ''
     const finalFirstName = firstName || draft?.firstName || ''
     const finalEmail = email || draft?.email || ''
 
     const message = buildMessage({
-      trade: finalTrade, qualified, firstName: finalFirstName, lastName, company,
+      trade: finalTrade, qualified, firstName: finalFirstName, lastName,
+      company: finalCompany, tradeOther: finalTradeOther,
       email: finalEmail, landingPath, variant, funnelVariant, attribution,
     })
     // The lead is keyed on phone, so later screens enrich the same row.
@@ -291,6 +323,8 @@ export async function POST(request: NextRequest) {
             // Never blank out a name we already banked with a later empty step.
             ...(displayName ? { name: displayName } : {}),
             ...(finalEmail ? { email: finalEmail } : {}),
+            ...(finalCompany ? { businessName: finalCompany } : {}),
+            ...(finalTradeOther ? { tradeOther: finalTradeOther } : {}),
             phone: phoneCheck.e164,
             message,
             variant,
@@ -310,6 +344,8 @@ export async function POST(request: NextRequest) {
             name: displayName || phoneCheck.e164,
             phone: phoneCheck.e164,
             email: finalEmail || null,
+            businessName: finalCompany || null,
+            tradeOther: finalTradeOther || null,
             message,
             status: 'partial',
             variant,
@@ -433,7 +469,8 @@ export async function POST(request: NextRequest) {
           phone: phoneCheck.e164,
           firstName,
           trade,
-          businessName: company,
+          tradeOther: finalTradeOther,
+          businessName: finalCompany,
           funnelArm: funnelVariant,
           referrerClass: touches.last?.referrer ?? touches.first?.referrer ?? null,
           firstTouchSource: touches.first?.source ?? touches.first?.referrer ?? null,
@@ -505,6 +542,11 @@ export async function POST(request: NextRequest) {
       const leadLink = `${appUrl}/dashboard/leads?tab=website&lead=${lead.id}`
       const armLabel = funnelVariant ?? 'unassigned'
       const tradeLabel = trade || 'not asked (arm B/C)'
+      // The 15-second vet: what they say they do, what they typed if they said
+      // "other", who they say they are, and a search for it.
+      const checkLink = finalCompany
+        ? `https://www.google.com/search?q=${encodeURIComponent(finalCompany)}`
+        : ''
 
       await sideEffect('owner-notify', () =>
         notifyOwnerOfMarketingEvent({
@@ -516,21 +558,26 @@ export async function POST(request: NextRequest) {
           <h2>New verified demo lead</h2>
           <p>Their number is verified. Call while they are still on the page.</p>
           <p><strong>First name:</strong> ${escapeHtml(firstName || displayName || 'not given')}</p>
-          <p><strong>Business:</strong> ${escapeHtml(company || 'not given')}</p>
+          <p><strong>Company:</strong> ${escapeHtml(finalCompany || 'not given')}</p>
           <p><strong>Trade:</strong> ${escapeHtml(tradeLabel)}</p>
+          ${finalTradeOther ? `<p><strong>Work:</strong> ${escapeHtml(finalTradeOther)}</p>` : ''}
+          ${checkLink ? `<p><strong>Check:</strong> <a href="${escapeHtml(checkLink)}">${escapeHtml(checkLink)}</a></p>` : ''}
           <p><strong>Phone:</strong> <a href="tel:${escapeHtml(phoneCheck.e164)}">${escapeHtml(phoneCheck.e164)}</a></p>
           <p><strong>Funnel arm:</strong> ${escapeHtml(armLabel)}</p>
           <p><a href="${escapeHtml(leadLink)}">Open this lead</a><br>
              <span style="color:#666;font-size:12px">Lead id: ${escapeHtml(lead.id)}</span></p>
           <pre style="font-family:inherit;white-space:pre-wrap;margin:0">${escapeHtml(formatAttributionBlock(attribution))}</pre>
         `,
-        smsText:
-          `Call now: ${displayName || 'lead'}` +
-          `${company ? ` (${company})` : ''}\n` +
-          `Trade: ${tradeLabel}\n` +
-          `${phoneCheck.e164}\n` +
-          `Arm ${armLabel}\n` +
+        smsText: buildOwnerSms({
+          name: displayName || 'lead',
+          company: finalCompany,
+          trade: tradeLabel,
+          tradeOther: finalTradeOther,
+          phone: phoneCheck.e164,
+          arm: armLabel,
+          checkLink,
           leadLink,
+        }),
         })
       )
     }

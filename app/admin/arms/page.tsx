@@ -197,18 +197,77 @@ async function stepFunnel(since?: Date): Promise<StepRow[][]> {
   })
 }
 
+/**
+ * Arm-ledger rows belonging to leads Jacob has flagged as junk.
+ *
+ * The ledger is keyed on leadId, so the exclusion is a set of ids rather than a
+ * join — ArmEvent has no businessId and cannot be filtered through WebsiteLead
+ * in one query. Small by construction: this is a hand-marked list.
+ */
+async function junkArmEventIds(): Promise<Set<string>> {
+  const junkLeads = await db.websiteLead.findMany({
+    where: { junk: true },
+    select: { id: true },
+  })
+  return new Set(junkLeads.map((l) => l.id))
+}
+
+/**
+ * Dead-ends by reason. Reads gate_exit_not_a_fit out of FunnelEvent — the same
+ * rows the modal writes — so this needs no second analytics vendor.
+ */
+async function deadEnds(since?: Date) {
+  const rows = await db.funnelEvent.findMany({
+    where: { name: 'gate_exit_not_a_fit', ...(since ? { createdAt: { gte: since } } : {}) },
+    select: { metadata: true },
+  })
+  const counts: Record<string, number> = { homeowner: 0, just_looking: 0, agency: 0, keyword: 0 }
+  for (const r of rows) {
+    const m = (r.metadata ?? {}) as { reason?: string; answer?: string }
+    // Rows written before the reason field existed carry only `answer`.
+    const reason =
+      m.reason && m.reason !== 'server'
+        ? m.reason
+        : /homeowner/i.test(m.answer ?? '')
+        ? 'homeowner'
+        : /just looking/i.test(m.answer ?? '')
+        ? 'just_looking'
+        : m.answer === 'agency'
+        ? 'agency'
+        : null
+    if (reason && reason in counts) counts[reason]++
+  }
+  return counts
+}
+
 export default async function ArmsPage() {
   const { userId } = await auth()
   if (!userId || userId !== process.env.ADMIN_USER_ID) redirect('/dashboard')
 
   const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
+  const junkIds = await junkArmEventIds()
+  // groupBy cannot express "leadId not in this set", so the rollup is done here.
+  // Volumes are in the hundreds; this is not the query to optimise.
+  const rollupRows = async (since?: Date) => {
+    const rows = await db.armEvent.findMany({
+      where: since ? { createdAt: { gte: since } } : {},
+      select: { arm: true, type: true, leadId: true },
+    })
+    const counts = new Map<string, number>()
+    for (const r of rows) {
+      if (r.leadId && junkIds.has(r.leadId)) continue
+      const k = `${r.arm}|${r.type}`
+      counts.set(k, (counts.get(k) ?? 0) + 1)
+    }
+    return Array.from(counts.entries()).map(([k, n]) => {
+      const [arm, type] = k.split('|')
+      return { arm, type, _count: { _all: n } }
+    })
+  }
+
   const [lifetime, last7, recent, srcLifetime, src7] = await Promise.all([
-    db.armEvent.groupBy({ by: ['arm', 'type'], _count: { _all: true } }),
-    db.armEvent.groupBy({
-      by: ['arm', 'type'],
-      where: { createdAt: { gte: sevenDaysAgo } },
-      _count: { _all: true },
-    }),
+    rollupRows(),
+    rollupRows(sevenDaysAgo),
     db.armEvent.findMany({
       where: { type: 'verified_lead' },
       orderBy: { createdAt: 'desc' },
@@ -220,6 +279,7 @@ export default async function ArmsPage() {
   ])
 
   const [stepsLifetime, steps7] = await Promise.all([stepFunnel(), stepFunnel(sevenDaysAgo)])
+  const [deadLifetime, dead7] = await Promise.all([deadEnds(), deadEnds(sevenDaysAgo)])
 
   const marketing = await getMarketingBusiness()
   const [adsLifetime, ads7] = marketing
@@ -248,6 +308,7 @@ export default async function ArmsPage() {
     bookingSources: { last7: src7, lifetime: srcLifetime },
     ads: { last7: ads7, lifetime: adsLifetime },
     steps: { last7: steps7, lifetime: stepsLifetime },
+    deadEnds: { last7: dead7, lifetime: deadLifetime },
     last7: rollup(last7),
     lifetime: rollup(lifetime),
     recentVerified: recent.map((r) => ({ ...r, createdAt: r.createdAt.toISOString() })),

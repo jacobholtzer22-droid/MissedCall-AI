@@ -22,6 +22,8 @@ export type ArmVideo = {
 
 export type AdRow = { arm: string; ad: string; leads: number; bookings: number }
 
+export type DeadEndCounts = Record<string, number>
+
 export type StepRow = {
   arm: string
   label: string
@@ -37,6 +39,7 @@ export type ArmsData = {
   bookingSources: { last7: BookingSources; lifetime: BookingSources }
   ads: { last7: AdRow[]; lifetime: AdRow[] }
   steps: { last7: StepRow[][]; lifetime: StepRow[][] }
+  deadEnds: { last7: DeadEndCounts; lifetime: DeadEndCounts }
   last7: ArmRow[]
   lifetime: ArmRow[]
   recentVerified: {
@@ -46,6 +49,57 @@ export type ArmsData = {
     businessName: string | null
     phone: string | null
   }[]
+}
+
+const DEAD_END_LABELS: [string, string][] = [
+  ['homeowner', 'Homeowner'],
+  ['just_looking', 'Just looking'],
+  ['agency', 'Agency (picked it)'],
+  ['keyword', 'Agency (keyword block)'],
+]
+
+/**
+ * Who told us early they were not a fit.
+ *
+ * These are not failures — they are the gate working. The two agency rows are
+ * the ones to watch: a keyword count climbing while the picked-it count stays
+ * flat means people are routing around the dropdown, and the free-text audit
+ * in the funnel log is where to look next.
+ */
+function DeadEnds({ counts7, countsLifetime }: { counts7: DeadEndCounts; countsLifetime: DeadEndCounts }) {
+  const total = (c: DeadEndCounts) => Object.values(c).reduce((a, b) => a + b, 0)
+  return (
+    <section className="mb-8">
+      <h2 className="text-sm font-bold uppercase tracking-widest text-gray-400 mb-1">Dead-ends by reason</h2>
+      <p className="mb-3 text-xs text-gray-600">
+        From the gate&apos;s own funnel log. No lead, no pixel, no alert fires for any of these.
+      </p>
+      {total(countsLifetime) === 0 ? (
+        <p className="text-sm text-gray-500">No dead-ends recorded yet.</p>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-left text-gray-500 border-b border-gray-800">
+                <th className="py-2 pr-4 font-medium">Reason</th>
+                <th className="py-2 pr-4 font-medium text-right">Last 7 days</th>
+                <th className="py-2 pr-4 font-medium text-right">Lifetime</th>
+              </tr>
+            </thead>
+            <tbody>
+              {DEAD_END_LABELS.map(([key, label]) => (
+                <tr key={key} className="border-b border-gray-900">
+                  <td className="py-2 pr-4">{label}</td>
+                  <td className="py-2 pr-4 text-right font-mono">{counts7[key] ?? 0}</td>
+                  <td className="py-2 pr-4 text-right font-mono">{countsLifetime[key] ?? 0}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </section>
+  )
 }
 
 /**
@@ -301,6 +355,8 @@ export default function ArmsClient({ data }: { data: ArmsData }) {
           </table>
         </div>
       </section>
+
+      <DeadEnds counts7={data.deadEnds.last7} countsLifetime={data.deadEnds.lifetime} />
 
       <StepFunnel title="Funnel steps — last 7 days" arms={data.steps.last7} />
       <StepFunnel title="Funnel steps — lifetime" arms={data.steps.lifetime} />

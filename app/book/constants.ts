@@ -1,3 +1,5 @@
+import { AGENCY, AGENCY_LABEL, OTHER_TRADE } from '@/lib/gate-filters'
+
 // ===========================================
 // /book FUNNEL CONSTANTS
 // ===========================================
@@ -83,7 +85,16 @@ export const OTP_MAX_RESENDS = 2
 export const HOMEOWNER = "I'm a homeowner"
 export const JUST_LOOKING = 'Just looking'
 
-export const GATE_TRADES = [
+/**
+ * The dropdown, as {value,label} pairs.
+ *
+ * Every option except the agency one uses its label as its value, which is what
+ * the lead row, the owner alert and the pixel have always stored. The agency
+ * option carries the short value `agency` because it is a routing token rather
+ * than a trade anyone will read back — nothing stores it, since that answer
+ * never produces a lead.
+ */
+export const GATE_TRADE_OPTIONS: readonly { value: string; label: string }[] = [
   'Landscaping',
   'Lawn care',
   'Tree service',
@@ -91,17 +102,21 @@ export const GATE_TRADES = [
   'Plumbing',
   'Electrical',
   'Junk removal',
-  'Other home service',
-  HOMEOWNER,
-  JUST_LOOKING,
-] as const
+  OTHER_TRADE,
+]
+  .map((t) => ({ value: t, label: t }))
+  .concat([
+    { value: AGENCY, label: AGENCY_LABEL },
+    { value: HOMEOWNER, label: HOMEOWNER },
+    { value: JUST_LOOKING, label: JUST_LOOKING },
+  ])
 
 /**
  * These never reach OTP, never create a lead and never fire Lead. They are not
  * failures — they are people telling us the truth early, and the kindest thing
  * is to stop asking rather than walk them through a demo gate they cannot use.
  */
-export const TERMINAL_TRADES: string[] = [HOMEOWNER, JUST_LOOKING]
+export const TERMINAL_TRADES: string[] = [HOMEOWNER, JUST_LOOKING, AGENCY]
 
 export function isTerminalTrade(trade: string): boolean {
   return TERMINAL_TRADES.includes(trade.trim())

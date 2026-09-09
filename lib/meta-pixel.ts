@@ -49,11 +49,38 @@ export function ensureFbq(): Fbq | null {
   return w.fbq
 }
 
+
+/**
+ * Suppress every pixel event on this page view.
+ *
+ * `?test=1` on any funnel URL. It exists so Jacob can walk his own funnel
+ * without the walk landing in Events Manager and teaching the ad set that his
+ * own testing is a conversion — the same failure mode, at a smaller scale, as
+ * the agency leads this flag was added alongside.
+ *
+ * Read per call rather than cached: the flag has to survive a client-side route
+ * change from /book/a to /book/a/watch, where the query string is re-evaluated
+ * but no module is re-imported.
+ *
+ * Deliberately does NOT suppress the SERVER event. CAPI is fired from the API
+ * route, which has its own test handling, and silently dropping half a deduped
+ * pair is how you end up debugging a phantom.
+ */
+export function pixelSuppressed(): boolean {
+  if (typeof window === 'undefined') return false
+  try {
+    return new URLSearchParams(window.location.search).get('test') === '1'
+  } catch {
+    return false
+  }
+}
+
 /**
  * Fire a Meta standard event. Safe to call before fbevents.js has loaded —
  * the call queues and flushes on load.
  */
 export function fbTrack(eventName: string, params?: Record<string, unknown>): void {
+  if (pixelSuppressed()) return
   const fbq = ensureFbq()
   if (!fbq) return
   if (params) {
@@ -68,6 +95,7 @@ export function fbTrack(eventName: string, params?: Record<string, unknown>): vo
  * measurable without adding another vendor. Same queueing guarantees as fbTrack.
  */
 export function fbTrackCustom(eventName: string, params?: Record<string, unknown>): void {
+  if (pixelSuppressed()) return
   const fbq = ensureFbq()
   if (!fbq) return
   if (params) {
@@ -90,6 +118,7 @@ export function fbTrackWithId(
   eventId: string,
   params?: Record<string, unknown>
 ): void {
+  if (pixelSuppressed()) return
   const fbq = ensureFbq()
   if (!fbq) return
   fbq('track', eventName, params ?? {}, { eventID: eventId })

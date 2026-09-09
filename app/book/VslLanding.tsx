@@ -107,10 +107,19 @@ export default function VslLanding({ arm, poster }: { arm: FunnelVariant; poster
       <WizardModal
         open={open}
         onClose={() => setOpen(false)}
-        onVerified={({ watchUrl, trade, eventId, qualified }) => {
+        onVerified={({ watchUrl, trade, tradeOther, eventId, qualified }) => {
           if (!leadFired.current) {
             leadFired.current = true
-            const params = { content_name: 'vsl_gate', trade }
+            // trade_other rides along ONLY for "Other home service" — it is the
+            // one field that says what an "other" actually is, which is the
+            // difference between optimising toward contractors and toward
+            // whoever fills in the box. Company name is deliberately NOT sent:
+            // PII-adjacent, and worth nothing to the optimiser.
+            const params = {
+              content_name: 'vsl_gate',
+              trade,
+              ...(tradeOther ? { trade_other: tradeOther } : {}),
+            }
             // Lead is the ad optimisation target: once, on OTP success, for a
             // verified owner. Deduped against the server's CAPI event.
             if (qualified) trackStandardWithId('Lead', eventId, params)

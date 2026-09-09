@@ -39,6 +39,8 @@ export type CapiLead = {
   firstName?: string | null
   /** Custom params Meta will show against the event. */
   trade?: string | null
+  /** Free text from "Other home service". Only ever set when trade is Other. */
+  tradeOther?: string | null
   businessName?: string | null
   funnelArm?: string | null
   /**
@@ -105,6 +107,7 @@ export async function sendCapiLead(input: CapiLead): Promise<CapiResult> {
         user_data: userData,
         custom_data: {
           ...(input.trade ? { trade: input.trade } : {}),
+          ...(input.tradeOther ? { trade_other: input.tradeOther } : {}),
           ...(input.businessName ? { business_name: input.businessName } : {}),
           ...(input.funnelArm ? { funnel_arm: input.funnelArm } : {}),
           ...(input.referrerClass ? { referrer_class: input.referrerClass } : {}),

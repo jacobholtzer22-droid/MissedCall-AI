@@ -22,7 +22,7 @@ import { ATTRIBUTION_COOKIE, parseAttributionCookie } from '@/lib/attribution-co
 
 export const dynamic = 'force-dynamic'
 
-const STEPS = ['trade', 'firstName', 'phone', 'email'] as const
+const STEPS = ['trade', 'firstName', 'company', 'phone', 'email'] as const
 
 function clean(v: unknown, max: number): string | undefined {
   if (typeof v !== 'string') return undefined
@@ -48,7 +48,9 @@ export async function POST(request: NextRequest) {
     const body = (await request.json()) as {
       step?: string
       trade?: string
+      tradeOther?: string
       firstName?: string
+      company?: string
       phone?: string
       email?: string
       landingPath?: string
@@ -56,7 +58,9 @@ export async function POST(request: NextRequest) {
 
     const lastStep = (STEPS as readonly string[]).includes(body.step ?? '') ? body.step : undefined
     const trade = clean(body.trade, 80)
+    const tradeOther = clean(body.tradeOther, 80)
     const firstName = clean(body.firstName, 80)
+    const company = clean(body.company, 80)
     const email = clean(body.email, 160)
     const landingPath = clean(body.landingPath, 1000)
     // Stored E.164 when it parses, raw otherwise: a half-typed number is still
@@ -73,7 +77,9 @@ export async function POST(request: NextRequest) {
     // earlier answer — going back and forth in the wizard is normal.
     const fields = {
       ...(trade ? { trade } : {}),
+      ...(tradeOther ? { tradeOther } : {}),
       ...(firstName ? { firstName } : {}),
+      ...(company ? { businessName: company } : {}),
       ...(phone ? { phone } : {}),
       ...(email ? { email } : {}),
       ...(lastStep ? { lastStep } : {}),

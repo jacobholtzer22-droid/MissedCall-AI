@@ -3,14 +3,15 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import FunnelProgressBar from './FunnelProgressBar'
 import { FunnelButton } from './FunnelCard'
-import { GATE_TRADES, isTerminalTrade, formatPhoneInput } from './constants'
+import { GATE_TRADE_OPTIONS, isTerminalTrade, formatPhoneInput, HOMEOWNER } from './constants'
+import { AGENCY, OTHER_TRADE, TRADE_OTHER_MAX, matchBlockedKeyword } from '@/lib/gate-filters'
 import { validateUsMobile } from '@/lib/phone-utils'
 
 // One question per screen, recovered from the pre-rebuild gate and trimmed to
 // exactly the five screens this funnel asks for. Nothing is written until the
 // code verifies: the earlier screens only fill state.
 
-type StepKey = 'trade' | 'firstName' | 'phone' | 'email' | 'otp'
+type StepKey = 'trade' | 'firstName' | 'company' | 'phone' | 'email' | 'otp'
 /**
  * Thrown by sendCode when the send did not fail so much as end differently:
  * the number cannot receive a text, or the resend cap is spent. Both need the
@@ -24,11 +25,12 @@ class NotRoutableOrCapped extends Error {
   }
 }
 
-const STEPS: StepKey[] = ['trade', 'firstName', 'phone', 'email', 'otp']
+const STEPS: StepKey[] = ['trade', 'firstName', 'company', 'phone', 'email', 'otp']
 
 const COPY: Record<StepKey, { headline: string; hint?: string }> = {
   trade: { headline: 'What do you do?' },
   firstName: { headline: 'What is your first name?' },
+  company: { headline: 'What is your company name?' },
   phone: {
     headline: 'What is your cell number?',
     // Consent notice. Must stay: it is what makes the lead SMS a consented send.
@@ -38,8 +40,11 @@ const COPY: Record<StepKey, { headline: string; hint?: string }> = {
   otp: { headline: 'Enter the code I just texted you' },
 }
 
-type Draft = Record<Exclude<StepKey, 'otp'>, string>
-const EMPTY: Draft = { trade: '', firstName: '', phone: '', email: '' }
+/** Shown for the agency option and for a blocked "other" answer. */
+const AGENCY_EXIT_COPY = "Thanks. This is built for contractors who run crews, so it won't be a fit."
+
+type Draft = Record<Exclude<StepKey, 'otp'>, string> & { tradeOther: string }
+const EMPTY: Draft = { trade: '', firstName: '', company: '', phone: '', email: '', tradeOther: '' }
 
 const inputCls =
   'w-full rounded-lg border px-4 py-4 text-[17px] outline-none focus:border-neutral-900'
@@ -51,6 +56,8 @@ function validate(step: StepKey, v: string): string {
       return t ? '' : 'Pick the one that fits best.'
     case 'firstName':
       return t.length >= 2 ? '' : 'Please enter your first name.'
+    case 'company':
+      return t.length >= 2 ? '' : 'Please enter your company name.'
     case 'phone': {
       const check = validateUsMobile(t)
       return check.ok ? '' : check.reason
@@ -69,7 +76,14 @@ export default function WizardModal({
 }: {
   open: boolean
   onClose: () => void
-  onVerified: (p: { watchUrl: string; trade: string; eventId: string; qualified: boolean }) => void
+  onVerified: (p: {
+    watchUrl: string
+    trade: string
+    /** Free text from "Other home service"; empty for every other trade. */
+    tradeOther: string
+    eventId: string
+    qualified: boolean
+  }) => void
 }) {
   const [index, setIndex] = useState(0)
   const [draft, setDraft] = useState<Draft>(EMPTY)
@@ -77,6 +91,10 @@ export default function WizardModal({
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const [exited, setExited] = useState(false)
+  /** Which dead-end line to show. Homeowner and just-looking keep today's. */
+  const [exitCopy, setExitCopy] = useState(
+    "Thanks. This is built for business owners, so it won't be a fit."
+  )
   const [verified, setVerified] = useState(false)
   const [resends, setResends] = useState(0)
   const [honeypot, setHoneypot] = useState('')
@@ -276,13 +294,39 @@ export default function WizardModal({
     const next = { ...draft, [step]: value } as Draft
     setDraft(next)
 
-    // Homeowners and browsers stop here: no OTP, no lead, no Lead event.
+    // Homeowners, browsers and agencies stop here: no OTP, no lead, no Lead
+    // event, no CAPI, no owner alert. One branch, three answers.
     if (step === 'trade' && isTerminalTrade(value)) {
-      // The answer is logged so homeowner and just-looking can be separated in
-      // the step table; it is a fixed menu choice, not typed input.
-      logStep('gate_exit_not_a_fit', 'trade', { answer: value })
+      // The answer is logged so the reasons can be separated in the step table;
+      // it is a fixed menu choice, not typed input.
+      logStep('gate_exit_not_a_fit', 'trade', {
+        answer: value,
+        reason: value === AGENCY ? 'agency' : value === HOMEOWNER ? 'homeowner' : 'just_looking',
+      })
+      if (value === AGENCY) setExitCopy(AGENCY_EXIT_COPY)
       setExited(true)
       return
+    }
+
+    // "Other home service" has to say what the work actually is. An unlabelled
+    // "other" is the door both agencies walked through.
+    if (step === 'trade' && value === OTHER_TRADE) {
+      const typed = draft.tradeOther.trim()
+      if (!typed) return setError('Tell me what kind of work you do.')
+
+      // Same dead end, reached by typing rather than by picking. The raw text
+      // is logged BECAUSE this will have false positives — "media blasting" and
+      // "AI" inside a real trade name are the ones to watch — and auditing them
+      // is impossible without the words the person actually typed.
+      const hit = matchBlockedKeyword(typed)
+      if (hit) {
+        logStep('gate_exit_not_a_fit', 'trade', { answer: AGENCY, reason: 'keyword', text: typed, matched: hit })
+        setExitCopy(AGENCY_EXIT_COPY)
+        setExited(true)
+        return
+      }
+      next.tradeOther = typed
+      setDraft(next)
     }
 
     // Screen cleared. Logged AFTER validation and after the disqualifying exit
@@ -299,7 +343,9 @@ export default function WizardModal({
       body: JSON.stringify({
         step,
         trade: next.trade,
+        tradeOther: next.tradeOther,
         firstName: next.firstName,
+        company: next.company,
         phone: next.phone,
         email: next.email,
         landingPath: typeof window !== 'undefined' ? window.location.pathname + window.location.search : undefined,
@@ -370,7 +416,9 @@ export default function WizardModal({
           verificationId: json.verificationId,
           eventId: eventIdRef.current,
           trade: draft.trade,
+          tradeOther: draft.tradeOther,
           firstName: draft.firstName,
+          company: draft.company,
           email: draft.email,
           phone: draft.phone,
           landingPath: window.location.pathname + window.location.search,
@@ -391,6 +439,7 @@ export default function WizardModal({
       onVerified({
         watchUrl: saved.watchUrl || '/book',
         trade: draft.trade,
+        tradeOther: draft.tradeOther,
         eventId: eventIdRef.current,
         qualified: Boolean(saved.qualified),
       })
@@ -474,9 +523,7 @@ export default function WizardModal({
             </p>
           </div>
         ) : exited ? (
-          <p className="pb-6 text-[16px] leading-[1.6] text-neutral-800">
-            Thanks. This is built for business owners, so it won&apos;t be a fit.
-          </p>
+          <p className="pb-6 text-[16px] leading-[1.6] text-neutral-800">{exitCopy}</p>
         ) : (
           <>
             <FunnelProgressBar pct={pct} label={`${pct}% of the way to the demo`} />
@@ -501,6 +548,7 @@ export default function WizardModal({
               }}
             >
               {step === 'trade' ? (
+                <>
                 <select
                   ref={inputRef as React.RefObject<HTMLSelectElement>}
                   value={draft.trade}
@@ -515,12 +563,36 @@ export default function WizardModal({
                   <option value="" disabled>
                     Select one
                   </option>
-                  {GATE_TRADES.map((t) => (
-                    <option key={t} value={t}>
-                      {t}
+                  {GATE_TRADE_OPTIONS.map((t) => (
+                    <option key={t.value} value={t.value}>
+                      {t.label}
                     </option>
                   ))}
                 </select>
+                {/* Revealed only for "Other home service". Required, because an
+                    unlabelled "other" is exactly where the agencies came in. */}
+                {draft.trade === OTHER_TRADE && (
+                  <div className="mt-4">
+                    <label htmlFor="gate-trade-other" className="mb-1.5 block text-[15px] font-semibold text-neutral-700">
+                      What kind of work do you do?
+                    </label>
+                    <input
+                      id="gate-trade-other"
+                      value={draft.tradeOther}
+                      onChange={(e) => {
+                        setDraft((d) => ({ ...d, tradeOther: e.target.value.slice(0, TRADE_OTHER_MAX) }))
+                        setError('')
+                      }}
+                      maxLength={TRADE_OTHER_MAX}
+                      type="text"
+                      autoComplete="off"
+                      placeholder="Pressure washing"
+                      className={inputCls}
+                      style={{ borderColor: error ? 'var(--funnel-accent)' : 'var(--funnel-border)' }}
+                    />
+                  </div>
+                )}
+                </>
               ) : (
                 <input
                   ref={inputRef as React.RefObject<HTMLInputElement>}
@@ -541,13 +613,18 @@ export default function WizardModal({
                   }}
                   type={step === 'phone' ? 'tel' : step === 'email' ? 'email' : 'text'}
                   inputMode={step === 'phone' ? 'tel' : step === 'email' ? 'email' : step === 'otp' ? 'numeric' : 'text'}
+                  // Explicit per step. The old fallback was 'one-time-code',
+                  // which was right only while otp was the sole remaining step:
+                  // the company screen added below it would otherwise ask iOS to
+                  // autofill an SMS code into a business name.
                   autoComplete={
                     step === 'phone' ? 'tel'
                     : step === 'email' ? 'email'
                     : step === 'firstName' ? 'given-name'
+                    : step === 'company' ? 'organization'
                     : 'one-time-code'
                   }
-                  maxLength={step === 'otp' ? 6 : undefined}
+                  maxLength={step === 'otp' ? 6 : step === 'company' ? 80 : undefined}
                   enterKeyHint={step === 'otp' ? 'done' : 'next'}
                   aria-label={COPY[step].headline}
                   className={`${inputCls} ${step === 'otp' ? 'text-center text-[24px] font-bold tracking-[0.4em]' : ''}`}

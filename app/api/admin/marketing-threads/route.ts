@@ -51,7 +51,7 @@ export async function GET() {
     db.websiteLead.findMany({
       where: { businessId: business.id, phone: { in: phones } },
       orderBy: { createdAt: 'desc' },
-      select: { phone: true, name: true, message: true, funnelVariant: true },
+      select: { phone: true, name: true, message: true, funnelVariant: true, businessName: true },
     }),
     db.blockedNumber.findMany({
       where: { businessId: business.id, phoneNumber: { in: phones }, label: 'sms-opt-out' },
@@ -72,7 +72,10 @@ export async function GET() {
         lastMessageAt: c.lastMessageAt.toISOString(),
         optedOut: optedOut.has(c.callerPhone),
         firstName: lead?.message?.match(/^First name: (.+)$/m)?.[1]?.trim() ?? lead?.name ?? '',
-        businessName: lead?.message?.match(/^Company: (.+)$/m)?.[1]?.trim() ?? '',
+        // Column first, then the legacy text block for leads captured before the
+        // gate asked for a company.
+        businessName:
+          lead?.businessName ?? lead?.message?.match(/^Company: (.+)$/m)?.[1]?.trim() ?? '',
         trade: lead?.message?.match(/^Trade: (.+)$/m)?.[1]?.trim() ?? '',
         arm: lead?.funnelVariant ?? null,
         messages: c.messages.map((m) => ({
