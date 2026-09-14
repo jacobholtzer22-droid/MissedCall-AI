@@ -28,6 +28,100 @@ function Eyebrow({ label }: { label: string }) {
   )
 }
 
+type FeaturedClient = {
+  photo: string
+  photoAlt: string
+  photoPosition?: string
+  // Quotes are verbatim from the client. null = review not left yet.
+  quote: string | null
+  business: string | null
+  meta: string | null
+  services: string[]
+  website: string | null
+}
+
+const FEATURED_CLIENTS: FeaturedClient[] = [
+  {
+    photo: '/images/testimonial-master-gardener.jpg',
+    photoAlt: 'Jacob shaking hands with Brett of Master Gardener LLC',
+    quote:
+      "My days are a lot simpler. Before this, probably 60 or 70 percent of my calls were spam. Now those get blocked and when I do pick up I know it's a real customer. The ones I miss, the AI texts them back right away so I'm not losing work while I'm out on a job. The website they built is way better than what I had before too. More modern, and it actually comes up on Google now.",
+    business: 'Master Gardener LLC',
+    meta: 'Lawn Care & Landscaping · West Michigan',
+    services: ['MissedCall AI', 'Spam Call Screening', 'Custom Website'],
+    website: 'https://www.mastergardnerllc.com',
+  },
+  {
+    // TODO: fill in once his Google review is posted — paste the review text
+    // verbatim into `quote`, plus his business name, trade/location, the
+    // services he uses, and the site we built him.
+    photo: '/images/testimonial-client-2.jpg',
+    photoAlt: 'Jacob shaking hands with a client',
+    photoPosition: 'center 40%',
+    quote: null,
+    business: null,
+    meta: null,
+    services: [],
+    website: null,
+  },
+]
+
+function FeaturedClientCard({ client }: { client: FeaturedClient }) {
+  return (
+    <article className="flex h-full flex-col border-2" style={{ borderColor: '#16181C', background: '#16181C' }}>
+      <TestimonialPhoto src={client.photo} alt={client.photoAlt} objectPosition={client.photoPosition} />
+
+      <div className="flex flex-1 flex-col justify-between p-7 sm:p-9">
+        <div>
+          <Quote size={32} strokeWidth={1.25} className="mb-5" style={{ color: '#EE6B1A' }} />
+          {client.quote ? (
+            <p className="mb-8 text-[16px] leading-relaxed sm:text-[18px]" style={{ color: 'rgba(242,240,235,0.9)' }}>
+              &ldquo;{client.quote}&rdquo;
+            </p>
+          ) : (
+            <p className="mb-8 font-mono text-[11px] uppercase tracking-[0.2em]" style={{ color: '#6E7681' }}>
+              Review coming soon
+            </p>
+          )}
+        </div>
+
+        {(client.services.length > 0 || client.business) && (
+          <div>
+            {client.services.length > 0 && (
+              <div className="mb-6 flex flex-wrap gap-2">
+                {client.services.map((s) => (
+                  <span key={s} className="px-2.5 py-1.5 font-mono text-[10px] font-bold uppercase tracking-widest" style={{ background: 'rgba(238,107,26,0.15)', color: '#EE6B1A' }}>
+                    {s}
+                  </span>
+                ))}
+              </div>
+            )}
+            {client.business && (
+              <div className="border-t-2 pt-6" style={{ borderColor: 'rgba(110,118,129,0.25)' }}>
+                <div className="text-[16px] font-bold" style={{ color: '#F2F0EB' }}>{client.business}</div>
+                {client.meta && (
+                  <div className="mt-1 font-mono text-[10px] uppercase tracking-widest" style={{ color: '#6E7681' }}>{client.meta}</div>
+                )}
+                {client.website && (
+                  <a
+                    href={client.website}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="mt-4 inline-flex items-center gap-2 border-2 px-4 py-2.5 text-[12px] font-bold uppercase tracking-wide transition-opacity hover:opacity-80"
+                    style={{ borderColor: '#EE6B1A', color: '#EE6B1A' }}
+                  >
+                    Visit the site we built them <ExternalLink size={14} strokeWidth={2.5} />
+                  </a>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </article>
+  )
+}
+
 export default function ReviewsPage() {
   return (
     <div className="min-h-dvh w-full overflow-x-hidden" style={{ background: '#16181C', color: '#F2F0EB' }}>
@@ -62,49 +156,14 @@ export default function ReviewsPage() {
             </div>
           </ScrollReveal>
 
-          {/* Featured testimonial — Master Gardener LLC */}
-          <ScrollReveal>
-            <div className="grid lg:grid-cols-[1fr_1.2fr] gap-0 border-2" style={{ borderColor: '#16181C' }}>
-
-              {/* Photo */}
-              <TestimonialPhoto />
-
-              {/* Quote */}
-              <div className="p-8 sm:p-10 flex flex-col justify-between" style={{ background: '#16181C' }}>
-                <div>
-                  <Quote size={36} strokeWidth={1.25} className="mb-6" style={{ color: '#EE6B1A' }} />
-                  <p className="text-[17px] sm:text-[20px] leading-relaxed mb-8" style={{ color: 'rgba(242,240,235,0.9)' }}>
-                    "My days are a lot simpler. Before this, probably 60 or 70 percent of my calls were spam. Now those get blocked and when I do pick up I know it&apos;s a real customer. The ones I miss, the AI texts them back right away so I&apos;m not losing work while I&apos;m out on a job. The website they built is way better than what I had before too. More modern, and it actually comes up on Google now."
-                  </p>
-                </div>
-
-                {/* Services used */}
-                <div>
-                  <div className="flex flex-wrap gap-2 mb-6">
-                    {['MissedCall AI', 'Spam Call Screening', 'Custom Website'].map(s => (
-                      <span key={s} className="font-mono text-[10px] font-bold uppercase tracking-widest px-2.5 py-1.5" style={{ background: 'rgba(238,107,26,0.15)', color: '#EE6B1A' }}>
-                        {s}
-                      </span>
-                    ))}
-                  </div>
-                  <div className="border-t-2 pt-6" style={{ borderColor: 'rgba(110,118,129,0.25)' }}>
-                    <div className="font-bold text-[16px]" style={{ color: '#F2F0EB' }}>Master Gardener LLC</div>
-                    <div className="font-mono text-[10px] uppercase tracking-widest mt-1" style={{ color: '#6E7681' }}>Lawn Care &amp; Landscaping · West Michigan</div>
-                    <a
-                      href="https://www.mastergardnerllc.com"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="mt-4 inline-flex items-center gap-2 border-2 px-4 py-2.5 text-[12px] font-bold uppercase tracking-wide transition-opacity hover:opacity-80"
-                      style={{ borderColor: '#EE6B1A', color: '#EE6B1A' }}
-                    >
-                      Visit the site we built them <ExternalLink size={14} strokeWidth={2.5} />
-                    </a>
-                  </div>
-                </div>
-              </div>
-
-            </div>
-          </ScrollReveal>
+          {/* Featured clients — side by side on desktop, stacked on phones */}
+          <div className="grid gap-6 md:grid-cols-2">
+            {FEATURED_CLIENTS.map((client) => (
+              <ScrollReveal key={client.photo}>
+                <FeaturedClientCard client={client} />
+              </ScrollReveal>
+            ))}
+          </div>
         </div>
       </section>
 
