@@ -14,6 +14,11 @@ import { Star, Quote, ChevronLeft, ChevronRight, ExternalLink } from 'lucide-rea
 // the reviewer's own capitalisation. Do not edit, shorten, or "improve" any
 // review. Order below is Google's own: newest first.
 //
+// 2026-09-16: Aaron Trizna added by hand from the review as shown on the
+// listing (Jacob pasted it). No photo URL was available, so it renders the
+// initials fallback. Its createdAt is "20 hours ago" converted from the time it
+// was added, so it is accurate to the hour, not the exact Google timestamp.
+//
 // This is still a snapshot, not a live fetch: hitting Google on every render
 // would put a third-party dependency and its latency in front of paid traffic.
 // To refresh it, ask Claude to re-pull from the GBP connector.
@@ -33,6 +38,12 @@ export interface Review {
 }
 
 export const REVIEWS: Review[] = [
+  {
+    name: 'Aaron Trizna',
+    rating: 5,
+    text: 'Jacob provides a premium service for an extremely reasonable rate! Will recommend his services moving forward',
+    createdAt: '2026-09-15T19:26:00.000Z',
+  },
   {
     name: 'JAWS Lawn and Snow',
     rating: 5,
