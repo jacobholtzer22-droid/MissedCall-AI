@@ -18,6 +18,7 @@ import { db } from '@/lib/db'
 import { normalizeToE164 } from '@/lib/phone-utils'
 import { MONTHLY_FEE, SETUP_FEE_FULL } from '@/lib/pricing'
 import { calendarLink } from '@/lib/lead-token'
+import { notifyOwnerOfMarketingEvent } from '@/lib/marketing-funnel'
 
 const MODEL = 'claude-haiku-4-5-20251001'
 
@@ -192,13 +193,18 @@ export async function composeMarketingReply(
   return { text: text || `Grab a time and I'll walk you through it: ${bookingLink(facts)}`, usedBookingHandoff: false }
 }
 
-/** Ping Jacob with the thread so no inbound reply is silent. */
+/**
+ * Ping Jacob with the thread so no inbound reply is silent.
+ *
+ * `reply` is nullable because the marketing line no longer auto-answers: pass
+ * null and the "You (auto)" line is omitted rather than rendered empty.
+ */
 export async function pingOwnerWithThread(
   ownerPhone: string | null | undefined,
   facts: LeadFacts,
   from: string,
   incoming: string,
-  reply: string
+  reply: string | null
 ): Promise<void> {
   const to = normalizeToE164(process.env.OWNER_PHONE || ownerPhone || '')
   const sender = process.env.MARKETING_TELNYX_NUMBER?.trim()
@@ -214,8 +220,8 @@ export async function pingOwnerWithThread(
   const who = [facts.firstName, facts.businessName].filter(Boolean).join(' / ') || from
   const body =
     `Reply from ${who} (${from})\n` +
-    `Them: ${incoming.slice(0, 140)}\n` +
-    `You (auto): ${reply.slice(0, 140)}`
+    `Them: ${incoming.slice(0, 140)}` +
+    (reply ? `\nYou (auto): ${reply.slice(0, 140)}` : '')
   try {
     const telnyx = new Telnyx({ apiKey: process.env.TELNYX_API_KEY })
     const res = await telnyx.messages.send({ from: sender, to, text: body })
@@ -223,5 +229,47 @@ export async function pingOwnerWithThread(
     console.log(`[marketing-reply] owner ping SENT to=${to} providerId=${id}`)
   } catch (err) {
     console.error(`[marketing-reply] owner ping FAILED: ${err instanceof Error ? err.message : String(err)}`)
+  }
+}
+
+/**
+ * Email Jacob the same inbound the text ping carries.
+ *
+ * Two channels on purpose: the text is the fast nudge, the email is the one that
+ * survives and is searchable. Routed through notifyOwnerOfMarketingEvent with no
+ * smsText so it sends email only and does not duplicate pingOwnerWithThread.
+ * Never throws: a notification failure must not fail the webhook.
+ */
+export async function emailInboundToOwner(
+  ownerEmail: string | null | undefined,
+  facts: LeadFacts,
+  from: string,
+  incoming: string
+): Promise<void> {
+  const who = [facts.firstName, facts.businessName].filter(Boolean).join(' / ') || from
+  const esc = (s: string) =>
+    s
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;')
+  try {
+    await notifyOwnerOfMarketingEvent({
+      ownerEmailFallback: ownerEmail,
+      subject: `Text from ${who} (${from})`,
+      html: `
+        <h2>Inbound text on the demo line</h2>
+        <p><strong>From:</strong> ${esc(who)} (${esc(from)})</p>
+        ${facts.trade ? `<p><strong>Trade:</strong> ${esc(facts.trade)}</p>` : ''}
+        <p><strong>They said:</strong></p>
+        <pre style="font-family:inherit;white-space:pre-wrap;margin:0">${esc(incoming)}</pre>
+        <p>No automatic reply was sent. Answer from your phone.</p>
+      `,
+    })
+  } catch (err) {
+    console.error(
+      `[marketing-reply] owner email FAILED: ${err instanceof Error ? err.message : String(err)}`
+    )
   }
 }

@@ -22,9 +22,10 @@ import { findOrCreateContact } from '@/lib/crm-utils'
 import { shouldRejectTelnyxWebhook } from '@/lib/telnyx-signature'
 import {
   leadFactsForPhone,
-  composeMarketingReply,
   pingOwnerWithThread,
+  emailInboundToOwner,
 } from '@/lib/marketing-reply'
+import { MARKETING_INBOUND_ACK } from '@/app/book/constants'
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY ?? '' })
 
@@ -355,6 +356,76 @@ export async function POST(request: NextRequest) {
         return new NextResponse('OK', { status: 200 })
       }
 
+      // Empty/blank inbound (e.g. MMS with no text body) — nothing to act on.
+      // Saving it would create a blank bubble AND poison future AI calls, since
+      // Anthropic 400s on empty content blocks. Acknowledge and skip.
+      if (!text || !text.trim()) {
+        console.log('📭 Empty inbound SMS (no text body) — acknowledging without processing')
+        return new NextResponse('OK', { status: 200 })
+      }
+
+      // ── Marketing line ────────────────────────────────────────────────
+      // Replies to the /book funnel number are NOT tenant traffic. None of the
+      // tenant flow below may touch them: the generic lead-capture AI once
+      // answered a lead who asked to book with "someone from our team will call
+      // you", the exact opposite of what the funnel promises.
+      //
+      // ORDERING. STOP / START / BlockedNumber win above this, always. This now
+      // sits ABOVE the "never mind" branch on purpose: a prospect texting "not
+      // interested" to the demo line used to get the tenant goodbye and a
+      // notifyOwnerOnLeadCaptured filed against the marketing business, which is
+      // both the wrong voice and a junk lead row.
+      //
+      // The line does not auto-reply. Inbound is saved, forwarded to Jacob by
+      // text and by email, and answered by a human. composeMarketingReply() in
+      // lib/marketing-reply.ts is the Claude persona that used to answer here;
+      // it is disabled by request, not deleted. To re-enable, call it here and
+      // pass its text to sendSMSAndLog and as the last argument to
+      // pingOwnerWithThread.
+      if (isMarketingLine(business, to)) {
+        try {
+          const facts = await leadFactsForPhone(business.id, from)
+          const convo = await db.conversation.findFirst({
+            where: { businessId: business.id, callerPhone: from },
+            orderBy: { lastMessageAt: 'desc' },
+            select: { id: true },
+          })
+          const conversationId =
+            convo?.id ??
+            (
+              await db.conversation.create({
+                data: { businessId: business.id, callerPhone: from, status: 'active', lastMessageAt: new Date() },
+                select: { id: true },
+              })
+            ).id
+
+          await db.message.create({
+            data: { conversationId, direction: 'inbound', content: text, telnyxSid: messageSid },
+          })
+          await db.conversation.update({
+            where: { id: conversationId },
+            data: { lastMessageAt: new Date(), status: 'active' },
+          })
+
+          // Off by default. Set MARKETING_INBOUND_ACK to send one static line.
+          if (MARKETING_INBOUND_ACK) {
+            await sendSMSAndLog(business, conversationId, from, MARKETING_INBOUND_ACK)
+          }
+
+          console.log(
+            `[marketing-reply] forwarded from=${from} autoReply=disabled ack=${
+              MARKETING_INBOUND_ACK ? 'sent' : 'off'
+            }`
+          )
+          // Never silent: Jacob gets every inbound on his phone and in his inbox.
+          await pingOwnerWithThread(business.ownerPhone, facts, from, text, null)
+          await emailInboundToOwner(business.ownerEmail, facts, from, text)
+        } catch (err) {
+          console.error('[marketing-reply] FAILED:', err)
+        }
+        return new NextResponse('OK', { status: 200 })
+      }
+
       // "Never mind" / "not interested" — acknowledge, flag, notify owner as partial interest
       const neverMindPhrases = ['never mind', 'nevermind', 'not interested', 'no thanks', 'no thank you']
       if (neverMindPhrases.some(w => text?.toLowerCase().trim().includes(w))) {
@@ -391,61 +462,6 @@ export async function POST(request: NextRequest) {
           })
         } catch (err) {
           console.error('❌ Failed to notify owner of partial interest lead:', err)
-        }
-        return new NextResponse('OK', { status: 200 })
-      }
-
-      // Empty/blank inbound (e.g. MMS with no text body) — nothing to act on.
-      // Saving it would create a blank bubble AND poison future AI calls, since
-      // Anthropic 400s on empty content blocks. Acknowledge and skip.
-      if (!text || !text.trim()) {
-        console.log('📭 Empty inbound SMS (no text body) — acknowledging without processing')
-        return new NextResponse('OK', { status: 200 })
-      }
-
-      // ── Marketing line ────────────────────────────────────────────────
-      // Replies to the /book funnel number are NOT tenant traffic. Falling
-      // through to the generic lead-capture AI made it answer a lead who asked
-      // to book with "someone from our team will call you" — the opposite of
-      // what the funnel promises. Handled here, before any of that runs.
-      //
-      // Placed after STOP/START so opt-out still wins, and before the
-      // conversation lookup so none of the tenant flow can touch it.
-      if (isMarketingLine(business, to)) {
-        try {
-          const facts = await leadFactsForPhone(business.id, from)
-          const convo = await db.conversation.findFirst({
-            where: { businessId: business.id, callerPhone: from },
-            orderBy: { lastMessageAt: 'desc' },
-            include: { messages: { orderBy: { createdAt: 'asc' }, select: { direction: true, content: true } } },
-          })
-          const thread = convo?.messages ?? []
-          const reply = await composeMarketingReply(facts, thread, text)
-
-          const conversationId =
-            convo?.id ??
-            (
-              await db.conversation.create({
-                data: { businessId: business.id, callerPhone: from, status: 'active', lastMessageAt: new Date() },
-                select: { id: true },
-              })
-            ).id
-
-          await db.message.create({
-            data: { conversationId, direction: 'inbound', content: text, telnyxSid: messageSid },
-          })
-          const sent = await sendSMSAndLog(business, conversationId, from, reply.text)
-          await db.conversation.update({
-            where: { id: conversationId },
-            data: { lastMessageAt: new Date(), status: 'active' },
-          })
-          console.log(
-            `[marketing-reply] handled from=${from} bookingHandoff=${reply.usedBookingHandoff} sent=${Boolean(sent)}`
-          )
-          // Never silent: Jacob sees every inbound on his own line.
-          await pingOwnerWithThread(business.ownerPhone, facts, from, text, reply.text)
-        } catch (err) {
-          console.error('[marketing-reply] FAILED:', err)
         }
         return new NextResponse('OK', { status: 200 })
       }

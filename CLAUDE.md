@@ -2523,6 +2523,44 @@ The route sets `duration: SLOT_MINUTES`, ends the calendar event at
 reminder cron keys on that exact string**. Changing it silently stops every
 reminder.
 
+### Inbound SMS on the funnel number
+
+Handled in `app/api/webhooks/sms/route.ts`, in this order. **The order is the
+feature.**
+
+1. `message.finalized` / `message.sent` delivery updates.
+2. Tenant lookup by `telnyxPhoneNumber`, then the shared-notification-sender branch.
+3. **START, then STOP.** Unchanged, and ahead of everything. `BlockedNumber`
+   opt-out always wins.
+4. Empty or blank inbound, acknowledged and dropped.
+5. **The marketing branch** (`isMarketingLine()`, matched on
+   `MARKETING_TELNYX_NUMBER`, not on business id, because the marketing business
+   also owns a tenant-style number).
+6. "Never mind" / "not interested".
+7. The tenant flow.
+
+**Step 5 moved above step 6 deliberately.** A prospect texting "not interested"
+to the demo line previously fell into the tenant goodbye and filed a
+`notifyOwnerOnLeadCaptured` "Partial interest" row against the marketing
+business: wrong voice, junk lead. The never-mind block itself is unchanged.
+
+**The marketing line does not auto-reply.** Inbound is saved as a `Message` on
+the caller's conversation, then forwarded to Jacob twice: by text
+(`pingOwnerWithThread`) and by email (`emailInboundToOwner`, routed through
+`notifyOwnerOfMarketingEvent` with no `smsText` so it sends email only and does
+not duplicate the text). A human answers.
+
+`composeMarketingReply()` in `lib/marketing-reply.ts` is the Claude persona that
+used to answer here. **Disabled by request, not deleted.** To re-enable, call it
+in that branch and pass its text to `sendSMSAndLog` and as the last argument to
+`pingOwnerWithThread` (whose `reply` parameter is nullable precisely so the
+"You (auto)" line disappears while it is off).
+
+`MARKETING_INBOUND_ACK` in `app/book/constants.ts` is `null` by default. Set it
+to a string to send that one static line back and nothing else. It is a constant
+rather than a `Business` column on purpose: one line of copy on one number, and a
+column would imply a per-tenant behaviour that does not exist.
+
 ### Google free/busy fails closed
 
 Both the GET and the write path treat an unreadable calendar as "no availability"

@@ -59,6 +59,17 @@ export function formatPhoneInput(raw: string): string {
 export const CALL_LENGTH_MINUTES = 15
 
 /**
+ * Optional one-line auto-acknowledgement for an inbound text to the /book funnel
+ * number. The marketing line does not reply: inbound is saved, forwarded to
+ * Jacob by text and email, and answered by a human. Set this to a string to send
+ * that single static line back instead of staying silent. Null sends nothing.
+ *
+ * Deliberately a constant and not a database column: this is one line of copy on
+ * one number, and a column would imply a per-tenant behaviour that does not exist.
+ */
+export const MARKETING_INBOUND_ACK: string | null = null
+
+/**
  * When the instant SMS goes out during the gate.
  *   "phone"    fire as soon as the number is captured (default). Someone who
  *              abandons on a later screen has still been texted and is callable.
