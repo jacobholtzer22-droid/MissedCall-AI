@@ -146,7 +146,7 @@ This document is the single source of truth for understanding, debugging, and mo
 │   │   │   └── delete-past/      # DELETE: cleanup old appointments
 │   │   ├── appointments/route.ts # GET: list appointments (dashboard)
 │   │   ├── contact/route.ts      # POST: website contact form submission
-│   │   ├── marketing-bookings/   # POST: /book page discovery call booking
+│   │   ├── marketing-bookings/   # GET only: /book slot availability (no POST, see §19)
 │   │   ├── book-demo/            # POST: demo request
 │   │   ├── campaigns/
 │   │   │   └── upload-image/     # POST: upload image to Vercel Blob
@@ -1092,7 +1092,7 @@ async function sendSMS(business, to, text)
 |---|---|---|---|
 | `/api/bookings/available-slots` | GET | `businessId` or `businessSlug`, `start?`, `end?` (YYYY-MM-DD) | `{ slots, businessName, slotDurationMinutes, servicesOffered, bookingPageTitle, bookingPageServiceLabel, bookingPageConfirmation, noMoreAvailabilityToday }` |
 | `/api/bookings/create` | POST | `{ businessId\|businessSlug, customerName, customerPhone, customerEmail?, slotStart, serviceType, notes?, customerAddress?, conversationId? }` | `{ appointment: { id, scheduledAt, serviceType, timezone } }` |
-| `/api/marketing-bookings` | POST | Same as above but for /book marketing page | Creates appointment with `createMarketingCalendarEvent()` |
+| `/api/marketing-bookings` | GET | /book slot availability. **No POST** (removed Sept 2026, see §19). Bookings are written by `/api/demo-book`. |
 
 ### Auth Routes
 
@@ -2514,8 +2514,14 @@ local development because that machine is already Eastern.
 ### Write path
 
 **`POST /api/demo-book` is the live write path.** `BookingWizard.tsx` and
-`DateCalendar.tsx` both post to it. `GET /api/marketing-bookings` serves the slot
-list and has no POST (the old duplicate handler was removed, see §19 changelog).
+`DateCalendar.tsx` both post to it.
+
+**`/api/marketing-bookings` is GET only.** It serves the slot list and nothing
+else. It used to carry a second, unreachable POST that duplicated the appointment
+insert, the calendar event and the confirmation SMS. Nothing in the app called it,
+so it drifted from the live path while staying publicly reachable, and it was
+removed Sept 2026. A POST to it now returns 405. **Do not restore it**: a second
+write path for one funnel is how the SMS copy diverged in the first place.
 
 The route sets `duration: SLOT_MINUTES`, ends the calendar event at
 `addMinutes(slotStart, SLOT_MINUTES)`, and writes the literal marker
