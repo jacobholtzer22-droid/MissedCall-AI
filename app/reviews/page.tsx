@@ -19,6 +19,18 @@ export const metadata: Metadata = {
 // Self-serving review markup on your own site violates Google's
 // structured data guidelines (see CLAUDE.md §16).
 
+function Stars() {
+  return (
+    <div className="flex gap-0.5" role="img" aria-label="5 out of 5 stars">
+      {Array.from({ length: 5 }).map((_, i) => (
+        <svg key={i} width="18" height="18" viewBox="0 0 24 24" fill="#FBBC04" aria-hidden="true">
+          <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
+        </svg>
+      ))}
+    </div>
+  )
+}
+
 function Eyebrow({ label }: { label: string }) {
   return (
     <div className="inline-flex items-center gap-2 font-mono text-[11px] font-semibold uppercase tracking-[0.28em] mb-5">
@@ -54,7 +66,7 @@ export default function ReviewsPage() {
         <div className="mx-auto max-w-7xl px-5 py-16 sm:px-8 lg:py-24">
           <ScrollReveal>
             <div className="mb-12">
-              <Eyebrow label="Featured client" />
+              <Eyebrow label="Featured clients" />
               <h2 className="text-[clamp(1.75rem,4.5vw,2.75rem)] font-black uppercase leading-[0.95] tracking-tight">
                 In their<br />
                 <span style={{ color: '#1A4A70' }}>own words.</span>
@@ -73,9 +85,10 @@ export default function ReviewsPage() {
               <div className="p-8 sm:p-10 flex flex-col justify-between" style={{ background: '#16181C' }}>
                 <div>
                   <Quote size={36} strokeWidth={1.25} className="mb-6" style={{ color: '#EE6B1A' }} />
-                  <p className="text-[17px] sm:text-[20px] leading-relaxed mb-8" style={{ color: 'rgba(242,240,235,0.9)' }}>
+                  <p className="text-[17px] sm:text-[20px] leading-relaxed mb-4" style={{ color: 'rgba(242,240,235,0.9)' }}>
                     "My days are a lot simpler. Before this, probably 60 or 70 percent of my calls were spam. Now those get blocked and when I do pick up I know it&apos;s a real customer. The ones I miss, the AI texts them back right away so I&apos;m not losing work while I&apos;m out on a job. The website they built is way better than what I had before too. More modern, and it actually comes up on Google now."
                   </p>
+                  <Stars />
                 </div>
 
                 {/* Services used */}
@@ -98,6 +111,59 @@ export default function ReviewsPage() {
                       style={{ borderColor: '#EE6B1A', color: '#EE6B1A' }}
                     >
                       Visit the site we built them <ExternalLink size={14} strokeWidth={2.5} />
+                    </a>
+                  </div>
+                </div>
+              </div>
+
+            </div>
+          </ScrollReveal>
+
+          {/* Featured testimonial — Big Bear Truck Repair. Eduardo's words, as he
+              gave them to Jacob directly (not posted on Google). Photo sits on the
+              right on desktop so the two blocks alternate; phones stack photo first. */}
+          <ScrollReveal>
+            <div className="mt-10 grid lg:grid-cols-[1.2fr_1fr] gap-0 border-2" style={{ borderColor: '#16181C' }}>
+
+              {/* Photo */}
+              <div className="lg:order-2">
+                <TestimonialPhoto
+                  src="/images/testimonial-big-bear-truck-repair.jpg"
+                  alt="Jacob with Eduardo, owner of Big Bear Truck Repair"
+                  objectPosition="center 30%"
+                />
+              </div>
+
+              {/* Quote */}
+              <div className="p-8 sm:p-10 flex flex-col justify-between lg:order-1" style={{ background: '#16181C' }}>
+                <div>
+                  <Quote size={36} strokeWidth={1.25} className="mb-6" style={{ color: '#EE6B1A' }} />
+                  <p className="text-[17px] sm:text-[20px] leading-relaxed mb-4" style={{ color: 'rgba(242,240,235,0.9)' }}>
+                    &quot;Jacob has brought me more traffic through my website, and he knows how to run and scale ads.&quot;
+                  </p>
+                  <Stars />
+                </div>
+
+                {/* Services used */}
+                <div className="mt-8">
+                  <div className="flex flex-wrap gap-2 mb-6">
+                    {['Custom Website', 'Ad Management'].map(s => (
+                      <span key={s} className="font-mono text-[10px] font-bold uppercase tracking-widest px-2.5 py-1.5" style={{ background: 'rgba(238,107,26,0.15)', color: '#EE6B1A' }}>
+                        {s}
+                      </span>
+                    ))}
+                  </div>
+                  <div className="border-t-2 pt-6" style={{ borderColor: 'rgba(110,118,129,0.25)' }}>
+                    <div className="font-bold text-[16px]" style={{ color: '#F2F0EB' }}>Eduardo, Big Bear Truck Repair</div>
+                    <div className="font-mono text-[10px] uppercase tracking-widest mt-1" style={{ color: '#6E7681' }}>Truck Repair · Wyoming, MI</div>
+                    <a
+                      href="https://www.bigbeartruckrepair.com"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="mt-4 inline-flex items-center gap-2 border-2 px-4 py-2.5 text-[12px] font-bold uppercase tracking-wide transition-opacity hover:opacity-80"
+                      style={{ borderColor: '#EE6B1A', color: '#EE6B1A' }}
+                    >
+                      Go to his website to see more of what we do <ExternalLink size={14} strokeWidth={2.5} />
                     </a>
                   </div>
                 </div>

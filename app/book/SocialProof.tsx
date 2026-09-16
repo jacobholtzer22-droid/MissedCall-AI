@@ -2,15 +2,44 @@
 
 import GoogleReviewsCard from '@/app/components/GoogleReviewsCard'
 
-// Brett, then the same Google card the homepage renders — the component itself,
-// not a copy, so the two surfaces cannot drift. It already paints its own white
-// surface, so it needs no light variant to sit here.
+// Client photos, then the same Google card the homepage renders — the component
+// itself, not a copy, so the two surfaces cannot drift. It already paints its own
+// white surface, so it needs no light variant to sit here.
 
-const PHOTO = '/images/testimonial-master-gardener.jpg'
+type PhotoTestimonial = {
+  photo: string
+  alt: string
+  quote: string
+  credit: string
+  /** Where the photo's crop sits. Faces sit high in these shots. */
+  objectPosition?: string
+  /** Optional link to the client's site. Opens in a new tab so the funnel stays put. */
+  site?: { href: string; label: string }
+}
 
-// Verbatim from the pre-rebuild BrettTestimonial component.
-const QUOTE =
-  "The ones I miss, the AI texts them back right away so I'm not losing work while I'm out on a job."
+const TESTIMONIALS: PhotoTestimonial[] = [
+  {
+    photo: '/images/testimonial-master-gardener.jpg',
+    alt: 'Jacob shaking hands with Brett',
+    // Verbatim from the pre-rebuild BrettTestimonial component.
+    quote:
+      "The ones I miss, the AI texts them back right away so I'm not losing work while I'm out on a job.",
+    credit: 'Brett, Master Gardner LLC',
+  },
+  {
+    photo: '/images/testimonial-big-bear-truck-repair.jpg',
+    alt: 'Jacob shaking hands with Eduardo',
+    // Eduardo's words, as he gave them to Jacob directly (not posted on Google).
+    quote:
+      'Jacob has brought me more traffic through my website, and he knows how to run and scale ads.',
+    credit: 'Eduardo, Big Bear Truck Repair',
+    objectPosition: 'center 30%',
+    site: {
+      href: 'https://www.bigbeartruckrepair.com',
+      label: 'Go to his website to see more of what I do',
+    },
+  },
+]
 
 function Stars() {
   return (
@@ -24,27 +53,47 @@ function Stars() {
   )
 }
 
+function Testimonial({ t }: { t: PhotoTestimonial }) {
+  return (
+    <figure>
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={t.photo}
+        alt={t.alt}
+        loading="lazy"
+        className="w-full rounded-lg border object-cover"
+        style={{ borderColor: 'var(--funnel-border)', maxHeight: 320, objectPosition: t.objectPosition }}
+      />
+      <figcaption className="mt-4">
+        <p className="text-[15px] leading-[1.6] text-neutral-800">{t.quote}</p>
+        <div className="mt-2">
+          <Stars />
+        </div>
+        <p className="mt-1.5 text-[14px] font-semibold" style={{ color: 'var(--funnel-ink)' }}>
+          {t.credit}
+        </p>
+        {t.site && (
+          <a
+            href={t.site.href}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="mt-2 inline-flex min-h-[44px] items-center text-[15px] font-semibold underline underline-offset-4"
+            style={{ color: 'var(--funnel-primary)' }}
+          >
+            {t.site.label} →
+          </a>
+        )}
+      </figcaption>
+    </figure>
+  )
+}
+
 export default function SocialProof() {
   return (
     <div className="space-y-8">
-      <figure>
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src={PHOTO}
-          alt="Jacob shaking hands with Brett"
-          className="w-full rounded-lg border object-cover"
-          style={{ borderColor: 'var(--funnel-border)', maxHeight: 320 }}
-        />
-        <figcaption className="mt-4">
-          <p className="text-[15px] leading-[1.6] text-neutral-800">{QUOTE}</p>
-          <div className="mt-2">
-            <Stars />
-          </div>
-          <p className="mt-1.5 text-[14px] font-semibold" style={{ color: 'var(--funnel-ink)' }}>
-            Brett, Master Gardner LLC
-          </p>
-        </figcaption>
-      </figure>
+      {TESTIMONIALS.map((t) => (
+        <Testimonial key={t.credit} t={t} />
+      ))}
 
       <GoogleReviewsCard collapsedCount={3} pinnedNames={['JAWS Lawn and Snow', 'Cameron Brillantes']} />
     </div>
