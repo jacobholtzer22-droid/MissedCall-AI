@@ -2463,3 +2463,67 @@ Each would be the natural thing to reach for by pattern-matching the missed-call
 1. **`getValidQbAccessToken` returns `null` in some failure modes and `throws` in others.** Null: no refresh token stored, refresh token already expired, refresh succeeded but returned no access token. Throws: the token endpoint itself failed. **Every caller must handle both.** In particular the prompt-3 cron must wrap each tenant in its own `try`/`catch` — one dead QuickBooks connection would otherwise abort the whole batch, exactly the way a single failure aborts nothing in `/api/cron/appointment-reminders` because that route catches per-appointment.
 2. **A refresh that succeeds followed by a failed `db.business.update` loses the rotated refresh token.** Intuit has already invalidated the old one at that point, so the connection is unrecoverable without re-consent. Known gap, no mitigation.
 3. **The OAuth state is signed but carries no expiry**, so a leaked state string verifies indefinitely. Mitigated in practice only by the Clerk admin-or-owner check on `/api/auth/quickbooks`, which bounds who can obtain one in the first place. Known gap.
+
+---
+
+## 19. Marketing Demo Funnel (`/book`): Booking, Slots, SMS
+
+The Align and Acquire demo funnel. **Completely separate from the tenant booking
+flow.** It does not use `getAvailableSlots`, `createBooking`, or any `Business`
+booking column. Meta ads point at `/book`; nothing else in the product touches it.
+
+### Routing
+
+`/book` is not a page. [middleware.ts](middleware.ts) 302s it to `/book/a` or
+`/book/b` (a sticky 30-day A/B arm cookie); `app/book/page.tsx` is only a
+backstop redirect for the case where middleware does not run. Both arms render
+the same `VslLanding` and differ only in which video the watch page plays.
+
+### Slot rules: `lib/marketing-slots.ts` is the single source of truth
+
+| Constant | Value | Meaning |
+|---|---|---|
+| `START_HOUR` / `END_HOUR` | 7 / 21 | 7:00 AM to 9:00 PM ET. Every block must finish by `END_HOUR`. |
+| `SLOT_MINUTES` | 30 | Calendar block length and `Appointment.duration`. |
+| `BUFFER_MINUTES` | 0 | Gap required around a demo. Zero means demos stack back to back. |
+| `SLOT_STEP_MINUTES` | 30 | Derived: `SLOT_MINUTES + BUFFER_MINUTES`. |
+| `MIN_NOTICE_HOURS` | 1 | Nothing bookable inside the next hour. |
+| `MAX_DAYS_AHEAD` | 3 | Today plus 3 days. The day picker renders only these. |
+
+7:00 to 21:00 on a 30-minute step is **28 slots a day**, 7:00 AM through 8:30 PM.
+
+Only two files import these: `/api/demo-book` (write) and the
+`/api/marketing-bookings` GET (read). Both arms inherit the rules through that
+GET rather than importing anything. **Never hardcode an hour, a step or a window
+anywhere else**. `isValidSlotStart` and `lastSlotOffsetMinutes` both derive from
+the constants precisely so changing one value cannot silently drop the day.
+
+**`BUFFER_MINUTES` is applied once, to the gap, by the private `conflicts()`
+helper.** Two blocks collide when either starts before the other has ended plus
+the gap. At 0 this collapses to a strict overlap test, so a demo ending at 5:00
+and one starting at 5:00 are both offered. `overlapsWithExisting` (booked
+appointments) and `overlapsWithBusy` (Google free/busy) both route through it, so
+they can never drift apart.
+
+**`isWithinBookingWindow` builds its upper bound with `TZDate`, never
+`setDate`/`setHours`.** Those resolve against the server zone, which is UTC on
+Vercel: the old form capped the final day at 23:59 UTC, i.e. 7:59 PM Eastern,
+silently discarding the 8:00 PM and 8:30 PM slots on day 3. It was invisible in
+local development because that machine is already Eastern.
+
+### Write path
+
+**`POST /api/demo-book` is the live write path.** `BookingWizard.tsx` and
+`DateCalendar.tsx` both post to it. `GET /api/marketing-bookings` serves the slot
+list and has no POST (the old duplicate handler was removed, see §19 changelog).
+
+The route sets `duration: SLOT_MINUTES`, ends the calendar event at
+`addMinutes(slotStart, SLOT_MINUTES)`, and writes the literal marker
+`SMS consent: yes (captured at booking)` into `Appointment.notes`. **The
+reminder cron keys on that exact string**. Changing it silently stops every
+reminder.
+
+### Google free/busy fails closed
+
+Both the GET and the write path treat an unreadable calendar as "no availability"
+rather than "free". Better to show no times than to double-book.
