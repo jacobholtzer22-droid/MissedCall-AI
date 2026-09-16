@@ -6,7 +6,18 @@
 //
 //   1. Night before, 6:30 PM Eastern. Skipped when the call was booked the same
 //      day it happens (they just booked it, they do not need a reminder tonight).
-//   2. One hour before.
+//   2. One hour before, unless the meeting starts before 8:00 AM local (its
+//      hour-before mark falls inside quiet hours and the night-before text has
+//      already covered it), or the booking was made within 90 minutes of the
+//      meeting (the confirmation text IS the reminder at that point).
+//
+// Nothing at all goes out before 7:00 AM local. That is a property of the wall
+// clock, so it is checked once per run rather than per appointment.
+//
+// Copy for both texts lives in lib/marketing-sms-copy.ts alongside the booking
+// confirmation, so the wording and the reschedule number cannot drift across the
+// three messages one prospect receives. The reschedule number is always derived
+// from business.ownerPhone, never hardcoded.
 //
 // Scope is deliberately the marketing business only. Client-tenant appointments
 // are NOT touched: those customers never consented to texts from this funnel and
@@ -35,6 +46,7 @@ import { normalizeToE164, phonesMatch } from '@/lib/phone-utils'
 import { getMarketingBusiness } from '@/lib/marketing-funnel'
 import { getCalendarEventState } from '@/lib/google-calendar'
 import { isSendableStatus } from '@/lib/reminder-status'
+import { nightBeforeText, hourBeforeText } from '@/lib/marketing-sms-copy'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
@@ -44,10 +56,31 @@ const NIGHT_BEFORE_HOUR = 18
 const NIGHT_BEFORE_MINUTE = 30
 const HOUR_BEFORE_MS = 60 * 60 * 1000
 
+/**
+ * Nothing goes out before this hour, business-local. A demo texted at 6:00 AM is
+ * worse than no text at all.
+ */
+const QUIET_UNTIL_HOUR = 7
+
+/**
+ * No hour-before for a demo starting before this hour. Its hour-before mark
+ * would land inside quiet hours anyway, and the night-before text already told
+ * them about it.
+ */
+const HOUR_BEFORE_MIN_MEETING_HOUR = 8
+
+/**
+ * No hour-before when the booking was made this close to the meeting. The
+ * confirmation text has only just landed and a second one an hour later reads
+ * as a glitch.
+ */
+const HOUR_BEFORE_MIN_LEAD_MS = 90 * 60 * 1000
+
 // If a cron run is missed, do not fire a stale night-before text hours late.
 const NIGHT_BEFORE_GRACE_MS = 12 * 60 * 60 * 1000
 
-// Consent marker written by /api/marketing-bookings at creation time.
+// Consent marker written by /api/demo-book at creation time. Keying on this
+// exact string is why that literal must never be reworded there.
 const CONSENT_MARKER = 'SMS consent: yes'
 
 
@@ -94,36 +127,19 @@ function nightBeforeDueAt(scheduledAt: Date): Date {
   )
 }
 
-function formatWhen(scheduledAt: Date): { dateLabel: string; timeLabel: string } {
-  return {
-    dateLabel: scheduledAt.toLocaleDateString('en-US', {
-      weekday: 'long',
-      month: 'short',
-      day: 'numeric',
-      timeZone: TIMEZONE,
-    }),
-    timeLabel: scheduledAt.toLocaleTimeString('en-US', {
-      hour: 'numeric',
-      minute: '2-digit',
-      hour12: true,
-      timeZone: TIMEZONE,
-    }),
-  }
+/** Hour of day in business-local time. */
+function localHour(d: Date): number {
+  return new TZDate(d, TIMEZONE).getHours()
 }
 
 function reminderText(
   kind: ReminderKind,
-  name: string,
   scheduledAt: Date,
-  meetLink: string | null
+  meetLink: string | null,
+  ownerPhone: string | null
 ): string {
-  const first = name.trim().split(/\s+/)[0] || 'there'
-  const { dateLabel, timeLabel } = formatWhen(scheduledAt)
-  const join = meetLink ? `\nJoin here: ${meetLink}` : ''
-  if (kind === 'night_before') {
-    return `Hi ${first}, this is Jacob with Align and Acquire. Reminder: our demo call is ${dateLabel} at ${timeLabel} ET. I will show you the system running on real client accounts.${join}\nReply STOP to opt out.`
-  }
-  return `Hi ${first}, Jacob here. Our demo call is in about an hour, at ${timeLabel} ET. I will show you the system running on real client accounts.${join}\nReply STOP to opt out.`
+  const params = { scheduledAt, meetLink, ownerPhone }
+  return kind === 'night_before' ? nightBeforeText(params) : hourBeforeText(params)
 }
 
 /** True when this number has opted out of texts from this business. */
@@ -163,8 +179,33 @@ async function runAppointmentReminders(request: NextRequest) {
     return NextResponse.json({ error: 'No SMS sender configured' }, { status: 503 })
   }
 
-  const now = new Date()
+  // `?now=<ISO>` shifts the clock for verification runs. Authorized callers only
+  // (CRON_SECRET bearer or the super-admin), and logged loudly, because it can
+  // make a real reminder fire early against a real booking.
+  const nowParam = request.nextUrl.searchParams.get('now')
+  const overridden = nowParam ? new Date(nowParam) : null
+  if (nowParam && (!overridden || isNaN(overridden.getTime()))) {
+    return NextResponse.json({ error: `Invalid now override: ${nowParam}` }, { status: 400 })
+  }
+  const now = overridden ?? new Date()
+  if (overridden) {
+    console.warn(`[reminders] CLOCK OVERRIDE now=${now.toISOString()} (verification run)`)
+  }
+
   const telnyx = new Telnyx({ apiKey: process.env.TELNYX_API_KEY })
+
+  // Quiet hours. Checked once per run rather than per appointment: it is a
+  // property of the wall clock, not of any booking.
+  if (localHour(now) < QUIET_UNTIL_HOUR) {
+    console.log(`[reminders] quiet hours, nothing sent (local hour ${localHour(now)})`)
+    return NextResponse.json({
+      ok: true,
+      checked: 0,
+      sent: [],
+      skipped: [{ id: 'all', reason: `quiet hours before ${QUIET_UNTIL_HOUR}:00 local` }],
+      failed: [],
+    })
+  }
 
   // Candidate window: anything upcoming in the next 48h that is still confirmed.
   const candidates = await db.appointment.findMany({
@@ -200,6 +241,24 @@ async function runAppointmentReminders(request: NextRequest) {
     // Decide which single reminder, if any, is due right now.
     let kind: ReminderKind | null = null
     if (msUntil > 0 && msUntil <= HOUR_BEFORE_MS && !appt.reminderHourBeforeSentAt) {
+      // An early demo's hour-before mark falls inside quiet hours, and the
+      // night-before text has already covered it.
+      if (localHour(appt.scheduledAt) < HOUR_BEFORE_MIN_MEETING_HOUR) {
+        result.skipped.push({
+          id: appt.id,
+          reason: `meeting starts before ${HOUR_BEFORE_MIN_MEETING_HOUR}:00 local, night-before covers it`,
+        })
+        continue
+      }
+      // Booked almost on top of the meeting: the confirmation is the reminder.
+      const leadMs = appt.scheduledAt.getTime() - appt.createdAt.getTime()
+      if (leadMs < HOUR_BEFORE_MIN_LEAD_MS) {
+        result.skipped.push({
+          id: appt.id,
+          reason: `booked ${Math.round(leadMs / 60000)} min before the meeting, confirmation covers it`,
+        })
+        continue
+      }
       kind = 'hour_before'
     } else if (!appt.reminderNightBeforeSentAt) {
       const bookedSameDay = sameDayInTz(appt.createdAt, appt.scheduledAt)
@@ -281,7 +340,7 @@ async function runAppointmentReminders(request: NextRequest) {
     }
 
     const to = normalizeToE164(appt.customerPhone)
-    const text = reminderText(kind, appt.customerName, appt.scheduledAt, fresh.googleMeetLink)
+    const text = reminderText(kind, appt.scheduledAt, fresh.googleMeetLink, business.ownerPhone)
 
     try {
       await telnyx.messages.send({ from: fromNumber, to, text })

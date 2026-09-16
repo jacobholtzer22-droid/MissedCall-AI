@@ -2561,6 +2561,54 @@ to a string to send that one static line back and nothing else. It is a constant
 rather than a `Business` column on purpose: one line of copy on one number, and a
 column would imply a per-tenant behaviour that does not exist.
 
+### The three demo texts, and the reminder cron
+
+All three live in **`lib/marketing-sms-copy.ts`**. `/api/demo-book` imports
+`confirmationText`; `/api/cron/appointment-reminders` imports `nightBeforeText`
+and `hourBeforeText`. They previously sat in two files with a private formatter
+each, which is how the wording, the timezone label and the Meet link handling
+became three near-copies.
+
+| Text | Sent by | When |
+|---|---|---|
+| Confirmation | `/api/demo-book` | The moment the slot is taken |
+| Night before | reminder cron | 6:30 PM ET the day before |
+| Hour before | reminder cron | Roughly an hour out |
+
+**The reschedule number is always derived from `business.ownerPhone`** and
+rendered `517-580-9709` by `formatReschedulePhone()`. Never write a literal phone
+number into that module. A missing `ownerPhone` or a missing Meet link drops its
+whole sentence rather than rendering `Join here: .`
+
+`/api/cron/appointment-reminders` runs every 15 minutes (`vercel.json`) and is
+marketing-business only. Client tenants have their own numbers and never
+consented to this funnel. Rules, on top of the claim-before-send idempotency:
+
+- **Nothing before 7:00 AM local.** Checked once per run, since it is a property
+  of the wall clock, not of a booking.
+- **Night before** is skipped when the call was booked the same day it happens.
+- **Hour before** is skipped when the meeting starts before 8:00 AM local (its
+  hour mark falls inside quiet hours and the night-before already covered it), or
+  when the booking was made within 90 minutes of the meeting (the confirmation
+  text IS the reminder at that point).
+- **Each reminder is claimed by conditionally setting its stamp BEFORE the send.**
+  `reminderNightBeforeSentAt` / `reminderHourBeforeSentAt`. Two overlapping runs
+  cannot both send. `reminderSentAt` is legacy and nothing writes it.
+- **The stamp is deliberately NOT rolled back on a Telnyx failure.** A missed
+  reminder is a better failure than texting a prospect twice. Failures surface in
+  the response body's `failed[]`.
+- **The Google Calendar cancellation guard is three-state.** `cancelled` marks the
+  booking cancelled and aborts; `unknown` (network error, expired token, Google
+  5xx) still sends, because our own record says the booking is on. Never collapse
+  `unknown` into `cancelled`: one bad API call would wipe out live bookings.
+- **`?now=<ISO>` shifts the clock** for verification runs. Authorized callers
+  only, logged with `CLOCK OVERRIDE`. It can fire a real reminder early against a
+  real booking, so it is not a dry run.
+
+⚠️ The cron gates on the literal string `SMS consent: yes` appearing in
+`Appointment.notes`, written by `/api/demo-book`. **Rewording that marker silently
+stops every reminder platform-wide.**
+
 ### Google free/busy fails closed
 
 Both the GET and the write path treat an unreadable calendar as "no availability"

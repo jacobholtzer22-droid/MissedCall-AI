@@ -41,6 +41,7 @@ import {
   overlapsWithExisting,
   overlapsWithBusy,
 } from '@/lib/marketing-slots'
+import { confirmationText } from '@/lib/marketing-sms-copy'
 import { GATE_COOKIE, NOT_AN_OWNER, CALL_LENGTH_MINUTES } from '@/app/book/constants'
 import { VARIANT_COOKIE, VISITOR_COOKIE } from '@/lib/variant'
 import { FUNNEL_VARIANT_COOKIE } from '@/lib/funnel-variant'
@@ -503,18 +504,20 @@ export async function POST(request: NextRequest) {
       `,
     })
 
-    // Customer confirmation SMS
+    // Customer confirmation SMS. Copy lives in lib/marketing-sms-copy.ts with
+    // the two reminder texts so the wording and the reschedule number cannot
+    // drift apart across the three messages one prospect receives.
     const fromNumber = process.env.MARKETING_TELNYX_NUMBER || business.telnyxPhoneNumber
     if (fromNumber && process.env.TELNYX_API_KEY) {
+      const confirmation = confirmationText({
+        scheduledAt: slotStart,
+        meetLink: googleMeetLink,
+        ownerPhone: business.ownerPhone,
+      })
       try {
         const telnyx = new Telnyx({ apiKey: process.env.TELNYX_API_KEY })
-        await telnyx.messages.send({
-          from: fromNumber,
-          to: phoneE164,
-          text: `You are booked with Align and Acquire for ${dateLabel} at ${timeLabel} ET. I will show you the system running on real client accounts.${
-            googleMeetLink ? `\nJoin here: ${googleMeetLink}` : ''
-          }\nReply STOP to opt out.`,
-        })
+        await telnyx.messages.send({ from: fromNumber, to: phoneE164, text: confirmation })
+        console.log(`[demo-book] confirmation SMS sent from=${fromNumber} to=${phoneE164}`)
       } catch (err) {
         console.error('[demo-book] confirmation SMS failed:', err)
       }
