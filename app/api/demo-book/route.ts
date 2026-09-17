@@ -21,6 +21,7 @@ import {
   findPartialLeadByPhone,
 } from '@/lib/marketing-funnel'
 import { afterResponse } from '@/lib/after-response'
+import { isOptedOut } from '@/lib/sms-opt-out'
 import {
   formatBookingAttribution,
   formatAttributionLine,
@@ -719,6 +720,10 @@ export async function POST(request: NextRequest) {
       })
       const telnyxKey = process.env.TELNYX_API_KEY
       afterResponse(ROUTE, 'confirmation-sms', async () => {
+        if (await isOptedOut(business.id, phoneE164, `appointmentId=${appointment.id}`)) {
+          console.log(`[demo-book] confirmation SMS skipped appointmentId=${appointment.id} reason=opted_out`)
+          return
+        }
         const telnyx = new Telnyx({ apiKey: telnyxKey })
         await telnyx.messages.send({ from: fromNumber, to: phoneE164, text: confirmation })
         console.log(`[demo-book] confirmation SMS sent from=${fromNumber} to=${phoneE164}`)

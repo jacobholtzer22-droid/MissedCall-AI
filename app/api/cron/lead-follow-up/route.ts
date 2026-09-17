@@ -13,6 +13,7 @@ import { db } from '@/lib/db'
 import { sendLeadFollowUpSms } from '@/lib/lead-sms'
 import { isTestPhone } from '@/lib/test-allowlist'
 import { getMarketingBusiness } from '@/lib/marketing-funnel'
+import { isOptedOut } from '@/lib/sms-opt-out'
 
 export const dynamic = 'force-dynamic'
 
@@ -83,6 +84,14 @@ export async function GET(request: NextRequest) {
       // Friends and testers are excluded by default. Set
       // FOLLOW_UP_INCLUDE_TEST_NUMBERS=true to chase them too.
       if (isTestPhone(lead.phone) && process.env.FOLLOW_UP_INCLUDE_TEST_NUMBERS !== 'true') {
+        skipped++
+        continue
+      }
+
+      // Replied STOP. Checked before the claim so the row is not stamped as
+      // followed up; it ages out of the 24 to 72 hour window on its own.
+      if (await isOptedOut(business.id, lead.phone as string, `leadId=${lead.id}`)) {
+        console.log(`[cron/lead-follow-up] SKIP leadId=${lead.id} reason=opted_out`)
         skipped++
         continue
       }

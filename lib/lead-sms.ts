@@ -7,11 +7,13 @@
 // Compliance notes, because this is a cold-ish send:
 //   - It goes from the marketing 10DLC number, the same pipeline client traffic
 //     uses, never from a number shared across tenants.
-//   - It carries NO link. The message is a personal follow-up, not a delivery
-//     mechanism, so there is nothing to click and nothing to phish.
+//   - It opens by naming the sender and ends with "Reply STOP to opt out".
+//   - It carries one link: the lead's personalized /calendar?l=<token> link
+//     (plus SMS UTMs), the same one the 24h follow-up uses. That token is how
+//     texted bookings are attributed to the lead.
 //   - The gate shows consent microcopy above the phone input before it is sent.
-//   - Body carries "Reply STOP to opt out". STOP is handled by the existing SMS
-//     webhook, which writes a BlockedNumber row.
+//   - STOP is handled by the SMS webhook, which writes a BlockedNumber row; both
+//     senders here check it first (lib/sms-opt-out) and skip an opted-out lead.
 //   - It fires exactly once per lead, enforced by a conditional DB claim rather
 //     than an in-memory flag, so a retry or a second tab cannot double-text.
 
@@ -21,6 +23,7 @@ import { normalizeToE164 } from '@/lib/phone-utils'
 import { isTestPhone } from '@/lib/test-allowlist'
 import { calendarLink } from '@/lib/lead-token'
 import { watchLink } from '@/lib/watch-token'
+import { isOptedOut } from '@/lib/sms-opt-out'
 
 /** Unguessable, URL-safe. Following this link identifies someone AS this lead. */
 export function newResumeToken(): string {
@@ -73,19 +76,24 @@ function bookingLink(ctx?: LeadContext): string {
   return calendarLink(ctx?.calendarToken ?? null, ctx?.watchArm ?? null)
 }
 
-function body(ctx?: LeadContext): string {
-  const link = bookingLink(ctx)
-  const who = greeting(ctx)
-  const biz = ctx?.businessName?.trim()
-  // Same fallback as before: without a business name the sentence still reads,
-  // rather than rendering "on 's line".
-  const line = biz ? `on ${biz}'s line` : 'on your line'
-
+/**
+ * The instant text after OTP. Copy approved by Jacob, Sep 2026: identifies the
+ * sender, no pitch, one link, opt-out line. The link is the personalized
+ * /calendar link, deliberately NOT the watch page: the copy says "my calendar",
+ * and /calendar?l=<token> opens prefilled on whatever phone reads the text.
+ * A null token (never expected: the wizard mints it before this is scheduled)
+ * degrades to the bare /calendar page, which still books.
+ *
+ * Exported for tests. 334 characters with a real token and UTMs, GSM-7, so
+ * 3 SMS segments.
+ */
+export function leadTextBody(ctx?: LeadContext): string {
+  const link = calendarLink(ctx?.calendarToken ?? null, ctx?.watchArm ?? null)
   return (
-    `Hey${who}, Jacob from Align and Acquire. ` +
-    `Thanks for checking out the demo. ` +
-    `I'll reach out myself within 24 hours. ` +
-    `If you'd rather skip the wait, grab a time here and I'll set it up ${line}: ${link}`
+    `This is Jacob with Align and Acquire. Thanks for taking a look. ` +
+    `I'll follow up with you soon. Want to skip the wait? ` +
+    `Book a time on my calendar and we'll go over everything and see if it's a fit: ${link}` +
+    `\n\nReply STOP to opt out.`
   )
 }
 
@@ -134,11 +142,17 @@ export async function sendLeadDemoSms(
   // because this function is the single door every automated lead-facing text
   // goes through, present and future.
   const flagged = await db.websiteLead
-    .findUnique({ where: { id: leadId }, select: { junk: true } })
+    .findUnique({ where: { id: leadId }, select: { junk: true, businessId: true } })
     .catch(() => null)
   if (flagged?.junk) {
     console.log(`[lead-sms] SKIP leadId=${leadId} reason=junk${tag}`)
     return { sent: false, reason: 'junk' }
+  }
+  // Checked before the one-shot claim, so an opted-out lead never gets
+  // demoSmsSentAt stamped and is therefore never eligible for the follow-up.
+  if (flagged && (await isOptedOut(flagged.businessId, phone, `leadId=${leadId}`))) {
+    console.log(`[lead-sms] SKIP leadId=${leadId} reason=opted_out${tag}`)
+    return { sent: false, reason: 'opted_out' }
   }
 
   if (!from || !process.env.TELNYX_API_KEY) {
@@ -174,7 +188,7 @@ export async function sendLeadDemoSms(
 
   try {
     const telnyx = new Telnyx({ apiKey: process.env.TELNYX_API_KEY })
-    const res = await telnyx.messages.send({ from, to, text: body(ctx) })
+    const res = await telnyx.messages.send({ from, to, text: leadTextBody(ctx) })
     const providerId = (res as { data?: { id?: string } })?.data?.id ?? 'unknown'
     console.log(
       `[lead-sms] SENT leadId=${leadId} template=lead_followup to=${to} from=${from} ` +
@@ -216,6 +230,14 @@ export async function sendLeadFollowUpSms(
     console.log(`[lead-followup] SUPPRESSED leadId=${leadId} reason=test_allowlist`)
     return { sent: false, reason: 'test_allowlist' }
   }
+  // The cron checks this before claiming; checked again here so no caller can
+  // text an opted-out lead through this door.
+  const row = await db.websiteLead.findUnique({ where: { id: leadId }, select: { businessId: true } }).catch(() => null)
+  if (!row || (await isOptedOut(row.businessId, phone, `leadId=${leadId}`))) {
+    console.log(`[lead-followup] SKIP leadId=${leadId} reason=${row ? 'opted_out' : 'lead_not_found'}`)
+    return { sent: false, reason: row ? 'opted_out' : 'lead_not_found' }
+  }
+
   if (!from || !process.env.TELNYX_API_KEY) {
     console.error(`[lead-followup] SKIP leadId=${leadId} reason=no_sender`)
     return { sent: false, reason: 'no_sender' }

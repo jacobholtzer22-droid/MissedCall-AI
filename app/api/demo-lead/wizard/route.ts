@@ -457,7 +457,9 @@ export async function POST(request: NextRequest) {
           watchUrl: mintWatchToken(lead.id, funnelVariant === 'B' ? 'B' : 'A'),
           watchArm: funnelVariant === 'B' ? 'B' : 'A',
         })
-        if (!sms.sent && sms.reason !== 'already_sent' && sms.reason !== 'test_allowlist') {
+        if (sms.reason === 'opted_out') {
+          console.log(`[demo-lead/wizard] lead SMS skipped leadId=${lead.id} reason=opted_out`)
+        } else if (!sms.sent && sms.reason !== 'already_sent' && sms.reason !== 'test_allowlist') {
           console.error(`[demo-lead/wizard] lead SMS not sent leadId=${lead.id} reason=${sms.reason}`)
         }
       })
