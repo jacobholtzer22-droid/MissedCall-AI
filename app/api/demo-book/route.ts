@@ -17,9 +17,10 @@ import { createMarketingCalendarEvent, getBusyTimes } from '@/lib/google-calenda
 import { getDemoVideoAbsoluteUrl, WATCH_BEFORE_LINE } from '@/lib/demo-video'
 import {
   getMarketingBusiness,
-  notifyOwnerOfMarketingEvent,
+  notifyOwnerOrShout,
   findPartialLeadByPhone,
 } from '@/lib/marketing-funnel'
+import { afterResponse } from '@/lib/after-response'
 import {
   formatBookingAttribution,
   formatAttributionLine,
@@ -54,6 +55,8 @@ import { logArmSchedule } from '@/lib/arm-log'
 import { resolveCalendarToken } from '@/lib/lead-token'
 
 export const dynamic = 'force-dynamic'
+
+const ROUTE = 'demo-book'
 
 function escapeHtml(value: string): string {
   return value
@@ -418,34 +421,41 @@ export async function POST(request: NextRequest) {
       },
     })
 
+    // Read off the request now: everything below that runs after the response
+    // must not touch the request object.
+    const clientIp = getClientIp(request)
+    const userAgent = request.headers.get('user-agent')
+    const fbpRequestCookie = request.cookies.get('_fbp')?.value ?? null
+    const fbcRequestCookie = request.cookies.get('_fbc')?.value ?? null
+
     // ── Schedule: server half of the deduped pair ───────────────────────────
     // Same discipline as Lead: the browser fires Schedule with this exact
-    // event_id and Meta counts one conversion. Awaited because Vercel can
-    // freeze the lambda as soon as the response returns. Fails open.
+    // event_id and Meta counts one conversion. Runs after the response, held
+    // open by waitUntil so Vercel does not freeze it mid-request. Fails open.
     // Direct /calendar traffic is cold and unattributed: firing Schedule for it
     // would teach the ad account that cold bookings are ad conversions.
-    if (body.eventId && bookingSource !== 'direct') {
-      await sendCapiLead({
-        eventName: 'Schedule',
-        eventId: body.eventId,
-        phone: phoneE164,
-        email,
-        firstName: name,
-        trade,
-        businessName: companyName,
-        funnelArm: funnelVariant,
-        referrerClass: touches.last?.referrer ?? touches.first?.referrer ?? null,
-        firstTouchSource: touches.first?.source ?? touches.first?.referrer ?? null,
-        firstTouchCampaign: touches.first?.campaign ?? null,
-        clientIp: getClientIp(request),
-        userAgent: request.headers.get('user-agent'),
-        fbp: request.cookies.get('_fbp')?.value ?? lead?.fbp ?? null,
-        fbc:
-          request.cookies.get('_fbc')?.value ??
-          lead?.fbc ??
-          buildFbc(touches.first?.fbclid ?? touches.last?.fbclid) ??
-          null,
-        eventSourceUrl: `${process.env.NEXT_PUBLIC_APP_URL ?? 'https://www.alignandacquire.com'}/book`,
+    const scheduleEventId = body.eventId
+    if (scheduleEventId && bookingSource !== 'direct') {
+      afterResponse(ROUTE, 'capi-schedule', async () => {
+        const result = await sendCapiLead({
+          eventName: 'Schedule',
+          eventId: scheduleEventId,
+          phone: phoneE164,
+          email,
+          firstName: name,
+          trade,
+          businessName: companyName,
+          funnelArm: funnelVariant,
+          referrerClass: touches.last?.referrer ?? touches.first?.referrer ?? null,
+          firstTouchSource: touches.first?.source ?? touches.first?.referrer ?? null,
+          firstTouchCampaign: touches.first?.campaign ?? null,
+          clientIp,
+          userAgent,
+          fbp: fbpRequestCookie ?? lead?.fbp ?? null,
+          fbc: fbcRequestCookie ?? lead?.fbc ?? buildFbc(touches.first?.fbclid ?? touches.last?.fbclid) ?? null,
+          eventSourceUrl: `${process.env.NEXT_PUBLIC_APP_URL ?? 'https://www.alignandacquire.com'}/book`,
+        })
+        if (!result.sent) console.error(`[capi] Schedule NOT SENT appointmentId=${appointment.id} reason=${result.reason}`)
       })
     } else if (bookingSource === 'direct') {
       console.log('[capi] SKIP event=Schedule reason=direct_booking (no ad attribution)')
@@ -453,14 +463,16 @@ export async function POST(request: NextRequest) {
       console.warn('[capi] SKIP event=Schedule reason=no_event_id_from_client')
     }
 
-    void logArmSchedule({
-      arm: funnelVariant ?? lead?.funnelVariant ?? null,
-      trade,
-      businessName: companyName,
-      phone: phoneE164,
-      visitorId,
-      leadId: lead?.id ?? null,
-    })
+    afterResponse(ROUTE, 'arm-schedule', () =>
+      logArmSchedule({
+        arm: funnelVariant ?? lead?.funnelVariant ?? null,
+        trade,
+        businessName: companyName,
+        phone: phoneE164,
+        visitorId,
+        leadId: lead?.id ?? null,
+      })
+    )
 
     // ── The lead row ────────────────────────────────────────────────────────
     // Every booking gets one. Until now only bookings that had come through the
@@ -474,9 +486,9 @@ export async function POST(request: NextRequest) {
       missesPerWeek ? `\nMissed calls per week: ${missesPerWeek}` : ''
     }${whoAnswers ? `\nWho answers now: ${whoAnswers}` : ''}`.trim()
 
-    const fbpCookie = request.cookies.get('_fbp')?.value ?? null
+    const fbpCookie = fbpRequestCookie
     const fbcCookie =
-      request.cookies.get('_fbc')?.value ??
+      fbcRequestCookie ??
       buildFbc(bookingTouches.first?.fbclid ?? bookingTouches.last?.fbclid) ??
       null
 
@@ -592,94 +604,112 @@ export async function POST(request: NextRequest) {
       })
       if (claim.claimed) {
         leadEventFired = true
-        await sendCapiLead({
-          eventName: 'Lead',
-          eventId: leadEventId,
-          phone: phoneE164,
-          email,
-          firstName: name,
-          trade,
-          businessName: companyName,
-          funnelArm: funnelVariant,
-          referrerClass: bookingTouches.last?.referrer ?? bookingTouches.first?.referrer ?? null,
-          firstTouchSource: resolvedFirst?.source ?? resolvedFirst?.referrer ?? null,
-          firstTouchCampaign: resolvedFirst?.campaign ?? null,
-          clientIp: getClientIp(request),
-          userAgent: request.headers.get('user-agent'),
-          fbp: fbpCookie ?? knownRow?.fbp ?? null,
-          fbc: request.cookies.get('_fbc')?.value ?? knownRow?.fbc ?? fbcCookie,
-          eventSourceUrl: `${process.env.NEXT_PUBLIC_APP_URL ?? 'https://www.alignandacquire.com'}/book`,
+        const leadRowForLog = leadRowId
+        afterResponse(ROUTE, 'capi-lead', async () => {
+          const result = await sendCapiLead({
+            eventName: 'Lead',
+            eventId: leadEventId,
+            phone: phoneE164,
+            email,
+            firstName: name,
+            trade,
+            businessName: companyName,
+            funnelArm: funnelVariant,
+            referrerClass: bookingTouches.last?.referrer ?? bookingTouches.first?.referrer ?? null,
+            firstTouchSource: resolvedFirst?.source ?? resolvedFirst?.referrer ?? null,
+            firstTouchCampaign: resolvedFirst?.campaign ?? null,
+            clientIp,
+            userAgent,
+            fbp: fbpCookie ?? knownRow?.fbp ?? null,
+            fbc: fbcRequestCookie ?? knownRow?.fbc ?? fbcCookie,
+            eventSourceUrl: `${process.env.NEXT_PUBLIC_APP_URL ?? 'https://www.alignandacquire.com'}/book`,
+          })
+          if (!result.sent) console.error(`[capi] Lead NOT SENT leadId=${leadRowForLog} reason=${result.reason}`)
         })
       }
     } else if (bookingSurface === 'landing' && !leadEventId) {
       console.warn('[capi] SKIP event=Lead reason=no_lead_event_id_from_client surface=landing')
     }
 
-    // Two different facts, reported separately.
-    //
-    // verifiedPreviously: any row for this number has ever passed OTP. Any row,
-    // not just the linked one, because the wizard only links to partial rows.
-    //
-    // gateThisBooking: THIS booking came through the gate. Only the watch page
-    // qualifies: it cannot render without a watch token, and that token is
-    // minted only when OTP passes. A landing or texted-calendar booking is "no"
-    // even for someone who verified weeks ago, which is the whole point of the
-    // flag: it says whether to treat this booking as pre-qualified.
-    const verifiedPreviously = Boolean(
-      knownRow?.otpVerifiedAt ||
-        (await db.websiteLead
-          .findFirst({
-            where: { businessId: business.id, phone: phoneE164, otpVerifiedAt: { not: null } },
-            select: { id: true },
-          })
-          .catch(() => null))
-    )
-    const gateThisBooking = bookingSurface === 'watch' && verifiedPreviously
+    // ════════════════════════════════════════════════════════════════════════
+    // AFTER THE RESPONSE. The appointment, the lead row and the Lead claim are
+    // written above; the visitor sees "Locked in" as soon as they are. Each
+    // task below runs in parallel, has a timeout and logs on failure.
+    // ════════════════════════════════════════════════════════════════════════
 
-    // One call per booking request, so one text per booking. Watch-page
+    // One owner alert per booking request, so one text per booking. Watch-page
     // bookers also got the "Call now" text at OTP; that one was about the lead,
     // this one is about the booking.
-    await notifyOwnerOfMarketingEvent({
-      ownerEmailFallback: business.ownerEmail,
-      ownerPhoneFallback: business.ownerPhone,
-      subject: `Demo booked: ${name}${trade ? ` (${trade})` : ''} - ${dateLabel} ${timeLabel} ET`,
-      html: `
-        ${agencyCheckLine ? `<p style="color:#b00;font-size:16px"><strong>${escapeHtml(agencyCheckLine)}</strong></p>` : ''}
-        <h2>Demo call booked</h2>
-        <p><strong>Name:</strong> ${escapeHtml(name)}</p>
-        <p><strong>Mobile:</strong> ${escapeHtml(phoneE164)}</p>
-        <p><strong>Email:</strong> ${escapeHtml(email)}</p>
-        <p><strong>Variant:</strong> ${escapeHtml(variant ?? 'unassigned')}</p>
-        <p><strong>Funnel arm:</strong> ${escapeHtml(funnelVariant ?? 'unassigned')}</p>
-        <p><strong>Company:</strong> ${escapeHtml(companyName || 'Not given')}</p>
-        <p><strong>Trade:</strong> ${escapeHtml(trade || 'Not specified')}</p>
-        <p><strong>Missed calls per week:</strong> ${escapeHtml(missesPerWeek || 'Not specified')}</p>
-        <p><strong>Who answers now:</strong> ${escapeHtml(whoAnswers || 'Not specified')}</p>
-        <p><strong>Time:</strong> ${escapeHtml(dateLabel)} at ${escapeHtml(timeLabel)} (Eastern Time)</p>
-        <p><strong>OTP verified (this booking):</strong> ${gateThisBooking ? 'yes' : 'no'}</p>
-        <p><strong>Verified previously:</strong> ${verifiedPreviously ? 'yes' : 'no'}</p>
-        ${googleEventLink ? `<p><strong>Calendar:</strong> <a href="${escapeHtml(googleEventLink)}">Open the event</a></p>` : ''}
-        ${googleMeetLink ? `<p><strong>Meet:</strong> <a href="${escapeHtml(googleMeetLink)}">${escapeHtml(googleMeetLink)}</a></p>` : ''}
-        ${calendarSyncFailed ? '<p style="color:#b00"><strong>Calendar sync FAILED. No Meet link. Fix before the call.</strong></p>' : ''}
-        <p><strong>How they got here:</strong> ${escapeHtml(describeJourney(resolvedPair, bookingSurface))}</p>
-        <pre style="font-family:inherit;white-space:pre-wrap;margin:0">${escapeHtml(attributionText)}</pre>
-      `,
-      smsText: [
-        agencyCheckLine,
-        `Booked: ${name}${companyName ? ` (${companyName})` : ''}`,
-        phoneE164,
-        `${dateLabel} at ${timeLabel} ET`,
-        `Surface: ${bookingSurface ?? 'unknown'}`,
-        `OTP verified (this booking): ${gateThisBooking ? 'yes' : 'no'}`,
-        `Verified previously: ${verifiedPreviously ? 'yes' : 'no'}`,
-      ]
-        .filter(Boolean)
-        .join('\n'),
+    afterResponse(ROUTE, 'owner-alert', async () => {
+      // Two different facts, reported separately.
+      //
+      // verifiedPreviously: any row for this number has ever passed OTP. Any
+      // row, not just the linked one, because the wizard only links to partial
+      // rows.
+      //
+      // gateThisBooking: THIS booking came through the gate. Only the watch page
+      // qualifies: it cannot render without a watch token (or the verified gate
+      // cookie), and both exist only once OTP passes. A landing or texted-
+      // calendar booking is "no" even for someone who verified weeks ago, which
+      // is the whole point of the flag: it says whether to treat this booking as
+      // pre-qualified.
+      const verifiedPreviously = Boolean(
+        knownRow?.otpVerifiedAt ||
+          (await db.websiteLead
+            .findFirst({
+              where: { businessId: business.id, phone: phoneE164, otpVerifiedAt: { not: null } },
+              select: { id: true },
+            })
+            .catch((err) => {
+              console.error(`[demo-book] verified-previously lookup FAILED appointmentId=${appointment.id}:`, err)
+              return null
+            }))
+      )
+      const gateThisBooking = bookingSurface === 'watch' && verifiedPreviously
+
+      await notifyOwnerOrShout(ROUTE, `appointmentId=${appointment.id} phone=${phoneE164} slot=${dateLabel} ${timeLabel}`, {
+        ownerEmailFallback: business.ownerEmail,
+        ownerPhoneFallback: business.ownerPhone,
+        subject: `Demo booked: ${name}${trade ? ` (${trade})` : ''} - ${dateLabel} ${timeLabel} ET`,
+        html: `
+          ${agencyCheckLine ? `<p style="color:#b00;font-size:16px"><strong>${escapeHtml(agencyCheckLine)}</strong></p>` : ''}
+          <h2>Demo call booked</h2>
+          <p><strong>Name:</strong> ${escapeHtml(name)}</p>
+          <p><strong>Mobile:</strong> ${escapeHtml(phoneE164)}</p>
+          <p><strong>Email:</strong> ${escapeHtml(email)}</p>
+          <p><strong>Variant:</strong> ${escapeHtml(variant ?? 'unassigned')}</p>
+          <p><strong>Funnel arm:</strong> ${escapeHtml(funnelVariant ?? 'unassigned')}</p>
+          <p><strong>Company:</strong> ${escapeHtml(companyName || 'Not given')}</p>
+          <p><strong>Trade:</strong> ${escapeHtml(trade || 'Not specified')}</p>
+          <p><strong>Missed calls per week:</strong> ${escapeHtml(missesPerWeek || 'Not specified')}</p>
+          <p><strong>Who answers now:</strong> ${escapeHtml(whoAnswers || 'Not specified')}</p>
+          <p><strong>Time:</strong> ${escapeHtml(dateLabel)} at ${escapeHtml(timeLabel)} (Eastern Time)</p>
+          <p><strong>OTP verified (this booking):</strong> ${gateThisBooking ? 'yes' : 'no'}</p>
+          <p><strong>Verified previously:</strong> ${verifiedPreviously ? 'yes' : 'no'}</p>
+          ${googleEventLink ? `<p><strong>Calendar:</strong> <a href="${escapeHtml(googleEventLink)}">Open the event</a></p>` : ''}
+          ${googleMeetLink ? `<p><strong>Meet:</strong> <a href="${escapeHtml(googleMeetLink)}">${escapeHtml(googleMeetLink)}</a></p>` : ''}
+          ${calendarSyncFailed ? '<p style="color:#b00"><strong>Calendar sync FAILED. No Meet link. Fix before the call.</strong></p>' : ''}
+          <p><strong>How they got here:</strong> ${escapeHtml(describeJourney(resolvedPair, bookingSurface))}</p>
+          <pre style="font-family:inherit;white-space:pre-wrap;margin:0">${escapeHtml(attributionText)}</pre>
+        `,
+        smsText: [
+          agencyCheckLine,
+          `Booked: ${name}${companyName ? ` (${companyName})` : ''}`,
+          phoneE164,
+          `${dateLabel} at ${timeLabel} ET`,
+          `Surface: ${bookingSurface ?? 'unknown'}`,
+          `OTP verified (this booking): ${gateThisBooking ? 'yes' : 'no'}`,
+          `Verified previously: ${verifiedPreviously ? 'yes' : 'no'}`,
+        ]
+          .filter(Boolean)
+          .join('\n'),
+      })
     })
 
     // Customer confirmation SMS. Copy lives in lib/marketing-sms-copy.ts with
     // the two reminder texts so the wording and the reschedule number cannot
-    // drift apart across the three messages one prospect receives.
+    // drift apart across the three messages one prospect receives. A throw
+    // here is logged by afterResponse with the task label.
     const fromNumber = process.env.MARKETING_TELNYX_NUMBER || business.telnyxPhoneNumber
     if (fromNumber && process.env.TELNYX_API_KEY) {
       const confirmation = confirmationText({
@@ -687,22 +717,24 @@ export async function POST(request: NextRequest) {
         meetLink: googleMeetLink,
         ownerPhone: business.ownerPhone,
       })
-      try {
-        const telnyx = new Telnyx({ apiKey: process.env.TELNYX_API_KEY })
+      const telnyxKey = process.env.TELNYX_API_KEY
+      afterResponse(ROUTE, 'confirmation-sms', async () => {
+        const telnyx = new Telnyx({ apiKey: telnyxKey })
         await telnyx.messages.send({ from: fromNumber, to: phoneE164, text: confirmation })
         console.log(`[demo-book] confirmation SMS sent from=${fromNumber} to=${phoneE164}`)
-      } catch (err) {
-        console.error('[demo-book] confirmation SMS failed:', err)
-      }
+      })
+    } else {
+      console.error(`[demo-book] confirmation SMS NOT SENT appointmentId=${appointment.id} reason=no_sender_or_api_key`)
     }
 
     // Customer confirmation email
-    if (process.env.RESEND_API_KEY) {
-      try {
-        await fetch('https://api.resend.com/emails', {
+    const resendKey = process.env.RESEND_API_KEY
+    if (resendKey) {
+      afterResponse(ROUTE, 'confirmation-email', async () => {
+        const res = await fetch('https://api.resend.com/emails', {
           method: 'POST',
           headers: {
-            Authorization: `Bearer ${process.env.RESEND_API_KEY}`,
+            Authorization: `Bearer ${resendKey}`,
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
@@ -721,9 +753,13 @@ export async function POST(request: NextRequest) {
             `,
           }),
         })
-      } catch (err) {
-        console.error('[demo-book] confirmation email failed:', err)
-      }
+        if (!res.ok) {
+          const detail = await res.text().catch(() => '')
+          throw new Error(`Resend status=${res.status} ${detail.slice(0, 200)}`)
+        }
+      })
+    } else {
+      console.error(`[demo-book] confirmation email NOT SENT appointmentId=${appointment.id} reason=RESEND_API_KEY missing`)
     }
 
     console.log(`[demo-book] BOOKED appointmentId=${appointment.id} qualified=${qualified} meet=${googleMeetLink ?? 'none'}`)

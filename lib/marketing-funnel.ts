@@ -41,9 +41,15 @@ type OwnerNotifyParams = {
   test?: boolean
 }
 
+/** What actually happened on each channel. */
+export type OwnerNotifyChannel = 'sent' | 'failed' | 'skipped' | 'not_requested'
+export type OwnerNotifyResult = { email: OwnerNotifyChannel; sms: OwnerNotifyChannel; smsError?: string }
+
 /**
  * Owner email (Resend) + owner SMS (Telnyx) for a marketing funnel event.
  * Never throws: a notification failure must not fail the lead or the booking.
+ * Returns what happened per channel so callers can shout when the text that
+ * tells Jacob to call did not go out.
  */
 export async function notifyOwnerOfMarketingEvent({
   subject: rawSubject,
@@ -52,7 +58,8 @@ export async function notifyOwnerOfMarketingEvent({
   ownerEmailFallback,
   ownerPhoneFallback,
   test,
-}: OwnerNotifyParams): Promise<void> {
+}: OwnerNotifyParams): Promise<OwnerNotifyResult> {
+  const result: OwnerNotifyResult = { email: 'skipped', sms: smsText ? 'skipped' : 'not_requested' }
   const ownerEmail = process.env.YOUR_EMAIL || ownerEmailFallback || 'jacob@alignandacquire.com'
   const tag = test ? ' test=true' : ''
   const subject = test ? `[TEST] ${rawSubject}` : rawSubject
@@ -83,12 +90,14 @@ export async function notifyOwnerOfMarketingEvent({
         }),
       })
       const payload = (await emailRes.json().catch(() => ({}))) as { id?: string; message?: string }
+      result.email = emailRes.ok ? 'sent' : 'failed'
       if (emailRes.ok) {
         console.log(`[owner-notify] SENT email to=${ownerEmail} template=${subject.slice(0, 48)} providerId=${payload.id ?? 'unknown'}${tag}`)
       } else {
         console.error(`[owner-notify] FAILED email to=${ownerEmail} status=${emailRes.status} error=${payload.message ?? 'unknown'}${tag}`)
       }
     } catch (err) {
+      result.email = 'failed'
       console.error(`[owner-notify] FAILED email to=${ownerEmail} error=${err instanceof Error ? err.message : String(err)}${tag}`)
     }
   }
@@ -101,7 +110,7 @@ export async function notifyOwnerOfMarketingEvent({
   //
   // Sent from the SAME number the lead was texted from, so a reply thread lands
   // somewhere Jacob already watches.
-  if (!smsText) return
+  if (!smsText) return result
 
   const from = process.env.MARKETING_TELNYX_NUMBER?.trim() || null
   const to = normalizeToE164(process.env.OWNER_PHONE || ownerPhoneFallback || '')
@@ -111,7 +120,8 @@ export async function notifyOwnerOfMarketingEvent({
       `[owner-notify] SKIP sms reason=no_sender TELNYX_API_KEY=${process.env.TELNYX_API_KEY ? 'set' : 'MISSING'} ` +
         `MARKETING_TELNYX_NUMBER=${from ? 'set' : 'MISSING'}${tag}`
     )
-    return
+    result.smsError = 'no_sender'
+    return result
   }
   if (!to) {
     // Loud on purpose: this is the exact silent failure that made the owner SMS
@@ -119,7 +129,8 @@ export async function notifyOwnerOfMarketingEvent({
     console.error(
       `[owner-notify] SKIP sms reason=no_recipient (OWNER_PHONE unset and business.ownerPhone empty)${tag}`
     )
-    return
+    result.smsError = 'no_recipient'
+    return result
   }
 
   try {
@@ -127,11 +138,54 @@ export async function notifyOwnerOfMarketingEvent({
     const res = await telnyx.messages.send({ from, to, text: test ? `[TEST] ${smsText}` : smsText })
     const providerId = (res as { data?: { id?: string } })?.data?.id ?? 'unknown'
     console.log(`[owner-notify] SENT sms to=${to} from=${from} providerId=${providerId}${tag}`)
+    result.sms = 'sent'
   } catch (err) {
+    result.sms = 'failed'
+    result.smsError = err instanceof Error ? err.message : String(err)
     // Never throws: the lead is already written and the email already went.
     console.error(
       `[owner-notify] FAILED sms to=${to} error=${err instanceof Error ? err.message : String(err)}${tag}`
     )
+  }
+  return result
+}
+
+/**
+ * The owner alert, run after the response, with a loud line when the TEXT did
+ * not go out. That text is the speed-to-call signal: an email-only alert is
+ * easy to miss mid-job, so "no text" is logged as its own searchable failure,
+ * OWNER ALERT NOT DELIVERED, whatever the reason (Telnyx error, missing sender
+ * or recipient, timeout, or a throw).
+ */
+export async function notifyOwnerOrShout(
+  route: string,
+  context: string,
+  params: OwnerNotifyParams,
+  timeoutMs = 12_000
+): Promise<void> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  try {
+    const result = await Promise.race([
+      notifyOwnerOfMarketingEvent(params),
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`timed out after ${timeoutMs}ms`)), timeoutMs)
+      }),
+    ])
+    if (params.smsText && result.sms !== 'sent') {
+      console.error(
+        `[${route}] OWNER ALERT NOT DELIVERED channel=sms status=${result.sms} ` +
+          `reason=${result.smsError ?? 'unknown'} email=${result.email} ${context}`
+      )
+    } else if (result.email !== 'sent') {
+      console.error(`[${route}] owner alert email not delivered status=${result.email} sms=${result.sms} ${context}`)
+    }
+  } catch (err) {
+    console.error(
+      `[${route}] OWNER ALERT NOT DELIVERED channel=${params.smsText ? 'sms+email' : 'email'} ` +
+        `reason=${err instanceof Error ? err.message : String(err)} ${context}`
+    )
+  } finally {
+    if (timer) clearTimeout(timer)
   }
 }
 

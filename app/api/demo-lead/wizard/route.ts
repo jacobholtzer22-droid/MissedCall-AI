@@ -19,9 +19,10 @@ import { validateUsMobile } from '@/lib/phone-utils'
 import { findOrCreateContact } from '@/lib/crm-utils'
 import {
   getMarketingBusiness,
-  notifyOwnerOfMarketingEvent,
+  notifyOwnerOrShout,
   findPartialLeadByPhone,
 } from '@/lib/marketing-funnel'
+import { afterResponse } from '@/lib/after-response'
 import {
   sanitizeAttribution,
   formatAttributionBlock,
@@ -61,6 +62,7 @@ const OWNER_RENOTIFY_AFTER_MS = 6 * 60 * 60 * 1000
 export const dynamic = 'force-dynamic'
 
 const LEAD_SOURCE = 'meta_demo_video'
+const ROUTE = 'demo-lead/wizard'
 
 function escapeHtml(value: string): string {
   return value
@@ -120,30 +122,6 @@ function buildMessage(p: {
     '',
     formatAttributionBlock(p.attribution),
   ].filter((l) => l !== null).join('\n')
-}
-
-/**
- * Run a post-lead side effect so that it can never break the response.
- *
- * Once the lead row exists and the gate cookie is set, the visitor has earned
- * their video. Everything after that — the SMS, the pixel, the owner alert — is
- * bookkeeping. A throw in any of it used to surface as an error screen on a
- * walk that had actually SUCCEEDED: lead written, owner alerted, and the person
- * staring at "something went wrong".
- *
- * The timeout matters as much as the catch. A hung Telnyx or Resend call does
- * not throw, it just never settles, and an awaited one holds the response until
- * the platform kills the invocation — same error screen, no stack trace.
- */
-async function sideEffect(label: string, work: () => Promise<unknown>, timeoutMs = 8000): Promise<void> {
-  try {
-    await Promise.race([
-      work(),
-      new Promise((_, reject) => setTimeout(() => reject(new Error(`timed out after ${timeoutMs}ms`)), timeoutMs)),
-    ])
-  } catch (err) {
-    console.error(`[demo-lead/wizard] side-effect FAILED step=${label} error=${err instanceof Error ? err.message : String(err)}`)
-  }
 }
 
 export async function POST(request: NextRequest) {
@@ -364,16 +342,94 @@ export async function POST(request: NextRequest) {
     // rather than deleted, so an abandonment report can tell "never finished"
     // from "finished, row lives elsewhere".
     if (draft && !draft.promotedAt) {
-      void db.gateDraft
-        .update({
+      afterResponse(ROUTE, 'draft-promoted', () =>
+        db.gateDraft.update({
           where: { id: draft.id },
           data: { promotedLeadId: lead.id, promotedAt: new Date() },
         })
-        .catch((err) => console.error('[demo-lead/wizard] could not mark draft promoted:', err))
+      )
     }
 
+    // ════════════════════════════════════════════════════════════════════════
+    // ESSENTIAL, before the response. Everything the visitor's next screen or
+    // a later request depends on: the lead row (above), the calendar token and
+    // OTP stamp the watch page and texts read, the once-per-person Lead claim
+    // (its result is in the response), and the owner-alert claim. The gate
+    // cookie is set on the response itself.
+    // ════════════════════════════════════════════════════════════════════════
+
+    // The lead has handed over a number on this request. Both the SMS and the
+    // owner alert hang off this ONE expression on purpose: they drifted apart
+    // once (email on isNew, SMS on the stage) and the owner silently lost every
+    // returning lead.
+    const banked = banksLead || isNew
+
+    // TEST_PHONE_ALLOWLIST: my own handsets bypass BOTH send-once guards so a
+    // repeat walk still fires both channels. See lib/test-allowlist.ts.
+    const isTest = isTestPhone(phoneCheck.e164)
+
+    if (banksLead) {
+      // /calendar link for every text we send this lead from here on. Minted
+      // once: the where-clause keeps a re-verification from rotating a token
+      // that is already sitting in a text on someone's phone. Minted before
+      // the lead text is scheduled, so the text carries it.
+      await db.websiteLead
+        .updateMany({ where: { id: lead.id, calendarToken: null }, data: { calendarToken: newCalendarToken() } })
+        .catch((err) => console.error(`[demo-lead/wizard] calendar token mint FAILED leadId=${lead.id}:`, err))
+
+      // Proof of OTP, stamped on the row itself. The follow-up cron keys on
+      // this, and the watch page's gate-cookie fallback requires it.
+      await db.websiteLead
+        .updateMany({ where: { id: lead.id, otpVerifiedAt: null }, data: { otpVerifiedAt: new Date() } })
+        .catch((err) => console.error(`[demo-lead/wizard] OTP stamp FAILED leadId=${lead.id}:`, err))
+    }
+
+    // Once per person, shared with landing-calendar bookings. The browser half
+    // fires only when this response says leadEvent: true, so a lost claim
+    // suppresses BOTH halves, not just this one.
+    let leadEventClaimed = false
+    let leadClaimReason: string | null = null
+    const capiEventId = body.eventId
+    if (banksLead && qualified && capiEventId) {
+      const claim = await claimLeadEvent({ leadId: lead.id, businessId: business.id, phone: phoneCheck.e164, eventId: capiEventId })
+      leadEventClaimed = claim.claimed
+      if (!claim.claimed) leadClaimReason = claim.reason
+    }
+
+    // Owner alert claim. EVERY OTP-verified qualified lead alerts, with no
+    // cooldown and no allowlist suppression (a test that produces no alert is
+    // indistinguishable from a broken funnel); the single-use verification
+    // ticket already guarantees one alert per verification. Without a ticket,
+    // a time-boxed claim on ownerNotifiedAt stops a refresh or double submit
+    // from alerting twice while still alerting on someone returning days later.
+    let notifyDue = false
+    if (qualified) {
+      if (banksLead) {
+        await db.websiteLead.updateMany({ where: { id: lead.id }, data: { ownerNotifiedAt: new Date() } })
+        notifyDue = true
+      } else if (banked) {
+        const notifyCutoff = new Date(Date.now() - OWNER_RENOTIFY_AFTER_MS)
+        const notifyClaim = await db.websiteLead.updateMany({
+          where: { id: lead.id, OR: [{ ownerNotifiedAt: null }, { ownerNotifiedAt: { lt: notifyCutoff } }] },
+          data: { ownerNotifiedAt: new Date() },
+        })
+        notifyDue = notifyClaim.count > 0
+      }
+    }
+
+    // Read off the request now: the tasks below run after it has been answered.
+    const clientIp = getClientIp(request)
+    const userAgent = request.headers.get('user-agent')
+    const fbpCookie = request.cookies.get('_fbp')?.value ?? null
+    const fbcCookie = request.cookies.get('_fbc')?.value ?? null
+
+    // ════════════════════════════════════════════════════════════════════════
+    // AFTER THE RESPONSE. Each task runs in parallel, has a timeout, and logs
+    // on failure (lib/after-response). None of it can hold the video unlock.
+    // ════════════════════════════════════════════════════════════════════════
+
     // CRM record. Contact carries a real source column.
-    await sideEffect('crm', () =>
+    afterResponse(ROUTE, 'crm', () =>
       findOrCreateContact({
         businessId: business.id,
         phoneNumber: phoneCheck.e164,
@@ -384,37 +440,19 @@ export async function POST(request: NextRequest) {
       })
     )
 
-    if (visitorId) {
-    }
-
-    // ── Lead-facing demo SMS ────────────────────────────────────────────────
-    // Fires at the phone step by default (SEND_SMS_AT). sendLeadDemoSms claims
-    // the send with a conditional DB update, so a retry, a second tab or a
-    // later enrichment step can never double-text.
-    // The lead has handed over a number on this request. Both the SMS and the
-    // owner alert hang off this ONE expression on purpose: they drifted apart
-    // once (email on isNew, SMS on the stage) and the owner silently lost every
-    // returning lead.
-    const banked = banksLead || isNew
-
-    // TEST_PHONE_ALLOWLIST: my own handsets bypass BOTH send-once guards so a
-    // repeat walk still fires both channels. See lib/test-allowlist.ts.
-    const isTest = isTestPhone(phoneCheck.e164)
+    // Lead-facing demo SMS. Fires at the phone step by default (SEND_SMS_AT).
+    // sendLeadDemoSms claims the send with a conditional DB update, so a retry,
+    // a second tab or a later enrichment step can never double-text.
     const smsDue = SEND_SMS_AT === 'phone' ? banked : Boolean(email)
     if (smsDue && qualified) {
-      await sideEffect('lead-sms', async () => {
-        // Re-read: the token was minted moments ago in a side effect, and the
-        // in-memory `lead` predates it.
-        const fresh = await db.websiteLead.findUnique({
-          where: { id: lead.id },
-          select: { calendarToken: true },
-        })
+      afterResponse(ROUTE, 'lead-sms', async () => {
+        const fresh = await db.websiteLead.findUnique({ where: { id: lead.id }, select: { calendarToken: true } })
         const sms = await sendLeadDemoSms(lead.id, phoneCheck.e164, funnelVariant, {
           firstName,
           businessName: company,
           trade,
           // Null here just means the link goes to the bare /calendar page,
-          // which still books them — it only loses the prefill.
+          // which still books them. It only loses the prefill.
           calendarToken: fresh?.calendarToken ?? null,
           watchUrl: mintWatchToken(lead.id, funnelVariant === 'B' ? 'B' : 'A'),
           watchArm: funnelVariant === 'B' ? 'B' : 'A',
@@ -425,122 +463,44 @@ export async function POST(request: NextRequest) {
       })
     }
 
-    // ── Verified lead: arm ledger + server-side Lead event ───────────────────
-    // Both hang off banksLead, so they fire at exactly the moment the number
-    // was proven and never on a later enrichment write.
-    if (banksLead) {
-      // /calendar link for every text we send this lead from here on. Minted
-      // once: the where-clause keeps a re-verification from rotating a token
-      // that is already sitting in a text on someone's phone.
-      await sideEffect('mint-calendar-token', () =>
-        db.websiteLead.updateMany({
-          where: { id: lead.id, calendarToken: null },
-          data: { calendarToken: newCalendarToken() },
-        })
-      )
-
-      // Proof of OTP, stamped on the row itself. The follow-up cron keys on
-      // this and nothing else.
-      await sideEffect('stamp-verified', () =>
-        db.websiteLead.updateMany({
-          where: { id: lead.id, otpVerifiedAt: null },
-          data: { otpVerifiedAt: new Date() },
-        })
-      )
-    }
-
-    let leadEventClaimed = false
     if (banksLead && qualified) {
-      void logArmVerifiedLead({
-        arm: funnelVariant,
-        trade,
-        businessName: company,
-        phone: phoneCheck.e164,
-        visitorId,
-        leadId: lead.id,
-      })
-
-      // Awaited, not fire-and-forget: on Vercel the lambda can be frozen the
-      // moment the response is returned, which would drop an un-awaited fetch.
-      // It fails open, so a CAPI outage cannot fail the lead write above.
-      // Captured before the closure: TS cannot narrow body.eventId inside one.
-      const capiEventId = body.eventId
-      // Once per person, shared with landing-calendar bookings. The browser
-      // half fires only when this response says leadEvent: true, so a lost
-      // claim suppresses BOTH halves, not just this one.
-      const claim = capiEventId
-        ? await claimLeadEvent({ leadId: lead.id, businessId: business.id, phone: phoneCheck.e164, eventId: capiEventId })
-        : null
-      leadEventClaimed = claim?.claimed === true
-      if (capiEventId && leadEventClaimed) {
-        await sideEffect('capi-lead', () =>
-          sendCapiLead({
-            eventId: capiEventId,
-          phone: phoneCheck.e164,
-          email: finalEmail,
-          firstName,
+      afterResponse(ROUTE, 'arm-verified-lead', () =>
+        logArmVerifiedLead({
+          arm: funnelVariant,
           trade,
-          tradeOther: finalTradeOther,
-          businessName: finalCompany,
-          funnelArm: funnelVariant,
-          referrerClass: touches.last?.referrer ?? touches.first?.referrer ?? null,
-          firstTouchSource: touches.first?.source ?? touches.first?.referrer ?? null,
-          firstTouchCampaign: touches.first?.campaign ?? null,
-          clientIp: getClientIp(request),
-          userAgent: request.headers.get('user-agent'),
-          fbp: request.cookies.get('_fbp')?.value ?? null,
-          fbc: request.cookies.get('_fbc')?.value ?? null,
+          businessName: company,
+          phone: phoneCheck.e164,
+          visitorId,
+          leadId: lead.id,
+        })
+      )
+
+      if (capiEventId && leadEventClaimed) {
+        afterResponse(ROUTE, 'capi-lead', async () => {
+          const result = await sendCapiLead({
+            eventId: capiEventId,
+            phone: phoneCheck.e164,
+            email: finalEmail,
+            firstName,
+            trade,
+            tradeOther: finalTradeOther,
+            businessName: finalCompany,
+            funnelArm: funnelVariant,
+            referrerClass: touches.last?.referrer ?? touches.first?.referrer ?? null,
+            firstTouchSource: touches.first?.source ?? touches.first?.referrer ?? null,
+            firstTouchCampaign: touches.first?.campaign ?? null,
+            clientIp,
+            userAgent,
+            fbp: fbpCookie,
+            fbc: fbcCookie,
             eventSourceUrl: `${process.env.NEXT_PUBLIC_APP_URL ?? 'https://www.alignandacquire.com'}${landingPath}`,
           })
-        )
+          if (!result.sent) console.error(`[capi] Lead NOT SENT leadId=${lead.id} reason=${result.reason}`)
+        })
       } else if (!capiEventId) {
         console.warn(`[capi] SKIP leadId=${lead.id} reason=no_event_id_from_client`)
       } else {
-        console.log(`[capi] SKIP event=Lead leadId=${lead.id} reason=${claim && !claim.claimed ? claim.reason : 'unclaimed'}`)
-      }
-    }
-
-    // Owner is notified when the number lands, for a real business owner.
-    //
-    // This used to be gated on `isNew`, which meant a returning prospect was
-    // re-texted but generated NO owner alert: the row already existed, so the
-    // whole block including its own log line was skipped and the failure was
-    // invisible. Repeat visitors are the warmest traffic on this funnel, so
-    // that was backwards.
-    //
-    // The gate is now the same bank-path condition the SMS uses, plus a claim
-    // against ownerNotifiedAt. The claim is a conditional updateMany, so two
-    // concurrent requests cannot both win it, and it is time-boxed rather than
-    // once-ever: someone returning days later is a real signal worth an email,
-    // while a refresh or double submit inside the window is not.
-    // Allowlisted test handsets skip the cooldown outright, so every walk from
-    // one of my own phones produces an email. Real numbers are unaffected.
-    const notifyCutoff = new Date(Date.now() - OWNER_RENOTIFY_AFTER_MS)
-    let notifyDue = false
-    if (qualified) {
-      if (banksLead) {
-        // EVERY OTP-verified lead alerts, with no cooldown and no allowlist
-        // suppression — including my own test walks, which is the point: a test
-        // that produces no alert is indistinguishable from a broken funnel.
-        //
-        // Safe to skip the claim here because banksLead means a single-use
-        // verification ticket was just consumed. That ticket already guarantees
-        // exactly one alert per verification; the time-boxed claim below is for
-        // the path that has no ticket to lean on.
-        await db.websiteLead.updateMany({
-          where: { id: lead.id },
-          data: { ownerNotifiedAt: new Date() },
-        })
-        notifyDue = true
-      } else if (banked) {
-        const notifyClaim = await db.websiteLead.updateMany({
-          where: {
-            id: lead.id,
-            OR: [{ ownerNotifiedAt: null }, { ownerNotifiedAt: { lt: notifyCutoff } }],
-          },
-          data: { ownerNotifiedAt: new Date() },
-        })
-        notifyDue = notifyClaim.count > 0
+        console.log(`[capi] SKIP event=Lead leadId=${lead.id} reason=${leadClaimReason ?? 'unclaimed'}`)
       }
     }
 
@@ -561,13 +521,13 @@ export async function POST(request: NextRequest) {
         ? `https://www.google.com/search?q=${encodeURIComponent(finalCompany)}`
         : ''
 
-      await sideEffect('owner-notify', () =>
-        notifyOwnerOfMarketingEvent({
-        test: isTest,
-        ownerEmailFallback: business.ownerEmail,
-        ownerPhoneFallback: business.ownerPhone,
-        subject: `Call now: ${displayName || phoneCheck.e164} (${trade || company || 'no trade given'}) [arm ${armLabel}]`,
-        html: `
+      afterResponse(ROUTE, 'owner-alert', () =>
+        notifyOwnerOrShout(ROUTE, `leadId=${lead.id} phone=${phoneCheck.e164}`, {
+          test: isTest,
+          ownerEmailFallback: business.ownerEmail,
+          ownerPhoneFallback: business.ownerPhone,
+          subject: `Call now: ${displayName || phoneCheck.e164} (${trade || company || 'no trade given'}) [arm ${armLabel}]`,
+          html: `
           <h2>New verified demo lead</h2>
           <p>Their number is verified. Call while they are still on the page.</p>
           <p><strong>First name:</strong> ${escapeHtml(firstName || displayName || 'not given')}</p>
@@ -581,16 +541,16 @@ export async function POST(request: NextRequest) {
              <span style="color:#666;font-size:12px">Lead id: ${escapeHtml(lead.id)}</span></p>
           <pre style="font-family:inherit;white-space:pre-wrap;margin:0">${escapeHtml(formatAttributionBlock(attribution))}</pre>
         `,
-        smsText: buildOwnerSms({
-          name: displayName || 'lead',
-          company: finalCompany,
-          trade: tradeLabel,
-          tradeOther: finalTradeOther,
-          phone: phoneCheck.e164,
-          arm: armLabel,
-          checkLink,
-          leadLink,
-        }),
+          smsText: buildOwnerSms({
+            name: displayName || 'lead',
+            company: finalCompany,
+            trade: tradeLabel,
+            tradeOther: finalTradeOther,
+            phone: phoneCheck.e164,
+            arm: armLabel,
+            checkLink,
+            leadLink,
+          }),
         })
       )
     }
