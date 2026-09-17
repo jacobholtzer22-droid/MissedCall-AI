@@ -321,6 +321,33 @@ export function describeJourney(pair: AttributionPair | null | undefined, bookin
 }
 
 /**
+ * The block rendered on a booking: calendar private notes, appointment notes
+ * and the owner email all print this, from the stored touches.
+ *
+ * Replaces formatAttributionBlock on bookings, which read a request field no
+ * calendar ever sent and so printed "none" on every booking. UTMs come from one
+ * touch (first, else last) so the fields never mix two different visits. Empty
+ * reads "direct", never "none".
+ */
+export function formatBookingAttribution(
+  pair: AttributionPair | null | undefined,
+  surface: string | null | undefined
+): string {
+  const t = pair?.first ?? pair?.last
+  const v = (x?: string) => x || REFERRER_DIRECT
+  const fbclid = Boolean(pair?.first?.fbclid || pair?.last?.fbclid)
+  return [
+    'Attribution:',
+    `  utm_source: ${v(t?.source)}`,
+    `  utm_campaign: ${v(t?.campaign)}`,
+    `  utm_content: ${v(t?.content)}`,
+    `  utm_term: ${v(t?.term)}`,
+    `  fbclid: ${fbclid ? 'yes' : 'no'}`,
+    `  surface: ${surface || 'unknown'}`,
+  ].join('\n')
+}
+
+/**
  * UTMs stamped on every link we send by text.
  *
  * Kept here rather than at each call site so the three senders (the post-OTP

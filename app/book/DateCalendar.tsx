@@ -123,7 +123,12 @@ export default function DateCalendar({
 }: {
   durationMinutes: number
   prefill: { firstName: string; phone: string; email: string; trade: string }
-  onBooked: (r: Booked & { scheduleEventId: string }) => void
+  /**
+   * leadEventId is present only when the server claimed this booking's Lead
+   * event (landing calendar, first Lead for this person). The page fires the
+   * browser half of Lead with it; absent means fire nothing.
+   */
+  onBooked: (r: Booked & { scheduleEventId: string; leadEventId?: string }) => void
   /**
    * Lifted to the page. Two calendars render on the watch page, and a booking
    * made in one has to close the other — otherwise the second instance still
@@ -167,6 +172,13 @@ export default function DateCalendar({
     typeof crypto !== 'undefined' && 'randomUUID' in crypto
       ? crypto.randomUUID()
       : `sched-${Date.now()}`
+  )
+  // Separate from Schedule's: Meta dedupes on event_name + event_id, and the
+  // two events must never share an id.
+  const leadEventId = useRef(
+    typeof crypto !== 'undefined' && 'randomUUID' in crypto
+      ? crypto.randomUUID()
+      : `lead-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
   )
 
   useEffect(() => {
@@ -238,6 +250,11 @@ export default function DateCalendar({
           companyName: company.trim(),
           bookingSurface: surface,
           eventId: scheduleEventId.current,
+          ...(surface === 'landing' ? { leadEventId: leadEventId.current } : {}),
+          // Attribution fallback for when the aa_attr cookie is missing or
+          // unreadable server-side. The server only uses these in that case.
+          pageUrl: window.location.href,
+          referrer: document.referrer,
         }),
       })
       const data = await res.json().catch(() => ({}))
@@ -255,6 +272,7 @@ export default function DateCalendar({
         timeLabel: data?.appointment?.timeLabel ?? timeIn(slot.iso, tz),
         meetLink: data?.appointment?.meetLink ?? null,
         scheduleEventId: scheduleEventId.current,
+        ...(data?.leadEvent === true ? { leadEventId: leadEventId.current } : {}),
       })
     } catch {
       setFormError('Network hiccup. Try again.')

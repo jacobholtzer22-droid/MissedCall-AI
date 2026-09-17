@@ -36,6 +36,8 @@ export type CapiLead = {
   /** MUST match the event_id the browser pixel fired. */
   eventId: string
   phone?: string | null
+  /** Hashed as em. Only sent when it looks like an address. */
+  email?: string | null
   firstName?: string | null
   /** Custom params Meta will show against the event. */
   trade?: string | null
@@ -89,6 +91,7 @@ export async function sendCapiLead(input: CapiLead): Promise<CapiResult> {
 
   const userData: Record<string, unknown> = {}
   if (input.phone) userData.ph = [hashPhone(input.phone)]
+  if (input.email && /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(input.email.trim())) userData.em = [hash(input.email)]
   if (input.firstName?.trim()) userData.fn = [hash(input.firstName)]
   if (input.clientIp) userData.client_ip_address = input.clientIp
   if (input.userAgent) userData.client_user_agent = input.userAgent

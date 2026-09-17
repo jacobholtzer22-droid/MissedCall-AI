@@ -83,6 +83,8 @@ export default function WizardModal({
     tradeOther: string
     eventId: string
     qualified: boolean
+    /** Server won the once-per-person Lead claim. Browser Lead fires only if true. */
+    leadEvent: boolean
   }) => void
 }) {
   const [index, setIndex] = useState(0)
@@ -442,6 +444,7 @@ export default function WizardModal({
         tradeOther: draft.tradeOther,
         eventId: eventIdRef.current,
         qualified: Boolean(saved.qualified),
+        leadEvent: saved.leadEvent === true,
       })
     } catch {
       setError('Could not check that code. Try again.')

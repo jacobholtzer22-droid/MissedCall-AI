@@ -24,8 +24,15 @@ export default function VslLanding({ arm, poster }: { arm: FunnelVariant; poster
   const leadFired = useRef(false)
   const scheduleFired = useRef(false)
 
-  function handleBooked(r: Booked & { scheduleEventId: string }) {
+  function handleBooked(r: Booked & { scheduleEventId: string; leadEventId?: string }) {
     setBooked({ dateLabel: r.dateLabel, timeLabel: r.timeLabel, meetLink: r.meetLink })
+    // Browser half of the landing-booking Lead. leadEventId is only present
+    // when /api/demo-book won the once-per-person claim and sent CAPI with this
+    // same id. Fired before Schedule, the order the gate path produces.
+    if (r.leadEventId && !leadFired.current) {
+      leadFired.current = true
+      trackStandardWithId('Lead', r.leadEventId, { content_name: 'vsl_landing_booking' })
+    }
     if (scheduleFired.current) return
     scheduleFired.current = true
     trackStandardWithId('Schedule', r.scheduleEventId, { content_name: 'vsl_landing' })
@@ -107,7 +114,7 @@ export default function VslLanding({ arm, poster }: { arm: FunnelVariant; poster
       <WizardModal
         open={open}
         onClose={() => setOpen(false)}
-        onVerified={({ watchUrl, trade, tradeOther, eventId, qualified }) => {
+        onVerified={({ watchUrl, trade, tradeOther, eventId, qualified, leadEvent }) => {
           if (!leadFired.current) {
             leadFired.current = true
             // trade_other rides along ONLY for "Other home service" — it is the
@@ -121,9 +128,12 @@ export default function VslLanding({ arm, poster }: { arm: FunnelVariant; poster
               ...(tradeOther ? { trade_other: tradeOther } : {}),
             }
             // Lead is the ad optimisation target: once, on OTP success, for a
-            // verified owner. Deduped against the server's CAPI event.
-            if (qualified) trackStandardWithId('Lead', eventId, params)
-            else trackCustomEvent('UnqualifiedLead', params)
+            // verified owner. Deduped against the server's CAPI event, and only
+            // when the server won the once-per-person claim: a re-verification
+            // or someone who already booked from the landing calendar gets none.
+            if (qualified) {
+              if (leadEvent) trackStandardWithId('Lead', eventId, params)
+            } else trackCustomEvent('UnqualifiedLead', params)
           }
           router.push(watchUrl)
         }}

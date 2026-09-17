@@ -697,6 +697,15 @@ model WebsiteLead {
   /// counted the conversion and a retraction is not something this sends.
   junk Boolean @default(false)
 
+  /// The once-per-lead guard on the Meta Lead event (browser pixel + CAPI).
+  /// Claimed with a conditional update before either side fires, at OTP
+  /// (app/api/demo-lead/wizard) or at a landing-calendar booking
+  /// (app/api/demo-book). Lead is the ad optimisation target, so a second fire
+  /// for the same person double-counts the conversion Meta is buying toward.
+  leadEventSentAt DateTime?
+  /// The event_id that claim fired with, for matching against Events Manager.
+  leadEventId     String?
+
   // Spam scoring (see lib/spam-score.ts). All nullable and additive: null means
   // the row predates scoring, which is why spamScore is not defaulted to 0.
   // A high score sets status='spam' and suppresses owner notification — it NEVER

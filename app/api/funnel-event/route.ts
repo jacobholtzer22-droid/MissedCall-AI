@@ -27,6 +27,7 @@ const ALLOWED_NAMES = [
   'otp_sent', 'otp_verified', 'otp_failed',
   'form_submitted', 'thanks_view',
   'gate_exit_not_a_fit',
+  'attribution_error',
 ]
 const ALLOWED_STEPS = [
   'landing',

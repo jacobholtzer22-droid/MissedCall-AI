@@ -69,7 +69,10 @@ export async function POST(request: NextRequest) {
     const parsed = rawPhone ? validateUsMobile(rawPhone) : null
     const phone = parsed?.ok ? parsed.e164 : rawPhone
 
-    const touches = parseAttributionCookie(request.cookies.get(ATTRIBUTION_COOKIE)?.value)
+    const touches = parseAttributionCookie(request.cookies.get(ATTRIBUTION_COOKIE)?.value, {
+      route: 'gate-draft',
+      visitorId: request.cookies.get(VISITOR_COOKIE)?.value ?? null,
+    })
     const arm = request.cookies.get(FUNNEL_VARIANT_COOKIE)?.value ?? null
     const variant = request.cookies.get(VARIANT_COOKIE)?.value ?? null
 

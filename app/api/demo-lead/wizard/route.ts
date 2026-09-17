@@ -37,6 +37,7 @@ import { SEND_SMS_AT } from '@/app/book/constants'
 import { isTestPhone } from '@/lib/test-allowlist'
 import { consumeVerification } from '@/lib/otp'
 import { sendCapiLead } from '@/lib/meta-capi'
+import { claimLeadEvent } from '@/lib/lead-event-guard'
 import { logArmVerifiedLead } from '@/lib/arm-log'
 import { isTerminalTrade } from '@/app/book/constants'
 import { matchBlockedKeyword, OTHER_TRADE, TRADE_OTHER_MAX } from '@/lib/gate-filters'
@@ -255,9 +256,10 @@ export async function POST(request: NextRequest) {
     // ── Attribution ─────────────────────────────────────────────────────────
     // Written by the browser on the landing view and re-sanitised here, because
     // it arrives from a cookie the visitor can edit.
-    const touches: AttributionPair = parseAttributionCookie(
-      request.cookies.get(ATTRIBUTION_COOKIE)?.value
-    )
+    const touches: AttributionPair = parseAttributionCookie(request.cookies.get(ATTRIBUTION_COOKIE)?.value, {
+      route: 'demo-lead/wizard',
+      visitorId: visitorId || null,
+    })
     // _fbc is what Meta matches a click against. Their cookie is only set when
     // the pixel loaded on the click landing, which ad blockers routinely stop,
     // so it is rebuilt from the fbclid we captured ourselves when missing.
@@ -447,6 +449,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    let leadEventClaimed = false
     if (banksLead && qualified) {
       void logArmVerifiedLead({
         arm: funnelVariant,
@@ -462,11 +465,19 @@ export async function POST(request: NextRequest) {
       // It fails open, so a CAPI outage cannot fail the lead write above.
       // Captured before the closure: TS cannot narrow body.eventId inside one.
       const capiEventId = body.eventId
-      if (capiEventId) {
+      // Once per person, shared with landing-calendar bookings. The browser
+      // half fires only when this response says leadEvent: true, so a lost
+      // claim suppresses BOTH halves, not just this one.
+      const claim = capiEventId
+        ? await claimLeadEvent({ leadId: lead.id, businessId: business.id, phone: phoneCheck.e164, eventId: capiEventId })
+        : null
+      leadEventClaimed = claim?.claimed === true
+      if (capiEventId && leadEventClaimed) {
         await sideEffect('capi-lead', () =>
           sendCapiLead({
             eventId: capiEventId,
           phone: phoneCheck.e164,
+          email: finalEmail,
           firstName,
           trade,
           tradeOther: finalTradeOther,
@@ -482,8 +493,10 @@ export async function POST(request: NextRequest) {
             eventSourceUrl: `${process.env.NEXT_PUBLIC_APP_URL ?? 'https://www.alignandacquire.com'}${landingPath}`,
           })
         )
-      } else {
+      } else if (!capiEventId) {
         console.warn(`[capi] SKIP leadId=${lead.id} reason=no_event_id_from_client`)
+      } else {
+        console.log(`[capi] SKIP event=Lead leadId=${lead.id} reason=${claim && !claim.claimed ? claim.reason : 'unclaimed'}`)
       }
     }
 
@@ -597,6 +610,8 @@ export async function POST(request: NextRequest) {
       leadId: lead.id,
       qualified,
       isNew,
+      /** The browser fires its half of Lead only when this is true. */
+      leadEvent: leadEventClaimed,
       watchUrl: watchPath(watchToken, armForWatch),
     })
     res.cookies.set(GATE_COOKIE, lead.id, {

@@ -97,7 +97,10 @@ export async function POST(request: NextRequest) {
     const email = body.email?.trim().slice(0, 160) || draft?.email || ''
     const arm = request.cookies.get(FUNNEL_VARIANT_COOKIE)?.value ?? draft?.arm ?? null
     const variant = request.cookies.get(VARIANT_COOKIE)?.value ?? null
-    const touches = parseAttributionCookie(request.cookies.get(ATTRIBUTION_COOKIE)?.value)
+    const touches = parseAttributionCookie(request.cookies.get(ATTRIBUTION_COOKIE)?.value, {
+      route: 'gate-failed',
+      visitorId: request.cookies.get(VISITOR_COOKIE)?.value ?? null,
+    })
     const isTest = isTestPhone(phone)
 
     const message = [
