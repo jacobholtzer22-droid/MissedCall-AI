@@ -5,6 +5,9 @@ import GoogleReviewsCard from '@/app/components/GoogleReviewsCard'
 // Client photos, then the same Google card the homepage renders — the component
 // itself, not a copy, so the two surfaces cannot drift. It already paints its own
 // white surface, so it needs no light variant to sit here.
+//
+// No outbound links in these testimonials. This renders on the paid-traffic
+// landing and watch pages, where any link off the funnel is a leak.
 
 type PhotoTestimonial = {
   photo: string
@@ -13,8 +16,6 @@ type PhotoTestimonial = {
   credit: string
   /** Where the photo's crop sits. Faces sit high in these shots. */
   objectPosition?: string
-  /** Optional link to the client's site. Opens in a new tab so the funnel stays put. */
-  site?: { href: string; label: string }
 }
 
 const TESTIMONIALS: PhotoTestimonial[] = [
@@ -34,10 +35,6 @@ const TESTIMONIALS: PhotoTestimonial[] = [
       'Jacob has brought me more traffic through my website, and he knows how to run and scale ads.',
     credit: 'Eduardo, Big Bear Truck Repair',
     objectPosition: 'center 30%',
-    site: {
-      href: 'https://www.bigbeartruckrepair.com',
-      label: 'Go to his website to see more of what I do',
-    },
   },
 ]
 
@@ -72,17 +69,6 @@ function Testimonial({ t }: { t: PhotoTestimonial }) {
         <p className="mt-1.5 text-[14px] font-semibold" style={{ color: 'var(--funnel-ink)' }}>
           {t.credit}
         </p>
-        {t.site && (
-          <a
-            href={t.site.href}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="mt-2 inline-flex min-h-[44px] items-center text-[15px] font-semibold underline underline-offset-4"
-            style={{ color: 'var(--funnel-primary)' }}
-          >
-            {t.site.label} →
-          </a>
-        )}
       </figcaption>
     </figure>
   )
