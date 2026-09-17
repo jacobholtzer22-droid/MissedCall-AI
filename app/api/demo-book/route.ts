@@ -33,6 +33,7 @@ import {
 } from '@/lib/attribution'
 import { ATTRIBUTION_COOKIE, parseAttributionCookie } from '@/lib/attribution-cookie'
 import { claimLeadEvent } from '@/lib/lead-event-guard'
+import { matchAgencySignal } from '@/lib/gate-filters'
 import { rateLimit, getClientIp } from '@/lib/rate-limit'
 import {
   TIMEZONE,
@@ -303,6 +304,22 @@ export async function POST(request: NextRequest) {
       ...(resolvedLast ? { last: resolvedLast } : {}),
     }
     const attributionText = formatBookingAttribution(resolvedPair, bookingSurface)
+
+    // ── Agency CHECK: landing calendar only, flag never block ───────────────
+    // The landing calendar skips the gate, so the gate's keyword block never
+    // sees these bookings. A hit is shown to the owner and stored; the booking
+    // and its Lead go through untouched, because false positives on real
+    // contractors ("Ads Roofing") cost more than the occasional agency call.
+    const agencySignal = bookingSurface === 'landing' ? matchAgencySignal(companyName, email) : null
+    const agencyFlagData = agencySignal
+      ? { agencyFlagTerm: agencySignal.term, agencyFlagField: agencySignal.field }
+      : {}
+    const agencyCheckLine = agencySignal
+      ? `CHECK: possible agency ("${agencySignal.term}" in ${agencySignal.field === 'company' ? 'company name' : 'email domain'})`
+      : null
+    if (agencySignal) {
+      console.log(`[demo-book] AGENCY CHECK term=${agencySignal.term} field=${agencySignal.field} surface=landing`)
+    }
     if (!resolvedFirst && !resolvedLast) {
       console.warn(
         `[demo-book] ATTRIBUTION EMPTY surface=${bookingSurface ?? '-'} visitor=${visitorId || 'none'} ` +
@@ -389,6 +406,7 @@ export async function POST(request: NextRequest) {
         ...(resolvedFirst ? { attributionFirst: resolvedFirst } : {}),
         ...(resolvedLast ? { attributionLast: resolvedLast } : {}),
         bookingSurface,
+        ...agencyFlagData,
         googleCalendarEventId: googleEventId,
         googleMeetLink,
         calendarSyncFailed,
@@ -474,6 +492,7 @@ export async function POST(request: NextRequest) {
             status: 'converted',
             email,
             bookingSurface,
+            ...agencyFlagData,
             ...(lead.attributionFirst ? {} : bookingTouches.first ? { attributionFirst: bookingTouches.first } : {}),
             ...(bookingTouches.last ? { attributionLast: bookingTouches.last } : {}),
             ...(lead.fbp ? {} : fbpCookie ? { fbp: fbpCookie } : {}),
@@ -518,6 +537,7 @@ export async function POST(request: NextRequest) {
         variant,
         funnelVariant,
         bookingSurface,
+        ...agencyFlagData,
         ...(bookingTouches.last ? { attributionLast: bookingTouches.last } : {}),
         ...(fbpCookie ? { fbp: fbpCookie } : {}),
         ...(fbcCookie ? { fbc: fbcCookie } : {}),
@@ -595,9 +615,17 @@ export async function POST(request: NextRequest) {
       console.warn('[capi] SKIP event=Lead reason=no_lead_event_id_from_client surface=landing')
     }
 
-    // Any row for this number that passed OTP counts, not just the one this
-    // booking linked to: the wizard only links to partial rows.
-    const otpVerified = Boolean(
+    // Two different facts, reported separately.
+    //
+    // verifiedPreviously: any row for this number has ever passed OTP. Any row,
+    // not just the linked one, because the wizard only links to partial rows.
+    //
+    // gateThisBooking: THIS booking came through the gate. Only the watch page
+    // qualifies: it cannot render without a watch token, and that token is
+    // minted only when OTP passes. A landing or texted-calendar booking is "no"
+    // even for someone who verified weeks ago, which is the whole point of the
+    // flag: it says whether to treat this booking as pre-qualified.
+    const verifiedPreviously = Boolean(
       knownRow?.otpVerifiedAt ||
         (await db.websiteLead
           .findFirst({
@@ -606,6 +634,7 @@ export async function POST(request: NextRequest) {
           })
           .catch(() => null))
     )
+    const gateThisBooking = bookingSurface === 'watch' && verifiedPreviously
 
     // One call per booking request, so one text per booking. Watch-page
     // bookers also got the "Call now" text at OTP; that one was about the lead,
@@ -615,6 +644,7 @@ export async function POST(request: NextRequest) {
       ownerPhoneFallback: business.ownerPhone,
       subject: `Demo booked: ${name}${trade ? ` (${trade})` : ''} - ${dateLabel} ${timeLabel} ET`,
       html: `
+        ${agencyCheckLine ? `<p style="color:#b00;font-size:16px"><strong>${escapeHtml(agencyCheckLine)}</strong></p>` : ''}
         <h2>Demo call booked</h2>
         <p><strong>Name:</strong> ${escapeHtml(name)}</p>
         <p><strong>Mobile:</strong> ${escapeHtml(phoneE164)}</p>
@@ -626,7 +656,8 @@ export async function POST(request: NextRequest) {
         <p><strong>Missed calls per week:</strong> ${escapeHtml(missesPerWeek || 'Not specified')}</p>
         <p><strong>Who answers now:</strong> ${escapeHtml(whoAnswers || 'Not specified')}</p>
         <p><strong>Time:</strong> ${escapeHtml(dateLabel)} at ${escapeHtml(timeLabel)} (Eastern Time)</p>
-        <p><strong>OTP verified:</strong> ${otpVerified ? 'yes' : 'no'}</p>
+        <p><strong>OTP verified (this booking):</strong> ${gateThisBooking ? 'yes' : 'no'}</p>
+        <p><strong>Verified previously:</strong> ${verifiedPreviously ? 'yes' : 'no'}</p>
         ${googleEventLink ? `<p><strong>Calendar:</strong> <a href="${escapeHtml(googleEventLink)}">Open the event</a></p>` : ''}
         ${googleMeetLink ? `<p><strong>Meet:</strong> <a href="${escapeHtml(googleMeetLink)}">${escapeHtml(googleMeetLink)}</a></p>` : ''}
         ${calendarSyncFailed ? '<p style="color:#b00"><strong>Calendar sync FAILED. No Meet link. Fix before the call.</strong></p>' : ''}
@@ -634,12 +665,16 @@ export async function POST(request: NextRequest) {
         <pre style="font-family:inherit;white-space:pre-wrap;margin:0">${escapeHtml(attributionText)}</pre>
       `,
       smsText: [
+        agencyCheckLine,
         `Booked: ${name}${companyName ? ` (${companyName})` : ''}`,
         phoneE164,
         `${dateLabel} at ${timeLabel} ET`,
         `Surface: ${bookingSurface ?? 'unknown'}`,
-        `OTP verified: ${otpVerified ? 'yes' : 'no'}`,
-      ].join('\n'),
+        `OTP verified (this booking): ${gateThisBooking ? 'yes' : 'no'}`,
+        `Verified previously: ${verifiedPreviously ? 'yes' : 'no'}`,
+      ]
+        .filter(Boolean)
+        .join('\n'),
     })
 
     // Customer confirmation SMS. Copy lives in lib/marketing-sms-copy.ts with

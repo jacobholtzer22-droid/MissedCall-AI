@@ -402,6 +402,10 @@ model Appointment {
   /// website / sms_link / direct.
   bookingSurface String?
 
+  /// Same agency CHECK as WebsiteLead.agencyFlagTerm, on the booking itself.
+  agencyFlagTerm  String?
+  agencyFlagField String?
+
   reminderNightBeforeSentAt DateTime?
   reminderHourBeforeSentAt  DateTime?
 
@@ -705,6 +709,13 @@ model WebsiteLead {
   leadEventSentAt DateTime?
   /// The event_id that claim fired with, for matching against Events Manager.
   leadEventId     String?
+
+  /// Landing-calendar agency CHECK (lib/gate-filters matchAgencySignal): the
+  /// keyword that matched and where ("company" | "email_domain"). Flag only,
+  /// the booking and its Lead went through. Compare against junk for the
+  /// false-positive rate.
+  agencyFlagTerm  String?
+  agencyFlagField String?
 
   // Spam scoring (see lib/spam-score.ts). All nullable and additive: null means
   // the row predates scoring, which is why spamScore is not defaulted to 0.

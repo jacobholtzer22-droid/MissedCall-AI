@@ -36,6 +36,18 @@ import {
 } from '@/lib/marketing-slots'
 import { getMarketingBusiness } from '@/lib/marketing-funnel'
 
+// Availability changes with every booking and every calendar edit, so this must
+// be computed per request. Without these, Next 14 prerenders a GET-only route
+// that never reads the request at BUILD time: the slot list froze at the
+// moment of each deploy and Vercel's edge served it from cache. The POST that
+// used to live here was silently keeping the route dynamic; removing it
+// (ed29979) is what froze the list.
+export const dynamic = 'force-dynamic'
+export const revalidate = 0
+
+/** No layer (edge, browser, proxy) may keep a copy of the slot list. */
+const NO_STORE = { 'Cache-Control': 'no-store, max-age=0' }
+
 
 type BookingPayload = {
   name: string
@@ -134,7 +146,7 @@ export async function GET(request: NextRequest) {
     const business = await getMarketingBusiness()
     if (!business) {
       console.error('Marketing availability: no business configured.')
-      return NextResponse.json({ days: [], calendarUnavailable: true })
+      return NextResponse.json({ days: [], calendarUnavailable: true }, { headers: NO_STORE })
     }
 
     const existing = await getExistingAppointmentsForRange(business.id, startOfToday, endOfRange)
@@ -142,7 +154,7 @@ export async function GET(request: NextRequest) {
     const busy = await readBusyOrNull(business, startOfToday, endOfRange)
     if (busy === null) {
       // Fail closed. Better to show no times than to double-book Jacob.
-      return NextResponse.json({ days: [], calendarUnavailable: true })
+      return NextResponse.json({ days: [], calendarUnavailable: true }, { headers: NO_STORE })
     }
 
     const days: {
@@ -238,9 +250,9 @@ export async function GET(request: NextRequest) {
       })
     }
 
-    return NextResponse.json({ days })
+    return NextResponse.json({ days }, { headers: NO_STORE })
   } catch (error) {
     console.error('Marketing bookings availability error:', error)
-    return NextResponse.json({ error: 'Failed to load availability' }, { status: 500 })
+    return NextResponse.json({ error: 'Failed to load availability' }, { status: 500, headers: NO_STORE })
   }
 }

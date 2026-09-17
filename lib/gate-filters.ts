@@ -96,3 +96,36 @@ export function isBlockedTradeText(text: string | null | undefined): boolean {
 
 /** Max length of the "what kind of work do you do?" box, client and server. */
 export const TRADE_OTHER_MAX = 60
+
+/** Webmail and ISP domains. Their words say nothing about the business. */
+const PERSONAL_EMAIL_DOMAINS = new Set([
+  'gmail.com', 'googlemail.com', 'yahoo.com', 'ymail.com', 'hotmail.com', 'outlook.com',
+  'live.com', 'msn.com', 'icloud.com', 'me.com', 'mac.com', 'aol.com', 'proton.me',
+  'protonmail.com', 'comcast.net', 'att.net', 'sbcglobal.net', 'verizon.net',
+])
+
+export type AgencySignal = { term: string; field: 'company' | 'email_domain' }
+
+/**
+ * Landing-calendar agency CHECK. Flags, never blocks: a hit is surfaced to the
+ * owner and stored, and the booking and its Lead go through unchanged, because
+ * a real contractor named "Ads Roofing" costs more to turn away than an agency
+ * costs to take a call with.
+ *
+ * Same keyword list and whole-word rule as the gate. The email domain is split
+ * on dots and hyphens so "apex-marketing.com" reads as words; a run-together
+ * domain like "apexmarketing.com" is deliberately NOT substring-matched, since
+ * substring matching is what turns "painting" into "ai".
+ */
+export function matchAgencySignal(
+  company: string | null | undefined,
+  email: string | null | undefined
+): AgencySignal | null {
+  const fromCompany = matchBlockedKeyword(company)
+  if (fromCompany) return { term: fromCompany, field: 'company' }
+
+  const domain = (email ?? '').trim().toLowerCase().split('@')[1] ?? ''
+  if (!domain || PERSONAL_EMAIL_DOMAINS.has(domain)) return null
+  const fromDomain = matchBlockedKeyword(domain.replace(/[.-]+/g, ' '))
+  return fromDomain ? { term: fromDomain, field: 'email_domain' } : null
+}

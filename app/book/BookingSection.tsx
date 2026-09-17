@@ -91,7 +91,7 @@ export default function BookingSection({
     let cancelled = false
     ;(async () => {
       try {
-        const res = await fetch('/api/marketing-bookings')
+        const res = await fetch('/api/marketing-bookings', { cache: 'no-store' })
         if (!res.ok) throw new Error('slots')
         const data = (await res.json()) as { days?: ApiDay[]; calendarUnavailable?: boolean }
         if (cancelled) return

@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { matchBlockedKeyword, isBlockedTradeText, BLOCKED_KEYWORDS } from './gate-filters'
+import { matchAgencySignal, matchBlockedKeyword, isBlockedTradeText, BLOCKED_KEYWORDS } from './gate-filters'
 
 // ── the ones that must be blocked ──────────────────────────────────────────
 
@@ -102,4 +102,23 @@ test('matching is case-insensitive and returns the keyword lowercased', () => {
 test('punctuation around a keyword still matches', () => {
   assert.equal(matchBlockedKeyword('marketing, roofing'), 'marketing')
   assert.equal(matchBlockedKeyword('roofing (and seo)'), 'seo')
+})
+
+// ── landing-calendar agency CHECK ──────────────────────────────────────────
+
+test('agency signal: company name hit reports the term and the field', () => {
+  assert.deepEqual(matchAgencySignal('Apex Marketing Agency', 'bob@apex.com'), { term: 'marketing', field: 'company' })
+  assert.deepEqual(matchAgencySignal('Ads Roofing', 'x@gmail.com'), { term: 'ads', field: 'company' })
+})
+
+test('agency signal: email domain split on dots and hyphens', () => {
+  assert.deepEqual(matchAgencySignal('Apex LLC', 'bob@apex-marketing.com'), { term: 'marketing', field: 'email_domain' })
+  assert.deepEqual(matchAgencySignal('Apex LLC', 'bob@growth.agency'), { term: 'agency', field: 'email_domain' })
+})
+
+test('agency signal: contractors, webmail and run-together domains do not flag', () => {
+  assert.equal(matchAgencySignal('Smith Painting', 'smith@smithpainting.com'), null)
+  assert.equal(matchAgencySignal('Lead Paint Pros', 'jo@gmail.com'), null)
+  assert.equal(matchAgencySignal('Apex LLC', 'bob@apexmarketing.com'), null)
+  assert.equal(matchAgencySignal('', ''), null)
 })
