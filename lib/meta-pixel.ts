@@ -76,18 +76,40 @@ export function pixelSuppressed(): boolean {
 }
 
 /**
+ * Run one pixel call so it can never affect the caller.
+ *
+ * Deferred to its own task, so a slow or blocking fbq (an ad blocker's
+ * replacement shim, a broken fbevents.js) cannot delay whatever the visitor
+ * just did, and caught, so a throw is logged and dropped. Analytics is the one
+ * thing on this funnel that is allowed to fail silently; the video unlock, a
+ * booking confirmation and a page change are not.
+ */
+function safely(label: string, call: () => void): void {
+  if (typeof window === 'undefined') return
+  setTimeout(() => {
+    try {
+      call()
+    } catch (err) {
+      console.warn(`[pixel] ${label} failed and was skipped:`, err instanceof Error ? err.message : err)
+    }
+  }, 0)
+}
+
+/**
  * Fire a Meta standard event. Safe to call before fbevents.js has loaded —
  * the call queues and flushes on load.
  */
 export function fbTrack(eventName: string, params?: Record<string, unknown>): void {
   if (pixelSuppressed()) return
-  const fbq = ensureFbq()
-  if (!fbq) return
-  if (params) {
-    fbq('track', eventName, params)
-  } else {
-    fbq('track', eventName)
-  }
+  safely(`track ${eventName}`, () => {
+    const fbq = ensureFbq()
+    if (!fbq) return
+    if (params) {
+      fbq('track', eventName, params)
+    } else {
+      fbq('track', eventName)
+    }
+  })
 }
 
 /**
@@ -96,13 +118,15 @@ export function fbTrack(eventName: string, params?: Record<string, unknown>): vo
  */
 export function fbTrackCustom(eventName: string, params?: Record<string, unknown>): void {
   if (pixelSuppressed()) return
-  const fbq = ensureFbq()
-  if (!fbq) return
-  if (params) {
-    fbq('trackCustom', eventName, params)
-  } else {
-    fbq('trackCustom', eventName)
-  }
+  safely(`trackCustom ${eventName}`, () => {
+    const fbq = ensureFbq()
+    if (!fbq) return
+    if (params) {
+      fbq('trackCustom', eventName, params)
+    } else {
+      fbq('trackCustom', eventName)
+    }
+  })
 }
 
 /**
@@ -119,7 +143,9 @@ export function fbTrackWithId(
   params?: Record<string, unknown>
 ): void {
   if (pixelSuppressed()) return
-  const fbq = ensureFbq()
-  if (!fbq) return
-  fbq('track', eventName, params ?? {}, { eventID: eventId })
+  safely(`track ${eventName}`, () => {
+    const fbq = ensureFbq()
+    if (!fbq) return
+    fbq('track', eventName, params ?? {}, { eventID: eventId })
+  })
 }

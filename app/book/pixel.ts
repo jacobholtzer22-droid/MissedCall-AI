@@ -56,9 +56,13 @@ function withVariant(params?: Record<string, unknown>): Record<string, unknown> 
 }
 
 function log(kind: 'track' | 'trackCustom', event: string, params: Record<string, unknown>) {
-  if (!isPixelDebug()) return
-  // eslint-disable-next-line no-console
-  console.log(`%c[pixel] ${kind} ${event}`, 'color:#EE6B1A;font-weight:bold', params)
+  try {
+    if (!isPixelDebug()) return
+    // eslint-disable-next-line no-console
+    console.log(`%c[pixel] ${kind} ${event}`, 'color:#EE6B1A;font-weight:bold', params)
+  } catch {
+    // Debug output only.
+  }
 }
 
 export function trackStandard(event: string, params?: Record<string, unknown>) {

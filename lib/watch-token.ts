@@ -27,7 +27,7 @@ function sign(payload: string, key: string): string {
 export function mintWatchToken(leadId: string, arm: FunnelVariant, now = Date.now()): string | null {
   const key = secret()
   if (!key) {
-    console.warn('[watch-token] OTP_SECRET unset; cannot mint a watch link')
+    console.error('[watch-token] OTP_SECRET unset; cannot mint a watch link (watch page falls back to the gate cookie)')
     return null
   }
   const exp = (now + WATCH_TOKEN_TTL_MS).toString(36)
@@ -68,7 +68,10 @@ export function verifyWatchToken(token: string | null | undefined, now = Date.no
  */
 export function watchPath(token: string | null, arm: FunnelVariant): string {
   const dir = arm.toLowerCase()
-  return token ? `/book/${dir}/watch?t=${encodeURIComponent(token)}` : `/book/${dir}`
+  // No token still goes to the watch page, never back to the landing page the
+  // visitor is already on: the watch page unlocks from the verified gate
+  // cookie when the link could not be signed (see armWatchPage).
+  return token ? `/book/${dir}/watch?t=${encodeURIComponent(token)}` : `/book/${dir}/watch`
 }
 
 /**

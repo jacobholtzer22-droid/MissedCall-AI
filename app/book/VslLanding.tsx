@@ -115,6 +115,14 @@ export default function VslLanding({ arm, poster }: { arm: FunnelVariant; poster
         open={open}
         onClose={() => setOpen(false)}
         onVerified={({ watchUrl, trade, tradeOther, eventId, qualified, leadEvent }) => {
+          // Unlock FIRST. Nothing below may run before the visitor is on their
+          // way to the video: analytics comes after, and every pixel call is
+          // deferred and caught (lib/meta-pixel safely()).
+          router.push(watchUrl)
+          // A watch URL that is this same page would leave the modal sitting at
+          // 100% with nothing happening. Close it so they are back on a page
+          // that works (the calendar is right there) instead of a dead end.
+          if (watchUrl === window.location.pathname) setOpen(false)
           if (!leadFired.current) {
             leadFired.current = true
             // trade_other rides along ONLY for "Other home service" — it is the
@@ -135,7 +143,6 @@ export default function VslLanding({ arm, poster }: { arm: FunnelVariant; poster
               if (leadEvent) trackStandardWithId('Lead', eventId, params)
             } else trackCustomEvent('UnqualifiedLead', params)
           }
-          router.push(watchUrl)
         }}
       />
     </main>

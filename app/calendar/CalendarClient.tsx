@@ -141,12 +141,14 @@ export default function CalendarClient({
         setFormError(data?.error || 'Could not book that. Try again.')
         return
       }
-      if (eventId) trackStandardWithId('Schedule', eventId, { content_name: 'calendar_sms_link' })
+      // Confirmation first: the booking exists, so nothing after this line may
+      // turn it into "Network hiccup" on screen.
       setBooked({
         dateLabel: data?.appointment?.dateLabel ?? slot.dateLabel,
         timeLabel: data?.appointment?.timeLabel ?? slot.display,
         meetLink: data?.appointment?.meetLink ?? null,
       })
+      if (eventId) trackStandardWithId('Schedule', eventId, { content_name: 'calendar_sms_link' })
     } catch {
       setFormError('Network hiccup. Try again.')
     } finally {

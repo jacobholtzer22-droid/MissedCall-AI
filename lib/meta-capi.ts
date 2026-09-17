@@ -17,6 +17,13 @@ import { createHash } from 'crypto'
 
 const GRAPH_VERSION = 'v21.0'
 
+/**
+ * Callers await this so Vercel does not freeze the lambda mid-request, which
+ * means a slow Graph API would hold the visitor's booking or OTP response.
+ * Past this, the event is abandoned and logged; the visitor never waits on Meta.
+ */
+const CAPI_TIMEOUT_MS = 4000
+
 /** Meta requires PII to be SHA-256 of a normalised, lowercased, trimmed value. */
 function hash(value: string): string {
   return createHash('sha256').update(value.trim().toLowerCase()).digest('hex')
@@ -131,6 +138,7 @@ export async function sendCapiLead(input: CapiLead): Promise<CapiResult> {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
+        signal: AbortSignal.timeout(CAPI_TIMEOUT_MS),
       }
     )
     const json = (await res.json().catch(() => ({}))) as {
