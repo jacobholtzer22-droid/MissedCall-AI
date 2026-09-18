@@ -22,8 +22,8 @@ import { db } from '@/lib/db'
 import { normalizeToE164 } from '@/lib/phone-utils'
 import { isTestPhone } from '@/lib/test-allowlist'
 import { calendarLink } from '@/lib/lead-token'
-import { watchLink } from '@/lib/watch-token'
 import { isOptedOut } from '@/lib/sms-opt-out'
+import { greetingName } from '@/lib/marketing-sms-copy'
 
 /** Unguessable, URL-safe. Following this link identifies someone AS this lead. */
 export function newResumeToken(): string {
@@ -49,65 +49,55 @@ export type LeadContext = {
   trade?: string | null
   /** Token for the /calendar link. Null falls back to the bare page. */
   calendarToken?: string | null
-  /** Watch-page token. Preferred: it lands them on the video AND the calendar. */
+  /**
+   * Watch-page token. Not linked by either text any more: both carry the
+   * /calendar link. Still accepted so the wizard's call site is unchanged.
+   */
   watchUrl?: string | null
-  /** Which arm's watch page that token belongs to. */
+  /** The lead's funnel arm. Tags the /calendar link's utm_campaign. */
   watchArm?: 'A' | 'B' | null
 }
 
-/** "Marcus" from "Marcus Vandenberg". Empty when we have nothing usable. */
-function greeting(ctx?: LeadContext): string {
-  const first = ctx?.firstName?.trim().split(/\s+/)[0] ?? ''
-  // Guard against the banked-lead placeholder, where the stored "name" is the
-  // phone number. "Hey +16165551234," is worse than no name at all.
-  if (!first || first.length < 2 || /\d/.test(first)) return ''
-  return ` ${first}`
+/** "your business" when the company was never given. */
+function companyOrDefault(ctx?: LeadContext): string {
+  return ctx?.businessName?.trim() || 'your business'
 }
 
 /**
- * Link we text. /calendar with the lead's signed token, so the page opens
- * prefilled on whatever handset read the message — /book would have re-gated
- * them, and the gate cookie does not follow a text to a different device.
+ * The link both texts carry: /calendar with the lead's token, so the page opens
+ * prefilled on whatever handset read the message. /book would have re-gated
+ * them, and the gate cookie does not follow a text to a different device. A
+ * null token (never expected: the wizard mints it before this is scheduled)
+ * degrades to the bare /calendar page, which still books.
  */
-function bookingLink(ctx?: LeadContext): string {
-  // The watch page has the video and the booking widget on it, so it is the
-  // better destination when we have a token for it. /calendar is the fallback.
-  if (ctx?.watchUrl) return watchLink(ctx.watchUrl, ctx.watchArm ?? 'A')
+function leadCalendarLink(ctx?: LeadContext): string {
   return calendarLink(ctx?.calendarToken ?? null, ctx?.watchArm ?? null)
 }
 
 /**
- * The instant text after OTP. Copy approved by Jacob, Sep 2026: identifies the
- * sender, no pitch, one link, opt-out line. The link is the personalized
- * /calendar link, deliberately NOT the watch page: the copy says "my calendar",
- * and /calendar?l=<token> opens prefilled on whatever phone reads the text.
- * A null token (never expected: the wizard mints it before this is scheduled)
- * degrades to the bare /calendar page, which still books.
- *
- * Exported for tests. 334 characters with a real token and UTMs, GSM-7, so
- * 3 SMS segments.
+ * MSG 2, the instant text after OTP. Copy approved by Jacob, Sep 2026: names
+ * the sender, one link, opt-out line. "Hey," with no name when the lead has no
+ * usable first name. Exported for tests and scripts/preview-booker-messages.ts.
  */
 export function leadTextBody(ctx?: LeadContext): string {
-  const link = calendarLink(ctx?.calendarToken ?? null, ctx?.watchArm ?? null)
   return (
-    `This is Jacob with Align and Acquire. Thanks for taking a look. ` +
-    `I'll follow up with you soon. Want to skip the wait? ` +
-    `Book a time on my calendar and we'll go over everything and see if it's a fit: ${link}` +
+    `Hey${greetingName(ctx?.firstName)}, it's Jacob from Align and Acquire. Thanks for taking a look. ` +
+    `If you want to see how it would work for ${companyOrDefault(ctx)}, ` +
+    `grab a time on my calendar: ${leadCalendarLink(ctx)}` +
     `\n\nReply STOP to opt out.`
   )
 }
 
-/** 24h nudge, sent only when they never booked. */
-function followUpBody(ctx?: LeadContext): string {
-  const link = bookingLink(ctx)
-  const who = greeting(ctx)
-  const biz = ctx?.businessName?.trim()
-  const line = biz ? ` for ${biz}` : ''
+/**
+ * MSG 3, the 24h nudge, sent only when they never booked. When it goes out is
+ * decided by lib/lead-follow-up-window.ts. Exported for tests and the preview.
+ */
+export function followUpBody(ctx?: LeadContext): string {
   return (
-    `Hey${who}, Jacob from Align and Acquire again. ` +
-    `You watched the demo yesterday but didn't grab a time. ` +
-    `If you want to see what it'd look like${line}, grab a time here: ${link}. ` +
-    `Reply STOP to opt out.`
+    `Hey${greetingName(ctx?.firstName)}, Jacob from Align and Acquire again. ` +
+    `Still want to see how this would work for ${companyOrDefault(ctx)}? ` +
+    `It's a quick call, pick any time that works: ${leadCalendarLink(ctx)}` +
+    `\n\nReply STOP to opt out.`
   )
 }
 

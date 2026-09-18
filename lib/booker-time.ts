@@ -79,7 +79,7 @@ export function detectBrowserTimeZone(): string | null {
  * doubles its segment count. Every string here ends up in an SMS.
  */
 function plainSpaces(s: string): string {
-  return s.replace(/[   ]/g, ' ')
+  return s.replace(/[\u202f\u00a0\u2009]/g, ' ')
 }
 
 function formatIn(date: Date, timeZone: string) {
@@ -100,6 +100,7 @@ function formatIn(date: Date, timeZone: string) {
   ).trim()
   return {
     day: date.toLocaleDateString('en-US', { weekday: 'long', timeZone }),
+    dayShort: date.toLocaleDateString('en-US', { weekday: 'short', timeZone }),
     date: date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone }),
     time: clock,
     abbr,
@@ -108,15 +109,27 @@ function formatIn(date: Date, timeZone: string) {
 }
 
 export type BookerWhen = {
-  /** "Thursday", in the zone the booker is shown. */
+  /** "Tuesday", in the zone the booker is shown. */
   day: string
-  /** "Sep 18", same zone. */
+  /** "Sep 22", same zone. */
   date: string
+  /** "Tue, Sep 22". The {date} token in the booker copy. */
+  dateShort: string
+  /** "Tuesday, Sep 22". The {longDate} token in the booker copy. */
+  dateLong: string
   /**
-   * "1:00 PM PDT" when the zone is known. "1:00 PM PDT (4:00 PM EDT)" when it
-   * is only an IP guess. "4:00 PM EDT" when nothing is known.
+   * The bare time. "1:00 PM PDT" when the zone is theirs, "1:00 PM PDT
+   * (4:00 PM EDT)" when it is only an IP guess, "4:00 PM EDT" when nothing is
+   * known. The hour-before text and the booking screen use this.
    */
   time: string
+  /**
+   * The {time} token everywhere else. Same as `time`, plus " (your time)" when
+   * the zone is theirs, so a booker reading "PDT" knows it was converted for
+   * them rather than copied from Jacob's calendar. A guess already carries ET
+   * beside it and gets no marker.
+   */
+  timeMarked: string
   /** True when the time is shown in a zone we are confident is theirs. */
   confident: boolean
 }
@@ -134,19 +147,22 @@ export function bookerWhen(
 ): BookerWhen {
   const tz = normalizeTimeZone(zone?.timeZone)
   const et = formatIn(scheduledAt, OWNER_TIMEZONE)
-  if (!tz) return { day: et.day, date: et.date, time: et.timeWithAbbr, confident: false }
+  const shown = tz ? formatIn(scheduledAt, tz) : et
+  const dates = {
+    day: shown.day,
+    date: shown.date,
+    dateShort: `${shown.dayShort}, ${shown.date}`,
+    dateLong: `${shown.day}, ${shown.date}`,
+  }
+  if (!tz) return { ...dates, time: et.timeWithAbbr, timeMarked: et.timeWithAbbr, confident: false }
 
-  const theirs = formatIn(scheduledAt, tz)
   if (zone?.source !== 'ip') {
-    return { day: theirs.day, date: theirs.date, time: theirs.timeWithAbbr, confident: true }
+    const time = shown.timeWithAbbr
+    return { ...dates, time, timeMarked: `${time} (your time)`, confident: true }
   }
-  const same = theirs.timeWithAbbr === et.timeWithAbbr && theirs.date === et.date
-  return {
-    day: theirs.day,
-    date: theirs.date,
-    time: same ? theirs.timeWithAbbr : `${theirs.timeWithAbbr} (${et.timeWithAbbr})`,
-    confident: false,
-  }
+  const same = shown.timeWithAbbr === et.timeWithAbbr && shown.date === et.date
+  const time = same ? shown.timeWithAbbr : `${shown.timeWithAbbr} (${et.timeWithAbbr})`
+  return { ...dates, time, timeMarked: time, confident: false }
 }
 
 /**

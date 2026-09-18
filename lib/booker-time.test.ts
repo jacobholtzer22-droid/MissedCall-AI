@@ -11,7 +11,6 @@ import {
   slotClock,
   slotTimeWithZone,
 } from './booker-time'
-import { confirmationText, hourBeforeText, nightBeforeText } from './marketing-sms-copy'
 
 // 4:00 PM EDT on Friday Sep 18 2026.
 const FOUR_PM_ET = new Date('2026-09-18T20:00:00Z')
@@ -20,7 +19,6 @@ const LAST_SLOT_ET = new Date('2026-09-19T00:30:00Z')
 // 4:00 PM EST in January, for the standard-time abbreviations.
 const FOUR_PM_EST = new Date('2027-01-15T21:00:00Z')
 
-const GSM7 = /^[A-Za-z0-9 \n\r@£$¥èéùìòÇØøÅåΔ_ΦΓΛΩΠΨΣΘΞÆæßÉ!"#¤%&'()*+,\-./:;<=>?¡ÄÖÑÜ§¿äöñüà]*$/
 
 test('OWNER_TIMEZONE matches TIMEZONE in lib/marketing-slots', () => {
   const src = readFileSync(join(__dirname, 'marketing-slots.ts'), 'utf8')
@@ -116,29 +114,19 @@ test('owner note says where they are, and says so when unknown', () => {
   assert.match(bookerZoneNote(FOUR_PM_ET, null), /not captured/)
 })
 
-const params = {
-  scheduledAt: FOUR_PM_ET,
-  meetLink: 'https://meet.google.com/abc-defg-hij',
-  ownerPhone: '+15175809709',
-}
+test('{date}, {longDate} and the "(your time)" marker', () => {
+  // Tuesday Sep 22 2026, 4:00 PM EDT.
+  const tue = new Date('2026-09-22T20:00:00Z')
+  const pt = bookerWhen(tue, { timeZone: 'America/Los_Angeles', source: 'widget' })
+  assert.equal(pt.dateShort, 'Tue, Sep 22')
+  assert.equal(pt.dateLong, 'Tuesday, Sep 22')
+  assert.equal(pt.time, '1:00 PM PDT')
+  assert.equal(pt.timeMarked, '1:00 PM PDT (your time)')
 
-test('all three texts render in the booker zone and never say bare ET', () => {
-  const pt = { ...params, timeZone: 'America/Los_Angeles', timeZoneSource: 'browser' }
-  const c = confirmationText(pt)
-  assert.match(c, /Friday Sep 18 at 1:00 PM PDT\./)
-  assert.match(nightBeforeText(pt), /tomorrow at 1:00 PM PDT\./)
-  assert.match(hourBeforeText(pt), /at 1:00 PM PDT, about an hour from now\./)
-  for (const t of [c, nightBeforeText(pt), hourBeforeText(pt)]) {
-    assert.doesNotMatch(t, / ET\b/, t)
-    assert.match(t, GSM7, `not GSM-7: ${t}`)
-  }
-})
+  const ip = bookerWhen(tue, { timeZone: 'America/Los_Angeles', source: 'ip' })
+  assert.equal(ip.timeMarked, '1:00 PM PDT (4:00 PM EDT)', 'a guess carries ET, never "(your time)"')
 
-test('texts for a booking with no captured zone read ET with its abbreviation', () => {
-  assert.match(confirmationText(params), /at 4:00 PM EDT\./)
-})
-
-test('texts for an IP-guessed zone carry both times', () => {
-  const ip = { ...params, timeZone: 'America/Chicago', timeZoneSource: 'ip' }
-  assert.match(confirmationText(ip), /at 3:00 PM CDT \(4:00 PM EDT\)\./)
+  const none = bookerWhen(tue, null)
+  assert.equal(none.timeMarked, '4:00 PM EDT')
+  assert.equal(none.dateShort, 'Tue, Sep 22')
 })

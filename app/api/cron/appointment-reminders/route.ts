@@ -45,7 +45,6 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@clerk/nextjs/server'
-import { TZDate } from '@date-fns/tz'
 import Telnyx from 'telnyx'
 import { db } from '@/lib/db'
 import { normalizeToE164, phonesMatch } from '@/lib/phone-utils'
@@ -53,47 +52,18 @@ import { getMarketingBusiness } from '@/lib/marketing-funnel'
 import { getCalendarEventState } from '@/lib/google-calendar'
 import { isSendableStatus } from '@/lib/reminder-status'
 import { nightBeforeText, hourBeforeText } from '@/lib/marketing-sms-copy'
-import { normalizeTimeZone } from '@/lib/booker-time'
+import { decideReminder, type ReminderKind } from '@/lib/demo-reminder-schedule'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
 
-/** Fallback when the booker's zone was not captured. */
-const TIMEZONE = 'America/New_York'
-const NIGHT_BEFORE_HOUR = 18
-const NIGHT_BEFORE_MINUTE = 30
-const HOUR_BEFORE_MS = 60 * 60 * 1000
-
-/**
- * Nothing goes out before this hour, business-local. A demo texted at 6:00 AM is
- * worse than no text at all.
- */
-const QUIET_UNTIL_HOUR = 7
-
-/**
- * No hour-before for a demo starting before this hour. Its hour-before mark
- * would land inside quiet hours anyway, and the night-before text already told
- * them about it.
- */
-const HOUR_BEFORE_MIN_MEETING_HOUR = 8
-
-/**
- * No hour-before when the booking was made this close to the meeting. The
- * confirmation text has only just landed and a second one an hour later reads
- * as a glitch.
- */
-const HOUR_BEFORE_MIN_LEAD_MS = 90 * 60 * 1000
-
-// If a cron run is missed, do not fire a stale night-before text hours late.
-const NIGHT_BEFORE_GRACE_MS = 12 * 60 * 60 * 1000
+// Timing rules (quiet hours, 6:30 PM night-before, the hour-before skips) live
+// in lib/demo-reminder-schedule.ts, so scripts/preview-booker-messages.ts shows
+// exactly what this cron would do by calling the same decideReminder.
 
 // Consent marker written by /api/demo-book at creation time. Keying on this
 // exact string is why that literal must never be reworded there.
 const CONSENT_MARKER = 'SMS consent: yes'
-
-
-
-type ReminderKind = 'night_before' | 'hour_before'
 
 async function isAuthorized(request: NextRequest): Promise<boolean> {
   const cronSecret = process.env.CRON_SECRET?.trim()
@@ -108,52 +78,16 @@ async function isAuthorized(request: NextRequest): Promise<boolean> {
   return false
 }
 
-/** The zone reminder timing runs in for this booking. */
-function bookerZone(appt: { customerTimezone: string | null }): string {
-  return normalizeTimeZone(appt.customerTimezone) ?? TIMEZONE
-}
-
-function sameDayInTz(a: Date, b: Date, tz: string): boolean {
-  const ta = new TZDate(a, tz)
-  const tb = new TZDate(b, tz)
-  return (
-    ta.getFullYear() === tb.getFullYear() &&
-    ta.getMonth() === tb.getMonth() &&
-    ta.getDate() === tb.getDate()
-  )
-}
-
-/** 6:30 PM local on the calendar day before the appointment. DST-correct via TZDate. */
-function nightBeforeDueAt(scheduledAt: Date, tz: string): Date {
-  const sched = new TZDate(scheduledAt, tz)
-  return new Date(
-    new TZDate(
-      sched.getFullYear(),
-      sched.getMonth(),
-      sched.getDate() - 1,
-      NIGHT_BEFORE_HOUR,
-      NIGHT_BEFORE_MINUTE,
-      0,
-      0,
-      tz
-    ).getTime()
-  )
-}
-
-/** Hour of day in the given zone. */
-function localHour(d: Date, tz: string): number {
-  return new TZDate(d, tz).getHours()
-}
-
 function reminderText(
   kind: ReminderKind,
   scheduledAt: Date,
+  firstName: string | null,
   meetLink: string | null,
   ownerPhone: string | null,
   timeZone: string | null,
   timeZoneSource: string | null
 ): string {
-  const params = { scheduledAt, meetLink, ownerPhone, timeZone, timeZoneSource }
+  const params = { scheduledAt, firstName, meetLink, ownerPhone, timeZone, timeZoneSource }
   return kind === 'night_before' ? nightBeforeText(params) : hourBeforeText(params)
 }
 
@@ -238,55 +172,12 @@ async function runAppointmentReminders(request: NextRequest) {
       continue
     }
 
-    const msUntil = appt.scheduledAt.getTime() - now.getTime()
-    const tz = bookerZone(appt)
-
-    // Decide which single reminder, if any, is due right now.
-    let kind: ReminderKind | null = null
-    if (msUntil > 0 && msUntil <= HOUR_BEFORE_MS && !appt.reminderHourBeforeSentAt) {
-      // An early demo's hour-before mark falls inside quiet hours, and the
-      // night-before text has already covered it.
-      if (localHour(appt.scheduledAt, tz) < HOUR_BEFORE_MIN_MEETING_HOUR) {
-        result.skipped.push({
-          id: appt.id,
-          reason: `meeting starts before ${HOUR_BEFORE_MIN_MEETING_HOUR}:00 local, night-before covers it`,
-        })
-        continue
-      }
-      // Booked almost on top of the meeting: the confirmation is the reminder.
-      const leadMs = appt.scheduledAt.getTime() - appt.createdAt.getTime()
-      if (leadMs < HOUR_BEFORE_MIN_LEAD_MS) {
-        result.skipped.push({
-          id: appt.id,
-          reason: `booked ${Math.round(leadMs / 60000)} min before the meeting, confirmation covers it`,
-        })
-        continue
-      }
-      kind = 'hour_before'
-    } else if (!appt.reminderNightBeforeSentAt) {
-      const bookedSameDay = sameDayInTz(appt.createdAt, appt.scheduledAt, tz)
-      if (bookedSameDay) {
-        result.skipped.push({ id: appt.id, reason: 'booked same day, night-before not applicable' })
-      } else {
-        const due = nightBeforeDueAt(appt.scheduledAt, tz).getTime()
-        const overdueBy = now.getTime() - due
-        if (overdueBy >= 0 && overdueBy <= NIGHT_BEFORE_GRACE_MS && msUntil > HOUR_BEFORE_MS) {
-          kind = 'night_before'
-        }
-      }
-    }
-
-    if (!kind) continue
-
-    // Quiet hours, in the booker's own zone. Per appointment now that bookers
-    // are in different zones: 6:00 AM Pacific is 9:00 AM Eastern.
-    if (localHour(now, tz) < QUIET_UNTIL_HOUR) {
-      result.skipped.push({
-        id: appt.id,
-        reason: `quiet hours before ${QUIET_UNTIL_HOUR}:00 local (${tz}, local hour ${localHour(now, tz)})`,
-      })
-      continue
-    }
+    // Which single reminder, if any, is due right now. Rules and their
+    // reasons are in lib/demo-reminder-schedule.ts.
+    const decision = decideReminder(appt, now)
+    if (decision.skip) result.skipped.push({ id: appt.id, reason: decision.skip })
+    if (!decision.kind) continue
+    const kind: ReminderKind = decision.kind
 
     if (await hasOptedOut(business.id, appt.customerPhone)) {
       result.skipped.push({ id: appt.id, reason: 'opted out (STOP)' })
@@ -356,6 +247,7 @@ async function runAppointmentReminders(request: NextRequest) {
     const text = reminderText(
       kind,
       appt.scheduledAt,
+      appt.customerName,
       fresh.googleMeetLink,
       business.ownerPhone,
       appt.customerTimezone,

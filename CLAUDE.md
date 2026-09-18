@@ -2567,27 +2567,74 @@ to a string to send that one static line back and nothing else. It is a constant
 rather than a `Business` column on purpose: one line of copy on one number, and a
 column would imply a per-tenant behaviour that does not exist.
 
-### The three demo texts, and the reminder cron
+### Every booker-facing message, and the reminder cron
 
-All three live in **`lib/marketing-sms-copy.ts`**. `/api/demo-book` imports
-`confirmationText`; `/api/cron/appointment-reminders` imports `nightBeforeText`
-and `hourBeforeText`. They previously sat in two files with a private formatter
-each, which is how the wording, the timezone label and the Meet link handling
-became three near-copies.
+Copy rewritten Sep 2026. Each message has exactly one builder, and
+`scripts/preview-booker-messages.ts` renders every one of them through that same
+builder (plus reminder timing through the cron's own `decideReminder`) for
+Pacific, Mountain, Arizona, Central, Eastern, an IP-guessed zone and no zone, in
+September and January. **Run it before and after any copy change**:
+`npx tsx scripts/preview-booker-messages.ts`. It sends nothing and blanks the
+send keys and `DATABASE_URL` itself.
 
-| Text | Sent by | When |
-|---|---|---|
-| Confirmation | `/api/demo-book` | The moment the slot is taken |
-| Night before | reminder cron | 6:30 PM the day before, booker-local |
-| Hour before | reminder cron | Roughly an hour out |
+| # | Message | Builder | Sent by | When |
+|---|---|---|---|---|
+| 2 | Lead text | `leadTextBody`, `lib/lead-sms.ts` | `/api/demo-lead/wizard` | Right after OTP |
+| 3 | 24h follow-up | `followUpBody`, `lib/lead-sms.ts` | `/api/cron/lead-follow-up` (hourly) | 24h to 72h after OTP, 11:00 AM to 7:00 PM ET only |
+| 4 | Confirmation SMS | `confirmationText`, `lib/marketing-sms-copy.ts` | `/api/demo-book` | The moment the slot is taken |
+| 5 | Confirmation email | `confirmationEmail`, `lib/demo-booker-copy.ts` | `/api/demo-book` | Same |
+| 6 | Calendar invite | `demoInviteTitle` / `demoInviteDescription`, `lib/demo-booker-copy.ts` | `createMarketingCalendarEvent` | Same |
+| 7 | Night before | `nightBeforeText`, `lib/marketing-sms-copy.ts` | reminder cron | 6:30 PM the day before, booker-local |
+| 8 | Hour before | `hourBeforeText`, `lib/marketing-sms-copy.ts` | reminder cron | 45 to 60 minutes out |
+
+Copy rules the tests enforce (`lib/demo-booker-copy.test.ts`, `lib/lead-sms.test.ts`):
+
+- **All SMS copy is GSM-7.** Straight quotes and apostrophes, no em or en dashes,
+  no emoji. One character outside the alphabet turns a text into UCS-2 and
+  roughly doubles its segments. No em dashes in the email or invite either.
+- **{time}** is `bookerWhen().timeMarked`: "1:00 PM PDT (your time)" for a
+  widget or device zone, "1:00 PM PDT (4:00 PM EDT)" for an IP guess, "4:00 PM
+  EDT" for none. MSG 8 alone uses the bare `time` ("1:00 PM PDT"). {date} is
+  `dateShort` ("Tue, Sep 22"), {longDate} is `dateLong` ("Tuesday, Sep 22").
+- **No first name** reads "Hey," / "Hi," (`greetingName`, which also refuses
+  the banked-lead phone-number placeholder). **No company** reads "your business".
+- **MSG 7 and MSG 8 carry no STOP line**, by decision. MSG 7 asks the booker to
+  "Reply YES"; that lands in the marketing-line branch of the SMS webhook, which
+  forwards it to Jacob and auto-replies nothing. YES is not an opt-in keyword
+  (only START and UNSTOP are).
+- **The invite carries no Meet link in its description.** Google puts its own
+  Join button on the event and in the invite email (from `conferenceData`), and
+  the link does not exist until the insert returns. There is no follow-up patch.
+- **Invite title:** "Align and Acquire demo with Jacob | {firstName}, {company}",
+  first word of the name only (`greetingName` rules). No company: "... | {firstName}".
+  No usable name: "... | {company}". Neither: "Align and Acquire demo with Jacob".
+  Never "your business" in the title; that fallback is for sentences.
+- **Confirmation email:** subject "You're booked: {date} at {time}". From
+  `Jacob at Align and Acquire <notifications@alignandacquire.com>`
+  (`DEMO_EMAIL_FROM`); Reply-To is `business.ownerEmail` when it is set and looks
+  like an address, omitted entirely otherwise (`demoEmailEnvelope`). /api/demo-book
+  posts to Resend's REST API directly, so the field is `reply_to` (snake_case).
+  The resend SDK's `replyTo` maps to that same wire field; do not pass `replyTo`
+  to the REST endpoint. The email is sent with both an HTML and a plain-text part.
+- **Call length:** the email says "It usually takes about 15 minutes. I block 30
+  so we're never rushed." Pages still say 15 (`CALL_LENGTH_MINUTES`); the
+  calendar block is 30 (`SLOT_MINUTES`).
 
 **The reschedule number is always derived from `business.ownerPhone`** and
 rendered `517-580-9709` by `formatReschedulePhone()`. Never write a literal phone
-number into that module. A missing `ownerPhone` or a missing Meet link drops its
-whole sentence rather than rendering `Join here: .`
+number into the copy modules. A missing `ownerPhone` or a missing Meet link drops
+its whole sentence rather than rendering `Join here: .`
+
+**24h follow-up send window** (`lib/lead-follow-up-window.ts`): 11:00 AM to 7:00
+PM **Eastern for everyone**, because the lead's zone is not captured at OTP. A
+24h mark outside the window waits for the next 11:00 AM ET (at most 16 hours,
+always inside the 72h cap). The cron runs on the hour and returns early outside
+the window.
 
 `/api/cron/appointment-reminders` runs every 15 minutes (`vercel.json`) and is
-marketing-business only. Client tenants have their own numbers and never
+marketing-business only. Its timing rules live in `lib/demo-reminder-schedule.ts`
+(`decideReminder`), pure, so the preview script and the tests call exactly what
+the cron calls. Client tenants have their own numbers and never
 consented to this funnel. Rules, on top of the claim-before-send idempotency:
 
 - **"Local" is the booker's zone** (`Appointment.customerTimezone`), Eastern when

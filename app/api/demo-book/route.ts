@@ -14,7 +14,7 @@ import Telnyx from 'telnyx'
 import { db } from '@/lib/db'
 import { validateUsMobile } from '@/lib/phone-utils'
 import { createMarketingCalendarEvent, getBusyTimes } from '@/lib/google-calendar'
-import { getDemoVideoAbsoluteUrl, WATCH_BEFORE_LINE } from '@/lib/demo-video'
+import { getDemoVideoAbsoluteUrl } from '@/lib/demo-video'
 import {
   getMarketingBusiness,
   notifyOwnerOrShout,
@@ -49,8 +49,9 @@ import {
   overlapsWithBusy,
 } from '@/lib/marketing-slots'
 import { confirmationText } from '@/lib/marketing-sms-copy'
+import { confirmationEmail, demoEmailEnvelope } from '@/lib/demo-booker-copy'
 import { bookerWhen, bookerZoneNote, resolveBookerZone } from '@/lib/booker-time'
-import { GATE_COOKIE, NOT_AN_OWNER, CALL_LENGTH_MINUTES } from '@/app/book/constants'
+import { GATE_COOKIE, NOT_AN_OWNER } from '@/app/book/constants'
 import { VARIANT_COOKIE, VISITOR_COOKIE } from '@/lib/variant'
 import { FUNNEL_VARIANT_COOKIE } from '@/lib/funnel-variant'
 import { sendCapiLead } from '@/lib/meta-capi'
@@ -378,7 +379,6 @@ export async function POST(request: NextRequest) {
             customerPhone: phoneE164,
             customerEmail: email,
             businessName: companyName || trade || 'Not specified',
-            serviceType,
             servicesInterested: [],
             attendeeEmail: email,
             companyName: companyName || null,
@@ -394,7 +394,9 @@ export async function POST(request: NextRequest) {
             // (IP) zone does not move the event: the description line carries
             // both times instead.
             eventTimeZone: bookerZone && bookerZone.source !== 'ip' ? bookerZone.timeZone : null,
-            whenLine: `Time: ${booker.day}, ${booker.date} at ${booker.time}`,
+            bookerTimeZone: bookerZone?.timeZone ?? null,
+            bookerTimeZoneSource: bookerZone?.source ?? null,
+            ownerPhone: business.ownerPhone,
           }
         )
         googleEventId = result.id
@@ -753,6 +755,7 @@ export async function POST(request: NextRequest) {
     if (fromNumber && process.env.TELNYX_API_KEY) {
       const confirmation = confirmationText({
         scheduledAt: slotStart,
+        firstName: name,
         meetLink: googleMeetLink,
         ownerPhone: business.ownerPhone,
         timeZone: bookerZone?.timeZone,
@@ -772,9 +775,19 @@ export async function POST(request: NextRequest) {
       console.error(`[demo-book] confirmation SMS NOT SENT appointmentId=${appointment.id} reason=no_sender_or_api_key`)
     }
 
-    // Customer confirmation email
+    // Customer confirmation email. Copy lives in lib/demo-booker-copy.ts, which
+    // scripts/preview-booker-messages.ts renders through the same function.
     const resendKey = process.env.RESEND_API_KEY
     if (resendKey) {
+      const confirmationMail = confirmationEmail({
+        scheduledAt: slotStart,
+        firstName: name,
+        meetLink: googleMeetLink,
+        ownerPhone: business.ownerPhone,
+        timeZone: bookerZone?.timeZone,
+        timeZoneSource: bookerZone?.source,
+        videoUrl: getDemoVideoAbsoluteUrl(),
+      })
       afterResponse(ROUTE, 'confirmation-email', async () => {
         const res = await fetch('https://api.resend.com/emails', {
           method: 'POST',
@@ -783,19 +796,13 @@ export async function POST(request: NextRequest) {
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
-            from: 'Align and Acquire <notifications@alignandacquire.com>',
+            // "Jacob at Align and Acquire" <notifications@...>, and reply_to
+            // business.ownerEmail when set (lib/demo-booker-copy.ts).
+            ...demoEmailEnvelope(business.ownerEmail),
             to: email,
-            subject: `You're booked with Align and Acquire`,
-            html: `
-              <h2>You're booked</h2>
-              <p>Hi ${escapeHtml(name)},</p>
-              <p>Your demo is set for <strong>${escapeHtml(booker.day)}, ${escapeHtml(booker.date)} at ${escapeHtml(booker.time)}</strong>.</p>
-              <p>It takes about ${CALL_LENGTH_MINUTES} minutes. I will show you the system running on real client accounts: real text-back conversations, and the jobs that got booked out of them. Then I will answer any questions.</p>
-              ${googleMeetLink ? `<p><strong>Join here:</strong> <a href="${googleMeetLink}">${googleMeetLink}</a></p>` : ''}
-              <p>${WATCH_BEFORE_LINE} <a href="${getDemoVideoAbsoluteUrl()}">Watch the video</a></p>
-              <p>You will also get a text from me confirming.</p>
-              <p>Talk soon, Jacob</p>
-            `,
+            subject: confirmationMail.subject,
+            html: confirmationMail.html,
+            text: confirmationMail.text,
           }),
         })
         if (!res.ok) {

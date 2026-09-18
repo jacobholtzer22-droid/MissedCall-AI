@@ -10,6 +10,7 @@ import { addMinutes } from 'date-fns'
 import { TZDate } from '@date-fns/tz'
 import { db } from '@/lib/db'
 import { DEFAULT_BUSINESS_HOURS } from '@/lib/business-hours'
+import { demoInviteDescription, demoInviteTitle } from '@/lib/demo-booker-copy'
 
 const SCOPES = ['https://www.googleapis.com/auth/calendar']
 const REDIRECT_URI = process.env.GOOGLE_REDIRECT_URI!
@@ -570,7 +571,6 @@ export type CreateMarketingCalendarEventOptions = {
   customerEmail?: string | null
   businessName: string
   servicesInterested: string[] // interests from form
-  serviceType?: string | null // derived booking type — used in the event title when present
   message?: string | null
   /**
    * Invite the prospect as a Google Calendar attendee. When set, Google emails
@@ -586,7 +586,7 @@ export type CreateMarketingCalendarEventOptions = {
   privateNotes?: string | null
   /** Founder video link, shown to the attendee in the invite description. */
   watchBeforeUrl?: string | null
-  /** Optional company name, appended to the event title when supplied. */
+  /** Company name for the title, after the booker's first name. Dropped when absent. */
   companyName?: string | null
   /**
    * The booker's IANA zone. Set as the event's timeZone so Google's invite
@@ -596,16 +596,21 @@ export type CreateMarketingCalendarEventOptions = {
    */
   eventTimeZone?: string | null
   /**
-   * "Time: Thursday, Sep 18 at 1:00 PM PDT". First line of the description,
-   * which the attendee sees, so the time is in writing in their zone even when
-   * their calendar client renders the invite in some other one.
+   * The booker's zone and how it was captured (Appointment.customerTimezone /
+   * customerTimezoneSource). Drives the "Time:" line at the top of the
+   * description, which the attendee sees, so the time is in writing in their
+   * zone even when their calendar client renders the invite in another one.
    */
-  whenLine?: string | null
+  bookerTimeZone?: string | null
+  bookerTimeZoneSource?: string | null
+  /** business.ownerPhone, for the "Need a different time?" line. */
+  ownerPhone?: string | null
 }
 
 /**
  * Creates a Google Calendar event for a marketing discovery call booking.
- * Title: "Discovery Call — [customer name]", 15-minute reminder, description with contact/details.
+ * Title and description come from lib/demo-booker-copy.ts, the same builders
+ * scripts/preview-booker-messages.ts renders. 15-minute reminder.
  */
 /** Google event id, the owner-facing link, and the Meet link for the call. */
 export type MarketingCalendarEventResult = {
@@ -626,14 +631,15 @@ export async function createMarketingCalendarEvent(
     customerEmail,
     businessName,
     servicesInterested,
-    serviceType,
     message,
     attendeeEmail,
     privateNotes,
     watchBeforeUrl,
     companyName,
     eventTimeZone,
-    whenLine,
+    bookerTimeZone,
+    bookerTimeZoneSource,
+    ownerPhone,
   } = options
 
   const calendar = await getCalendarClient(businessId)
@@ -645,25 +651,17 @@ export async function createMarketingCalendarEvent(
   })
   const tz = eventTimeZone?.trim() || business?.timezone || 'America/New_York'
 
-  const who = companyName?.trim() ? `${customerName}, ${companyName.trim()}` : customerName
-  const summary = serviceType?.trim()
-    ? `${serviceType.trim()} — ${who}`
-    : `Discovery Call — ${who}`
-  const descriptionLines = [
-    whenLine?.trim() ? whenLine.trim() : null,
-    `Name: ${customerName}`,
-    `Phone: ${customerPhone}`,
-    customerEmail ? `Email: ${customerEmail}` : null,
-    `Business: ${businessName}`,
-    servicesInterested.length > 0 ? `Services interested in: ${servicesInterested.join(', ')}` : null,
-    message?.trim() ? `Message: ${message.trim()}` : null,
-    ...(watchBeforeUrl?.trim()
-      ? ['', 'Watch this before we talk, takes 2 minutes.', watchBeforeUrl.trim()]
-      : []),
-    '',
-    'Booked via /book (Align and Acquire)',
-  ].filter((line) => line !== null)
-  const description = descriptionLines.join('\n')
+  const summary = demoInviteTitle(customerName, companyName)
+  // No Meet link in the description: Google adds its own Join button to the
+  // event and to the invite email from conferenceData below.
+  const description = demoInviteDescription({
+    scheduledAt: start,
+    timeZone: bookerTimeZone,
+    timeZoneSource: bookerTimeZoneSource,
+    ownerPhone,
+    videoUrl: watchBeforeUrl,
+    details: { customerName, customerPhone, customerEmail, businessName, servicesInterested, message },
+  })
 
   const invitee = attendeeEmail?.trim()
 

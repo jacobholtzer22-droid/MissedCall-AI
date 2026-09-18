@@ -7,6 +7,10 @@
 //
 // Deliberately conservative about what counts as "no booking": if we cannot
 // prove they have not booked, we do not text.
+//
+// Only between 11:00 AM and 7:00 PM Eastern (lib/lead-follow-up-window.ts). A
+// lead whose 24h mark lands outside that window is picked up by the first
+// hourly run after the next 11:00 AM ET, well inside the 72h cap.
 
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
@@ -14,12 +18,14 @@ import { sendLeadFollowUpSms } from '@/lib/lead-sms'
 import { isTestPhone } from '@/lib/test-allowlist'
 import { getMarketingBusiness } from '@/lib/marketing-funnel'
 import { isOptedOut } from '@/lib/sms-opt-out'
+import {
+  FOLLOW_UP_MAX_AGE_HOURS,
+  FOLLOW_UP_MIN_AGE_HOURS,
+  followUpDue,
+  isInFollowUpWindow,
+} from '@/lib/lead-follow-up-window'
 
 export const dynamic = 'force-dynamic'
-
-/** Wait a full day, but never chase someone from last week. */
-const MIN_AGE_HOURS = 24
-const MAX_AGE_HOURS = 72
 
 function authorized(request: NextRequest): boolean {
   const secret = process.env.CRON_SECRET?.trim()
@@ -36,6 +42,13 @@ export async function GET(request: NextRequest) {
   const business = await getMarketingBusiness()
   if (!business) return NextResponse.json({ error: 'No marketing business' }, { status: 503 })
 
+  // Outside the send window nobody is due, so skip the query entirely. The
+  // window is the same for every lead, which is why this can be global.
+  if (!isInFollowUpWindow(new Date())) {
+    console.log('[cron/lead-follow-up] outside the 11:00 AM to 7:00 PM ET send window, nothing sent')
+    return NextResponse.json({ candidates: 0, sent: 0, skipped: 0, errors: [], outsideWindow: true })
+  }
+
   const now = Date.now()
   const candidates = await db.websiteLead.findMany({
     where: {
@@ -48,8 +61,8 @@ export async function GET(request: NextRequest) {
       // written only on the bank path, behind a consumed single-use ticket.
       otpVerifiedAt: {
         not: null,
-        lte: new Date(now - MIN_AGE_HOURS * 3_600_000),
-        gte: new Date(now - MAX_AGE_HOURS * 3_600_000),
+        lte: new Date(now - FOLLOW_UP_MIN_AGE_HOURS * 3_600_000),
+        gte: new Date(now - FOLLOW_UP_MAX_AGE_HOURS * 3_600_000),
       },
       // They must actually have received the first text. A lead whose instant
       // text never dispatched is not owed a "you didn't book" nudge.
@@ -61,7 +74,7 @@ export async function GET(request: NextRequest) {
       // a lead Jacob has already decided is junk.
       junk: false,
     },
-    select: { id: true, phone: true, name: true, message: true, calendarToken: true },
+    select: { id: true, phone: true, name: true, message: true, calendarToken: true, otpVerifiedAt: true },
     take: 100,
   })
 
@@ -71,6 +84,13 @@ export async function GET(request: NextRequest) {
 
   for (const lead of candidates) {
     try {
+      // Same rule the query encodes, checked through the tested function so the
+      // two cannot drift. Anything failing it here is a query bug, not a lead.
+      if (!lead.otpVerifiedAt || !followUpDue(lead.otpVerifiedAt, new Date(now))) {
+        skipped++
+        continue
+      }
+
       // Booked already? Appointment is keyed on the phone, not the lead, so a
       // booking made from a different device still counts.
       const booked = await db.appointment.count({
