@@ -43,11 +43,13 @@ import {
   isWithinBookingWindow,
   isWithinHours,
   isValidSlotStart,
+  toTZDate,
   getExistingAppointmentsForRange,
   overlapsWithExisting,
   overlapsWithBusy,
 } from '@/lib/marketing-slots'
 import { confirmationText } from '@/lib/marketing-sms-copy'
+import { bookerWhen, bookerZoneNote, resolveBookerZone } from '@/lib/booker-time'
 import { GATE_COOKIE, NOT_AN_OWNER, CALL_LENGTH_MINUTES } from '@/app/book/constants'
 import { VARIANT_COOKIE, VISITOR_COOKIE } from '@/lib/variant'
 import { FUNNEL_VARIANT_COOKIE } from '@/lib/funnel-variant'
@@ -106,6 +108,13 @@ type Payload = {
    * and cannot tell a booking made before the video from one made after it.
    */
   bookingSurface?: string
+  /**
+   * IANA zone the calendar widget showed the times in (DateCalendar lets them
+   * change it). Every text, email and invite this booker gets renders in it.
+   */
+  timeZone?: string
+  /** The device's own zone. Fallback when the widget sent none. */
+  browserTimeZone?: string
 }
 
 export async function POST(request: NextRequest) {
@@ -155,6 +164,14 @@ export async function POST(request: NextRequest) {
         : bookingSource
         ? 'calendar'
         : null
+
+    // The booker's zone, for everything they are sent. The IP header is a last
+    // resort and is stored as a guess, which renders their time AND ET.
+    const bookerZone = resolveBookerZone({
+      widget: body.timeZone,
+      browser: body.browserTimeZone,
+      ip: request.headers.get('x-vercel-ip-timezone'),
+    })
 
     // Re-sanitised: this arrives from a cookie the visitor can edit.
     // `touches` is the cookie alone and is what the Schedule event reads, so
@@ -259,11 +276,17 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'That time is no longer available.' }, { status: 409 })
     }
 
+    // The ET calendar day of the slot. Read through toTZDate, never off the
+    // plain Date: getFullYear/getMonth/getDate on a Date resolve in the SERVER
+    // zone, which is UTC on Vercel. An 8:00 PM ET slot is midnight UTC the next
+    // day, so the old form checked the WRONG day for conflicts and busy time,
+    // and 8:00/8:30 PM (7:00 PM onward in winter) could be double-booked.
+    const slotEt = toTZDate(slotStart)
     const startOfDay = new TZDate(
-      slotStart.getFullYear(), slotStart.getMonth(), slotStart.getDate(), 0, 0, 0, 0, TIMEZONE
+      slotEt.getFullYear(), slotEt.getMonth(), slotEt.getDate(), 0, 0, 0, 0, TIMEZONE
     )
     const endOfDay = new TZDate(
-      slotStart.getFullYear(), slotStart.getMonth(), slotStart.getDate(), 23, 59, 59, 999, TIMEZONE
+      slotEt.getFullYear(), slotEt.getMonth(), slotEt.getDate(), 23, 59, 59, 999, TIMEZONE
     )
 
     const existing = await getExistingAppointmentsForRange(business.id, startOfDay, endOfDay)
@@ -333,6 +356,12 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    // The call time as the booker reads it ("Thursday", "Sep 18", "1:00 PM PDT"),
+    // and as Jacob reads it (ET, below). Never mixed: booker-facing copy uses
+    // `booker`, owner alerts use dateLabel/timeLabel.
+    const booker = bookerWhen(slotStart, bookerZone)
+    const zoneNote = bookerZoneNote(slotStart, bookerZone)
+
     // ── Calendar event with Meet link ────────────────────────────────────────
     const qualified = trade !== NOT_AN_OWNER && trade !== ''
     const serviceType = 'Missed Call AI demo'
@@ -361,6 +390,11 @@ export async function POST(request: NextRequest) {
               whoAnswers ? `Who answers now: ${whoAnswers}` : null,
             ].filter(Boolean).join('\n') || null,
             privateNotes: attributionText,
+            // Invite renders in the booker's zone when we know it. A guessed
+            // (IP) zone does not move the event: the description line carries
+            // both times instead.
+            eventTimeZone: bookerZone && bookerZone.source !== 'ip' ? bookerZone.timeZone : null,
+            whenLine: `Time: ${booker.day}, ${booker.date} at ${booker.time}`,
           }
         )
         googleEventId = result.id
@@ -388,6 +422,8 @@ export async function POST(request: NextRequest) {
         serviceType,
         scheduledAt: slotStart,
         duration: SLOT_MINUTES,
+        customerTimezone: bookerZone?.timeZone ?? null,
+        customerTimezoneSource: bookerZone?.source ?? null,
         notes: [
           'SMS consent: yes (captured at booking)',
           `Source: meta_demo_video`,
@@ -685,6 +721,7 @@ export async function POST(request: NextRequest) {
           <p><strong>Missed calls per week:</strong> ${escapeHtml(missesPerWeek || 'Not specified')}</p>
           <p><strong>Who answers now:</strong> ${escapeHtml(whoAnswers || 'Not specified')}</p>
           <p><strong>Time:</strong> ${escapeHtml(dateLabel)} at ${escapeHtml(timeLabel)} (Eastern Time)</p>
+          <p>${escapeHtml(zoneNote)}</p>
           <p><strong>OTP verified (this booking):</strong> ${gateThisBooking ? 'yes' : 'no'}</p>
           <p><strong>Verified previously:</strong> ${verifiedPreviously ? 'yes' : 'no'}</p>
           ${googleEventLink ? `<p><strong>Calendar:</strong> <a href="${escapeHtml(googleEventLink)}">Open the event</a></p>` : ''}
@@ -698,6 +735,7 @@ export async function POST(request: NextRequest) {
           `Booked: ${name}${companyName ? ` (${companyName})` : ''}`,
           phoneE164,
           `${dateLabel} at ${timeLabel} ET`,
+          zoneNote,
           `Surface: ${bookingSurface ?? 'unknown'}`,
           `OTP verified (this booking): ${gateThisBooking ? 'yes' : 'no'}`,
           `Verified previously: ${verifiedPreviously ? 'yes' : 'no'}`,
@@ -717,6 +755,8 @@ export async function POST(request: NextRequest) {
         scheduledAt: slotStart,
         meetLink: googleMeetLink,
         ownerPhone: business.ownerPhone,
+        timeZone: bookerZone?.timeZone,
+        timeZoneSource: bookerZone?.source,
       })
       const telnyxKey = process.env.TELNYX_API_KEY
       afterResponse(ROUTE, 'confirmation-sms', async () => {
@@ -749,7 +789,7 @@ export async function POST(request: NextRequest) {
             html: `
               <h2>You're booked</h2>
               <p>Hi ${escapeHtml(name)},</p>
-              <p>Your demo is set for <strong>${escapeHtml(dateLabel)} at ${escapeHtml(timeLabel)} (Eastern Time)</strong>.</p>
+              <p>Your demo is set for <strong>${escapeHtml(booker.day)}, ${escapeHtml(booker.date)} at ${escapeHtml(booker.time)}</strong>.</p>
               <p>It takes about ${CALL_LENGTH_MINUTES} minutes. I will show you the system running on real client accounts: real text-back conversations, and the jobs that got booked out of them. Then I will answer any questions.</p>
               ${googleMeetLink ? `<p><strong>Join here:</strong> <a href="${googleMeetLink}">${googleMeetLink}</a></p>` : ''}
               <p>${WATCH_BEFORE_LINE} <a href="${getDemoVideoAbsoluteUrl()}">Watch the video</a></p>
@@ -767,7 +807,10 @@ export async function POST(request: NextRequest) {
       console.error(`[demo-book] confirmation email NOT SENT appointmentId=${appointment.id} reason=RESEND_API_KEY missing`)
     }
 
-    console.log(`[demo-book] BOOKED appointmentId=${appointment.id} qualified=${qualified} meet=${googleMeetLink ?? 'none'}`)
+    console.log(
+      `[demo-book] BOOKED appointmentId=${appointment.id} qualified=${qualified} meet=${googleMeetLink ?? 'none'} ` +
+        `tz=${bookerZone?.timeZone ?? 'none'} tzSource=${bookerZone?.source ?? 'none'}`
+    )
 
     return NextResponse.json({
       success: true,
@@ -776,8 +819,10 @@ export async function POST(request: NextRequest) {
       appointment: {
         id: appointment.id,
         scheduledAt: appointment.scheduledAt,
-        dateLabel,
-        timeLabel,
+        // The booker's labels, not the ET ones: this is what the "Locked in"
+        // screen shows the person who just picked the time.
+        dateLabel: `${booker.day}, ${booker.date}`,
+        timeLabel: booker.time,
         meetLink: googleMeetLink,
       },
     })

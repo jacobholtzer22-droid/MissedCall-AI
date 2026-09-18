@@ -4,15 +4,21 @@
 // Runs every 15 minutes (vercel.json). Sends two English reminder texts for
 // Align and Acquire demo calls booked through the /book marketing funnel:
 //
-//   1. Night before, 6:30 PM Eastern. Skipped when the call was booked the same
-//      day it happens (they just booked it, they do not need a reminder tonight).
+//   1. Night before, 6:30 PM the booker's local time. Skipped when the call was
+//      booked the same day it happens (they just booked it, they do not need a
+//      reminder tonight).
 //   2. One hour before, unless the meeting starts before 8:00 AM local (its
 //      hour-before mark falls inside quiet hours and the night-before text has
 //      already covered it), or the booking was made within 90 minutes of the
 //      meeting (the confirmation text IS the reminder at that point).
 //
-// Nothing at all goes out before 7:00 AM local. That is a property of the wall
-// clock, so it is checked once per run rather than per appointment.
+// Nothing at all goes out before 7:00 AM local.
+//
+// "Local" means the BOOKER's zone (Appointment.customerTimezone), falling back
+// to Eastern when it was not captured. It used to be Eastern for everyone, so a
+// Pacific booker with a 10:00 AM ET call was texted at 6:00 AM their time. A
+// guessed (IP) zone is used for timing too: it is the best information we have
+// about when they are awake, and the copy shows ET beside it.
 //
 // Copy for both texts lives in lib/marketing-sms-copy.ts alongside the booking
 // confirmation, so the wording and the reschedule number cannot drift across the
@@ -47,10 +53,12 @@ import { getMarketingBusiness } from '@/lib/marketing-funnel'
 import { getCalendarEventState } from '@/lib/google-calendar'
 import { isSendableStatus } from '@/lib/reminder-status'
 import { nightBeforeText, hourBeforeText } from '@/lib/marketing-sms-copy'
+import { normalizeTimeZone } from '@/lib/booker-time'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
 
+/** Fallback when the booker's zone was not captured. */
 const TIMEZONE = 'America/New_York'
 const NIGHT_BEFORE_HOUR = 18
 const NIGHT_BEFORE_MINUTE = 30
@@ -100,9 +108,14 @@ async function isAuthorized(request: NextRequest): Promise<boolean> {
   return false
 }
 
-function sameDayInTz(a: Date, b: Date): boolean {
-  const ta = new TZDate(a, TIMEZONE)
-  const tb = new TZDate(b, TIMEZONE)
+/** The zone reminder timing runs in for this booking. */
+function bookerZone(appt: { customerTimezone: string | null }): string {
+  return normalizeTimeZone(appt.customerTimezone) ?? TIMEZONE
+}
+
+function sameDayInTz(a: Date, b: Date, tz: string): boolean {
+  const ta = new TZDate(a, tz)
+  const tb = new TZDate(b, tz)
   return (
     ta.getFullYear() === tb.getFullYear() &&
     ta.getMonth() === tb.getMonth() &&
@@ -110,9 +123,9 @@ function sameDayInTz(a: Date, b: Date): boolean {
   )
 }
 
-/** 6:30 PM Eastern on the calendar day before the appointment. DST-correct via TZDate. */
-function nightBeforeDueAt(scheduledAt: Date): Date {
-  const sched = new TZDate(scheduledAt, TIMEZONE)
+/** 6:30 PM local on the calendar day before the appointment. DST-correct via TZDate. */
+function nightBeforeDueAt(scheduledAt: Date, tz: string): Date {
+  const sched = new TZDate(scheduledAt, tz)
   return new Date(
     new TZDate(
       sched.getFullYear(),
@@ -122,23 +135,25 @@ function nightBeforeDueAt(scheduledAt: Date): Date {
       NIGHT_BEFORE_MINUTE,
       0,
       0,
-      TIMEZONE
+      tz
     ).getTime()
   )
 }
 
-/** Hour of day in business-local time. */
-function localHour(d: Date): number {
-  return new TZDate(d, TIMEZONE).getHours()
+/** Hour of day in the given zone. */
+function localHour(d: Date, tz: string): number {
+  return new TZDate(d, tz).getHours()
 }
 
 function reminderText(
   kind: ReminderKind,
   scheduledAt: Date,
   meetLink: string | null,
-  ownerPhone: string | null
+  ownerPhone: string | null,
+  timeZone: string | null,
+  timeZoneSource: string | null
 ): string {
-  const params = { scheduledAt, meetLink, ownerPhone }
+  const params = { scheduledAt, meetLink, ownerPhone, timeZone, timeZoneSource }
   return kind === 'night_before' ? nightBeforeText(params) : hourBeforeText(params)
 }
 
@@ -194,19 +209,6 @@ async function runAppointmentReminders(request: NextRequest) {
 
   const telnyx = new Telnyx({ apiKey: process.env.TELNYX_API_KEY })
 
-  // Quiet hours. Checked once per run rather than per appointment: it is a
-  // property of the wall clock, not of any booking.
-  if (localHour(now) < QUIET_UNTIL_HOUR) {
-    console.log(`[reminders] quiet hours, nothing sent (local hour ${localHour(now)})`)
-    return NextResponse.json({
-      ok: true,
-      checked: 0,
-      sent: [],
-      skipped: [{ id: 'all', reason: `quiet hours before ${QUIET_UNTIL_HOUR}:00 local` }],
-      failed: [],
-    })
-  }
-
   // Candidate window: anything upcoming in the next 48h that is still confirmed.
   const candidates = await db.appointment.findMany({
     where: {
@@ -237,13 +239,14 @@ async function runAppointmentReminders(request: NextRequest) {
     }
 
     const msUntil = appt.scheduledAt.getTime() - now.getTime()
+    const tz = bookerZone(appt)
 
     // Decide which single reminder, if any, is due right now.
     let kind: ReminderKind | null = null
     if (msUntil > 0 && msUntil <= HOUR_BEFORE_MS && !appt.reminderHourBeforeSentAt) {
       // An early demo's hour-before mark falls inside quiet hours, and the
       // night-before text has already covered it.
-      if (localHour(appt.scheduledAt) < HOUR_BEFORE_MIN_MEETING_HOUR) {
+      if (localHour(appt.scheduledAt, tz) < HOUR_BEFORE_MIN_MEETING_HOUR) {
         result.skipped.push({
           id: appt.id,
           reason: `meeting starts before ${HOUR_BEFORE_MIN_MEETING_HOUR}:00 local, night-before covers it`,
@@ -261,11 +264,11 @@ async function runAppointmentReminders(request: NextRequest) {
       }
       kind = 'hour_before'
     } else if (!appt.reminderNightBeforeSentAt) {
-      const bookedSameDay = sameDayInTz(appt.createdAt, appt.scheduledAt)
+      const bookedSameDay = sameDayInTz(appt.createdAt, appt.scheduledAt, tz)
       if (bookedSameDay) {
         result.skipped.push({ id: appt.id, reason: 'booked same day, night-before not applicable' })
       } else {
-        const due = nightBeforeDueAt(appt.scheduledAt).getTime()
+        const due = nightBeforeDueAt(appt.scheduledAt, tz).getTime()
         const overdueBy = now.getTime() - due
         if (overdueBy >= 0 && overdueBy <= NIGHT_BEFORE_GRACE_MS && msUntil > HOUR_BEFORE_MS) {
           kind = 'night_before'
@@ -274,6 +277,16 @@ async function runAppointmentReminders(request: NextRequest) {
     }
 
     if (!kind) continue
+
+    // Quiet hours, in the booker's own zone. Per appointment now that bookers
+    // are in different zones: 6:00 AM Pacific is 9:00 AM Eastern.
+    if (localHour(now, tz) < QUIET_UNTIL_HOUR) {
+      result.skipped.push({
+        id: appt.id,
+        reason: `quiet hours before ${QUIET_UNTIL_HOUR}:00 local (${tz}, local hour ${localHour(now, tz)})`,
+      })
+      continue
+    }
 
     if (await hasOptedOut(business.id, appt.customerPhone)) {
       result.skipped.push({ id: appt.id, reason: 'opted out (STOP)' })
@@ -340,7 +353,14 @@ async function runAppointmentReminders(request: NextRequest) {
     }
 
     const to = normalizeToE164(appt.customerPhone)
-    const text = reminderText(kind, appt.scheduledAt, fresh.googleMeetLink, business.ownerPhone)
+    const text = reminderText(
+      kind,
+      appt.scheduledAt,
+      fresh.googleMeetLink,
+      business.ownerPhone,
+      appt.customerTimezone,
+      appt.customerTimezoneSource
+    )
 
     try {
       await telnyx.messages.send({ from: fromNumber, to, text })

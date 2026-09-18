@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Calendar, Clock, Check, Loader2 } from 'lucide-react'
 import BookingWizard, { type ChosenSlot, type WizardPrefill } from './BookingWizard'
 import type { Attribution } from '@/lib/attribution'
+import { detectBrowserTimeZone, slotClock, slotTimeWithZone } from '@/lib/booker-time'
 
 // ─────────────────────────────────────────────────────────
 // Self-contained slot picker + booking wizard.
@@ -77,6 +78,11 @@ export default function BookingSection({
   const TEXT = light ? '#171717' : '#F2F0EB'
   const MUTED = light ? '#737373' : '#6E7681'
 
+  // Slots render in the visitor's own zone. They used to render the server's
+  // ET `display` string under this label, so someone in California saw
+  // "4:00 PM" next to "PDT" for a call at 1:00 PM their time.
+  const browserTz = useMemo(() => detectBrowserTimeZone(), [])
+
   const timezoneLabel = useMemo(() => {
     try {
       return new Intl.DateTimeFormat('en-US', { timeZoneName: 'short' })
@@ -116,7 +122,7 @@ export default function BookingSection({
     for (const day of days) {
       const match = day.slots.find((s) => s.iso === preselectIso)
       if (match) {
-        const chosen = { iso: match.iso, display: match.display, dateLabel: day.label }
+        const chosen = { iso: match.iso, display: slotTimeWithZone(match.iso, browserTz), dateLabel: day.label }
         setSelectedDate(day.date)
         setSlot(chosen)
         if (onSlotChosen) onSlotChosen(chosen)
@@ -127,7 +133,7 @@ export default function BookingSection({
     // Not found: the slot is gone. Leave them on the picker rather than
     // pretending, and say so.
     setTakenNote('That time has been taken. Here is what is still open.')
-  }, [preselectIso, days, slot, onSlotChosen])
+  }, [preselectIso, days, slot, onSlotChosen, browserTz])
 
   const daySlots = days.find((d) => d.date === selectedDate)?.slots ?? []
 
@@ -140,7 +146,6 @@ export default function BookingSection({
         <h3 className="text-[clamp(1.8rem,5vw,2.6rem)] font-black uppercase leading-[1.1] tracking-tight mb-4">Locked in.</h3>
         <p className="text-[16px] font-bold leading-[1.5] mb-2">
           {booked.dateLabel} at {booked.timeLabel}
-          <span className="ml-2 text-[13px] font-normal" style={{ color: MUTED }}>({timezoneLabel})</span>
         </p>
         {booked.meetLink && (
           <p className="text-[14px] leading-[1.6] mb-4">
@@ -221,7 +226,7 @@ export default function BookingSection({
                       setTakenNote('')
                       const chosen = {
                         iso: s.iso,
-                        display: s.display,
+                        display: slotTimeWithZone(s.iso, browserTz),
                         dateLabel: days.find((d) => d.date === selectedDate)?.label ?? '',
                       }
                       setSlot(chosen)
@@ -231,7 +236,7 @@ export default function BookingSection({
                     className="px-4 py-3 border-2 text-[14px] font-semibold min-h-[52px]"
                     style={{ borderColor: BORDER, color: TEXT }}>
                     <Clock size={13} strokeWidth={2.25} className="inline mr-1.5 -mt-0.5" style={{ color: '#EE6B1A' }} />
-                    {s.display}
+                    {slotClock(s.iso, browserTz)}
                   </button>
                 ))}
               </div>

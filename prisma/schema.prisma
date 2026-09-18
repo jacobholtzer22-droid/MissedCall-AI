@@ -386,6 +386,13 @@ model Appointment {
   // Needs a real column because the reminder SMS reads it back at send time.
   googleMeetLink String?
 
+  // The booker's own time zone (/book funnel), so every text, email and invite
+  // they receive shows the call in their time. customerTimezoneSource says how
+  // sure we are: "widget" | "browser" are theirs; "ip" is a guess, and a guessed
+  // zone is always shown alongside ET. Both null = not captured (ET only).
+  customerTimezone       String?
+  customerTimezoneSource String?
+
   // A/B arm this booking came from: "gate" | "nogate" | null for pre-test rows.
   variant String?
 

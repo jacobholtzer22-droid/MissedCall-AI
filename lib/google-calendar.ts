@@ -588,6 +588,19 @@ export type CreateMarketingCalendarEventOptions = {
   watchBeforeUrl?: string | null
   /** Optional company name, appended to the event title when supplied. */
   companyName?: string | null
+  /**
+   * The booker's IANA zone. Set as the event's timeZone so Google's invite
+   * email states the call in their time rather than Jacob's. It does not move
+   * the event: start/end are absolute instants, and Jacob's calendar still
+   * shows it in his own zone. Null keeps the business zone.
+   */
+  eventTimeZone?: string | null
+  /**
+   * "Time: Thursday, Sep 18 at 1:00 PM PDT". First line of the description,
+   * which the attendee sees, so the time is in writing in their zone even when
+   * their calendar client renders the invite in some other one.
+   */
+  whenLine?: string | null
 }
 
 /**
@@ -619,6 +632,8 @@ export async function createMarketingCalendarEvent(
     privateNotes,
     watchBeforeUrl,
     companyName,
+    eventTimeZone,
+    whenLine,
   } = options
 
   const calendar = await getCalendarClient(businessId)
@@ -628,13 +643,14 @@ export async function createMarketingCalendarEvent(
     where: { id: businessId },
     select: { timezone: true },
   })
-  const tz = business?.timezone ?? 'America/New_York'
+  const tz = eventTimeZone?.trim() || business?.timezone || 'America/New_York'
 
   const who = companyName?.trim() ? `${customerName}, ${companyName.trim()}` : customerName
   const summary = serviceType?.trim()
     ? `${serviceType.trim()} — ${who}`
     : `Discovery Call — ${who}`
   const descriptionLines = [
+    whenLine?.trim() ? whenLine.trim() : null,
     `Name: ${customerName}`,
     `Phone: ${customerPhone}`,
     customerEmail ? `Email: ${customerEmail}` : null,

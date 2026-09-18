@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { FunnelButton } from './FunnelCard'
 import { formatPhoneInput } from './constants'
 import { validateUsMobile } from '@/lib/phone-utils'
+import { detectBrowserTimeZone } from '@/lib/booker-time'
 
 // Date-first booking. Only the UI changed: availability, booking creation, the
 // Google event with its Meet link, the confirmation SMS, the Schedule event and
@@ -249,6 +250,10 @@ export default function DateCalendar({
           trade: prefill.trade,
           companyName: company.trim(),
           bookingSurface: surface,
+          // The zone they picked from, and the device's own as a fallback. The
+          // confirmation text, email, invite and reminders all render in it.
+          timeZone: tz,
+          browserTimeZone: detectBrowserTimeZone(),
           eventId: scheduleEventId.current,
           ...(surface === 'landing' ? { leadEventId: leadEventId.current } : {}),
           // Attribution fallback for when the aa_attr cookie is missing or

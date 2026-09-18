@@ -7,6 +7,7 @@ import { Logo } from '@/app/components/Logo'
 import BookingSection from '@/app/book/BookingSection'
 import type { ChosenSlot } from '@/app/book/BookingWizard'
 import { validateUsMobile } from '@/lib/phone-utils'
+import { detectBrowserTimeZone } from '@/lib/booker-time'
 import { formatPhoneInput } from '@/app/book/constants'
 import { trackStandardWithId } from '@/app/book/pixel'
 import { captureAttribution } from '@/lib/attribution-cookie'
@@ -127,6 +128,9 @@ export default function CalendarClient({
           email: form.email.trim(),
           bookingSource: prefill.mode === 'prefilled' ? 'sms_link' : 'direct',
           bookingSurface: 'calendar',
+          // BookingSection renders the slots in this zone; the texts, email,
+          // invite and reminders follow it.
+          browserTimeZone: detectBrowserTimeZone(),
           ...(prefill.leadToken ? { leadToken: prefill.leadToken } : {}),
           ...(eventId ? { eventId } : {}),
         }),

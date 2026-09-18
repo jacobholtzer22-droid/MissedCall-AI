@@ -7,13 +7,16 @@
 // One module because they drifted. The confirmation lived in /api/demo-book and
 // the two reminders in /api/cron/appointment-reminders, each with its own
 // formatter, so the wording, the timezone label and the Meet link handling were
-// three near-copies. Every one of them now renders through formatWhen() here.
+// three near-copies. Every one of them now renders through lib/booker-time, in
+// the BOOKER's zone with its abbreviation ("1:00 PM PDT"). They used to say
+// "ET" to everyone, so a prospect in California was texted 4:00 PM for a call
+// they had picked at 1:00 PM on the calendar.
 //
 // The reschedule number is ALWAYS derived from business.ownerPhone. Never write
 // a literal phone number into this file: the row is the source of truth, and a
 // hardcoded number silently outlives the day it changes.
 
-import { TIMEZONE } from '@/lib/marketing-slots'
+import { bookerWhen } from '@/lib/booker-time'
 
 /**
  * "+15175809709" renders as "517-580-9709".
@@ -31,33 +34,22 @@ export function formatReschedulePhone(phone: string | null | undefined): string 
   return `${ten.slice(0, 3)}-${ten.slice(3, 6)}-${ten.slice(6)}`
 }
 
-export function formatWhen(scheduledAt: Date): {
-  day: string
-  date: string
-  time: string
-} {
-  return {
-    day: scheduledAt.toLocaleDateString('en-US', { weekday: 'long', timeZone: TIMEZONE }),
-    date: scheduledAt.toLocaleDateString('en-US', {
-      month: 'short',
-      day: 'numeric',
-      timeZone: TIMEZONE,
-    }),
-    time: scheduledAt.toLocaleTimeString('en-US', {
-      hour: 'numeric',
-      minute: '2-digit',
-      hour12: true,
-      timeZone: TIMEZONE,
-    }),
-  }
-}
-
 export type DemoSmsParams = {
   scheduledAt: Date
   /** Google Meet link. Omitted from the copy entirely when absent. */
   meetLink?: string | null
   /** business.ownerPhone. The reschedule line is omitted when absent. */
   ownerPhone?: string | null
+  /**
+   * Appointment.customerTimezone / customerTimezoneSource. Absent renders ET
+   * with its abbreviation; an 'ip' source renders the guess AND ET.
+   */
+  timeZone?: string | null
+  timeZoneSource?: string | null
+}
+
+function when(params: DemoSmsParams) {
+  return bookerWhen(params.scheduledAt, { timeZone: params.timeZone, source: params.timeZoneSource })
 }
 
 /** "Join here: <link>. " or nothing. Never renders a dangling "Join here: ." */
@@ -73,20 +65,20 @@ function rescheduleSentence(ownerPhone: string | null | undefined, verb: string)
 
 /** Sent by /api/demo-book the moment the slot is taken. */
 export function confirmationText(params: DemoSmsParams): string {
-  const { day, date, time } = formatWhen(params.scheduledAt)
+  const { day, date, time } = when(params)
   return (
-    `You're booked with Jacob at Align and Acquire: ${day} ${date} at ${time} ET.` +
+    `You're booked with Jacob at Align and Acquire: ${day} ${date} at ${time}.` +
     joinSentence(params.meetLink) +
     rescheduleSentence(params.ownerPhone, 'Text or call Jacob at') +
     ' Reply STOP to opt out.'
   )
 }
 
-/** Sent by the reminder cron at 6:30 PM ET the day before. */
+/** Sent by the reminder cron at 6:30 PM the day before, in the booker's zone. */
 export function nightBeforeText(params: DemoSmsParams): string {
-  const { time } = formatWhen(params.scheduledAt)
+  const { time } = when(params)
   return (
-    `Reminder: your demo with Jacob at Align and Acquire is tomorrow at ${time} ET.` +
+    `Reminder: your demo with Jacob at Align and Acquire is tomorrow at ${time}.` +
     joinSentence(params.meetLink) +
     rescheduleSentence(params.ownerPhone, 'Text or call Jacob at')
   )
@@ -94,9 +86,9 @@ export function nightBeforeText(params: DemoSmsParams): string {
 
 /** Sent by the reminder cron roughly an hour out. */
 export function hourBeforeText(params: DemoSmsParams): string {
-  const { time } = formatWhen(params.scheduledAt)
+  const { time } = when(params)
   return (
-    `Your demo with Jacob is at ${time} ET, about an hour from now.` +
+    `Your demo with Jacob is at ${time}, about an hour from now.` +
     joinSentence(params.meetLink) +
     rescheduleSentence(params.ownerPhone, 'Text or call')
   )

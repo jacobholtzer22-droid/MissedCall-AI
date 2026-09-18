@@ -2578,7 +2578,7 @@ became three near-copies.
 | Text | Sent by | When |
 |---|---|---|
 | Confirmation | `/api/demo-book` | The moment the slot is taken |
-| Night before | reminder cron | 6:30 PM ET the day before |
+| Night before | reminder cron | 6:30 PM the day before, booker-local |
 | Hour before | reminder cron | Roughly an hour out |
 
 **The reschedule number is always derived from `business.ownerPhone`** and
@@ -2590,8 +2590,11 @@ whole sentence rather than rendering `Join here: .`
 marketing-business only. Client tenants have their own numbers and never
 consented to this funnel. Rules, on top of the claim-before-send idempotency:
 
-- **Nothing before 7:00 AM local.** Checked once per run, since it is a property
-  of the wall clock, not of a booking.
+- **"Local" is the booker's zone** (`Appointment.customerTimezone`), Eastern when
+  it was not captured. Quiet hours, the 8:00 AM hour-before rule and the 6:30 PM
+  night-before are all evaluated per appointment in that zone.
+- **Nothing before 7:00 AM local.** Checked per appointment, because bookers are
+  in different zones.
 - **Night before** is skipped when the call was booked the same day it happens.
 - **Hour before** is skipped when the meeting starts before 8:00 AM local (its
   hour mark falls inside quiet hours and the night-before already covered it), or
@@ -2614,6 +2617,27 @@ consented to this funnel. Rules, on top of the claim-before-send idempotency:
 ⚠️ The cron gates on the literal string `SMS consent: yes` appearing in
 `Appointment.notes`, written by `/api/demo-book`. **Rewording that marker silently
 stops every reminder platform-wide.**
+
+### Booker time zone (Sep 2026)
+
+Every message a booker receives renders the call in THEIR zone with its
+abbreviation ("1:00 PM PDT"), through `lib/booker-time.ts`: the confirmation
+text, both reminders, the confirmation email, the invite's description line and
+event zone, and the "Locked in" screen. Jacob's own alerts stay ET, with an extra
+"Their time: ..." line.
+
+The zone is sent by the browser calendars (`timeZone` = the zone DateCalendar
+showed, `browserTimeZone` = the device's) and stored on
+`Appointment.customerTimezone` + `customerTimezoneSource`
+(`widget` | `browser` | `ip`). `ip` is Vercel's `x-vercel-ip-timezone`, a
+guess, so it always renders beside ET: "1:00 PM PDT (4:00 PM EDT)". Null renders
+ET with its abbreviation. Times go through `plainSpaces()` because some ICU
+builds emit U+202F before AM/PM, which is not GSM-7 and would push every text
+into UCS-2.
+
+`/api/demo-book` derives the slot's ET day with `toTZDate(slotStart)`. It used
+to read `slotStart.getDate()` in the server zone (UTC on Vercel), so 8:00 and
+8:30 PM ET slots checked the NEXT day for conflicts and busy time.
 
 ### Google free/busy fails closed
 

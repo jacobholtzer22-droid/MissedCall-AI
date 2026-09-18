@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { X, ArrowLeft, Loader2, Check, Calendar } from 'lucide-react'
 import { validateUsMobile } from '@/lib/phone-utils'
+import { detectBrowserTimeZone } from '@/lib/booker-time'
 import type { Attribution } from '@/lib/attribution'
 import {
   TRADES,
@@ -261,6 +262,8 @@ export default function BookingWizard({
           eventId: scheduleEventId.current,
           attribution,
           website: honeypot,
+          // The slot picker renders in this zone; so does everything we send them.
+          browserTimeZone: detectBrowserTimeZone(),
         }),
       })
       const data = await res.json().catch(() => ({}))
