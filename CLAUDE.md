@@ -2690,3 +2690,90 @@ to read `slotStart.getDate()` in the server zone (UTC on Vercel), so 8:00 and
 
 Both the GET and the write path treat an unreadable calendar as "no availability"
 rather than "free". Better to show no times than to double-book.
+
+---
+
+## 20. Admin Pipeline (`/admin/pipeline`): outcome + follow-up CRM
+
+Added Sep 2026. Outcome and follow-up tracking on the `/book` funnel, so closes
+tie back to the ad that produced them. **Admin only and additive.** It touches
+nothing on `/book`, `/watch`, `/calendar`, the booking routes, the wizard, CAPI
+or the pixel.
+
+### The row is a person, not a booking
+
+A person is every non-spam `WebsiteLead` and every `Appointment` of the
+marketing business that share a phone number (E.164 on both, exact match),
+stitched together at read time in `lib/pipeline-server.ts`. A lead with no phone
+is its own person, keyed `lead:<id>`. This is what makes verified leads who never
+booked visible. They are the main list to chase.
+
+Two separate axes:
+- **Stage** is where they got to. It is derived and never stored:
+  `lead_only` / `booked` / `showed` / `no_show` / `cancelled`. Showed on any
+  booking wins. Otherwise the *primary* booking decides: the latest one not
+  cancelled, else the latest.
+- **Status** is the outcome call, stored on `PipelinePerson.status`:
+  `pending` / `working` / `won` / `lost` / `not_a_fit` / `junk`. "Open" means
+  pending or working.
+
+### Data (applied 2026-09-18 via `scripts/sql/2026-09-18_add_pipeline.sql`)
+
+- `Appointment.showStatus`: `pending` | `showed` | `no_show` | `cancelled`. It is
+  per booking, because one person can book, cancel and rebook. A `pending` row
+  whose `Appointment.status` is `cancelled` reads as cancelled (`effectiveShow`),
+  so calendar cancellations count without a backfill. An explicit mark wins.
+- `PipelinePerson` (`@@unique([businessId, personKey])`): status, lostReason,
+  closedAt, mrr, setupFee (Float dollars, what they actually pay),
+  lastContactedAt, nextFollowUpAt. **Created lazily on the first write.** No row
+  means pending, which is how every existing lead and booking starts out.
+- `PipelineNote`: append-only log (`kind` = `note` | `contact`). No route
+  updates or deletes a note.
+- ⚠️ **Applied with `npx prisma db execute --file …`, not `db push`.** Two
+  sessions had schema.prisma open at once, and `db push` diffs against one schema
+  file, so it would have dropped the other session's `customerTimezone` columns.
+  The SQL is additive and safe to re-run.
+- ⚠️ **Never store an outcome in `Appointment.status`.** That column is the
+  calendar slot's state, and it is rewritten automatically: `GET /api/appointments`
+  flips every past `confirmed` row to `completed` whether or not anyone showed,
+  and the Google sync flips rows to `cancelled`.
+- `status = 'junk'` is independent of `WebsiteLead.junk`. The lead flag drives
+  the follow-up cron and the arm counts, and the pipeline never writes it. Cards
+  show it read-only.
+
+### Files
+
+| File | Role |
+|---|---|
+| `lib/pipeline.ts` | Pure and client-safe: vocabularies, `effectiveShow`, `primaryBooking`, `stageOf`, `surfaceKey`, `resolveUtmTerm`, `resolveCompany`, `followUpState`, `sortPipeline`, `rollupRoi`. Tests in `lib/pipeline.test.ts`. |
+| `lib/pipeline-server.ts` | `loadPipeline()` / `loadPerson(key)`: 3 queries, no pagination (under 100 people as of Sep 2026). Also `requireAdmin()`. |
+| `app/api/admin/pipeline/route.ts` | GET: all people |
+| `app/api/admin/pipeline/person/route.ts` | PATCH `{ key, …fields }`: upserts `PipelinePerson`. 404 unless the key matches a lead or booking. A non-open status stamps `closedAt` (unless it is sent explicitly); going back to open clears it. A win with the primary booking still unmarked marks it `showed`. |
+| `app/api/admin/pipeline/person/notes/route.ts` | POST `{ key, body, logContact, nextFollowUpAt? }`: `logContact` stamps `lastContactedAt = now` in the same transaction. |
+| `app/api/admin/pipeline/booking/[id]/route.ts` | PATCH `{ showStatus }`: writes only `Appointment.showStatus`. |
+| `app/admin/pipeline/` | Server auth shell plus `PipelineClient` (Pipeline and ROI tabs). Linked from the AdminTools dropdown. |
+
+### Rules
+
+- **utm_term**: any first touch (leads oldest first, then bookings) before any
+  last touch, then `utm_term:` in a booking's notes block (the placeholder
+  `direct` is ignored).
+- **Needs follow-up**: `nextFollowUpAt` has passed (any status), OR the person is
+  open with no contact in 3 days (`FOLLOW_UP_STALE_DAYS`). The clock starts at the
+  later of the call and the last contact for a past call. For a lead only, or
+  someone with only cancelled bookings, it starts at the last contact, else when
+  they verified, else when they booked. **No clock** for someone with a call still
+  ahead, or for an unverified lead: only a date you set flags them. A future
+  `nextFollowUpAt` suppresses the stale rule.
+- **Default order**: due now (longest waiting first), then scheduled follow-ups
+  (soonest first), then everyone else by most recent activity.
+- **Presets**: "Verified, never booked" (lead only + verified + open), "Showed,
+  not closed" (showed + open), "Needs follow-up".
+- **ROI**, grouped by utm_term and by `surfaceKey` (the primary booking's surface,
+  "(no booking)", or "(surface not recorded)" for old rows). Only test numbers
+  are excluded. Leads are people. Verified = passed OTP or booked. Bookings count
+  every booking, cancelled and junk included. Show rate = showed ÷ (showed +
+  no-show). Cancelled and not-marked get their own columns. Close rate = won
+  people ÷ people who showed. MRR and setup sum won people only. No Meta spend
+  integration, by design.
+- Every dollar figure is behind the `adminShowRevenue` toggle, like the rest of `/admin`.

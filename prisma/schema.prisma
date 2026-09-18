@@ -137,6 +137,7 @@ model Business {
   websiteLeads       WebsiteLead[]
   googleAdsSnapshots GoogleAdsSnapshot[]
   reviewRequests     ReviewRequest[]
+  pipelinePeople     PipelinePerson[]
 
   @@index([stripeCustomerId])
   @@index([ownerGroupId])
@@ -416,6 +417,20 @@ model Appointment {
   reminderNightBeforeSentAt DateTime?
   reminderHourBeforeSentAt  DateTime?
 
+  // /admin/pipeline (Sep 2026): did this booking happen. Per booking, not per
+  // person, because one person can book, no-show and rebook. Written ONLY by
+  // /api/admin/pipeline; nothing on the booking path, the reminder cron or the
+  // calendar sync reads it. The person-level outcome lives on PipelinePerson.
+  //
+  // Deliberately NOT `status` above: that column means "is the calendar slot
+  // live" and is rewritten automatically (GET /api/appointments flips every past
+  // confirmed row to 'completed' whether or not anyone showed; the Google sync
+  // flips rows to 'cancelled'). An outcome stored there would be clobbered.
+
+  /// "pending" | "showed" | "no_show" | "cancelled". A pending row whose
+  /// calendar status is 'cancelled' reads as cancelled (lib/pipeline.ts).
+  showStatus String @default("pending")
+
   // Timestamps
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -423,6 +438,63 @@ model Appointment {
   @@index([businessId])
   @@index([scheduledAt])
   @@index([status])
+}
+
+// ===========================================
+// PIPELINE PERSON - /admin/pipeline outcome + follow-up, one per person
+// ===========================================
+// The pipeline row is a PERSON, not a booking: verified leads who never booked
+// are the ones most worth chasing. A person is every WebsiteLead and
+// Appointment of the marketing business sharing one phone number, stitched
+// together at read time (lib/pipeline-server.ts). This row only holds what
+// Jacob decides; everything observed stays on the lead and the booking.
+//
+// Created lazily on the first write. No row = status pending, no notes, which
+// is how every existing lead and booking starts out without a backfill.
+model PipelinePerson {
+  id         String   @id @default(cuid())
+  businessId String
+  business   Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  /// E.164 phone, the key leads and bookings are joined on. A lead with no
+  /// phone gets "lead:<WebsiteLead.id>" instead.
+  personKey String
+
+  /// "pending" | "working" | "won" | "lost" | "not_a_fit" | "junk".
+  /// Independent of WebsiteLead.junk, which drives the follow-up cron and the
+  /// arm counts; the pipeline never writes that flag.
+  status          String    @default("pending")
+  lostReason      String?   @db.Text
+  closedAt        DateTime?
+  /// What they actually pay, not list price. Dollars.
+  mrr             Float?
+  setupFee        Float?
+  lastContactedAt DateTime?
+  nextFollowUpAt  DateTime?
+
+  notes PipelineNote[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([businessId, personKey])
+}
+
+// Append-only: the API creates rows and never updates or deletes them, so the
+// log is a true history of every contact. Separate from Appointment.notes, the
+// booking-time text block the reminder cron gates on.
+model PipelineNote {
+  id       String         @id @default(cuid())
+  personId String
+  person   PipelinePerson @relation(fields: [personId], references: [id], onDelete: Cascade)
+
+  body String @db.Text
+  /// "note" | "contact" (written by the Log contact action)
+  kind String @default("note")
+
+  createdAt DateTime @default(now())
+
+  @@index([personId, createdAt])
 }
 
 // ===========================================
