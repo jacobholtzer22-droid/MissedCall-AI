@@ -2765,8 +2765,17 @@ Two separate axes:
   they verified, else when they booked. **No clock** for someone with a call still
   ahead, or for an unverified lead: only a date you set flags them. A future
   `nextFollowUpAt` suppresses the stale rule.
-- **Default order**: due now (longest waiting first), then scheduled follow-ups
-  (soonest first), then everyone else by most recent activity.
+- **Sort**, remembered per browser in localStorage (`adminPipelineSort`):
+  - *Newest first* (default, the backfill order): latest booking call time if
+    they booked (upcoming calls on top), else when the lead came in (`activityAt`).
+  - *Needs follow-up*: due now (longest waiting first), then scheduled follow-ups
+    (soonest first), then everyone else newest first.
+- **Nothing is ever required.** Every showed / no-show / cancelled mark and every
+  status saves on one tap and opens nothing. Log contact stamps
+  `lastContactedAt` on the tap itself. The panel it opens only offers an optional
+  next follow-up (each chip saves on its own tap) and an optional note. Add note is
+  a separate card action. MRR, setup and the lost reason live in Details, and are
+  never prompted.
 - **Presets**: "Verified, never booked" (lead only + verified + open), "Showed,
   not closed" (showed + open), "Needs follow-up".
 - **ROI**, grouped by utm_term and by `surfaceKey` (the primary booking's surface,

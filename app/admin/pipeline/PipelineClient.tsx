@@ -8,10 +8,13 @@
 //   stage  — where they got to (derived): lead only / booked / showed / no-show / cancelled
 //   status — the outcome call (stored):   pending / working / won / lost / not a fit / junk
 //
-// Built for a phone between calls: one tap for showed / no-show / cancelled on
-// the live booking, one tap for status, and Log contact stamps the time and
-// takes a note in the same step. Default order: who needs follow-up, soonest
-// first (lib/pipeline.ts sortPipeline).
+// Built for a phone between calls, and for backfilling fast: every mark
+// (showed / no-show / cancelled, and every status) saves on one tap with nothing
+// to fill in. Log contact stamps the time on the tap; a note and a next
+// follow-up are optional extras after. Add note is its own action.
+//
+// Sort: Newest first (default, for the backfill) or Needs follow-up, remembered
+// per browser in localStorage.
 //
 // Writes go to /api/admin/pipeline only, which touches PipelinePerson,
 // PipelineNote and Appointment.showStatus, nothing the funnel reads.
@@ -26,6 +29,8 @@ import {
   NO_TERM,
   UNKNOWN_SURFACE,
   SHOW_LABELS,
+  SORTS,
+  SORT_LABELS,
   SHOW_STATUSES,
   STAGES,
   STAGE_LABELS,
@@ -36,6 +41,7 @@ import {
   isOpenStatus,
   primaryBooking,
   rollupRoi,
+  sortNewest,
   sortPipeline,
   stageOf,
   surfaceKey,
@@ -44,6 +50,7 @@ import {
   type PipelinePerson,
   type RoiRow,
   type ShowStatus,
+  type SortKey,
   type Stage,
   type Status,
 } from '@/lib/pipeline'
@@ -51,6 +58,8 @@ import { formatPhoneNumber } from '@/lib/utils'
 import { formatAge } from '../ui'
 
 const REVENUE_COOKIE = 'adminShowRevenue'
+/** Per-browser convenience only; the page works the same without it. */
+const SORT_STORAGE_KEY = 'adminPipelineSort'
 const FOCUS = 'focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500'
 
 type Patch = Partial<
@@ -156,6 +165,8 @@ const ACTIVE_TONE: Record<string, string> = {
   cancelled: TONE.amber,
   not_a_fit: TONE.gray,
   junk: TONE.gray,
+  newest: TONE.blue,
+  follow_up: TONE.blue,
 }
 
 const STAGE_PILL: Record<Stage, string> = {
@@ -212,43 +223,69 @@ const btnPrimary = `min-h-[44px] rounded-lg bg-blue-600 px-4 text-sm font-semibo
 const btnGhost = `min-h-[44px] rounded-lg border border-gray-800 px-4 text-sm text-gray-300 hover:text-gray-100 hover:border-gray-700 disabled:opacity-50 ${FOCUS}`
 
 // ---------------------------------------------------------------------------
-// Log contact
+// Log contact / Add note
 // ---------------------------------------------------------------------------
+// Nothing here is ever required. Log contact stamps the time on the tap itself;
+// the panel it opens only offers optional extras, each saving on its own tap.
 
 const NEXT_CHOICES = [
-  { key: 'keep', label: 'Keep as is' },
-  { key: 'none', label: 'None' },
-  { key: '1', label: 'Tomorrow' },
-  { key: '3', label: 'In 3 days' },
-  { key: '7', label: 'In a week' },
+  { key: 'none', label: 'No follow-up', days: null },
+  { key: '1', label: 'Tomorrow', days: 1 },
+  { key: '3', label: 'In 3 days', days: 3 },
+  { key: '7', label: 'In a week', days: 7 },
 ] as const
-type NextChoice = (typeof NEXT_CHOICES)[number]['key']
 
-function LogContactForm({ onSave, onCancel }: { onSave: (p: NotePayload) => Promise<boolean>; onCancel: () => void }) {
+/** Optional note box. Only a non-empty note enables Save; closing is always free. */
+function NoteBox({
+  placeholder,
+  onSave,
+  onClose,
+  closeLabel,
+}: {
+  placeholder: string
+  onSave: (body: string) => Promise<boolean>
+  onClose: () => void
+  closeLabel: string
+}) {
   const [text, setText] = useState('')
-  const [next, setNext] = useState<NextChoice>('keep')
   const [busy, setBusy] = useState(false)
-
   const save = async () => {
     setBusy(true)
-    const payload: NotePayload = { body: text, logContact: true }
-    if (next === 'none') payload.nextFollowUpAt = null
-    else if (next !== 'keep') payload.nextFollowUpAt = daysFromNow(Number(next))
-    const ok = await onSave(payload)
+    const ok = await onSave(text)
     setBusy(false)
-    if (ok) onCancel()
+    if (ok) setText('')
   }
+  return (
+    <div className="space-y-2">
+      <textarea rows={2} value={text} onChange={(e) => setText(e.target.value)} placeholder={placeholder} className={`${inputCls} py-2`} />
+      <div className="flex gap-2">
+        <button type="button" onClick={() => void save()} disabled={busy || !text.trim()} className={btnGhost}>
+          {busy ? 'Saving' : 'Save note'}
+        </button>
+        <button type="button" onClick={onClose} className={btnGhost}>
+          {closeLabel}
+        </button>
+      </div>
+    </div>
+  )
+}
 
+/** Shown after Log contact has ALREADY saved. Every control here is optional. */
+function ContactLoggedPanel({
+  person,
+  actions,
+  onClose,
+}: {
+  person: PipelinePerson
+  actions: Actions
+  onClose: () => void
+}) {
+  const [picked, setPicked] = useState<string | null>(null)
   return (
     <div className="mt-3 space-y-3 rounded-lg border border-gray-800 bg-gray-950 p-3">
-      <textarea
-        autoFocus
-        rows={3}
-        value={text}
-        onChange={(e) => setText(e.target.value)}
-        placeholder="What happened? Optional."
-        className={`${inputCls} py-2`}
-      />
+      <p className="text-sm text-emerald-300">
+        Contact logged{person.lastContactedAt ? ` at ${new Date(person.lastContactedAt).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}` : ''}. Anything below is optional.
+      </p>
       <div>
         <div className="mb-1.5 text-sm text-gray-400">Next follow-up</div>
         <div className="flex flex-wrap gap-1.5">
@@ -256,10 +293,13 @@ function LogContactForm({ onSave, onCancel }: { onSave: (p: NotePayload) => Prom
             <button
               key={c.key}
               type="button"
-              aria-pressed={next === c.key}
-              onClick={() => setNext(c.key)}
+              aria-pressed={picked === c.key}
+              onClick={() => {
+                setPicked(c.key)
+                void actions.patch(person.key, { nextFollowUpAt: c.days === null ? null : daysFromNow(c.days) })
+              }}
               className={`min-h-[44px] rounded-lg border px-3 text-sm ${FOCUS} ${
-                next === c.key ? TONE.blue : 'border-gray-800 text-gray-400 hover:text-gray-100'
+                picked === c.key ? TONE.blue : 'border-gray-800 text-gray-400 hover:text-gray-100'
               }`}
             >
               {c.label}
@@ -267,14 +307,14 @@ function LogContactForm({ onSave, onCancel }: { onSave: (p: NotePayload) => Prom
           ))}
         </div>
       </div>
-      <div className="flex gap-2">
-        <button type="button" onClick={() => void save()} disabled={busy} className={btnPrimary}>
-          {busy ? 'Saving' : 'Log contact now'}
-        </button>
-        <button type="button" onClick={onCancel} disabled={busy} className={btnGhost}>
-          Cancel
-        </button>
-      </div>
+      <NoteBox
+        placeholder="What happened? Optional."
+        closeLabel="Done"
+        onClose={onClose}
+        // Tagged as a contact note. Re-stamps lastContactedAt a few seconds
+        // later, which is harmless.
+        onSave={(body) => actions.note(person.key, { body, logContact: true })}
+      />
     </div>
   )
 }
@@ -331,8 +371,6 @@ function DetailsForm({
   )
   const [form, setForm] = useState(initial)
   const [busy, setBusy] = useState(false)
-  const [note, setNote] = useState('')
-  const [noteBusy, setNoteBusy] = useState(false)
 
   // A save or a tap elsewhere on the card refreshes the person. Take the new
   // values, except in fields already being edited: tapping Closed won opens
@@ -366,13 +404,6 @@ function DetailsForm({
     setBusy(true)
     await actions.patch(person.key, p as Patch)
     setBusy(false)
-  }
-
-  const addNote = async () => {
-    setNoteBusy(true)
-    const ok = await actions.note(person.key, { body: note, logContact: false })
-    setNoteBusy(false)
-    if (ok) setNote('')
   }
 
   return (
@@ -429,22 +460,10 @@ function DetailsForm({
 
       <div className="border-t border-gray-800 pt-4">
         <h4 className="mb-2 text-sm font-semibold text-gray-200">Notes</h4>
-        <div className="flex flex-col gap-2 sm:flex-row">
-          <textarea
-            rows={2}
-            value={note}
-            onChange={(e) => setNote(e.target.value)}
-            placeholder="Add a note. Does not change last contacted."
-            className={`${inputCls} py-2`}
-          />
-          <button type="button" onClick={() => void addNote()} disabled={noteBusy || !note.trim()} className={`${btnGhost} shrink-0`}>
-            {noteBusy ? 'Adding' : 'Add note'}
-          </button>
-        </div>
         {person.notes.length === 0 ? (
-          <p className="mt-3 text-sm text-gray-500">No notes yet.</p>
+          <p className="text-sm text-gray-500">No notes yet.</p>
         ) : (
-          <ol className="mt-3 space-y-2">
+          <ol className="space-y-2">
             {person.notes.map((n) => (
               <li key={n.id} className="rounded-lg border border-gray-800 p-2.5">
                 <div className="mb-1 flex items-center gap-2 text-xs text-gray-500">
@@ -476,17 +495,19 @@ const PersonCard = memo(function PersonCard({
   showRevenue: boolean
   actions: Actions
 }) {
-  const [mode, setMode] = useState<null | 'contact' | 'details'>(null)
+  const [mode, setMode] = useState<null | 'contact' | 'note' | 'details'>(null)
   const f = followUpState(person, now)
   const stage = stageOf(person)
   const primary = primaryBooking(person.bookings)
   const surface = surfaceOf(person)
-  const note = useCallback((p: NotePayload) => actions.note(person.key, p), [actions, person.key])
+  // Every mark saves on the tap. Nothing opens, nothing is required: MRR and
+  // a lost reason can be added later from Details, or never.
+  const setStatus = (s: Status) => void actions.patch(person.key, { status: s })
 
-  const setStatus = (s: Status) => {
-    void actions.patch(person.key, { status: s })
-    // A win wants the money filled in; a loss wants the reason.
-    if (s === 'won' || s === 'lost') setMode('details')
+  /** Saves on the tap, then offers optional extras. */
+  const logContact = () => {
+    void actions.note(person.key, { body: '', logContact: true })
+    setMode('contact')
   }
 
   let when: string
@@ -570,13 +591,16 @@ const PersonCard = memo(function PersonCard({
       )}
 
       <div className="mt-3 flex flex-wrap gap-2">
+        <button type="button" onClick={logContact} className={btnPrimary}>
+          Log contact
+        </button>
         <button
           type="button"
-          onClick={() => setMode((m) => (m === 'contact' ? null : 'contact'))}
-          aria-expanded={mode === 'contact'}
-          className={mode === 'contact' ? btnGhost : btnPrimary}
+          onClick={() => setMode((m) => (m === 'note' ? null : 'note'))}
+          aria-expanded={mode === 'note'}
+          className={btnGhost}
         >
-          Log contact
+          Add note
         </button>
         <button
           type="button"
@@ -584,11 +608,25 @@ const PersonCard = memo(function PersonCard({
           aria-expanded={mode === 'details'}
           className={btnGhost}
         >
-          {mode === 'details' ? 'Hide details' : `Details and notes${person.notes.length ? ` (${person.notes.length})` : ''}`}
+          {mode === 'details' ? 'Hide details' : `Details${person.notes.length ? ` (${person.notes.length} notes)` : ''}`}
         </button>
       </div>
 
-      {mode === 'contact' && <LogContactForm onSave={note} onCancel={() => setMode(null)} />}
+      {mode === 'contact' && <ContactLoggedPanel person={person} actions={actions} onClose={() => setMode(null)} />}
+      {mode === 'note' && (
+        <div className="mt-3 rounded-lg border border-gray-800 bg-gray-950 p-3">
+          <NoteBox
+            placeholder="Add a note. Does not change last contacted."
+            closeLabel="Close"
+            onClose={() => setMode(null)}
+            onSave={async (body) => {
+              const ok = await actions.note(person.key, { body, logContact: false })
+              if (ok) setMode(null)
+              return ok
+            }}
+          />
+        </div>
+      )}
       {mode === 'details' && <DetailsForm person={person} now={now} showRevenue={showRevenue} actions={actions} />}
     </article>
   )
@@ -714,6 +752,25 @@ export function PipelineClient({ initialShowRevenue = false }: { initialShowReve
   const [showRevenue, setShowRevenue] = useState(initialShowRevenue)
   const [now, setNow] = useState(() => Date.now())
   const [filters, setFilters] = useState<Filters>(NO_FILTERS)
+  // Newest first by default: the backfill order. The choice is remembered in
+  // localStorage, read after mount so the server render and first paint agree.
+  const [sort, setSortState] = useState<SortKey>('newest')
+  useEffect(() => {
+    try {
+      const saved = window.localStorage.getItem(SORT_STORAGE_KEY)
+      if (saved && (SORTS as readonly string[]).includes(saved)) setSortState(saved as SortKey)
+    } catch {
+      // Storage blocked (private window): keep the default.
+    }
+  }, [])
+  const setSort = (s: SortKey) => {
+    setSortState(s)
+    try {
+      window.localStorage.setItem(SORT_STORAGE_KEY, s)
+    } catch {
+      // Not persisted; the choice still applies for this visit.
+    }
+  }
   const setFilter = <K extends keyof Filters>(k: K, v: Filters[K]) => setFilters((f) => ({ ...f, [k]: v }))
 
   // Latest request per person. A slower, older response must never overwrite
@@ -819,8 +876,8 @@ export function PipelineClient({ initialShowRevenue = false }: { initialShowReve
       if (f.dueOnly && !followUpState(p, now).due) return false
       return true
     })
-    return sortPipeline(matched, now)
-  }, [people, filters, now])
+    return sort === 'newest' ? sortNewest(matched) : sortPipeline(matched, now)
+  }, [people, filters, now, sort])
 
   const dueCount = useMemo(() => people.filter((p) => followUpState(p, now).due).length, [people, now])
   const byTerm = useMemo(() => rollupRoi(people, 'utmTerm'), [people])
@@ -945,9 +1002,16 @@ export function PipelineClient({ initialShowRevenue = false }: { initialShowReve
                 <option value={NO_TERM}>No utm_term</option>
               </select>
             </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-sm text-gray-400">Sort</span>
+              <Segmented<SortKey> label="Sort" options={SORTS} labels={SORT_LABELS} value={sort} onChange={setSort} />
+            </div>
             <div className="flex flex-wrap items-center gap-x-3 text-sm text-gray-500 tabular-nums">
               <span hidden={loading && people.length === 0}>
-                {visible.length} of {people.length} people. Needs follow-up first, then next follow-up soonest.
+                {visible.length} of {people.length} people.{' '}
+                {sort === 'newest'
+                  ? 'Latest booking or lead first.'
+                  : 'Needs follow-up first, then next follow-up soonest.'}
               </span>
               {filtered && (
                 <button type="button" onClick={() => setFilters(NO_FILTERS)} className={`min-h-[44px] rounded text-blue-400 hover:text-blue-300 ${FOCUS}`}>

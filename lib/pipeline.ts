@@ -270,15 +270,27 @@ export function followUpState(p: FollowUpInput, now: number): FollowUp {
   return { due: false, scheduled: null }
 }
 
-/** Most recent thing that happened with this person, for the fallback order. */
-function lastActivity(p: Pick<PipelinePerson, 'bookings' | 'leadCreatedAt'>): number {
-  const times = p.bookings.map((b) => Date.parse(b.scheduledAt))
-  if (p.leadCreatedAt) times.push(Date.parse(p.leadCreatedAt))
-  return times.length ? Math.max(...times) : 0
+/**
+ * When this person last did something: their latest booking's call time if
+ * they booked (an upcoming call counts, so it sorts to the top), otherwise when
+ * the lead came in.
+ */
+export function activityAt(p: Pick<PipelinePerson, 'bookings' | 'leadCreatedAt'>): number {
+  if (p.bookings.length > 0) return Math.max(...p.bookings.map((b) => Date.parse(b.scheduledAt)))
+  return p.leadCreatedAt ? Date.parse(p.leadCreatedAt) : 0
+}
+
+export const SORTS = ['newest', 'follow_up'] as const
+export type SortKey = (typeof SORTS)[number]
+export const SORT_LABELS: Record<SortKey, string> = { newest: 'Newest first', follow_up: 'Needs follow-up' }
+
+/** Newest activity at the top. The backfill order. */
+export function sortNewest<T extends Pick<PipelinePerson, 'bookings' | 'leadCreatedAt'>>(rows: T[]): T[] {
+  return [...rows].sort((a, b) => activityAt(b) - activityAt(a))
 }
 
 /**
- * Default order, soonest first:
+ * Follow-up order, soonest first:
  *   1. due now, longest waiting first
  *   2. follow-up scheduled for later, soonest first
  *   3. everyone else, most recent activity first
@@ -292,7 +304,7 @@ export function sortPipeline<T extends FollowUpInput>(rows: T[], now: number): T
     if (ra !== rb) return ra - rb
     if (a.f.due && b.f.due) return a.f.since - b.f.since
     if (!a.f.due && !b.f.due && a.f.scheduled !== null && b.f.scheduled !== null) return a.f.scheduled - b.f.scheduled
-    return lastActivity(b.r) - lastActivity(a.r)
+    return activityAt(b.r) - activityAt(a.r)
   })
   return keyed.map((k) => k.r)
 }

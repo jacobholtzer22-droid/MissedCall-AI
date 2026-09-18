@@ -13,6 +13,7 @@ import {
   resolveCompany,
   resolveUtmTerm,
   rollupRoi,
+  sortNewest,
   sortPipeline,
   stageOf,
   termFromNotes,
@@ -169,6 +170,18 @@ test('sort: due (longest waiting) → scheduled (soonest) → rest (most recent)
     person({ key: 'old', leadCreatedAt: days(30) }),
   ]
   assert.deepEqual(sortPipeline(rows, NOW).map((r) => r.key), ['due9', 'due5', 'later1', 'later3', 'recent', 'old'])
+})
+
+test('sort newest: latest booking time if booked, else when the lead came in', () => {
+  const rows = [
+    person({ key: 'lead2d', leadCreatedAt: days(2) }),
+    person({ key: 'call5d', leadCreatedAt: days(0.1), bookings: [booking({ scheduledAt: days(5) })] }),
+    person({ key: 'upcoming', leadCreatedAt: days(9), bookings: [booking({ scheduledAt: inDays(1) })] }),
+    person({ key: 'rebooked', bookings: [booking({ scheduledAt: days(8) }), booking({ scheduledAt: days(1) })] }),
+    person({ key: 'noDates', leadCreatedAt: null }),
+  ]
+  // call5d sorts by its call, not by its fresh lead row.
+  assert.deepEqual(sortNewest(rows).map((r) => r.key), ['upcoming', 'rebooked', 'lead2d', 'call5d', 'noDates'])
 })
 
 // ---- ROI ----
