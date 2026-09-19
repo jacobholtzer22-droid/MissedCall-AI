@@ -20,6 +20,7 @@ import { formatPhoneNumber } from '@/lib/utils'
 import { phonesMatch } from '@/lib/phone-utils'
 import { findOrCreateContact } from '@/lib/crm-utils'
 import { shouldRejectTelnyxWebhook } from '@/lib/telnyx-signature'
+import { raisePlatformAlert, buildSmsSendFailedAlert } from '@/lib/platform-alert'
 import {
   leadFactsForPhone,
   pingOwnerWithThread,
@@ -2717,5 +2718,6 @@ async function sendSMSAndLog(
       console.log('⏱️ [SMS] Telnyx API error at:', timing.telnyxResponseAt, { error: errMsg })
     }
     console.error('❌ Error sending SMS:', error, '| Full error:', JSON.stringify(error, Object.getOwnPropertyNames(error)))
+    raisePlatformAlert(buildSmsSendFailedAlert({ business: { id: business.id, name: business.name }, path: 'ai_reply', error, toPhone: to, conversationId }))
   }
 }

@@ -10,6 +10,7 @@ import Telnyx from 'telnyx'
 import { createCalendarEvent, getAvailableSlotsWithMeta } from '@/lib/google-calendar'
 import { notifyOwnerOnBookingCreated } from '@/lib/notify-owner'
 import { recordMessageSent } from '@/lib/sms-cooldown'
+import { raisePlatformAlert, buildCalendarSyncFailedAlert } from '@/lib/platform-alert'
 import type { Business } from '@prisma/client'
 
 /** Thrown inside the booking transaction to signal a 409 conflict (not a server error). */
@@ -283,6 +284,7 @@ export async function createBooking(params: CreateBookingParams): Promise<Create
     } catch (calErr) {
       calendarSyncFailed = true
       console.error(`${logPrefix} Calendar FAILED:`, calErr instanceof Error ? calErr.message : String(calErr))
+      raisePlatformAlert(buildCalendarSyncFailedAlert({ business: { id: business.id, name: business.name }, appointmentId: appointment.id, error: calErr }))
       // Booking stands either way — appointment is already saved
     }
     try {

@@ -1166,7 +1166,7 @@ async function sendSMS(business, to, text)
 | Route | Method | Purpose |
 |---|---|---|
 | `/api/contact` | POST | Website contact form. Body: `{ name, phone?, message?, smsConsent, businessId?, businessSlug?, email?, hp_7d3a_ref?, website?, turnstileToken? }`. **Every submission is scored** by `scoreSubmission()` (`lib/spam-score.ts`) and **every submission writes a `WebsiteLead` row** carrying `spamScore`, `spamReasons`, `sourceIp`, `userAgent` — a high score sets `status='spam'` and suppresses Contact creation plus owner notification, it NEVER discards the record. Bots get an identical 200 either way. `hp_7d3a_ref` (and legacy `website`) is the honeypot; a non-empty value auto-condemns. Cross-tenant velocity counts come from `getVelocityCounts()` (`lib/spam-velocity.ts`). **Marketing path** (no `businessId`/`businessSlug`): row is written against `MARKETING_BUSINESS_ID`; clean submissions also send the Resend email to `YOUR_EMAIL`. If no marketing business is configured, the payload is logged and not persisted. **Tenant path:** awaits `findOrCreateContact(source='website_form')` + `websiteLead.create` sequentially, then `notifyOwnerOnWebsiteLead()`. **Business not found:** returns 404 and fires a throttled ops alert email carrying the full payload (see gotcha #40). All user input in email bodies is HTML-escaped. No auth, no rate limiting — open endpoint. |
-| `/api/book-demo` | POST | Demo request form submission |
+| `/api/book-demo` | POST | Demo request form (`DemoForm`, `WebsiteQuoteForm`). Saves the request as a `WebsiteLead` under the marketing business (`status='new'`, `businessName`, industry and note in `message`), then emails `YOUR_EMAIL` and reads the Resend status. A failure of either raises a `book_demo_failed` platform alert (§21). Always returns `{ success: true }`: neither form reads the response or has an error state. |
 
 ---
 
@@ -1335,6 +1335,9 @@ exchangeCodeForTokens(code: string, businessId: string): Promise<void>
 
 getValidAccessToken(businessId: string): Promise<string>
 // Return stored access token, refreshing via refresh token if expired.
+// On a refresh failure it always re-throws. It sets googleCalendarConnected=false ONLY when
+// isDefinitiveAuthFailure(error) (Google's invalid_grant); any other failure is treated as
+// transient and leaves the calendar connected. Both branches raise a platform alert (§21).
 
 getAvailableSlots(businessId: string, startDate: string, endDate: string): Promise<TimeSlot[]>
 // Fetch busy times from Google Calendar, apply business hours, slot duration, buffer.
@@ -2795,7 +2798,7 @@ Added Sep 2026 on the `silent-failure-alerts` branch. When something a paying
 client depends on fails quietly, a `PlatformAlert` row is written and one email
 goes to the **platform owner** (not the client's owner; those are
 `lib/notify-owner.ts`). This section covers the model, the helper and the test
-route. The call sites that raise alerts are listed at the end once wired.
+route. The call sites that raise alerts are listed under "Call sites" below.
 
 ### Model: `PlatformAlert`
 
@@ -2810,6 +2813,7 @@ dedupeKey, createdAt, emailedAt?, resolvedAt?
   incident history; deleting a client must not erase what went wrong for them.
   null also means "belongs to no business" (`voice_webhook_error`,
   `book_demo_failed`, `alert_storm`, `test`).
+- **Not every raise is a row.** The same `dedupeKey` within 10 minutes of its last row writes nothing (row throttle, below).
 - **`emailedAt` is stamped only when the email actually sent.** A throttled,
   storm-capped or failed-to-send alert is still a row, with `emailedAt` null and
   (for the first two) `metadata.emailSkipped` = `"throttled"` | `"storm"`.
@@ -2852,6 +2856,7 @@ filtered on. If Resend itself is what is down, the row is still written and
 | Rule | Behavior |
 |---|---|
 | Throttle | The same `dedupeKey` with an email inside its window: row written, email skipped. The window is part of the alert (`throttleHours`): **6 hours** by default (`THROTTLE_HOURS_DEFAULT`), **24 hours** for a missing setting that will not fix itself (`THROTTLE_HOURS_CONFIG`: `no_recipient`, `no_sender`, `no_owner_email`, `calendar_disconnected`). A failed email does not start a window. |
+| Row throttle | The same `dedupeKey` with a row written in the last **10 minutes** (`ROW_THROTTLE_MINUTES`): nothing is written and nothing is sent. Caps any one key at 6 rows an hour, so a busy public booking page during a Google outage, or a run of failing calls, cannot flood the table. Both throttles share one lookup (`recentForKey`). |
 | Storm cap | 10 or more alert emails in the last 60 minutes (`STORM_EMAIL_CAP`, storm notices excluded): row written, email skipped, and at most one `alert_storm` email per hour carrying the count of alerts held back. The storm notice is never itself capped. |
 | Database down | The throttle cannot be read, so a per-instance in-memory map allows each key one email per window. The email still goes out even though the row cannot be written (`ROW NOT WRITTEN` is logged). |
 
@@ -2897,6 +2902,34 @@ Network errors, timeouts, 5xx and 429 are false. **`invalid_client` and
 OAuth credentials are wrong, and disconnecting on them would disconnect every
 client at once.
 
+### Call sites
+
+Every site is an insertion next to the log line that was already there. No status
+code, return value, log line or customer-facing copy changed, with the one
+exception noted for the calendar.
+
+| # | Failure | Where | Alert |
+|---|---|---|---|
+| 1 | Missed-call text-back fails at send time | `app/api/webhooks/voice/route.ts`, `catch` of `sendMissedCallSMS` | `sms_send_failed`, path `missed_call` |
+| 1 | AI reply or lead-flow text fails at send time | `app/api/webhooks/sms/route.ts`, `catch` of `sendSMSAndLog` | `sms_send_failed`, path `ai_reply` |
+| 2 | Voice webhook handler throws | `voice/route.ts`, outer `catch`. **Still returns 200** so Telnyx does not retry call events | `voice_webhook_error` |
+| 3 | Owner notification reached nobody, or one channel failed | `lib/notify-owner.ts`: all seven notifiers fill an `OwnerNotifyOutcome` and call `decideOwnerNotifyAlert` once, right before returning. No signature changed | `owner_notify_none_delivered` / `owner_notify_failed` |
+| 3 | Voicemail owner SMS and email | `voice/route.ts`, `call.recording.saved`. Same outcome pattern, notifier `voicemail`. The Resend result is now read, so a failed email is logged as failed instead of "sent" | same |
+| 3 | The website-lead notifier throws outright | `app/api/contact/route.ts`, the `catch` around `notifyOwnerOnWebsiteLead` | `owner_notify_none_delivered` via `buildOwnerNotifyThrewAlert` |
+| 4 | Demo request not emailed, not saved, or both | `app/api/book-demo/route.ts` | `book_demo_failed`, stage from `bookDemoFailureStage` |
+| 5 | Google refresh token rejected, calendar disconnected | `lib/google-calendar.ts`, `getValidAccessToken` | `calendar_disconnected` |
+| 5 | Google refresh failed for any other reason. **Calendar stays connected** (this is the one behavior change in the batch; before, any error disconnected) | same | `calendar_refresh_error` |
+| 6 | Booking saved with `calendarSyncFailed = true` | `lib/create-booking.ts` | `calendar_sync_failed` |
+
+Deliberately **not** alerts:
+
+- **Carrier-level `delivery_failed`.** Many are landlines. Only a send that fails at the Telnyx API call alerts.
+- **`notifyBySms=false` / `notifyByEmail=false`.** A channel switched off by setting is the owner's choice, not a failure.
+- **The contact route's notifier result.** Channel failures are alerted from inside the notifier, which sees both channels; the route only covers the notifier throwing.
+- **Not wired:** the legacy `voice-gather` and `voice-dial-status` webhooks (slated for deletion), `demo-book` calendar failures (the booked-alert email already shows them), `lib/marketing-funnel.ts` (already loud via `notifyOwnerOrShout`), and `sendSMS()` in the SMS webhook (its throw reaches the outer catch and returns 500, so it is not silent).
+
+**Adding a new alert:** write a builder in `lib/platform-alert.ts` (type, severity, dedupeKey, window), add its test, add the type to `PlatformAlertType` and the schema comment, then call `raisePlatformAlert(buildX(...))` next to the existing log line. Key on the business, never the phone.
+
 ### Test route
 
 `POST /api/admin/alerts/test` (admin only, same `ADMIN_USER_ID` check as the
@@ -2906,7 +2939,7 @@ path end to end.
 
 ### Tests
 
-`lib/platform-alert.test.ts` (33 tests, no database, no email): scrubbing, every
+`lib/platform-alert.test.ts` (38 tests, no database, no email): scrubbing, every
 builder, the owner-notify decision, `isDefinitiveAuthFailure` against the real
 GaxiosError shapes, the throttle, the storm cap, and never-throws with every
 dependency rejecting. It never calls `raisePlatformAlert()`, which is wired to

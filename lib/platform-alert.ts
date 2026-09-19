@@ -15,9 +15,11 @@
 //      (a cron, a script) waitUntil is a no-op and the work is simply a floating
 //      promise that catches its own errors.
 //
-//   2. Every alert writes a row; not every alert sends an email. The same
-//      dedupeKey inside its throttle window is recorded but not re-sent, and a
-//      storm cap stops a platform-wide outage from sending hundreds of emails.
+//   2. Alerts are recorded far more often than they are emailed. The same
+//      dedupeKey inside its throttle window is recorded but not re-sent, a storm
+//      cap stops a platform-wide outage from sending hundreds of emails, and a
+//      key that wrote a row in the last 10 minutes writes nothing at all, so one
+//      failing hot path cannot flood the table.
 //
 //   3. Nothing sensitive is stored or emailed. Title, detail, metadata and the
 //      dedupeKey all pass through the scrubber: phone numbers keep their last 4
@@ -69,6 +71,8 @@ export const THROTTLE_HOURS_CONFIG = 24
 export const STORM_EMAIL_CAP = 10
 export const STORM_WINDOW_MINUTES = 60
 export const STORM_DEDUPE_KEY = 'alert_storm'
+/** A key that already wrote a row this recently writes nothing at all: at most 6 rows an hour per key. */
+export const ROW_THROTTLE_MINUTES = 10
 
 const MAX_TITLE = 160
 const MAX_DETAIL = 2000
@@ -244,6 +248,13 @@ export function buildBookDemoFailedAlert(p: { stage: 'email' | 'persist' | 'both
   }
 }
 
+/** Which part of a demo request failed, or null when both the save and the email worked. */
+export function bookDemoFailureStage(p: { emailOk: boolean; persistOk: boolean }): 'email' | 'persist' | 'both' | null {
+  if (p.emailOk && p.persistOk) return null
+  if (!p.emailOk && !p.persistOk) return 'both'
+  return p.emailOk ? 'persist' : 'email'
+}
+
 /** 5a. A definitive auth failure disconnected a business's Google Calendar. */
 export function buildCalendarDisconnectedAlert(p: { businessId: string; error: unknown }): PlatformAlertInput {
   return {
@@ -417,6 +428,25 @@ export function decideOwnerNotifyAlert(p: {
   }
 }
 
+/**
+ * An owner notifier THREW instead of returning. Its per-channel outcome is unknown,
+ * so this is reported as "nothing delivered" under the same key a send failure uses.
+ */
+export function buildOwnerNotifyThrewAlert(p: { business: BusinessRef; notifier: string; error: unknown }): PlatformAlertInput {
+  return {
+    type: 'owner_notify_none_delivered',
+    severity: 'critical',
+    businessId: p.business.id,
+    title: `Owner of ${label(p.business)} was NOT notified (${p.notifier} threw)`,
+    detail:
+      `The owner notifier (${p.notifier}) threw before reporting what it delivered, so assume the owner ` +
+      `was told nothing. The lead or booking itself is saved.\n\nError: ${describeError(p.error)}`,
+    metadata: { notifier: p.notifier, threw: true, error: describeError(p.error) },
+    dedupeKey: `owner_notify_none:${p.business.id}:send`,
+    throttleHours: THROTTLE_HOURS_DEFAULT,
+  }
+}
+
 // ── 5. Google auth failure classification ────────────────────────────────
 
 /**
@@ -462,8 +492,11 @@ function parsedErrorField(text: string): unknown {
 
 export type PlatformAlertDeps = {
   now: () => Date
-  /** Was an email already sent for this dedupeKey since `since`? */
-  wasEmailedSince: (dedupeKey: string, since: Date) => Promise<boolean>
+  /**
+   * One lookup, used by both throttles: among rows for this dedupeKey created since `since`,
+   * when was the newest one written, and when was the newest email sent? null = none.
+   */
+  recentForKey: (dedupeKey: string, since: Date) => Promise<{ lastCreatedAt: Date | null; lastEmailedAt: Date | null }>
   /** How many alert emails (storm notices excluded) went out since `since`? */
   countEmailedSince: (since: Date) => Promise<number>
   /** How many alerts were recorded without an email because of the storm cap since `since`? */
@@ -485,7 +518,7 @@ export type PlatformAlertDeps = {
 export type PlatformAlertResult = {
   alertId: string | null
   emailed: boolean
-  skipped: 'throttled' | 'storm' | 'send_failed' | null
+  skipped: 'row_throttled' | 'throttled' | 'storm' | 'send_failed' | null
   stormNoticeSent: boolean
 }
 
@@ -554,10 +587,19 @@ export async function processPlatformAlert(input: PlatformAlertInput, deps: Plat
     const now = deps.now()
     const windowMs = a.throttleHours * 3_600_000
 
-    // 1. Throttle on the dedupeKey.
+    // 1. Throttle on the dedupeKey. One lookup answers both questions: was a row written
+    //    in the last few minutes (then write nothing), and was an email sent inside this
+    //    alert's window (then write the row, skip the email).
+    const rowWindowMs = ROW_THROTTLE_MINUTES * 60_000
     let throttled: boolean
     try {
-      throttled = await deps.wasEmailedSince(a.dedupeKey, new Date(now.getTime() - windowMs))
+      const recent = await deps.recentForKey(a.dedupeKey, new Date(now.getTime() - Math.max(windowMs, rowWindowMs)))
+      if (recent.lastCreatedAt && now.getTime() - recent.lastCreatedAt.getTime() < rowWindowMs) {
+        result.skipped = 'row_throttled'
+        console.log(`[platform-alert] not recorded (same key within ${ROW_THROTTLE_MINUTES} min) type=${a.type} key=${a.dedupeKey}`)
+        return result
+      }
+      throttled = Boolean(recent.lastEmailedAt && now.getTime() - recent.lastEmailedAt.getTime() < windowMs)
     } catch (err) {
       console.error('[platform-alert] throttle check failed, using in-memory fallback:', describeError(err))
       throttled = !memoryAllows(a.dedupeKey, windowMs, now.getTime())
@@ -632,7 +674,7 @@ export async function processPlatformAlert(input: PlatformAlertInput, deps: Plat
 async function sendStormNotice(deps: PlatformAlertDeps, now: Date): Promise<boolean> {
   try {
     const since = new Date(now.getTime() - STORM_WINDOW_MINUTES * 60_000)
-    if (await deps.wasEmailedSince(STORM_DEDUPE_KEY, since)) return false
+    if ((await deps.recentForKey(STORM_DEDUPE_KEY, since)).lastEmailedAt) return false
     const suppressedCount = await deps.countStormSuppressedSince(since)
     const storm = sanitizeAlert(buildAlertStormAlert({ suppressedCount }))
     const row = await deps.createAlert({
@@ -657,8 +699,14 @@ async function sendStormNotice(deps: PlatformAlertDeps, now: Date): Promise<bool
 
 const liveDeps: PlatformAlertDeps = {
   now: () => new Date(),
-  wasEmailedSince: async (dedupeKey, since) =>
-    (await db.platformAlert.count({ where: { dedupeKey, emailedAt: { gte: since } } })) > 0,
+  // emailedAt is stamped moments after createdAt, so "created since" also bounds "emailed since".
+  recentForKey: async (dedupeKey, since) => {
+    const agg = await db.platformAlert.aggregate({
+      where: { dedupeKey, createdAt: { gte: since } },
+      _max: { createdAt: true, emailedAt: true },
+    })
+    return { lastCreatedAt: agg._max.createdAt, lastEmailedAt: agg._max.emailedAt }
+  },
   countEmailedSince: async (since) =>
     db.platformAlert.count({ where: { emailedAt: { gte: since }, type: { not: 'alert_storm' } } }),
   countStormSuppressedSince: async (since) =>

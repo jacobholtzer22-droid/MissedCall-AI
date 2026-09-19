@@ -46,6 +46,14 @@ import { findExistingContact } from '@/lib/crm-utils'
 import { normalizePhoneNumber, phonesMatch } from '@/lib/phone-utils'
 import { formatPhoneNumber } from '@/lib/utils'
 import { shouldRejectTelnyxWebhook } from '@/lib/telnyx-signature'
+import {
+  raisePlatformAlert,
+  buildSmsSendFailedAlert,
+  buildVoiceWebhookErrorAlert,
+  decideOwnerNotifyAlert,
+  newOwnerNotifyOutcome,
+  describeError,
+} from '@/lib/platform-alert'
 
 const VOICE = 'AWS.Polly.Joanna'
 const DEFAULT_VOICE_MESSAGE =
@@ -800,6 +808,15 @@ export async function POST(request: NextRequest) {
                 : formatPhoneNumber(callerPhone)
             }
 
+            // What happened on each channel, so a voicemail alert that reached nobody is not silent.
+            const vmOutcome = newOwnerNotifyOutcome()
+            vmOutcome.sms.enabled = Boolean(business.notifyBySms)
+            vmOutcome.email.enabled = Boolean(business.notifyByEmail)
+            if (business.notifyBySms && !(business.ownerPhone && business.telnyxPhoneNumber)) {
+              vmOutcome.sms.reason = !business.ownerPhone ? 'no_recipient' : 'no_sender'
+            }
+            if (business.notifyByEmail && !business.ownerEmail) vmOutcome.email.reason = 'no_owner_email'
+
             if (business.notifyBySms && business.ownerPhone && business.telnyxPhoneNumber) {
               try {
                 const smsBody = [
@@ -813,8 +830,11 @@ export async function POST(request: NextRequest) {
                   text: smsBody,
                 })
                 console.log('📞 Voicemail SMS notification sent to owner:', business.ownerPhone)
+                vmOutcome.sms.delivered = true
               } catch (err) {
                 console.error('❌ Failed to send voicemail SMS notification:', err)
+                vmOutcome.sms.reason = 'send_error'
+                vmOutcome.sms.error = describeError(err)
               }
             }
 
@@ -838,17 +858,25 @@ export async function POST(request: NextRequest) {
   <p><a href="https://www.alignandacquire.com/dashboard/voicemails" style="color: #2563eb;">View in Dashboard</a></p>
 </body>
 </html>`
-                await resend.emails.send({
+                const emailResult = await resend.emails.send({
                   from: 'notifications@alignandacquire.com',
                   to: business.ownerEmail,
                   subject: `New Voicemail from ${callerDisplay} - ${business.name}`,
                   html: htmlBody,
                 })
+                // The Resend SDK reports failure in the result instead of throwing.
+                if (emailResult.error) throw new Error(`Resend error: ${emailResult.error.message}`)
                 console.log('📞 Voicemail email notification sent to owner:', business.ownerEmail)
+                vmOutcome.email.delivered = true
               } catch (err) {
                 console.error('❌ Failed to send voicemail email notification:', err)
+                vmOutcome.email.reason = 'send_error'
+                vmOutcome.email.error = describeError(err)
               }
             }
+
+            const vmAlert = decideOwnerNotifyAlert({ business: { id: conv.businessId, name: business.name }, notifier: 'voicemail', outcome: vmOutcome })
+            if (vmAlert) raisePlatformAlert(vmAlert)
           }
         }
       }
@@ -886,6 +914,8 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({}, { status: 200 })
   } catch (error) {
     console.error('❌ Error handling voice webhook:', error)
+    // Still 200: Telnyx must not retry call events. The alert is what makes this visible.
+    raisePlatformAlert(buildVoiceWebhookErrorAlert({ error }))
     return NextResponse.json({}, { status: 200 })
   }
 }
@@ -1189,6 +1219,7 @@ async function sendMissedCallSMS(
       console.log('⏱️ [VOICE] Telnyx API error at:', timing.telnyxResponseAt, { error: errMsg })
     }
     console.error('❌ [VOICE] Failed to send SMS:', err, '| Full:', JSON.stringify(err, Object.getOwnPropertyNames(err)))
+    raisePlatformAlert(buildSmsSendFailedAlert({ business, path: 'missed_call', error: err, toPhone: callerPhone, conversationId: conversation.id }))
   }
 }
 

@@ -5,6 +5,7 @@ import { notifyOwnerOnWebsiteLead } from '@/lib/notify-owner'
 import { getMarketingBusiness } from '@/lib/marketing-funnel'
 import { getClientIp } from '@/lib/rate-limit'
 import { getVelocityCounts } from '@/lib/spam-velocity'
+import { raisePlatformAlert, buildOwnerNotifyThrewAlert } from '@/lib/platform-alert'
 import {
   scoreSubmission,
   HONEYPOT_FIELD,
@@ -369,6 +370,9 @@ export async function POST(request: NextRequest) {
       })
     } catch (err) {
       console.error('Failed to notify owner of website lead:', err)
+      // Channel-level failures are alerted from inside the notifier. This covers the one
+      // case it cannot report itself: the notifier throwing outright.
+      raisePlatformAlert(buildOwnerNotifyThrewAlert({ business, notifier: 'website_lead', error: err }))
     }
 
     return NextResponse.json({ success: true }, { headers: CORS_HEADERS })

@@ -1,17 +1,20 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
+  ROW_THROTTLE_MINUTES,
   STORM_EMAIL_CAP,
   STORM_DEDUPE_KEY,
   THROTTLE_HOURS_CONFIG,
   THROTTLE_HOURS_DEFAULT,
   _resetMemoryThrottle,
   alertEmailSubject,
+  bookDemoFailureStage,
   buildAlertStormAlert,
   buildBookDemoFailedAlert,
   buildCalendarDisconnectedAlert,
   buildCalendarRefreshErrorAlert,
   buildCalendarSyncFailedAlert,
+  buildOwnerNotifyThrewAlert,
   buildSmsSendFailedAlert,
   buildTestAlert,
   buildVoiceWebhookErrorAlert,
@@ -53,7 +56,11 @@ function fakeDeps(start = '2026-09-19T12:00:00.000Z') {
   let emailWorks = true
   const deps: PlatformAlertDeps = {
     now: () => new Date(clock),
-    wasEmailedSince: async (key, since) => rows.some((r) => r.dedupeKey === key && r.emailedAt !== null && r.emailedAt >= since),
+    recentForKey: async (key, since) => {
+      const mine = rows.filter((r) => r.dedupeKey === key && r.createdAt >= since)
+      const newest = (ds: (Date | null)[]) => ds.reduce<Date | null>((m, d) => (d && (!m || d > m) ? d : m), null)
+      return { lastCreatedAt: newest(mine.map((r) => r.createdAt)), lastEmailedAt: newest(mine.map((r) => r.emailedAt)) }
+    },
     countEmailedSince: async (since) => rows.filter((r) => r.type !== 'alert_storm' && r.emailedAt !== null && r.emailedAt >= since).length,
     countStormSuppressedSince: async (since) =>
       rows.filter((r) => r.createdAt >= since && r.emailedAt === null && r.metadata.emailSkipped === 'storm').length,
@@ -195,6 +202,19 @@ test('book_demo_failed: one key per stage', () => {
     assert.equal(a.dedupeKey, `book_demo_failed:${stage}`)
   }
   assert.match(buildBookDemoFailedAlert({ stage: 'both', error: 'x' }).title, /lost/)
+})
+
+test('book demo: the failure stage is decided from the two outcomes', () => {
+  assert.equal(bookDemoFailureStage({ emailOk: true, persistOk: true }), null)
+  assert.equal(bookDemoFailureStage({ emailOk: false, persistOk: true }), 'email')
+  assert.equal(bookDemoFailureStage({ emailOk: true, persistOk: false }), 'persist')
+  assert.equal(bookDemoFailureStage({ emailOk: false, persistOk: false }), 'both')
+})
+
+test('owner notifier that THREW: critical, and shares the send-failure key so the two throttle together', () => {
+  const a = buildOwnerNotifyThrewAlert({ business: BIZ, notifier: 'website_lead', error: new Error('boom +15551234567') })
+  assert.deepEqual([a.type, a.severity, a.dedupeKey, a.throttleHours], ['owner_notify_none_delivered', 'critical', 'owner_notify_none:biz_1:send', THROTTLE_HOURS_DEFAULT])
+  assert.ok(!JSON.stringify(a).includes('5551234567'))
 })
 
 test('calendar alerts: disconnect is critical and daily, a transient refresh error is a warning', () => {
@@ -363,6 +383,53 @@ test('throttle: a different key is not throttled, and a failed email does not st
   } finally { s.restore() }
 })
 
+test('row throttle: the same key inside 10 minutes writes no row and sends no email', async () => {
+  const f = fakeDeps(); const s = silence()
+  try {
+    const first = await processPlatformAlert(sample(), f.deps)
+    f.advanceMinutes(ROW_THROTTLE_MINUTES - 1)
+    const repeat = await processPlatformAlert(sample(), f.deps)
+    assert.deepEqual([first.emailed, first.skipped], [true, null])
+    assert.deepEqual([repeat.alertId, repeat.emailed, repeat.skipped], [null, false, 'row_throttled'])
+    assert.equal(f.rows.length, 1)
+
+    f.advanceMinutes(2) // 11 minutes after the first row: recorded again, email still throttled
+    const later = await processPlatformAlert(sample(), f.deps)
+    assert.deepEqual([later.emailed, later.skipped], [false, 'throttled'])
+    assert.equal(f.rows.length, 2)
+
+    const otherKey = await processPlatformAlert(sample({ dedupeKey: 'another' }), f.deps)
+    assert.equal(otherKey.emailed, true, 'the row throttle is per key')
+  } finally { s.restore() }
+})
+
+test('row throttle: one failing key hammered every minute for an hour writes at most 6 rows and 1 email', async () => {
+  const f = fakeDeps(); const s = silence()
+  try {
+    for (let minute = 0; minute < 60; minute++) {
+      await processPlatformAlert(sample({ dedupeKey: 'calendar_refresh_error:biz_1' }), f.deps)
+      f.advanceMinutes(1)
+    }
+  } finally { s.restore() }
+  assert.equal(f.rows.length, 6)
+  assert.equal(f.emails.length, 1)
+})
+
+test('row throttle: a row whose email failed still holds the key for 10 minutes, then the email is retried', async () => {
+  const f = fakeDeps(); const s = silence()
+  try {
+    f.breakEmail()
+    const failed = await processPlatformAlert(sample(), f.deps)
+    f.advanceMinutes(5)
+    const soon = await processPlatformAlert(sample(), f.deps)
+    assert.deepEqual([failed.skipped, soon.skipped], ['send_failed', 'row_throttled'])
+    f.advanceMinutes(6)
+    const retry = await processPlatformAlert(sample(), f.deps)
+    assert.equal(retry.skipped, 'send_failed', 'no email ever went out, so the email is attempted again')
+  } finally { s.restore() }
+  assert.equal(f.rows.length, 2)
+})
+
 // ── Storm cap ────────────────────────────────────────────────────────────
 
 test('storm cap: the 11th email in an hour is held back and ONE storm notice goes out', async () => {
@@ -414,7 +481,7 @@ test('never throws: every dependency rejecting still resolves, and says so in th
   const boom = async () => { throw new Error('database is down +15551234567') }
   const deps: PlatformAlertDeps = {
     now: () => new Date('2026-09-19T12:00:00Z'),
-    wasEmailedSince: boom, countEmailedSince: boom, countStormSuppressedSince: boom,
+    recentForKey: boom, countEmailedSince: boom, countStormSuppressedSince: boom,
     createAlert: boom, markEmailed: boom, sendEmail: boom as unknown as PlatformAlertDeps['sendEmail'],
   }
   const s = silence()
@@ -431,7 +498,7 @@ test('never throws: with the database down the email still goes out, once per ke
   const down = async () => { throw new Error('db down') }
   const deps: PlatformAlertDeps = {
     now: () => new Date('2026-09-19T12:00:00Z'),
-    wasEmailedSince: down, countEmailedSince: down, countStormSuppressedSince: down, createAlert: down, markEmailed: down,
+    recentForKey: down, countEmailedSince: down, countStormSuppressedSince: down, createAlert: down, markEmailed: down,
     sendEmail: async (subject) => { emails.push(subject); return true },
   }
   const s = silence()

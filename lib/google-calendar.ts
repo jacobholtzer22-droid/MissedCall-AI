@@ -10,6 +10,12 @@ import { addMinutes } from 'date-fns'
 import { TZDate } from '@date-fns/tz'
 import { db } from '@/lib/db'
 import { DEFAULT_BUSINESS_HOURS } from '@/lib/business-hours'
+import {
+  raisePlatformAlert,
+  isDefinitiveAuthFailure,
+  buildCalendarDisconnectedAlert,
+  buildCalendarRefreshErrorAlert,
+} from '@/lib/platform-alert'
 import { demoInviteDescription, demoInviteTitle } from '@/lib/demo-booker-copy'
 
 const SCOPES = ['https://www.googleapis.com/auth/calendar']
@@ -87,13 +93,21 @@ export async function getValidAccessToken(businessId: string): Promise<string | 
     tokenResult = await oauth2.refreshAccessToken() as unknown as RefreshResult
   } catch (error) {
     console.error('[CALENDAR] OAuth token refresh failed for business', businessId, error)
-    try {
-      await db.business.update({
-        where: { id: businessId },
-        data: { googleCalendarConnected: false },
-      })
-    } catch (e) {
-      console.error('[CALENDAR] Failed to flag business as disconnected:', e)
+    // Only a revoked or expired grant disconnects. A network error, a timeout, a 5xx or a
+    // rate limit is transient: this request fails (the throw below) and the next one retries.
+    if (isDefinitiveAuthFailure(error)) {
+      try {
+        await db.business.update({
+          where: { id: businessId },
+          data: { googleCalendarConnected: false },
+        })
+      } catch (e) {
+        console.error('[CALENDAR] Failed to flag business as disconnected:', e)
+      }
+      raisePlatformAlert(buildCalendarDisconnectedAlert({ businessId, error }))
+    } else {
+      console.error('[CALENDAR] Refresh failure is not invalid_grant: calendar left connected for business', businessId)
+      raisePlatformAlert(buildCalendarRefreshErrorAlert({ businessId, error }))
     }
     throw error
   }

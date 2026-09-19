@@ -9,6 +9,7 @@ import { Resend } from 'resend'
 import { TZDate } from '@date-fns/tz'
 import { normalizeToE164 } from '@/lib/phone-utils'
 import { plainTextToEmailHtml } from '@/lib/email-format'
+import { raisePlatformAlert, decideOwnerNotifyAlert, newOwnerNotifyOutcome, describeError } from '@/lib/platform-alert'
 import type { Business, Appointment } from '@prisma/client'
 
 /** Parse "YYYY-MM-DD HH:mm" as business local time (not UTC). */
@@ -123,6 +124,12 @@ export async function notifyOwnerOnBookingCreated(
     : ''
 
   // SMS
+  // Per-channel outcome, so a notification that reached nobody raises a platform alert.
+  const outcome = newOwnerNotifyOutcome()
+  outcome.sms.enabled = Boolean(business.notifyBySms)
+  outcome.email.enabled = Boolean(business.notifyByEmail)
+  if (business.notifyByEmail && !business.ownerEmail) outcome.email.reason = 'no_owner_email'
+
   if (business.notifyBySms) {
     console.error('[NOTIFY OWNER] SMS enabled, checking phone numbers...')
     const rawPhone = business.ownerPhone || business.forwardingNumber
@@ -130,8 +137,10 @@ export async function notifyOwnerOnBookingCreated(
     const fromNumber = resolveOwnerSmsFrom(business)
     if (!toPhone) {
       console.error('[NOTIFY OWNER] SMS SKIP: No ownerPhone or forwardingNumber set for business (or invalid format)', { businessId: business.id, ownerPhone: business.ownerPhone ?? 'null', forwardingNumber: business.forwardingNumber ?? 'null' })
+      outcome.sms.reason = 'no_recipient'
     } else if (!fromNumber) {
       console.error('[NOTIFY OWNER] SMS SKIP: no sender resolved (no telnyxPhoneNumber, no notificationSenderNumber, no NOTIFICATIONS_TELNYX_NUMBER)', { businessId: business.id })
+      outcome.sms.reason = 'no_sender'
     } else {
       const addressLine = appointment.customerAddress ? `\n📍 Address: ${appointment.customerAddress}` : ''
       const smsText = `📅 New Quote Request! ${appointment.customerName} wants a quote for ${appointment.serviceType} on ${dateStr} at ${timeStr}.\nPhone: ${appointment.customerPhone}${addressLine}${notesTruncated ? `\nNotes: ${notesTruncated}` : ''}\nFull details in your email and dashboard.`
@@ -145,7 +154,10 @@ export async function notifyOwnerOnBookingCreated(
         })
         console.error('[NOTIFY OWNER] SMS sent successfully', { to: toPhone, telnyxResponse: JSON.stringify(response.data) })
         result.smsSent = true
+        outcome.sms.delivered = true
       } catch (err) {
+        outcome.sms.reason = 'send_error'
+        outcome.sms.error = describeError(err)
         console.error('[NOTIFY OWNER] SMS FAILED:', {
           to: toPhone,
           from: fromNumber,
@@ -189,7 +201,10 @@ export async function notifyOwnerOnBookingCreated(
       await sendEmail(business.ownerEmail, subject, body)
       console.error('[NOTIFY OWNER] Email sent successfully to', business.ownerEmail)
       result.emailSent = true
+      outcome.email.delivered = true
     } catch (err) {
+      outcome.email.reason = 'send_error'
+      outcome.email.error = describeError(err)
       console.error('[NOTIFY OWNER] Email FAILED:', {
         to: business.ownerEmail,
         error: err instanceof Error ? err.message : String(err),
@@ -203,6 +218,9 @@ export async function notifyOwnerOnBookingCreated(
       console.error('[NOTIFY OWNER] Email SKIP: No ownerEmail set for business', { businessId: business.id })
     }
   }
+
+  const platformAlert = decideOwnerNotifyAlert({ business, notifier: 'booking_created', outcome })
+  if (platformAlert) raisePlatformAlert(platformAlert)
   return result
 }
 
@@ -233,14 +251,22 @@ export async function notifyOwnerOnBookingRequestNoCalendar(
   const dateTimeLabel = `${dateStr} at ${timeStr}`
 
   // SMS
+  // Per-channel outcome, so a notification that reached nobody raises a platform alert.
+  const outcome = newOwnerNotifyOutcome()
+  outcome.sms.enabled = Boolean(business.notifyBySms)
+  outcome.email.enabled = Boolean(business.notifyByEmail)
+  if (business.notifyByEmail && !business.ownerEmail) outcome.email.reason = 'no_owner_email'
+
   if (business.notifyBySms) {
     const rawPhone = business.ownerPhone || business.forwardingNumber
     const toPhone = rawPhone ? normalizeToE164(rawPhone.trim()) : ''
     const fromNumber = resolveOwnerSmsFrom(business)
     if (!toPhone) {
       console.error('[NOTIFY OWNER] Booking request SMS SKIP: No ownerPhone or forwardingNumber set (or invalid format)', { businessId: business.id })
+      outcome.sms.reason = 'no_recipient'
     } else if (!fromNumber) {
       console.error('[NOTIFY OWNER] Booking request SMS SKIP: no sender resolved (no telnyxPhoneNumber, no notificationSenderNumber, no NOTIFICATIONS_TELNYX_NUMBER)', { businessId: business.id })
+      outcome.sms.reason = 'no_sender'
     } else {
       const addressLine = customerAddress ? `\n📍 Address: ${customerAddress}` : ''
       const smsText = `📅 New Quote Request! ${customerName} wants a quote for ${service} around ${dateTimeLabel}. Phone: ${customerPhone}${addressLine}. Check your dashboard for details.`
@@ -252,7 +278,10 @@ export async function notifyOwnerOnBookingRequestNoCalendar(
           text: smsText,
         })
         console.error('[NOTIFY OWNER] Booking request (no calendar) SMS sent to', toPhone)
+        outcome.sms.delivered = true
       } catch (err) {
+        outcome.sms.reason = 'send_error'
+        outcome.sms.error = describeError(err)
         console.error('[NOTIFY OWNER] Booking request SMS FAILED:', err instanceof Error ? err.message : String(err))
       }
     }
@@ -297,10 +326,16 @@ export async function notifyOwnerOnBookingRequestNoCalendar(
     try {
       await sendEmail(business.ownerEmail, subject, body)
       console.error('[NOTIFY OWNER] Booking request (no calendar) email sent to', business.ownerEmail)
+      outcome.email.delivered = true
     } catch (err) {
+      outcome.email.reason = 'send_error'
+      outcome.email.error = describeError(err)
       console.error('[NOTIFY OWNER] Booking request email FAILED:', err instanceof Error ? err.message : String(err))
     }
   }
+
+  const platformAlert = decideOwnerNotifyAlert({ business, notifier: 'booking_request_no_calendar', outcome })
+  if (platformAlert) raisePlatformAlert(platformAlert)
 }
 
 // ── Lead captured (no calendar) ─────────────────────────────────────
@@ -333,14 +368,22 @@ export async function notifyOwnerOnLeadCaptured(
   const tz = business.timezone ?? 'America/New_York'
 
   // SMS: "New lead! [Name] wants [service] around [timeframe]. Address: [address]. Phone: [phone]. Email: [email]. Check your email for the full conversation."
+  // Per-channel outcome, so a notification that reached nobody raises a platform alert.
+  const outcome = newOwnerNotifyOutcome()
+  outcome.sms.enabled = Boolean(business.notifyBySms)
+  outcome.email.enabled = Boolean(business.notifyByEmail)
+  if (business.notifyByEmail && !business.ownerEmail) outcome.email.reason = 'no_owner_email'
+
   if (business.notifyBySms) {
     const rawPhone = business.ownerPhone || business.forwardingNumber
     const toPhone = rawPhone ? normalizeToE164(rawPhone.trim()) : ''
     const fromNumber = resolveOwnerSmsFrom(business)
     if (!toPhone) {
       console.error('[NOTIFY OWNER] Lead captured SMS SKIP: No ownerPhone or forwardingNumber set (or invalid format)', { businessId: business.id })
+      outcome.sms.reason = 'no_recipient'
     } else if (!fromNumber) {
       console.error('[NOTIFY OWNER] Lead captured SMS SKIP: no sender resolved (no telnyxPhoneNumber, no notificationSenderNumber, no NOTIFICATIONS_TELNYX_NUMBER)', { businessId: business.id })
+      outcome.sms.reason = 'no_sender'
     } else {
       const timeframePart = customerTimeframe ? ` around ${customerTimeframe}` : ''
       const parts = [
@@ -359,7 +402,10 @@ export async function notifyOwnerOnLeadCaptured(
           text: smsText,
         })
         console.error('[NOTIFY OWNER] Lead captured SMS sent to', toPhone)
+        outcome.sms.delivered = true
       } catch (err) {
+        outcome.sms.reason = 'send_error'
+        outcome.sms.error = describeError(err)
         console.error('[NOTIFY OWNER] Lead captured SMS FAILED:', err instanceof Error ? err.message : String(err))
       }
     }
@@ -408,10 +454,16 @@ export async function notifyOwnerOnLeadCaptured(
     try {
       await sendEmail(business.ownerEmail, subject, body)
       console.error('[NOTIFY OWNER] Lead captured email sent to', business.ownerEmail)
+      outcome.email.delivered = true
     } catch (err) {
+      outcome.email.reason = 'send_error'
+      outcome.email.error = describeError(err)
       console.error('[NOTIFY OWNER] Lead captured email FAILED:', err instanceof Error ? err.message : String(err))
     }
   }
+
+  const platformAlert = decideOwnerNotifyAlert({ business, notifier: 'lead_captured', outcome })
+  if (platformAlert) raisePlatformAlert(platformAlert)
 }
 
 // ── Human needed ────────────────────────────────────────────────────
@@ -432,14 +484,22 @@ export async function notifyOwnerOnHumanNeeded(
   const tz = business.timezone ?? 'America/New_York'
 
   // SMS
+  // Per-channel outcome, so a notification that reached nobody raises a platform alert.
+  const outcome = newOwnerNotifyOutcome()
+  outcome.sms.enabled = Boolean(business.notifyBySms)
+  outcome.email.enabled = Boolean(business.notifyByEmail)
+  if (business.notifyByEmail && !business.ownerEmail) outcome.email.reason = 'no_owner_email'
+
   if (business.notifyBySms) {
     const rawPhone = business.ownerPhone || business.forwardingNumber
     const toPhone = rawPhone ? normalizeToE164(rawPhone.trim()) : ''
     const fromNumber = resolveOwnerSmsFrom(business)
     if (!toPhone) {
       console.error('[NOTIFY OWNER] Human needed SMS SKIP: No ownerPhone or forwardingNumber set (or invalid format)', { businessId: business.id })
+      outcome.sms.reason = 'no_recipient'
     } else if (!fromNumber) {
       console.error('[NOTIFY OWNER] Human needed SMS SKIP: no sender resolved (no telnyxPhoneNumber, no notificationSenderNumber, no NOTIFICATIONS_TELNYX_NUMBER)', { businessId: business.id })
+      outcome.sms.reason = 'no_sender'
     } else {
       const smsText = `⚠️ A customer needs your help! ${customerName} (${customerPhone}) needs a personal follow-up. Check your email for the full conversation.`
       try {
@@ -450,7 +510,10 @@ export async function notifyOwnerOnHumanNeeded(
           text: smsText,
         })
         console.error('[NOTIFY OWNER] Human needed SMS sent to', toPhone)
+        outcome.sms.delivered = true
       } catch (err) {
+        outcome.sms.reason = 'send_error'
+        outcome.sms.error = describeError(err)
         console.error('[NOTIFY OWNER] Human needed SMS FAILED:', err instanceof Error ? err.message : String(err))
       }
     }
@@ -492,10 +555,16 @@ export async function notifyOwnerOnHumanNeeded(
     try {
       await sendEmail(business.ownerEmail, subject, body)
       console.error('[NOTIFY OWNER] Human needed email sent to', business.ownerEmail)
+      outcome.email.delivered = true
     } catch (err) {
+      outcome.email.reason = 'send_error'
+      outcome.email.error = describeError(err)
       console.error('[NOTIFY OWNER] Human needed email FAILED:', err instanceof Error ? err.message : String(err))
     }
   }
+
+  const platformAlert = decideOwnerNotifyAlert({ business, notifier: 'human_needed', outcome })
+  if (platformAlert) raisePlatformAlert(platformAlert)
 }
 
 // ── AI failed (e.g. Claude 529 overload) ─────────────────────────────
@@ -514,14 +583,22 @@ export async function notifyOwnerOnAIFailed(
   const conversationUrl = `${baseUrl}/dashboard/conversations/${conversationId}`
   const tz = business.timezone ?? 'America/New_York'
 
+  // Per-channel outcome, so a notification that reached nobody raises a platform alert.
+  const outcome = newOwnerNotifyOutcome()
+  outcome.sms.enabled = Boolean(business.notifyBySms)
+  outcome.email.enabled = Boolean(business.notifyByEmail)
+  if (business.notifyByEmail && !business.ownerEmail) outcome.email.reason = 'no_owner_email'
+
   if (business.notifyBySms) {
     const rawPhone = business.ownerPhone || business.forwardingNumber
     const toPhone = rawPhone ? normalizeToE164(rawPhone.trim()) : ''
     const fromNumber = resolveOwnerSmsFrom(business)
     if (!toPhone) {
       console.error('[NOTIFY OWNER] AI failed SMS SKIP: No ownerPhone or forwardingNumber set (or invalid format)', { businessId: business.id })
+      outcome.sms.reason = 'no_recipient'
     } else if (!fromNumber) {
       console.error('[NOTIFY OWNER] AI failed SMS SKIP: no sender resolved (no telnyxPhoneNumber, no notificationSenderNumber, no NOTIFICATIONS_TELNYX_NUMBER)', { businessId: business.id })
+      outcome.sms.reason = 'no_sender'
     } else {
       const smsText = `⚠️ AI was temporarily unavailable. We sent ${customerName} (${customerPhone}) a fallback message. Please follow up when you can.`
       try {
@@ -532,7 +609,10 @@ export async function notifyOwnerOnAIFailed(
           text: smsText,
         })
         console.error('[NOTIFY OWNER] AI failed SMS sent to', toPhone)
+        outcome.sms.delivered = true
       } catch (err) {
+        outcome.sms.reason = 'send_error'
+        outcome.sms.error = describeError(err)
         console.error('[NOTIFY OWNER] AI failed SMS FAILED:', err instanceof Error ? err.message : String(err))
       }
     }
@@ -571,10 +651,16 @@ export async function notifyOwnerOnAIFailed(
     try {
       await sendEmail(business.ownerEmail, subject, body)
       console.error('[NOTIFY OWNER] AI failed email sent to', business.ownerEmail)
+      outcome.email.delivered = true
     } catch (err) {
+      outcome.email.reason = 'send_error'
+      outcome.email.error = describeError(err)
       console.error('[NOTIFY OWNER] AI failed email FAILED:', err instanceof Error ? err.message : String(err))
     }
   }
+
+  const platformAlert = decideOwnerNotifyAlert({ business, notifier: 'ai_failed', outcome })
+  if (platformAlert) raisePlatformAlert(platformAlert)
 }
 
 // ── No reply after missed-call text-back ────────────────────────────
@@ -607,14 +693,22 @@ export async function notifyOwnerOnNoReply(
   const conversationsUrl = `${baseUrl}/dashboard/conversations`
 
   // SMS
+  // Per-channel outcome, so a notification that reached nobody raises a platform alert.
+  const outcome = newOwnerNotifyOutcome()
+  outcome.sms.enabled = Boolean(business.notifyBySms)
+  outcome.email.enabled = Boolean(business.notifyByEmail)
+  if (business.notifyByEmail && !business.ownerEmail) outcome.email.reason = 'no_owner_email'
+
   if (business.notifyBySms) {
     const rawPhone = business.ownerPhone || business.forwardingNumber
     const toPhone = rawPhone ? normalizeToE164(rawPhone.trim()) : ''
     const fromNumber = resolveOwnerSmsFrom(business)
     if (!toPhone) {
       console.error('[NOTIFY OWNER] No-reply SMS SKIP: No ownerPhone or forwardingNumber set', { businessId: business.id })
+      outcome.sms.reason = 'no_recipient'
     } else if (!fromNumber) {
       console.error('[NOTIFY OWNER] No-reply SMS SKIP: no sender resolved (no telnyxPhoneNumber, no notificationSenderNumber, no NOTIFICATIONS_TELNYX_NUMBER)', { businessId: business.id })
+      outcome.sms.reason = 'no_sender'
     } else {
       const smsText = `⏰ Heads up: ${customerLabel} missed you (${missedAtLabel}), got the automatic text-back, and hasn't replied in ${windowLabel}. A quick call back could save this lead: ${customerPhone}`
       try {
@@ -626,7 +720,10 @@ export async function notifyOwnerOnNoReply(
         })
         console.error('[NOTIFY OWNER] No-reply SMS sent to', toPhone)
         result.smsSent = true
+        outcome.sms.delivered = true
       } catch (err) {
+        outcome.sms.reason = 'send_error'
+        outcome.sms.error = describeError(err)
         console.error('[NOTIFY OWNER] No-reply SMS FAILED:', err instanceof Error ? err.message : String(err))
       }
     }
@@ -654,11 +751,17 @@ export async function notifyOwnerOnNoReply(
       await sendEmail(business.ownerEmail, subject, body)
       console.error('[NOTIFY OWNER] No-reply email sent to', business.ownerEmail, { conversationId })
       result.emailSent = true
+      outcome.email.delivered = true
     } catch (err) {
+      outcome.email.reason = 'send_error'
+      outcome.email.error = describeError(err)
       console.error('[NOTIFY OWNER] No-reply email FAILED:', err instanceof Error ? err.message : String(err))
     }
   }
 
+
+  const platformAlert = decideOwnerNotifyAlert({ business, notifier: 'no_reply', outcome })
+  if (platformAlert) raisePlatformAlert(platformAlert)
   return result
 }
 
@@ -680,14 +783,22 @@ export async function notifyOwnerOnWebsiteLead(
   const { name, phone, email, message, smsConsent } = params
 
   // SMS
+  // Per-channel outcome, so a notification that reached nobody raises a platform alert.
+  const outcome = newOwnerNotifyOutcome()
+  outcome.sms.enabled = Boolean(business.notifyBySms)
+  outcome.email.enabled = Boolean(business.notifyByEmail)
+  if (business.notifyByEmail && !business.ownerEmail) outcome.email.reason = 'no_owner_email'
+
   if (business.notifyBySms) {
     const rawPhone = business.ownerPhone || business.forwardingNumber
     const toPhone = rawPhone ? normalizeToE164(rawPhone.trim()) : ''
     const fromNumber = resolveOwnerSmsFrom(business)
     if (!toPhone) {
       console.error('[NOTIFY OWNER] Website lead SMS SKIP: No ownerPhone or forwardingNumber set', { businessId: business.id })
+      outcome.sms.reason = 'no_recipient'
     } else if (!fromNumber) {
       console.error('[NOTIFY OWNER] Website lead SMS SKIP: no sender resolved (no telnyxPhoneNumber, no notificationSenderNumber, no NOTIFICATIONS_TELNYX_NUMBER)', { businessId: business.id })
+      outcome.sms.reason = 'no_sender'
     } else {
       const parts = [
         `📩 New website lead! ${name} just submitted your contact form.`,
@@ -705,7 +816,10 @@ export async function notifyOwnerOnWebsiteLead(
         })
         console.error('[NOTIFY OWNER] Website lead SMS sent to', toPhone)
         result.smsSent = true
+        outcome.sms.delivered = true
       } catch (err) {
+        outcome.sms.reason = 'send_error'
+        outcome.sms.error = describeError(err)
         console.error('[NOTIFY OWNER] Website lead SMS FAILED:', err instanceof Error ? err.message : String(err))
       }
     }
@@ -793,7 +907,10 @@ export async function notifyOwnerOnWebsiteLead(
       await sendEmail(business.ownerEmail, subject, textBody, htmlBody, leadReplyTo)
       console.error('[NOTIFY OWNER] Website lead email sent to', business.ownerEmail)
       result.emailSent = true
+      outcome.email.delivered = true
     } catch (err) {
+      outcome.email.reason = 'send_error'
+      outcome.email.error = describeError(err)
       console.error('[NOTIFY OWNER] Website lead email FAILED:', err instanceof Error ? err.message : String(err))
     }
   } else {
@@ -804,6 +921,9 @@ export async function notifyOwnerOnWebsiteLead(
     }
   }
 
+
+  const platformAlert = decideOwnerNotifyAlert({ business, notifier: 'website_lead', outcome })
+  if (platformAlert) raisePlatformAlert(platformAlert)
   return result
 }
 
