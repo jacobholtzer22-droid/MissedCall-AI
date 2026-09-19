@@ -2786,3 +2786,128 @@ Two separate axes:
   people ÷ people who showed. MRR and setup sum won people only. No Meta spend
   integration, by design.
 - Every dollar figure is behind the `adminShowRevenue` toggle, like the rest of `/admin`.
+
+---
+
+## 21. Platform Alerts (`lib/platform-alert.ts`): health alerts for the platform owner
+
+Added Sep 2026 on the `silent-failure-alerts` branch. When something a paying
+client depends on fails quietly, a `PlatformAlert` row is written and one email
+goes to the **platform owner** (not the client's owner; those are
+`lib/notify-owner.ts`). This section covers the model, the helper and the test
+route. The call sites that raise alerts are listed at the end once wired.
+
+### Model: `PlatformAlert`
+
+```
+id, type, severity ("info" | "warning" | "critical", default "warning"),
+businessId? (relation, onDelete: SetNull), title, detail (Text), metadata (Json?),
+dedupeKey, createdAt, emailedAt?, resolvedAt?
+@@index([type, businessId, createdAt])   @@index([dedupeKey, createdAt])
+```
+
+- **`businessId` is `SetNull`, not `Cascade`.** These rows are the platform's
+  incident history; deleting a client must not erase what went wrong for them.
+  null also means "belongs to no business" (`voice_webhook_error`,
+  `book_demo_failed`, `alert_storm`, `test`).
+- **`emailedAt` is stamped only when the email actually sent.** A throttled,
+  storm-capped or failed-to-send alert is still a row, with `emailedAt` null and
+  (for the first two) `metadata.emailSkipped` = `"throttled"` | `"storm"`.
+- **`resolvedAt` has no writer yet.** There is no admin alerts screen.
+- Applied with `npm run db:push` on 2026-09-19; mirror in
+  `scripts/sql/2026-09-19_add_platform_alert.sql`.
+
+### `raisePlatformAlert(input): void`
+
+The only function request code should call. **Returns void immediately, cannot
+throw, and must not be awaited.** The work runs through `afterResponse()`
+(`waitUntil`), so calling it in a webhook's catch block right before the
+`return` neither delays nor endangers the response. Outside a request (a cron, a
+script) `waitUntil` is a no-op and the work is a floating promise that catches
+its own errors.
+
+`raisePlatformAlertAndReport(input)` runs the same pipeline awaited and returns
+`{ alertId, emailed, skipped, stormNoticeSent }`. It exists for the admin test
+route only. `processPlatformAlert(input, deps)` is the pipeline with its
+database, mailer and clock injected; the unit tests drive that, never the live one.
+
+**Build the input with a builder, never by hand.** One exported pure function per
+type decides that type's `severity`, `dedupeKey` and throttle window in exactly
+one place: `buildSmsSendFailedAlert`, `buildVoiceWebhookErrorAlert`,
+`buildBookDemoFailedAlert`, `buildCalendarDisconnectedAlert`,
+`buildCalendarRefreshErrorAlert`, `buildCalendarSyncFailedAlert`,
+`buildAlertStormAlert`, `buildTestAlert`, and `decideOwnerNotifyAlert` (below).
+
+### Email
+
+Sent through `notifyOwnerOfMarketingEvent({ subject, html })` in
+`lib/marketing-funnel.ts`, the same path the OTP-volume alert uses: email only
+(no `smsText`), recipient `YOUR_EMAIL`, never throws, reports `'sent'`. **No new
+env var.** Subject is always `[PLATFORM ALERT] {severity}: {title}` so it can be
+filtered on. If Resend itself is what is down, the row is still written and
+`emailedAt` stays null.
+
+### Throttle and storm cap
+
+| Rule | Behavior |
+|---|---|
+| Throttle | The same `dedupeKey` with an email inside its window: row written, email skipped. The window is part of the alert (`throttleHours`): **6 hours** by default (`THROTTLE_HOURS_DEFAULT`), **24 hours** for a missing setting that will not fix itself (`THROTTLE_HOURS_CONFIG`: `no_recipient`, `no_sender`, `no_owner_email`, `calendar_disconnected`). A failed email does not start a window. |
+| Storm cap | 10 or more alert emails in the last 60 minutes (`STORM_EMAIL_CAP`, storm notices excluded): row written, email skipped, and at most one `alert_storm` email per hour carrying the count of alerts held back. The storm notice is never itself capped. |
+| Database down | The throttle cannot be read, so a per-instance in-memory map allows each key one email per window. The email still goes out even though the row cannot be written (`ROW NOT WRITTEN` is logged). |
+
+Keys hold the **business, never the phone**: a Telnyx outage is one email per
+business per window, not one per caller. `voice_webhook_error` has no business in
+scope, so it keys on the error name plus `normalizeForDedupe(message)`: digit
+runs become `#`, any token of 20+ characters becomes `*`, first 40 characters. A
+per-call id in the message must not defeat the throttle.
+
+### Scrubbing
+
+Title, detail, metadata **and the dedupeKey** all pass through `sanitizeAlert()`
+before anything is stored or emailed. `scrubText` reduces any phone number to
+`***` + last 4 digits, and removes bearer tokens and key-shaped strings; dates,
+times and cuids survive (regression-tested). `scrubMetadata` **drops** keys that
+could carry a message body or a credential (`text`, `body`, `content`, `message`,
+`transcript`, anything matching token/secret/password/authorization/api key)
+rather than trying to clean them. Pass `last4(phone)`, never a phone.
+
+### Owner-notification outcome: `decideOwnerNotifyAlert`
+
+A notifier records what happened per channel in an `OwnerNotifyOutcome`
+(`{ sms, email }`, each `{ enabled, delivered, reason?, error? }`) and this pure
+function decides:
+
+| Outcome | Alert |
+|---|---|
+| Both channels switched off by setting | none (the owner chose silence) |
+| Every enabled channel delivered | none |
+| Nothing delivered, at least one channel enabled | **critical** `owner_notify_none_delivered`, key `owner_notify_none:{businessId}:{config\|send}` |
+| One delivered, another enabled one failed | **warning** `owner_notify_failed`, key `owner_notify:{businessId}:{channel}:{reason}` |
+
+The reason class is in the "none delivered" key on purpose: a fresh send error
+must not be hidden behind a day-old "no owner phone on file" email.
+
+### `isDefinitiveAuthFailure(error)`
+
+True only for Google's `invalid_grant`: `error.response.data.error` first, then
+`error.message` plain, then `error.message` parsed as JSON (google-auth-library
+rewrites the message to `JSON.stringify(response.data)` in the ReAuth case).
+Network errors, timeouts, 5xx and 429 are false. **`invalid_client` and
+`unauthorized_client` are deliberately false too:** they mean the platform's own
+OAuth credentials are wrong, and disconnecting on them would disconnect every
+client at once.
+
+### Test route
+
+`POST /api/admin/alerts/test` (admin only, same `ADMIN_USER_ID` check as the
+other admin routes). Raises a `test` alert with a fresh dedupeKey per call and
+returns `{ ok, alertId, emailed, skipped }`. Use it after a deploy to prove the
+path end to end.
+
+### Tests
+
+`lib/platform-alert.test.ts` (33 tests, no database, no email): scrubbing, every
+builder, the owner-notify decision, `isDefinitiveAuthFailure` against the real
+GaxiosError shapes, the throttle, the storm cap, and never-throws with every
+dependency rejecting. It never calls `raisePlatformAlert()`, which is wired to
+the live database and the live mailer.

@@ -138,6 +138,7 @@ model Business {
   googleAdsSnapshots GoogleAdsSnapshot[]
   reviewRequests     ReviewRequest[]
   pipelinePeople     PipelinePerson[]
+  platformAlerts     PlatformAlert[]
 
   @@index([stripeCustomerId])
   @@index([ownerGroupId])
@@ -1092,4 +1093,39 @@ model FunnelEvent {
   @@index([name, createdAt])
   @@index([visitorId])
   @@index([funnelVariant])
+}
+
+// ===========================================
+// PLATFORM ALERT - Health alerts for the PLATFORM OWNER (not client owners)
+// ===========================================
+// One row every time lib/platform-alert.ts is asked to raise an alert, whether
+// or not an email went out. emailedAt is stamped only when the email actually
+// sent, so a throttled or storm-capped alert is still on record here.
+//
+// businessId is SetNull, not Cascade: these rows are the platform's incident
+// history, and deleting a client must not erase the record of what went wrong
+// for them. null also covers alerts that belong to no business at all
+// (voice_webhook_error, book_demo_failed, alert_storm).
+model PlatformAlert {
+  id String @id @default(cuid())
+
+  type     String // sms_send_failed, voice_webhook_error, owner_notify_failed, owner_notify_none_delivered, book_demo_failed, calendar_disconnected, calendar_refresh_error, calendar_sync_failed, alert_storm, test
+  severity String @default("warning") // info, warning, critical
+
+  businessId String?
+  business   Business? @relation(fields: [businessId], references: [id], onDelete: SetNull)
+
+  title    String
+  detail   String @db.Text
+  metadata Json? // ids, reason codes, last 4 of a phone at most. Never message bodies or tokens.
+
+  // Same key inside the type's throttle window = row written, email skipped.
+  dedupeKey String
+
+  createdAt  DateTime  @default(now())
+  emailedAt  DateTime? // null = no email went out (throttled, storm-capped, or the send failed)
+  resolvedAt DateTime? // no writer yet
+
+  @@index([type, businessId, createdAt])
+  @@index([dedupeKey, createdAt])
 }
