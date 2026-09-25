@@ -419,7 +419,7 @@ export async function POST(request: NextRequest) {
           )
           // Never silent: Jacob gets every inbound on his phone and in his inbox.
           await pingOwnerWithThread(business.ownerPhone, facts, from, text, null)
-          await emailInboundToOwner(business.ownerEmail, facts, from, text)
+          await emailInboundToOwner(business.ownerEmail, business.id, facts, from, text)
         } catch (err) {
           console.error('[marketing-reply] FAILED:', err)
         }

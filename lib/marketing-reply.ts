@@ -16,6 +16,11 @@ import Anthropic from '@anthropic-ai/sdk'
 import Telnyx from 'telnyx'
 import { db } from '@/lib/db'
 import { normalizeToE164 } from '@/lib/phone-utils'
+import {
+  getDemoThreadContext,
+  relativeAge,
+  type DemoThreadContext,
+} from '@/lib/marketing-thread-log'
 import { MONTHLY_FEE, SETUP_FEE_FULL } from '@/lib/pricing'
 import { calendarLink } from '@/lib/lead-token'
 import { notifyOwnerOfMarketingEvent } from '@/lib/marketing-funnel'
@@ -242,6 +247,7 @@ export async function pingOwnerWithThread(
  */
 export async function emailInboundToOwner(
   ownerEmail: string | null | undefined,
+  businessId: string,
   facts: LeadFacts,
   from: string,
   incoming: string
@@ -255,21 +261,79 @@ export async function emailInboundToOwner(
       .replace(/"/g, '&quot;')
       .replace(/'/g, '&#39;')
   try {
+    const ctx = await getDemoThreadContext(businessId, from)
     await notifyOwnerOfMarketingEvent({
       ownerEmailFallback: ownerEmail,
       subject: `Text from ${who} (${from})`,
-      html: `
-        <h2>Inbound text on the demo line</h2>
-        <p><strong>From:</strong> ${esc(who)} (${esc(from)})</p>
-        ${facts.trade ? `<p><strong>Trade:</strong> ${esc(facts.trade)}</p>` : ''}
-        <p><strong>They said:</strong></p>
-        <pre style="font-family:inherit;white-space:pre-wrap;margin:0">${esc(incoming)}</pre>
-        <p>No automatic reply was sent. Answer from your phone.</p>
-      `,
+      html: inboundAlertHtml(ctx, { who, from, trade: facts.trade, incoming }),
     })
   } catch (err) {
     console.error(
       `[marketing-reply] owner email FAILED: ${err instanceof Error ? err.message : String(err)}`
     )
   }
+}
+
+/**
+ * The alert body.
+ *
+ * Exported and pure so scripts/preview-inbound-alert.ts renders the real thing
+ * rather than a copy that can drift, the same way preview-booker-messages.ts
+ * renders the booker copy through its own builders.
+ */
+export function inboundAlertHtml(
+  ctx: DemoThreadContext,
+  parts: { who: string; from: string; trade?: string; incoming: string }
+): string {
+  const esc = (s: string) =>
+    s
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;')
+  return `
+        <h2>Inbound text on the demo line</h2>
+        <p><strong>From:</strong> ${esc(parts.who)} (${esc(parts.from)})</p>
+        ${parts.trade ? `<p><strong>Trade:</strong> ${esc(parts.trade)}</p>` : ''}
+        ${renderLastSent(ctx, esc)}
+        ${renderDemo(ctx)}
+        <p><strong>They said:</strong></p>
+        <pre style="font-family:inherit;white-space:pre-wrap;margin:0">${esc(parts.incoming)}</pre>
+        <p>No automatic reply was sent. Answer from your phone.</p>
+      `
+}
+
+/**
+ * What we last said to them, above what they said to us.
+ *
+ * Three cases, and the third is the point: a line that says nothing is on
+ * record is information. Hiding it would leave the alert looking exactly the
+ * way it looks when we did text them, which is the ambiguity this whole change
+ * exists to remove.
+ */
+function renderLastSent(ctx: DemoThreadContext, esc: (s: string) => string): string {
+  if (ctx.lastOutbound) {
+    return (
+      `<p><strong>Last text we sent:</strong> ${relativeAge(ctx.lastOutbound.sentAt)}</p>` +
+      `<pre style="font-family:inherit;white-space:pre-wrap;margin:0 0 12px 0;color:#555">` +
+      `${esc(ctx.lastOutbound.body)}</pre>`
+    )
+  }
+  if (ctx.fallback) {
+    // Sends that predate the outbound log, or whose Message write failed. The
+    // timestamp columns survive either way, so the type and the time are still
+    // recoverable even though the wording is not.
+    return (
+      `<p><strong>Last automated text:</strong> ${esc(ctx.fallback.label)}, ` +
+      `${relativeAge(ctx.fallback.sentAt)} (body not on record)</p>`
+    )
+  }
+  return `<p><strong>Last text we sent:</strong> No outbound text on record</p>`
+}
+
+function renderDemo(ctx: DemoThreadContext): string {
+  return ctx.demo
+    ? `<p><strong>Their demo:</strong> ${ctx.demo.whenEt}</p>`
+    : `<p><strong>Their demo:</strong> No upcoming demo found</p>`
 }
