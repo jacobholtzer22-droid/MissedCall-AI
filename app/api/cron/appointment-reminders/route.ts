@@ -47,6 +47,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@clerk/nextjs/server'
 import Telnyx from 'telnyx'
 import { db } from '@/lib/db'
+import { logMarketingOutbound } from '@/lib/marketing-thread-log'
 import { normalizeToE164, phonesMatch } from '@/lib/phone-utils'
 import { getMarketingBusiness } from '@/lib/marketing-funnel'
 import { getCalendarEventState } from '@/lib/google-calendar'
@@ -255,10 +256,20 @@ async function runAppointmentReminders(request: NextRequest) {
     )
 
     try {
-      await telnyx.messages.send({ from: fromNumber, to, text })
+      const res = await telnyx.messages.send({ from: fromNumber, to, text })
+      const providerId = (res as { data?: { id?: string } })?.data?.id ?? null
       console.log(
         `[reminders] SENT kind=${kind} appointmentId=${appt.id} to=${to} scheduledAt=${appt.scheduledAt.toISOString()} at=${now.toISOString()}`
       )
+      // After the send. The claim above is what prevents a double-text; a
+      // failure to log must not touch it or the send result.
+      await logMarketingOutbound({
+        phone: to,
+        body: text,
+        telnyxSid: providerId,
+        businessId: business.id,
+        label: 'reminders',
+      })
       result.sent.push({ id: appt.id, kind })
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)

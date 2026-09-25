@@ -10,6 +10,7 @@ import Telnyx from 'telnyx'
 import { db } from '@/lib/db'
 import { validateUsMobile } from '@/lib/phone-utils'
 import { rateLimit, getClientIp } from '@/lib/rate-limit'
+import { logMarketingOutbound, OTP_LOG_PLACEHOLDER } from '@/lib/marketing-thread-log'
 import { notifyOwnerOfMarketingEvent } from '@/lib/marketing-funnel'
 import { isTestPhone } from '@/lib/test-allowlist'
 import { VARIANT_COOKIE, VISITOR_COOKIE } from '@/lib/variant'
@@ -160,6 +161,15 @@ export async function POST(request: NextRequest) {
         const res = await telnyx.messages.send({ from, to: phone, text: codeMessage(code) })
         const providerId = (res as { data?: { id?: string } })?.data?.id ?? 'unknown'
         console.log(`[otp] SENT phone=${phone} verificationId=${row.id} providerId=${providerId}${tag}`)
+        // Logged as a placeholder, never as the code. The alert needs to know a
+        // code went out and when; a live code in a Message row is readable by
+        // anyone with dashboard access for as long as the row lives.
+        await logMarketingOutbound({
+          phone,
+          body: OTP_LOG_PLACEHOLDER,
+          telnyxSid: providerId === 'unknown' ? null : providerId,
+          label: 'otp',
+        })
         // Kept so delivery can be resolved by id rather than by matching phone
         // and timestamp against the detail records. Not awaited: a failure to
         // record the id must not fail a code that already went out.

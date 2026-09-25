@@ -14,6 +14,7 @@ import Telnyx from 'telnyx'
 import { db } from '@/lib/db'
 import { validateUsMobile } from '@/lib/phone-utils'
 import { createMarketingCalendarEvent, getBusyTimes } from '@/lib/google-calendar'
+import { logMarketingOutbound } from '@/lib/marketing-thread-log'
 import { getDemoVideoAbsoluteUrl } from '@/lib/demo-video'
 import {
   getMarketingBusiness,
@@ -768,8 +769,16 @@ export async function POST(request: NextRequest) {
           return
         }
         const telnyx = new Telnyx({ apiKey: telnyxKey })
-        await telnyx.messages.send({ from: fromNumber, to: phoneE164, text: confirmation })
+        const res = await telnyx.messages.send({ from: fromNumber, to: phoneE164, text: confirmation })
+        const providerId = (res as { data?: { id?: string } })?.data?.id ?? null
         console.log(`[demo-book] confirmation SMS sent from=${fromNumber} to=${phoneE164}`)
+        await logMarketingOutbound({
+          phone: phoneE164,
+          body: confirmation,
+          telnyxSid: providerId,
+          businessId: business.id,
+          label: 'demo-book',
+        })
       })
     } else {
       console.error(`[demo-book] confirmation SMS NOT SENT appointmentId=${appointment.id} reason=no_sender_or_api_key`)
