@@ -23,6 +23,7 @@ import { normalizeToE164 } from '@/lib/phone-utils'
 import { isTestPhone } from '@/lib/test-allowlist'
 import { calendarLink } from '@/lib/lead-token'
 import { isOptedOut } from '@/lib/sms-opt-out'
+import { logMarketingOutbound } from '@/lib/marketing-thread-log'
 import { greetingName } from '@/lib/marketing-sms-copy'
 
 /** Unguessable, URL-safe. Following this link identifies someone AS this lead. */
@@ -178,12 +179,21 @@ export async function sendLeadDemoSms(
 
   try {
     const telnyx = new Telnyx({ apiKey: process.env.TELNYX_API_KEY })
-    const res = await telnyx.messages.send({ from, to, text: leadTextBody(ctx) })
+    const body = leadTextBody(ctx)
+    const res = await telnyx.messages.send({ from, to, text: body })
     const providerId = (res as { data?: { id?: string } })?.data?.id ?? 'unknown'
     console.log(
       `[lead-sms] SENT leadId=${leadId} template=lead_followup to=${to} from=${from} ` +
         `arm=${funnelVariant ?? 'none'} providerId=${providerId}${tag}`
     )
+    // After the send, and never able to fail it: the text is already gone.
+    await logMarketingOutbound({
+      phone: to,
+      body,
+      telnyxSid: providerId === 'unknown' ? null : providerId,
+      businessId: flagged?.businessId,
+      label: 'lead-sms',
+    })
     if (isTest) {
       await db.websiteLead.updateMany({ where: { id: leadId }, data: { demoSmsSentAt: new Date() } })
     }
@@ -239,9 +249,17 @@ export async function sendLeadFollowUpSms(
 
   try {
     const telnyx = new Telnyx({ apiKey: process.env.TELNYX_API_KEY })
-    const res = await telnyx.messages.send({ from, to, text: followUpBody(ctx) })
+    const body = followUpBody(ctx)
+    const res = await telnyx.messages.send({ from, to, text: body })
     const providerId = (res as { data?: { id?: string } })?.data?.id ?? 'unknown'
     console.log(`[lead-followup] SENT leadId=${leadId} to=${to} from=${from} providerId=${providerId}`)
+    await logMarketingOutbound({
+      phone: to,
+      body,
+      telnyxSid: providerId === 'unknown' ? null : providerId,
+      businessId: row.businessId,
+      label: 'lead-followup',
+    })
     return { sent: true, providerId }
   } catch (err) {
     // The cron releases the claim on a falsy result.

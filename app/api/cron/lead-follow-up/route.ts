@@ -74,7 +74,7 @@ export async function GET(request: NextRequest) {
       // a lead Jacob has already decided is junk.
       junk: false,
     },
-    select: { id: true, phone: true, name: true, message: true, calendarToken: true, otpVerifiedAt: true },
+    select: { id: true, phone: true, name: true, message: true, calendarToken: true, otpVerifiedAt: true, funnelVariant: true },
     take: 100,
   })
 
@@ -136,6 +136,11 @@ export async function GET(request: NextRequest) {
         firstName,
         businessName,
         calendarToken: lead.calendarToken,
+        // Same expression as the instant text's call site
+        // (app/api/demo-lead/wizard/route.ts). Without it the link tagged
+        // utm_campaign=unassigned, so every follow-up booking was unattributable
+        // to its arm. Copy is unchanged: the arm only sets that one parameter.
+        watchArm: lead.funnelVariant === 'B' ? 'B' : 'A',
       })
       if (res.sent) {
         sent++
