@@ -40,6 +40,7 @@ export type PlatformAlertSeverity = 'info' | 'warning' | 'critical'
 export type PlatformAlertType =
   | 'sms_send_failed'
   | 'voice_webhook_error'
+  | 'voice_call_ended'
   | 'owner_notify_failed'
   | 'owner_notify_none_delivered'
   | 'book_demo_failed'
@@ -59,6 +60,19 @@ export type PlatformAlertInput = {
   dedupeKey: string
   /** How long the same dedupeKey stays quiet after an email. Defaults to 6. */
   throttleHours?: number
+  /**
+   * Whether this alert is worth an email. Defaults to TRUE, so every existing
+   * builder is unaffected.
+   *
+   * false = record only: the PlatformAlert row is written exactly as usual and no
+   * email is ever sent, at any severity and regardless of throttle state. For the
+   * expected-but-worth-counting events, where the row is the whole point and an
+   * inbox is the wrong place for it.
+   *
+   * Severity deliberately does NOT control this. 'info' still emails — the test
+   * alert is 'info' and is meant to arrive in the inbox to prove the path works.
+   */
+  email?: boolean
 }
 
 // ── Tunables ─────────────────────────────────────────────────────────────
@@ -175,6 +189,8 @@ export function sanitizeAlert(input: PlatformAlertInput): Required<Omit<Platform
     metadata: (scrubMetadata(input.metadata ?? {}) as Record<string, unknown>) ?? {},
     dedupeKey: scrubText(input.dedupeKey).slice(0, 200),
     throttleHours: Number.isFinite(hours) && hours > 0 ? hours : THROTTLE_HOURS_DEFAULT,
+    // Opt out, never opt in: anything but an explicit false emails as before.
+    email: input.email !== false,
   }
 }
 
@@ -225,6 +241,35 @@ export function buildVoiceWebhookErrorAlert(p: { error: unknown }): PlatformAler
     metadata: { errorName: name, error: describeError(p.error) },
     dedupeKey: `voice_webhook_error:${name}:${normalizeForDedupe(message)}`,
     throttleHours: THROTTLE_HOURS_DEFAULT,
+  }
+}
+
+/**
+ * 2b. The voice webhook aborted because the caller had already hung up (Telnyx 90018).
+ *
+ * Expected, unavoidable, and not actionable: every call-control command races the
+ * caller putting the phone down. It is NOT a platform failure and must never email —
+ * it was drowning the real voice_webhook_error alert at 6-hour throttle. Recorded so
+ * the rate stays visible in PlatformAlert, where a sudden jump is still a signal.
+ *
+ * NOTE: ROW_THROTTLE_MINUTES caps this at one row per 10 minutes, so these rows are a
+ * SAMPLE, not a count. Treat a run of them as "this is happening", never as "this many
+ * times".
+ */
+export function buildVoiceCallEndedAlert(p: { error: unknown }): PlatformAlertInput {
+  return {
+    type: 'voice_call_ended',
+    severity: 'info',
+    businessId: null,
+    title: 'Voice webhook aborted: call had already ended',
+    detail:
+      `A Telnyx call-control command was rejected with 90018 ("call has already ended") on a path ` +
+      `that does not wrap it, so the webhook handler unwound. The caller hung up; nothing is broken ` +
+      `and nothing is retryable.\n\nError: ${describeError(p.error)}`,
+    metadata: { error: describeError(p.error) },
+    // One key: this is a rate signal, not a per-call record.
+    dedupeKey: 'voice_call_ended',
+    email: false,
   }
 }
 
@@ -518,7 +563,7 @@ export type PlatformAlertDeps = {
 export type PlatformAlertResult = {
   alertId: string | null
   emailed: boolean
-  skipped: 'row_throttled' | 'throttled' | 'storm' | 'send_failed' | null
+  skipped: 'row_throttled' | 'record_only' | 'throttled' | 'storm' | 'send_failed' | null
   stormNoticeSent: boolean
 }
 
@@ -605,9 +650,10 @@ export async function processPlatformAlert(input: PlatformAlertInput, deps: Plat
       throttled = !memoryAllows(a.dedupeKey, windowMs, now.getTime())
     }
 
-    // 2. Storm cap. A storm notice is never itself capped.
+    // 2. Storm cap. A storm notice is never itself capped. A record-only alert
+    //    never reaches the email step, so it is not counted or capped either.
     let stormCapped = false
-    if (!throttled && a.type !== 'alert_storm') {
+    if (a.email && !throttled && a.type !== 'alert_storm') {
       try {
         const sent = await deps.countEmailedSince(new Date(now.getTime() - STORM_WINDOW_MINUTES * 60_000))
         stormCapped = sent >= STORM_EMAIL_CAP
@@ -616,7 +662,7 @@ export async function processPlatformAlert(input: PlatformAlertInput, deps: Plat
       }
     }
 
-    const emailSkipped = throttled ? 'throttled' : stormCapped ? 'storm' : null
+    const emailSkipped = !a.email ? 'record_only' : throttled ? 'throttled' : stormCapped ? 'storm' : null
 
     // 3. The row is written whatever happens to the email.
     try {

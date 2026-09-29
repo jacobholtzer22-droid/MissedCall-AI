@@ -46,9 +46,11 @@ import { findExistingContact } from '@/lib/crm-utils'
 import { normalizePhoneNumber, phonesMatch } from '@/lib/phone-utils'
 import { formatPhoneNumber } from '@/lib/utils'
 import { shouldRejectTelnyxWebhook } from '@/lib/telnyx-signature'
+import { isCallEndedError } from '@/lib/telnyx-errors'
 import {
   raisePlatformAlert,
   buildSmsSendFailedAlert,
+  buildVoiceCallEndedAlert,
   buildVoiceWebhookErrorAlert,
   decideOwnerNotifyAlert,
   newOwnerNotifyOutcome,
@@ -144,7 +146,7 @@ export async function POST(request: NextRequest) {
         // instead of as "four hundred and twenty one thousand". Said twice, with
         // a pause, because this is someone writing it down off a phone call.
         const spoken = row.voiceCode.split('').join(', ')
-        await telnyx.calls.actions.speak(callControlId, {
+        await callAction('otp speak', () => telnyx.calls.actions.speak(callControlId, {
           payload:
             `Hello. This is your Align and Acquire verification code. ` +
             `${spoken}. Once again. ${spoken}. ` +
@@ -152,7 +154,7 @@ export async function POST(request: NextRequest) {
           voice: VOICE,
           language: 'en-US',
           client_state: toB64({ otpVerificationId: row.id, otpSpoken: true } as ClientState),
-        })
+        }))
 
         // Cleared as soon as it has been handed to Telnyx to say: the column
         // exists for the length of one call, not for the length of the row.
@@ -187,7 +189,7 @@ export async function POST(request: NextRequest) {
 
       if (!business) {
         console.log('⚠️ No business found for:', to)
-        await telnyx.calls.actions.reject(callControlId, { cause: 'CALL_REJECTED' })
+        await callAction('reject (no business)', () => telnyx.calls.actions.reject(callControlId, { cause: 'CALL_REJECTED' }))
         return NextResponse.json({}, { status: 200 })
       }
 
@@ -196,9 +198,9 @@ export async function POST(request: NextRequest) {
       if (business.telnyxPhoneNumber && phonesMatch(from, business.telnyxPhoneNumber)) {
         console.log('Skipping conversation creation — caller is the business Telnyx number (forwarding loop)')
         const clientState = toB64({ businessId: business.id, callerPhone: from, connectionId: payload?.connection_id as string | undefined })
-        await telnyx.calls.actions.answer(callControlId, { client_state: clientState } as any)
+        await callAction('answer (forwarding loop)', () => telnyx.calls.actions.answer(callControlId, { client_state: clientState } as any))
         const msg = business.missedCallVoiceMessage || NO_SMS_VOICE_MESSAGE
-        await telnyx.calls.actions.speak(callControlId, { payload: msg, voice: VOICE })
+        await callAction('speak (forwarding loop)', () => telnyx.calls.actions.speak(callControlId, { payload: msg, voice: VOICE }))
         return NextResponse.json({}, { status: 200 })
       }
 
@@ -207,13 +209,15 @@ export async function POST(request: NextRequest) {
         await db.screenedCall.create({
           data: { businessId: business.id, callerPhone: from, callSid: callControlId, result: 'blocked' },
         })
-        await telnyx.calls.actions.reject(callControlId, { cause: 'CALL_REJECTED' })
+        await callAction('reject (spam)', () => telnyx.calls.actions.reject(callControlId, { cause: 'CALL_REJECTED' }))
         return NextResponse.json({}, { status: 200 })
       }
 
       const connectionId = payload?.connection_id as string | undefined
       const clientState = toB64({ businessId: business.id, callerPhone: from, connectionId })
-      await telnyx.calls.actions.answer(callControlId, { client_state: clientState } as any)
+      // A 90018 here means the caller hung up before we could answer — which is exactly
+      // when the missed-call text matters most. Swallowed so the SMS below still fires.
+      await callAction('answer (inbound)', () => telnyx.calls.actions.answer(callControlId, { client_state: clientState } as any))
 
       if (business.callScreenerEnabled) {
         await db.conversation.upsert({
@@ -224,7 +228,7 @@ export async function POST(request: NextRequest) {
         const screenerMsg =
           business.callScreenerMessage ||
           `Thank you for calling ${business.name}. To be connected, please press 1.`
-        await telnyx.calls.actions.gatherUsingSpeak(callControlId, {
+        await callAction('gatherUsingSpeak (screener)', () => telnyx.calls.actions.gatherUsingSpeak(callControlId, {
           payload: screenerMsg,
           voice: VOICE,
           minimum_digits: 1,
@@ -232,7 +236,7 @@ export async function POST(request: NextRequest) {
           timeout_millis: 8000,
           valid_digits: '0123456789',
           maximum_tries: 1,
-        })
+        }))
       } else {
         const routeToVoicemail =
           business.knownContactVoicemailEnabled &&
@@ -249,10 +253,10 @@ export async function POST(request: NextRequest) {
             ? (business.missedCallVoiceMessage || DEFAULT_VOICE_MESSAGE)
             : (business.missedCallVoiceMessage || NO_SMS_VOICE_MESSAGE)
           console.log('🔊 Speaking missed call message:', { callControlId, message: normalMsg })
-          await telnyx.calls.actions.speak(callControlId, {
+          await callAction('speak missed-call message', () => telnyx.calls.actions.speak(callControlId, {
             payload: normalMsg,
             voice: VOICE,
-          })
+          }))
         }
       }
 
@@ -320,7 +324,10 @@ export async function POST(request: NextRequest) {
           }),
         })
       } catch (err) {
-        console.error('❌ Failed to speak caller announcement on B-leg, bridging immediately:', err)
+        // The B-leg may have ended mid-command (90018). Either way we still try to bridge,
+        // and a failed bridge still routes to handleForwardingFallback below — only the
+        // log level changes, never the compensating path.
+        logCallActionFailure('speak caller announcement on B-leg, bridging immediately', err)
         try {
           await (telnyx.calls.actions as any).bridge(callControlId, {
             call_control_id: state.aLegCallControlId,
@@ -332,7 +339,7 @@ export async function POST(request: NextRequest) {
             })
           }
         } catch (bridgeErr) {
-          console.error('❌ Failed to bridge calls:', bridgeErr)
+          logCallActionFailure('bridge calls', bridgeErr)
           await handleForwardingFallback(telnyx, state, 'failed', undefined, timing)
         }
       }
@@ -359,7 +366,7 @@ export async function POST(request: NextRequest) {
             data: { callConnected: true, status: 'completed', answeredBy: 'human' },
           })
         } catch (err) {
-          console.error('❌ Failed to bridge after announcement:', err)
+          logCallActionFailure('bridge after announcement', err)
           await handleForwardingFallback(telnyx, state, 'failed', undefined, timing)
         }
         return NextResponse.json({}, { status: 200 })
@@ -390,7 +397,7 @@ export async function POST(request: NextRequest) {
               : {}),
           })
         } catch (err) {
-          console.error('❌ Failed to start voicemail recording:', err)
+          logCallActionFailure('start voicemail recording', err)
           try {
             await telnyx.calls.actions.hangup(callControlId, {})
           } catch {}
@@ -423,14 +430,14 @@ export async function POST(request: NextRequest) {
               const fallbackMsg = business.missedCallAiEnabled
                 ? (business.missedCallVoiceMessage || DEFAULT_VOICE_MESSAGE)
                 : (business.missedCallVoiceMessage || NO_SMS_VOICE_MESSAGE)
-              await telnyx.calls.actions.speak(callControlId, {
+              await callAction('speak fallback (no forwarding number)', () => telnyx.calls.actions.speak(callControlId, {
                 payload: fallbackMsg,
                 voice: VOICE,
                 client_state: toB64({ businessId: state.businessId, callerPhone: state.callerPhone }),
-              })
+              }))
             }
           } else {
-            await telnyx.calls.actions.hangup(callControlId, {})
+            await callAction('hangup (no business)', () => telnyx.calls.actions.hangup(callControlId, {}))
           }
           return NextResponse.json({}, { status: 200 })
         }
@@ -452,11 +459,11 @@ export async function POST(request: NextRequest) {
             const fallbackMsg = business.missedCallAiEnabled
               ? (business.missedCallVoiceMessage || DEFAULT_VOICE_MESSAGE)
               : (business.missedCallVoiceMessage || NO_SMS_VOICE_MESSAGE)
-            await telnyx.calls.actions.speak(callControlId, {
+            await callAction('speak fallback (no connection id)', () => telnyx.calls.actions.speak(callControlId, {
               payload: fallbackMsg,
               voice: VOICE,
               client_state: toB64({ businessId: state.businessId, callerPhone: state.callerPhone }),
-            })
+            }))
           }
           return NextResponse.json({}, { status: 200 })
         }
@@ -501,15 +508,15 @@ export async function POST(request: NextRequest) {
             const fallbackMsg = business.missedCallAiEnabled
               ? (business.missedCallVoiceMessage || DEFAULT_VOICE_MESSAGE)
               : (business.missedCallVoiceMessage || NO_SMS_VOICE_MESSAGE)
-            await telnyx.calls.actions.speak(callControlId, {
+            await callAction('speak fallback (dial failed)', () => telnyx.calls.actions.speak(callControlId, {
               payload: fallbackMsg,
               voice: VOICE,
               client_state: toB64({ businessId: state.businessId, callerPhone: state.callerPhone }),
-            })
+            }))
           }
         }
       } else {
-        await telnyx.calls.actions.hangup(callControlId, {})
+        await callAction('hangup (speak ended, nothing pending)', () => telnyx.calls.actions.hangup(callControlId, {}))
       }
 
       return NextResponse.json({}, { status: 200 })
@@ -524,13 +531,13 @@ export async function POST(request: NextRequest) {
       const digits = payload?.digits as string | undefined
 
       if (!businessId) {
-        await telnyx.calls.actions.hangup(callControlId, {})
+        await callAction('hangup (gather, no businessId)', () => telnyx.calls.actions.hangup(callControlId, {}))
         return NextResponse.json({}, { status: 200 })
       }
 
       const business = await db.business.findUnique({ where: { id: businessId } })
       if (!business) {
-        await telnyx.calls.actions.hangup(callControlId, {})
+        await callAction('hangup (gather, no business)', () => telnyx.calls.actions.hangup(callControlId, {}))
         return NextResponse.json({}, { status: 200 })
       }
 
@@ -591,6 +598,11 @@ export async function POST(request: NextRequest) {
               ringback_tone: true,
             } as any)
             const [speakResult, dialResult] = await Promise.allSettled([speakPromise, dialPromise])
+            if (speakResult.status === 'rejected') {
+              // Hold message only. allSettled already contained it; log so a real failure
+              // is still visible without it ever reaching the top-level handler.
+              logCallActionFailure('speak hold message (parallel)', speakResult.reason)
+            }
             if (dialResult.status === 'rejected') {
               console.error('❌ Failed to create forwarding call (parallel dial):', dialResult.reason)
               const routeToVoicemail =
@@ -607,22 +619,22 @@ export async function POST(request: NextRequest) {
                 const fallbackMsg = business.missedCallAiEnabled
                   ? (business.missedCallVoiceMessage || DEFAULT_VOICE_MESSAGE)
                   : (business.missedCallVoiceMessage || NO_SMS_VOICE_MESSAGE)
-                await telnyx.calls.actions.speak(callControlId, {
+                await callAction('speak fallback (parallel dial failed)', () => telnyx.calls.actions.speak(callControlId, {
                   payload: fallbackMsg,
                   voice: VOICE,
                   client_state: toB64({ businessId, callerPhone }),
-                })
+                }))
               }
             } else {
               const dialValue = (dialResult.value as { data?: { call_control_id?: string } })?.data
               console.log('📞 Forwarding call created (parallel):', dialValue?.call_control_id)
             }
           } else {
-            await telnyx.calls.actions.speak(callControlId, {
+            await callAction('speak hold message', () => telnyx.calls.actions.speak(callControlId, {
               payload: HOLD_MESSAGE_PAYLOAD,
               voice: VOICE,
               client_state: fwdState,
-            } as any)
+            } as any))
           }
         } else {
           // ---- STANDARD SCREENING FLOW (no forwarding) ----
@@ -641,10 +653,10 @@ export async function POST(request: NextRequest) {
               ? (business.missedCallVoiceMessage || DEFAULT_VOICE_MESSAGE)
               : (business.missedCallVoiceMessage || NO_SMS_VOICE_MESSAGE)
             console.log('🔊 Speaking missed call message:', { callControlId, message: missedMsg })
-            await telnyx.calls.actions.speak(callControlId, {
+            await callAction('speak missed-call message (screened)', () => telnyx.calls.actions.speak(callControlId, {
               payload: missedMsg,
               voice: VOICE,
-            })
+            }))
           }
         }
       } else {
@@ -659,12 +671,12 @@ export async function POST(request: NextRequest) {
         })
         if (noInput) {
           // Timeout with no keypress (e.g. robocall): end call immediately, no message, no SMS
-          await telnyx.calls.actions.hangup(callControlId, {})
+          await callAction('hangup (gather timeout)', () => telnyx.calls.actions.hangup(callControlId, {}))
         } else {
-          await telnyx.calls.actions.speak(callControlId, {
+          await callAction('speak goodbye (blocked)', () => telnyx.calls.actions.speak(callControlId, {
             payload: 'Thanks for calling. Goodbye.',
             voice: VOICE,
-          })
+          }))
         }
       }
 
@@ -883,7 +895,7 @@ export async function POST(request: NextRequest) {
       try {
         await telnyx.calls.actions.hangup(callControlId, {})
       } catch (err) {
-        console.error('❌ Failed to hangup after recording saved:', err)
+        logCallActionFailure('hangup after recording saved', err)
       }
       return NextResponse.json({}, { status: 200 })
     }
@@ -913,6 +925,16 @@ export async function POST(request: NextRequest) {
     // Acknowledge all other events
     return NextResponse.json({}, { status: 200 })
   } catch (error) {
+    // A caller hanging up mid-command is not a platform failure. Individual call
+    // actions already swallow it (callAction), so reaching here means a path that
+    // is not wrapped. Recorded so the rate stays visible in PlatformAlert, but
+    // record-only: no email, at any severity. Never a critical alert whose only
+    // cause is someone putting the phone down.
+    if (isCallEndedError(error)) {
+      console.info('ℹ️ [VOICE] Webhook aborted — call has already ended (Telnyx 90018)')
+      raisePlatformAlert(buildVoiceCallEndedAlert({ error }))
+      return NextResponse.json({}, { status: 200 })
+    }
     console.error('❌ Error handling voice webhook:', error)
     // Still 200: Telnyx must not retry call events. The alert is what makes this visible.
     raisePlatformAlert(buildVoiceWebhookErrorAlert({ error }))
@@ -926,6 +948,46 @@ export async function POST(request: NextRequest) {
 
 function toB64(obj: object): string {
   return Buffer.from(JSON.stringify(obj)).toString('base64')
+}
+
+/**
+ * Runs one Telnyx call-control command. A 90018 ("call has already ended") is logged
+ * at info level and swallowed; EVERY other error is rethrown unchanged, so real
+ * failures still reach the outer catch and still raise a critical platform alert.
+ *
+ * Returns true when Telnyx accepted the command, false when the call had already
+ * ended. Call sites that have their own compensating work (bridge fallback, forwarding
+ * fallback) keep their try/catch and use logCallActionFailure instead — this helper is
+ * for the commands whose failure has nowhere to go but up.
+ */
+async function callAction(label: string, run: () => Promise<unknown>): Promise<boolean> {
+  try {
+    await run()
+    return true
+  } catch (err) {
+    if (isCallEndedError(err)) {
+      console.info(`ℹ️ [VOICE] ${label} skipped — call has already ended (Telnyx 90018)`)
+      return false
+    }
+    throw err
+  }
+}
+
+/**
+ * Logging counterpart of callAction, for the sites that already catch their own errors
+ * because they have compensating work to do (bridge fallback, forwarding fallback,
+ * hangup-after-failure).
+ *
+ * The compensating path is unchanged and still runs on a 90018 — the leg really is
+ * gone, and the caller still needs the fallback. Only the log level changes, so an
+ * ordinary hangup stops reading as a failure.
+ */
+function logCallActionFailure(label: string, err: unknown): void {
+  if (isCallEndedError(err)) {
+    console.info(`ℹ️ [VOICE] ${label} failed — call has already ended (Telnyx 90018)`)
+    return
+  }
+  console.error(`❌ Failed to ${label}:`, err)
 }
 
 async function findBusiness(to: string): Promise<Business | null> {
@@ -1005,7 +1067,7 @@ async function handleForwardingFallback(
         client_state: toB64({ businessId: state.businessId, callerPhone: state.callerPhone }),
       })
     } catch (err) {
-      console.error('❌ Failed to speak on A-leg (caller may have hung up):', err)
+      logCallActionFailure('speak on A-leg (caller may have hung up)', err)
       try {
         await telnyx.calls.actions.hangup(state.aLegCallControlId, {})
       } catch {}
@@ -1024,7 +1086,7 @@ async function handleForwardingFallback(
         }),
       })
     } catch (err) {
-      console.error('❌ Failed to speak voicemail greeting on A-leg:', err)
+      logCallActionFailure('speak voicemail greeting on A-leg', err)
       try {
         await telnyx.calls.actions.hangup(state.aLegCallControlId, {})
       } catch {}
@@ -1078,7 +1140,7 @@ async function startClientContactVoicemail(
     })
   } catch (err) {
     // Caller may have already hung up (Telnyx 90018 "Call has already ended"). Do not throw.
-    console.error('❌ Failed to speak known-contact voicemail greeting (caller may have hung up):', err)
+    logCallActionFailure('speak known-contact voicemail greeting', err)
   }
 }
 

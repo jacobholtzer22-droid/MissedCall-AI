@@ -17,6 +17,7 @@ import {
   buildOwnerNotifyThrewAlert,
   buildSmsSendFailedAlert,
   buildTestAlert,
+  buildVoiceCallEndedAlert,
   buildVoiceWebhookErrorAlert,
   decideOwnerNotifyAlert,
   isDefinitiveAuthFailure,
@@ -536,4 +537,83 @@ test('what is stored and emailed is scrubbed even when a caller passes raw value
   assert.ok(!stored.includes('5551234567') && !stored.includes('123-4567'))
   assert.ok(!stored.includes('customer message body') && !stored.includes('secret') && !stored.includes('abc.def.ghi'))
   assert.equal(f.rows[0].dedupeKey, 'x:***4567')
+})
+
+// ── Record-only alerts (email: false) ────────────────────────────────────
+// The row is the point; the inbox is not. Severity does NOT control this, so
+// these tests pin the behaviour to the explicit flag.
+
+test('record-only: the row is written and no email is sent', async () => {
+  const f = fakeDeps()
+  const r = await processPlatformAlert(buildVoiceCallEndedAlert({ error: new Error('422 {"errors":[{"code":"90018"}]}') }), f.deps)
+
+  assert.equal(f.rows.length, 1, 'the row must still be written')
+  assert.equal(f.emails.length, 0, 'no email may be sent')
+  assert.equal(r.emailed, false)
+  assert.equal(r.skipped, 'record_only')
+  assert.ok(r.alertId)
+  assert.equal(f.rows[0].type, 'voice_call_ended')
+  assert.equal(f.rows[0].severity, 'info')
+  assert.equal(f.rows[0].emailedAt, null)
+  assert.equal(f.rows[0].metadata.emailSkipped, 'record_only')
+})
+
+test('record-only never emails no matter how much time passes', async () => {
+  const f = fakeDeps()
+  for (let i = 0; i < 5; i++) {
+    await processPlatformAlert(buildVoiceCallEndedAlert({ error: new Error('90018') }), f.deps)
+    f.advanceHours(THROTTLE_HOURS_DEFAULT + 1)
+  }
+  assert.equal(f.emails.length, 0)
+  assert.equal(f.rows.length, 5)
+})
+
+test('record-only rows do not consume the storm budget', async () => {
+  const f = fakeDeps()
+  // Far more record-only alerts than the storm cap, spaced past the row throttle.
+  for (let i = 0; i < STORM_EMAIL_CAP + 5; i++) {
+    await processPlatformAlert(buildVoiceCallEndedAlert({ error: new Error('90018') }), f.deps)
+    f.advanceMinutes(ROW_THROTTLE_MINUTES + 1)
+  }
+  assert.equal(f.emails.length, 0)
+
+  // A real critical alert must still get through afterwards.
+  const real = await processPlatformAlert(buildVoiceWebhookErrorAlert({ error: new TypeError('undefined is not a function') }), f.deps)
+  assert.equal(real.emailed, true, 'record-only alerts must not starve a real alert')
+  assert.equal(f.emails.length, 1)
+})
+
+test('the row throttle still applies, so these rows are a sample not a count', async () => {
+  const f = fakeDeps()
+  await processPlatformAlert(buildVoiceCallEndedAlert({ error: new Error('90018') }), f.deps)
+  f.advanceMinutes(ROW_THROTTLE_MINUTES - 1)
+  const second = await processPlatformAlert(buildVoiceCallEndedAlert({ error: new Error('90018') }), f.deps)
+
+  assert.equal(second.skipped, 'row_throttled')
+  assert.equal(f.rows.length, 1, 'documented limitation: at most one row per ROW_THROTTLE_MINUTES')
+})
+
+test('email defaults to true, so every pre-existing builder still emails', async () => {
+  const f = fakeDeps()
+  // Including the one that is severity 'info' — severity must not gate the email.
+  const t = await processPlatformAlert(buildTestAlert({ nonce: 'abc' }), f.deps)
+  assert.equal(sanitizeAlert(buildTestAlert({ nonce: 'abc' })).severity, 'info')
+  assert.equal(t.emailed, true, "severity 'info' must still email; only email:false suppresses")
+  assert.equal(f.emails.length, 1)
+})
+
+test('sanitizeAlert defaults email to true and honours an explicit false', () => {
+  assert.equal(sanitizeAlert(buildVoiceWebhookErrorAlert({ error: new Error('x') })).email, true)
+  assert.equal(sanitizeAlert(buildVoiceCallEndedAlert({ error: new Error('x') })).email, false)
+})
+
+test('buildVoiceCallEndedAlert is distinct from buildVoiceWebhookErrorAlert', () => {
+  const quiet = buildVoiceCallEndedAlert({ error: new Error('90018') })
+  const loud = buildVoiceWebhookErrorAlert({ error: new Error('90018') })
+  assert.notEqual(quiet.type, loud.type)
+  assert.notEqual(quiet.dedupeKey, loud.dedupeKey, 'a quiet alert must not throttle the loud one')
+  assert.equal(quiet.severity, 'info')
+  assert.equal(loud.severity, 'critical')
+  assert.equal(quiet.email, false)
+  assert.equal(loud.email, undefined)
 })
