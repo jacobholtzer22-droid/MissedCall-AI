@@ -103,15 +103,6 @@ const projects: Project[] = [
     features: ['Custom Website Design', 'Service Showcases & Gallery', 'SEO Optimization', 'Online Quote Requests'],
   },
   {
-    title: "G's Elite Dump Service",
-    category: 'Junk Removal & Dumpster Rental',
-    description: 'A bold, high-contrast website for a junk removal and dumpster rental crew based in Portage and working across Southwest Michigan. Two clear paths: rent a dumpster, or have the crew load it and go. Backed by before-and-after job photos and online quote requests.',
-    image1: '/images/portfolio/gs-elite-1.png',
-    image2: '/images/portfolio/gs-elite-2.png',
-    url: 'https://www.gselitedump.com',
-    features: ['Custom Website Design', 'Service Showcases & Gallery', 'SEO Optimization', 'Online Quote Requests'],
-  },
-  {
     title: 'Rodas Premier Landscaping',
     category: 'Landscaping & Snow Removal',
     description: 'A polished, photo-forward website for a premier lawn care, landscaping, and snow removal crew serving Grand Rapids and West Michigan year-round. Built to showcase real property work and turn visitors into free-quote requests.',
