@@ -2786,3 +2786,36 @@ Two separate axes:
   people ÷ people who showed. MRR and setup sum won people only. No Meta spend
   integration, by design.
 - Every dollar figure is behind the `adminShowRevenue` toggle, like the rest of `/admin`.
+
+## 21. Ops Module (`/admin/ops`): client delivery tracking
+
+Added Oct 2026, schema only so far (branch `ops-schema`): no UI, routes or cron
+yet. Ops tracks what happens **after** a sale: what each client bought, whether
+each piece is live, contact after the sale, and agent work dispatched for them.
+Vocabularies for every String column are in `lib/ops/types.ts`.
+
+### Tables (`scripts/sql/2026-10-24_add_ops.sql`)
+
+| Model | Purpose |
+|---|---|
+| `Engagement` | One row per client. The bridge between a won `PipelinePerson` (prospect) and the `Business` row they become (client). Both links are nullable and `@unique`: a prospect has no Business yet, and a self-onboarded client has no PipelinePerson. Holds stage, services bought, Stripe ids and amounts (written only by the ops sync), and post-sale follow-up. |
+| `Deliverable` | One per thing sold (`@@unique([engagementId, type])`): website, domain, email, missedcall, ads, gbp. `computedStatus` comes from its checks; `manualStatus` (plus a note) wins in the UI until cleared. `evidence` holds the pointers checks and agents read (repo, Vercel project, domain, Telnyx number, Ads ids). |
+| `OpsCheck` | Latest result per automated check per deliverable (`@@unique([deliverableId, key])`), keyed by a dotted key such as `stripe.upfront_paid` or `dns.a_record`. `passed = null` means the check could not run. |
+| `OpsActivity` | Post-sale contact log. Pre-sale contact stays in `PipelineNote`. |
+| `AgentRun` | Log of agent dispatches (site build, SEO pass, ads setup…) with input, output and status. |
+
+`OpsActivity` is named that way because `Activity` already exists for tenant contacts.
+
+### Rules
+
+- **Ops reads existing models and writes only its own five tables.** It never
+  writes `Business`, `PipelinePerson`, `WebsiteLead`, `Appointment` or any other
+  pre-existing model. `Business.stripeCustomerId` is left alone; Ops keeps its
+  own copy on `Engagement`. The only change to existing models is the two
+  back-relation lines (`Business.engagement`, `PipelinePerson.engagement`), which
+  add no columns.
+- ⚠️ **Schema changes are applied by hand from `scripts/sql/`, never `db push`
+  from a branch.** The SQL is generated with `prisma migrate diff` (main's
+  schema → the branch's) so it cannot drift from `schema.prisma`, then run with
+  `npx prisma db execute --file …`. `db push` diffs against one schema file and
+  would drop columns other branches have already added to the database.

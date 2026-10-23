@@ -138,6 +138,7 @@ model Business {
   googleAdsSnapshots GoogleAdsSnapshot[]
   reviewRequests     ReviewRequest[]
   pipelinePeople     PipelinePerson[]
+  engagement         Engagement?
 
   @@index([stripeCustomerId])
   @@index([ownerGroupId])
@@ -473,6 +474,7 @@ model PipelinePerson {
   nextFollowUpAt  DateTime?
 
   notes PipelineNote[]
+  engagement Engagement?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -1092,4 +1094,157 @@ model FunnelEvent {
   @@index([name, createdAt])
   @@index([visitorId])
   @@index([funnelVariant])
+}
+
+model Engagement {
+  id String @id @default(cuid())
+
+  // Links. Both nullable: a prospect has a PipelinePerson and no Business;
+  // a self-onboarded client has a Business and no PipelinePerson. Both set
+  // once the prospect becomes a client. Unique so one row per client.
+  businessId       String?         @unique
+  business         Business?       @relation(fields: [businessId], references: [id], onDelete: SetNull)
+  pipelinePersonId String?         @unique
+  pipelinePerson   PipelinePerson? @relation(fields: [pipelinePersonId], references: [id], onDelete: SetNull)
+
+  // Who
+  displayName String // business name as shown in /admin/ops
+  contactName String?
+  email       String?
+  phone       String? // E.164
+  trade       String?
+  location    String? // "City, ST"
+
+  // How this row got here: pipeline_won | business_row | stripe | manual
+  source String @default("manual")
+
+  // What they bought. JSON string[] of "website" | "ads" | "missedcall" | "gbp"
+  services Json @default("[]")
+
+  // prospect | paid_upfront | onboarding | active | paused | churned
+  stage String @default("prospect")
+
+  // Stripe, written only by the ops sync. Business.stripeCustomerId is left alone.
+  stripeCustomerId         String?   @unique
+  stripeSubscriptionId     String?
+  stripeSubscriptionStatus String? // active | past_due | canceled | trialing | none
+  upfrontPaidAt            DateTime?
+  upfrontAmount            Float?
+  monthlyAmount            Float?
+  monthlyStartedAt         DateTime?
+  stripeSyncedAt           DateTime?
+
+  // Post-sale follow-up. Pre-sale follow-up stays on PipelinePerson.
+  lastContactedAt DateTime?
+  nextFollowUpAt  DateTime?
+  notes           String?   @db.Text
+
+  deliverables Deliverable[]
+  activities   OpsActivity[]
+  agentRuns    AgentRun[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([stage])
+  @@index([nextFollowUpAt])
+  @@index([email])
+  @@index([phone])
+}
+
+model Deliverable {
+  id           String     @id @default(cuid())
+  engagementId String
+  engagement   Engagement @relation(fields: [engagementId], references: [id], onDelete: Cascade)
+
+  // website | domain | email | missedcall | ads | gbp
+  type String
+
+  // Derived by the ops sync from OpsCheck rows:
+  // not_started | in_progress | blocked | live | unknown
+  computedStatus String @default("unknown")
+
+  // Set by hand in /admin/ops. When present it wins over computedStatus in
+  // the UI until cleared. The note is the reason ("domain not switched yet").
+  manualStatus     String?
+  manualStatusNote String?
+  manualStatusAt   DateTime?
+
+  // Pointers the checks and agents read, keyed by type:
+  // website: repoUrl, vercelProjectId, branch, previewUrl, productionUrl
+  // domain: domain, registrar
+  // email: workspaceDomain
+  // missedcall: telnyxNumber
+  // ads: adsCustomerId, campaignId
+  // gbp: locationId
+  evidence Json @default("{}")
+
+  checks    OpsCheck[]
+  agentRuns AgentRun[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([engagementId, type])
+}
+
+model OpsCheck {
+  id            String      @id @default(cuid())
+  deliverableId String
+  deliverable   Deliverable @relation(fields: [deliverableId], references: [id], onDelete: Cascade)
+
+  // Dotted key, e.g. stripe.upfront_paid, stripe.subscription_active,
+  // business.owner_contact_set, business.number_assigned, vercel.prod_ready,
+  // dns.a_record, dns.txt_spf, http.indexable, slug.matches_db,
+  // lead.test_row, ads.campaign_enabled, ads.geo_presence_only, ads.spend_7d
+  key       String
+  passed    Boolean? // null = the check could not run (API error, missing evidence)
+  detail    String?  @db.Text
+  lastRunAt DateTime @default(now())
+
+  @@unique([deliverableId, key])
+}
+
+model OpsActivity {
+  id           String     @id @default(cuid())
+  engagementId String
+  engagement   Engagement @relation(fields: [engagementId], references: [id], onDelete: Cascade)
+
+  // note | call | voicemail | text | email | meeting | status_change | system
+  kind String @default("note")
+  body String @db.Text
+
+  // Set when logging this contact also scheduled the next touch; the API
+  // copies it onto Engagement.nextFollowUpAt.
+  followUpAt DateTime?
+
+  createdAt DateTime @default(now())
+
+  @@index([engagementId, createdAt])
+}
+
+model AgentRun {
+  id            String       @id @default(cuid())
+  engagementId  String
+  engagement    Engagement   @relation(fields: [engagementId], references: [id], onDelete: Cascade)
+  deliverableId String?
+  deliverable   Deliverable? @relation(fields: [deliverableId], references: [id], onDelete: SetNull)
+
+  // site_build | site_update | seo_pass | ads_setup | ads_audit | other
+  kind String
+
+  // queued | dispatched | running | succeeded | failed | cancelled
+  status String @default("queued")
+
+  input      Json? // what was sent: repo, branch, intake payload
+  output     Json? // prUrl, previewUrl, runUrl, summary, verifyOutput
+  externalId String? // GitHub Actions run id once known
+  error      String? @db.Text
+
+  startedAt  DateTime?
+  finishedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([engagementId, createdAt])
+  @@index([status])
 }
