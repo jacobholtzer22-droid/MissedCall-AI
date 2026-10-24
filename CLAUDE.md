@@ -2867,3 +2867,43 @@ engagement's services, Stripe, checks, status derivation. It writes only
   created.
 - `lib/ops/alerts.ts` `computeEngagementAlerts` is the pure health/alert rules for
   one engagement, in the style of `lib/admin-health.ts`. The sync does not call it.
+
+### Page (`/admin/ops`, Oct 2026)
+
+`app/admin/ops/page.tsx` is the server gate (`ADMIN_USER_ID`, like `/admin`) and
+renders `OpsClient` from `getOpsBoard()` (`lib/ops/board.ts`: a fixed set of
+cross-tenant queries, ISO dates, `ignored` rows split out of every list and
+total). Tabs are `?tab=today|clients|money|agents`. Linked from AdminTools ("Ops").
+Writes are optimistic and every one is followed by a board refetch, because
+alerts, health and totals are computed only on the server.
+
+| Route (all `requireAdmin()`) | What it does |
+|---|---|
+| `GET /api/admin/ops/board` | `getOpsBoard()` |
+| `PATCH /api/admin/ops/engagements/[id]` | Allowlist: `displayName`, `contactName`, `email`, `phone`, `trade`, `location`, `services`, `stage`, `notes`, `nextFollowUpAt`, `lastContactedAt`, `monthlyAmount`, `upfrontAmount`, `stripeCustomerId` (null unlinks and also clears `stripeSubscriptionId`, `stripeSubscriptionStatus`, `stripeSyncedAt`; the amounts stay). Any other key is a 400. Services → `ensureDeliverables`; stage → `OpsActivity` `status_change`; a new `stripeCustomerId` → 409 if taken, else `syncStripeForEngagement`. |
+| `POST /api/admin/ops/engagements` | `{ stripeCustomerId }` → new Engagement, source `stripe`, stage `paid_upfront`, then `syncStripeForEngagement`. 409 if the customer is already linked. |
+| `GET` / `POST /api/admin/ops/engagements/[id]/activities` | GET: the full log, newest first (the board carries the last 5; the panel's "Show all"). POST `{ kind, body, followUpAt? }`: contact kinds stamp `lastContactedAt`; `followUpAt` becomes `nextFollowUpAt`. |
+| `POST /api/admin/ops/engagements/[id]/snooze` | `{ days }` 1–60 → `nextFollowUpAt`, plus a `system` activity. |
+| `PATCH /api/admin/ops/deliverables/[id]` | Allowlist: `manualStatus` (null clears; stamps `manualStatusAt`), `manualStatusNote`, `evidence` merged key by key (null removes one key) over `EVIDENCE_KEYS` in `lib/ops/evidence.ts`. Never `computedStatus`. |
+| `GET /api/admin/ops/stripe/unmatched` | `listUnmatchedStripeCustomers()`, cached 10 min per instance; `?refresh=1` skips the cache. |
+| `POST /api/admin/ops/sync` | The Sync button (same `runOpsSync`). |
+
+- **effectiveStatus = `manualStatus ?? computedStatus`.** A hand-set status wins
+  everywhere in the UI until it is cleared; the sync keeps updating
+  `computedStatus` underneath.
+- **MRR is split Verified / Projected** (`lib/ops/money.ts`, shared by the board totals
+  and the Money tab). Verified = `stripeSubscriptionStatus` `active` or `past_due`;
+  Projected = every other row with a `monthlyAmount`. Bucket by stage (active →
+  Active; paid_upfront, onboarding → Pending; churned → Churned), except a
+  `scheduled` subscription, which is always Pending.
+- **`scheduled`**: with no live subscription (active, trialing, past_due, unpaid), a
+  Stripe subscription schedule in `not_started` or `active` sets
+  `stripeSubscriptionStatus = 'scheduled'`, `monthlyStartedAt` from its first phase
+  and `monthlyAmount` from that phase's first price when monthly. It suppresses the
+  `no_subscription` alert. A schedules error (e.g. a restricted key without that
+  permission) lands in `stripe.errors` and the rest of the customer still syncs.
+- ⚠️ **Booking show-status goes through `PATCH /api/admin/pipeline/booking/[id]`.**
+  Ops never writes `Appointment`.
+- `lib/ops/sync.ts` also exports `ensureDeliverables`, `listUnmatchedStripeCustomers`
+  and `syncStripeForEngagement` (the full run's match + per-customer update for one
+  row; it refuses a match another unlinked engagement would also make).

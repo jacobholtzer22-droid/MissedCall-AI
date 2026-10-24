@@ -1128,7 +1128,7 @@ model Engagement {
   // Stripe, written only by the ops sync. Business.stripeCustomerId is left alone.
   stripeCustomerId         String?   @unique
   stripeSubscriptionId     String?
-  stripeSubscriptionStatus String? // active | past_due | canceled | trialing | none
+  stripeSubscriptionStatus String? // active | past_due | canceled | trialing | scheduled | none
   upfrontPaidAt            DateTime?
   upfrontAmount            Float?
   monthlyAmount            Float?

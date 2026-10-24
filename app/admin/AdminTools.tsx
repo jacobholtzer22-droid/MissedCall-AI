@@ -2,14 +2,14 @@
 
 import { useState, useRef, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { ChevronDown, RefreshCw, Download, RotateCcw, ShieldAlert, MessageSquare, BarChart3, Users, KanbanSquare } from 'lucide-react'
+import { ChevronDown, RefreshCw, Download, RotateCcw, ShieldAlert, MessageSquare, BarChart3, Users, KanbanSquare, ClipboardList } from 'lucide-react'
 
 interface Props {
   onToast: (message: string, type: 'success' | 'error') => void
   onRefresh: () => Promise<void>
 }
 
-type ActionKey = 'telnyx' | 'ads' | 'sheets' | 'export' | 'refresh' | 'spam' | 'marketing-line' | 'arms' | 'funnel-leads' | 'pipeline'
+type ActionKey = 'telnyx' | 'ads' | 'sheets' | 'export' | 'refresh' | 'spam' | 'marketing-line' | 'arms' | 'funnel-leads' | 'pipeline' | 'ops'
 
 export function AdminTools({ onToast, onRefresh }: Props) {
   const router = useRouter()
@@ -134,6 +134,12 @@ export function AdminTools({ onToast, onRefresh }: Props) {
       label: 'Pipeline / ROI',
       icon: KanbanSquare,
       action: () => router.push('/admin/pipeline'),
+    },
+    {
+      key: 'ops',
+      label: 'Ops',
+      icon: ClipboardList,
+      action: () => router.push('/admin/ops'),
     },
   ]
 
