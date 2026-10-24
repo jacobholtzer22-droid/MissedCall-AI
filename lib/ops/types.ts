@@ -40,8 +40,12 @@ export type ServiceKey = (typeof SERVICE_KEYS)[number]
 export const DELIVERABLE_TYPES = ['website', 'domain', 'email', 'missedcall', 'ads', 'gbp'] as const
 export type DeliverableType = (typeof DELIVERABLE_TYPES)[number]
 
-/** Deliverable.computedStatus, and the values allowed in manualStatus. */
-export const DELIVERABLE_STATUSES = ['not_started', 'in_progress', 'blocked', 'live', 'unknown'] as const
+/**
+ * Deliverable.computedStatus, and the values allowed in manualStatus.
+ * 'blocked' and 'paused' are manual only: the sync never derives them. 'paused'
+ * (client asked to hold, e.g. ads paused) raises no alert.
+ */
+export const DELIVERABLE_STATUSES = ['not_started', 'in_progress', 'blocked', 'paused', 'live', 'unknown'] as const
 export type DeliverableStatus = (typeof DELIVERABLE_STATUSES)[number]
 
 /** The deliverables each purchased service creates. */

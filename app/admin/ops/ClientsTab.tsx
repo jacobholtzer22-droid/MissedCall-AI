@@ -8,12 +8,13 @@ import { ChevronDown, RefreshCw } from 'lucide-react'
 import type { BoardEngagement, OpsBoard } from '@/lib/ops/board'
 import type { UnmatchedPayingCustomer } from '@/lib/ops/sync'
 import { DELIVERABLE_TYPES, DELIVERABLE_TYPES_FOR_SERVICE, SERVICE_KEYS, STAGE_ORDER, type DeliverableType, type ServiceKey } from '@/lib/ops/types'
-import { Age, HealthDot, StatusPill } from '../ui'
+import { Age, HealthDot } from '../ui'
 import { EngagementPicker } from './Pickers'
 import {
   DeliverableChip,
   STAGE_LABELS,
   StagePill,
+  StripeStatusPill,
   control,
   detroitDate,
   money,
@@ -225,7 +226,7 @@ export function ClientsTab({
                   <td className="px-3 py-2.5 text-right tabular-nums text-gray-200">{money(e.monthlyAmount)}</td>
                   <td className="px-3 py-2.5">
                     {e.stripeSubscriptionStatus ? (
-                      <StatusPill status={e.stripeSubscriptionStatus} />
+                      <StripeStatusPill status={e.stripeSubscriptionStatus} />
                     ) : (
                       <span className="text-xs text-gray-600">{e.stripeCustomerId ? 'not synced' : 'unlinked'}</span>
                     )}
@@ -268,7 +269,7 @@ export function ClientsTab({
               <Chips e={e} />
               <span className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-400">
                 <span className="tabular-nums text-gray-200">{money(e.monthlyAmount)}/mo</span>
-                {e.stripeSubscriptionStatus ? <StatusPill status={e.stripeSubscriptionStatus} /> : <span>Stripe unlinked</span>}
+                {e.stripeSubscriptionStatus ? <StripeStatusPill status={e.stripeSubscriptionStatus} /> : <span>Stripe unlinked</span>}
                 <span>follow-up {e.nextFollowUpAt ? detroitDate(e.nextFollowUpAt) : '—'}</span>
                 <span>
                   activity <Age iso={e.lastActivityAt} />

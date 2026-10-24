@@ -14,13 +14,14 @@ import type { UnmatchedPayingCustomer } from '@/lib/ops/sync'
 import { DELIVERABLE_STATUSES, ENGAGEMENT_STAGES, OPS_ACTIVITY_KINDS, SERVICE_KEYS, type DeliverableType } from '@/lib/ops/types'
 import { EVIDENCE_FIELDS_FOR_TYPE, SYNC_EVIDENCE_FOR_TYPE } from '@/lib/ops/evidence'
 import { formatPhoneNumber } from '@/lib/utils'
-import { Age, HealthDot, StatusPill } from '../ui'
+import { Age, HealthDot } from '../ui'
 import { StripeCustomerPicker } from './Pickers'
 import {
   ALERT_TONE,
   DELIVERABLE_STATUS_LABELS,
   DeliverableChip,
   STAGE_LABELS,
+  StripeStatusPill,
   detroitDate,
   money,
   smallButton,
@@ -386,7 +387,7 @@ function StripeSection({
       <h3 className="text-sm font-semibold text-gray-100 mb-2">Stripe</h3>
       <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
         <dt className="text-gray-500">Subscription</dt>
-        <dd>{e.stripeSubscriptionStatus ? <StatusPill status={e.stripeSubscriptionStatus} /> : <span className="text-gray-500">—</span>}</dd>
+        <dd>{e.stripeSubscriptionStatus ? <StripeStatusPill status={e.stripeSubscriptionStatus} /> : <span className="text-gray-500">—</span>}</dd>
         <dt className="text-gray-500">Monthly</dt>
         <dd className="tabular-nums text-gray-200">
           {money(e.monthlyAmount)}

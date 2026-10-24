@@ -2907,3 +2907,30 @@ alerts, health and totals are computed only on the server.
 - `lib/ops/sync.ts` also exports `ensureDeliverables`, `listUnmatchedStripeCustomers`
   and `syncStripeForEngagement` (the full run's match + per-customer update for one
   row; it refuses a match another unlinked engagement would also make).
+
+### Stripe amounts, promotion, `paused` / `scheduled` (Oct 23 2026)
+
+- **monthlyAmount = every live subscription, every item.** Live = active, trialing,
+  past_due, unpaid. Per item `unit_amount × quantity ÷ interval_count`, normalised
+  to a month (year ÷ 12, week × 52 ÷ 12, day × 30), then any `percent_off`
+  discount on the subscription (`subscriptionMonthly` in `lib/ops/sync.ts`).
+  Tiered and metered prices count 0, as does `amount_off`, and each is named in
+  the summary. `stripeSubscriptionStatus` / `stripeSubscriptionId` are still the
+  highest-priority subscription; the per-subscription breakdown
+  (`stripe.synced[].subscriptions`) is in the sync summary only. Subscriptions are
+  listed with `expand: ['data.discounts.source.coupon']`; a key that cannot expand
+  coupons falls back to the plain list with a warning.
+- **`scheduled`** (no live subscription): a subscription schedule in `not_started`
+  or `active` (first phase start, monthly price), else an open or draft invoice
+  with no subscription whose `due_date` or `automatically_finalizes_at` is ahead
+  (that date, `total / 100`). Still never clears a value Stripe cannot see.
+- **Promotion only.** When a run (full sync or `syncStripeForEngagement`) finds an
+  active subscription on a `prospect`, `paid_upfront` or `onboarding` engagement,
+  it sets `active` and writes an `OpsActivity` `status_change` "stage: <old> ->
+  active (Stripe subscription active)". Nothing demotes automatically: a canceled
+  subscription on an active client stays a red alert.
+- **Deliverable `paused`**: manual only (the sync never derives it, like
+  `blocked`), slate chip, no alert. The Stripe `scheduled` status has its own chip
+  (`StripeStatusPill` in `app/admin/ops/opsUi.tsx`).
+- `scripts/ops-apply-2026-10-23.ts` is the one-off standings apply (`--dry` first;
+  idempotent, never undoes a promotion). Kept for the record; do not re-run blind.
