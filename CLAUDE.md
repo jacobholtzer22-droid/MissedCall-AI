@@ -2835,12 +2835,18 @@ engagement's services, Stripe, checks, status derivation. It writes only
   on an existing row: `businessId` (link only, never unlink), `stripeCustomerId`,
   `stripeSubscriptionId`, `stripeSubscriptionStatus`, `upfrontPaidAt`,
   `upfrontAmount`, `monthlyAmount`, `monthlyStartedAt`, `stripeSyncedAt`.
-  Everything else is set on create and then edited by hand only. On a
+  Everything else is set on create and then edited by hand only, with one
+  exception for rows inserted **in the same run**: their stage is finalized
+  after the Stripe phase (subscription active/trialing/past_due → `active`,
+  canceled → `churned`, upfront found and no subscription → `paid_upfront`,
+  nothing in Stripe → the insert stage), and a same-run link renames them to
+  `Business.name` and fills empty `services` from the Business row. Names in
+  `IGNORE_ON_CREATE` are inserted with stage `ignored`. On a
   Deliverable it adds missing ones and merges `evidence.telnyxNumber` /
   `evidence.adsCustomerId`; it never deletes a row or an evidence key.
 - **Check keys written** (database only): missedcall → `business.number_assigned`,
   `business.owner_contact_set`, `missedcall.activity_30d`; website →
-  `website.business_row`, `lead.test_row` (a `ZZTEST…` lead exists),
+  `website.business_row`, `business.owner_contact_set`, `lead.test_row` (a `ZZTEST…` lead exists),
   `website.real_lead_30d`; ads → `ads.customer_linked`, `ads.snapshot_7d`,
   `ads.spend_7d`. No checks yet for domain, email, gbp. With no linked
   Business, every business-dependent check is `passed = null`, detail
@@ -2855,7 +2861,9 @@ engagement's services, Stripe, checks, status derivation. It writes only
   2026-09-30 has no `charge.invoice` or `invoice.subscription`: subscription
   invoices are told apart by `invoice.parent.subscription_details`, and invoice
   charges by the InvoicePayments API, so upfront money is never counted twice.
-  Upfront charges are net of refunds. Unmatched paying customers (last 120 days)
-  are reported, never created.
+  Upfront charges are net of refunds. **Stripe never clears a value**: the money
+  fields are written only when Stripe found something. Ignored rows never claim a
+  Stripe customer. Unmatched paying customers (last 120 days) are reported, never
+  created.
 - `lib/ops/alerts.ts` `computeEngagementAlerts` is the pure health/alert rules for
   one engagement, in the style of `lib/admin-health.ts`. The sync does not call it.

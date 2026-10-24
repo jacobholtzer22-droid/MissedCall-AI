@@ -55,6 +55,22 @@ export const SYNC_OWNED_FIELDS = [
 const DAY_MS = 24 * 60 * 60 * 1000
 const UNPAID_LOOKBACK_DAYS = 120
 const NO_ACCOUNT = 'no platform account linked'
+
+/**
+ * Test or junk rows: created with stage 'ignored' instead of the computed
+ * stage. Applied at creation only, compared on the trimmed display name, so a
+ * row renamed later is never re-ignored and an ignored row can be revived by
+ * hand.
+ */
+export const IGNORE_ON_CREATE = [
+  'Test Business',
+  'fisrtcomesfunction',
+  'Smith Insurance',
+  'BomaCrumbs',
+  'Terrell Kempfer',
+  'ApplyNex',
+] as const
+const isIgnoredOnCreate = (name: string) => (IGNORE_ON_CREATE as readonly string[]).includes(name.trim())
 const SUB_PRIORITY: Stripe.Subscription.Status[] = ['active', 'trialing', 'past_due', 'unpaid', 'canceled']
 
 // ── Summary ─────────────────────────────────────────────────────────────────
@@ -68,13 +84,24 @@ export interface OpsSyncSummary {
   notes: string[]
   engagementsCreated: (EngRef & {
     source: EngagementSource
+    /** Final stage, after the post-Stripe finalization. */
     stage: EngagementStage
+    /** The stage set at insert, when finalization changed it. */
+    stageAtInsert?: EngagementStage
     services: ServiceKey[]
     businessId: string | null
     pipelinePersonId: string | null
   })[]
   createdBySource: Record<string, number>
-  links: (EngRef & { businessId: string; businessName: string; matchedOn: string[] })[]
+  links: (EngRef & {
+    businessId: string
+    businessName: string
+    matchedOn: string[]
+    /** Set when a same-run link renamed the engagement to Business.name. */
+    previousDisplayName?: string
+    /** Set when a same-run link filled empty services from the Business row. */
+    servicesInferred?: ServiceKey[]
+  })[]
   ambiguities: {
     businessId: string
     businessName: string
@@ -130,6 +157,8 @@ type Eng = {
   upfrontAmount: number | null
   monthlyAmount: number | null
   monthlyStartedAt: Date | null
+  /** Inserted by this run: the only rows whose stage, name and services the sync may still settle. */
+  createdThisRun: boolean
 }
 
 type Del = {
@@ -198,6 +227,34 @@ const STAGE_FOR_SUBSCRIPTION: Record<string, EngagementStage> = {
   trialing: 'onboarding',
 }
 
+type ServiceSource = {
+  telnyxPhoneNumber: string | null
+  googleAdsCustomerId: string | null
+  googleAdsEnabled: boolean
+  id: string
+}
+
+/** Services a Business row implies. Used once, when an engagement gets its services. */
+function inferServices(b: ServiceSource, hasWebsiteLead: Set<string>): ServiceKey[] {
+  const services: ServiceKey[] = []
+  if (b.telnyxPhoneNumber) services.push('missedcall')
+  if (b.googleAdsCustomerId || b.googleAdsEnabled) services.push('ads')
+  if (hasWebsiteLead.has(b.id)) services.push('website')
+  return services
+}
+
+/**
+ * Stage for an engagement inserted this run, from what the Stripe phase
+ * learned. null = Stripe found nothing decisive, keep the insert stage.
+ */
+function stageFromStripe(e: Pick<Eng, 'stripeSubscriptionStatus' | 'upfrontPaidAt'>): EngagementStage | null {
+  const s = e.stripeSubscriptionStatus
+  if (s === 'active' || s === 'trialing' || s === 'past_due') return 'active'
+  if (s === 'canceled') return 'churned'
+  if (s === 'none' && e.upfrontPaidAt) return 'paid_upfront'
+  return null
+}
+
 /** Per the rules in CLAUDE.md §21: no rows unknown, all pass live, all fail not_started. */
 export function deriveDeliverableStatus(results: { passed: boolean | null }[]): DeliverableStatus {
   const ran = results.filter((r) => r.passed !== null)
@@ -261,7 +318,9 @@ export async function runOpsSync({ dryRun }: { dryRun: boolean }): Promise<OpsSy
     upfrontAmount: e.upfrontAmount,
     monthlyAmount: e.monthlyAmount,
     monthlyStartedAt: e.monthlyStartedAt,
+    createdThisRun: false,
   }))
+  const createdEntries = new Map<string, OpsSyncSummary['engagementsCreated'][number]>()
   const dels: Del[] = existing.flatMap((e) =>
     e.deliverables.map((d) => ({
       id: d.id,
@@ -278,6 +337,7 @@ export async function runOpsSync({ dryRun }: { dryRun: boolean }): Promise<OpsSy
   }
 
   async function createEngagement(data: Prisma.EngagementUncheckedCreateInput, source: EngagementSource): Promise<Eng> {
+    if (isIgnoredOnCreate(data.displayName)) data = { ...data, stage: 'ignored' }
     let id = nextDryId()
     if (!dryRun) {
       // update: {} — if a concurrent run already created it, change nothing.
@@ -303,16 +363,19 @@ export async function runOpsSync({ dryRun }: { dryRun: boolean }): Promise<OpsSy
       upfrontAmount: data.upfrontAmount ?? null,
       monthlyAmount: data.monthlyAmount ?? null,
       monthlyStartedAt: null,
+      createdThisRun: true,
     }
     engs.push(eng)
-    summary.engagementsCreated.push({
+    const entry = {
       ...ref(eng),
       source,
       stage: eng.stage as EngagementStage,
       services: eng.services,
       businessId: eng.businessId,
       pipelinePersonId: eng.pipelinePersonId,
-    })
+    }
+    createdEntries.set(eng.id, entry)
+    summary.engagementsCreated.push(entry)
     summary.createdBySource[source] = (summary.createdBySource[source] ?? 0) + 1
     return eng
   }
@@ -430,19 +493,39 @@ export async function runOpsSync({ dryRun }: { dryRun: boolean }): Promise<OpsSy
         })
         continue
       }
+      // An engagement inserted by this run takes the platform's name, and its
+      // services if it has none yet. A pre-existing row only gains businessId:
+      // its name and services may already be hand-edited.
+      const link: OpsSyncSummary['links'][number] = { ...ref(eng), businessId: b.id, businessName: b.name, matchedOn: on }
+      const data: Prisma.EngagementUncheckedUpdateManyInput = { businessId: b.id }
+      if (eng.createdThisRun) {
+        if (eng.displayName !== b.name) {
+          link.previousDisplayName = eng.displayName
+          data.displayName = b.name
+          eng.displayName = b.name
+        }
+        if (eng.services.length === 0) {
+          const inferred = inferServices(b, hasWebsiteLead)
+          if (inferred.length > 0) {
+            link.servicesInferred = inferred
+            data.services = inferred
+            eng.services = inferred
+          }
+        }
+        const entry = createdEntries.get(eng.id)
+        if (entry) Object.assign(entry, { displayName: eng.displayName, services: eng.services, businessId: b.id })
+      }
       if (!dryRun) {
         // Conditional so it can only ever link, never repoint a linked row.
-        await db.engagement.updateMany({ where: { id: eng.id, businessId: null }, data: { businessId: b.id } })
+        await db.engagement.updateMany({ where: { id: eng.id, businessId: null }, data })
       }
       eng.businessId = b.id
-      summary.links.push({ ...ref(eng), businessId: b.id, businessName: b.name, matchedOn: on })
+      link.displayName = eng.displayName
+      summary.links.push(link)
       continue
     }
 
-    const services: ServiceKey[] = []
-    if (b.telnyxPhoneNumber) services.push('missedcall')
-    if (b.googleAdsCustomerId || b.googleAdsEnabled) services.push('ads')
-    if (hasWebsiteLead.has(b.id)) services.push('website')
+    const services = inferServices(b, hasWebsiteLead)
     const stage = STAGE_FOR_SUBSCRIPTION[b.subscriptionStatus]
     if (!stage) summary.notes.push(`${b.name}: unknown subscriptionStatus "${b.subscriptionStatus}", stage set to onboarding.`)
     await createEngagement(
@@ -512,6 +595,23 @@ export async function runOpsSync({ dryRun }: { dryRun: boolean }): Promise<OpsSy
     }
   }
 
+  // ── Stage finalization: rows inserted this run only ─────────────────────
+  // The insert stage is a placeholder until Stripe has been read. Ignored rows
+  // stay ignored, and a row Stripe found nothing for keeps its insert stage.
+  // Rows that existed before this run are never touched.
+  for (const eng of engs) {
+    if (!eng.createdThisRun || eng.stage === 'ignored') continue
+    const next = stageFromStripe(eng)
+    if (!next || next === eng.stage) continue
+    if (!dryRun) await db.engagement.update({ where: { id: eng.id }, data: { stage: next } })
+    const entry = createdEntries.get(eng.id)
+    if (entry) {
+      entry.stageAtInsert = entry.stageAtInsert ?? (eng.stage as EngagementStage)
+      entry.stage = next
+    }
+    eng.stage = next
+  }
+
   // ── e. Checks (database only) ───────────────────────────────────────────
   const d30 = new Date(now.getTime() - 30 * DAY_MS)
   const d7 = new Date(now.getTime() - 7 * DAY_MS)
@@ -551,15 +651,20 @@ export async function runOpsSync({ dryRun }: { dryRun: boolean }): Promise<OpsSy
     const na = (key: OpsCheckKey): CheckResult => ({ key, passed: null, detail: NO_ACCOUNT })
     const yes = (key: OpsCheckKey, passed: boolean, detail: string | null = null): CheckResult => ({ key, passed, detail })
 
+    // Shared by missedcall and website: both notify the owner of a lead.
+    const ownerContact = (biz: NonNullable<typeof b>): CheckResult => {
+      const missing: string[] = []
+      if (!biz.ownerPhone && !biz.forwardingNumber) missing.push('owner phone or forwarding number')
+      if (!biz.ownerEmail) missing.push('owner email')
+      return yes('business.owner_contact_set', missing.length === 0, missing.length ? `missing ${missing.join(' and ')}` : null)
+    }
+
     switch (del.type) {
       case 'missedcall': {
         if (!b) return [na('business.number_assigned'), na('business.owner_contact_set'), na('missedcall.activity_30d')]
-        const missing: string[] = []
-        if (!b.ownerPhone && !b.forwardingNumber) missing.push('owner phone or forwarding number')
-        if (!b.ownerEmail) missing.push('owner email')
         return [
           yes('business.number_assigned', Boolean(b.telnyxPhoneNumber), b.telnyxPhoneNumber ?? 'no Telnyx number'),
-          yes('business.owner_contact_set', missing.length === 0, missing.length ? `missing ${missing.join(' and ')}` : null),
+          ownerContact(b),
           yes(
             'missedcall.activity_30d',
             activeCalls.has(b.id) || activeInbound.has(b.id),
@@ -569,10 +674,16 @@ export async function runOpsSync({ dryRun }: { dryRun: boolean }): Promise<OpsSy
       }
       case 'website': {
         if (!b) {
-          return [yes('website.business_row', false, NO_ACCOUNT), na('lead.test_row'), na('website.real_lead_30d')]
+          return [
+            yes('website.business_row', false, NO_ACCOUNT),
+            na('business.owner_contact_set'),
+            na('lead.test_row'),
+            na('website.real_lead_30d'),
+          ]
         }
         return [
           yes('website.business_row', true),
+          ownerContact(b),
           yes('lead.test_row', withTestRow.has(b.id), withTestRow.has(b.id) ? null : 'no ZZTEST lead found'),
           yes('website.real_lead_30d', withRealLead.has(b.id), withRealLead.has(b.id) ? null : 'no real lead in 30 days'),
         ]
@@ -697,7 +808,9 @@ async function syncStripe(
   // written, so one customer matched by two engagements links neither.
   const proposals: { eng: Eng; customerId: string; on: 'email' | 'phone' }[] = []
   for (const eng of engs) {
-    if (eng.stripeCustomerId || eng.stage === 'prospect') continue
+    // Ignored (test/junk) rows never claim a customer: stripeCustomerId is
+    // unique, and a junk row holding one would block the real client.
+    if (eng.stripeCustomerId || eng.stage === 'prospect' || eng.stage === 'ignored') continue
     const email = emailKey(eng.email)
     const phone = phoneKey(eng.phone)
     if (!email && !phone) {
@@ -747,34 +860,31 @@ async function syncStripe(
         stripe.charges.list({ customer, limit: 100 }).autoPagingToArray({ limit: 1000 }),
       ])
 
+      // Stripe never clears a value: the money fields are written only when
+      // Stripe found something, otherwise whatever create set stays.
+      const data: Prisma.EngagementUncheckedUpdateInput = { stripeSyncedAt: now }
+
       const sub = pickSubscription(subs)
       eng.stripeSubscriptionId = sub?.id ?? null
       eng.stripeSubscriptionStatus = sub?.status ?? 'none'
+      data.stripeSubscriptionId = eng.stripeSubscriptionId
+      data.stripeSubscriptionStatus = eng.stripeSubscriptionStatus
       if (sub) {
         const price = sub.items.data[0]?.price
         if (price?.recurring?.interval === 'month' && price.unit_amount != null) {
-          eng.monthlyAmount = dollars(price.unit_amount)
+          eng.monthlyAmount = data.monthlyAmount = dollars(price.unit_amount)
         }
-        eng.monthlyStartedAt = fromUnix(sub.start_date)
+        eng.monthlyStartedAt = data.monthlyStartedAt = fromUnix(sub.start_date)
       }
 
       const upfront = await upfrontPayments(stripe, invoices, charges)
-      eng.upfrontAmount = upfront.length ? dollars(upfront.reduce((s, p) => s + p.amount, 0)) : null
-      eng.upfrontPaidAt = upfront.length ? new Date(Math.min(...upfront.map((p) => p.at.getTime()))) : null
+      if (upfront.length > 0) {
+        eng.upfrontAmount = data.upfrontAmount = dollars(upfront.reduce((s, p) => s + p.amount, 0))
+        eng.upfrontPaidAt = data.upfrontPaidAt = new Date(Math.min(...upfront.map((p) => p.at.getTime())))
+      }
 
       if (!dryRun && !eng.id.startsWith('dry:')) {
-        await db.engagement.update({
-          where: { id: eng.id },
-          data: {
-            stripeSubscriptionId: eng.stripeSubscriptionId,
-            stripeSubscriptionStatus: eng.stripeSubscriptionStatus,
-            monthlyAmount: eng.monthlyAmount,
-            monthlyStartedAt: eng.monthlyStartedAt,
-            upfrontAmount: eng.upfrontAmount,
-            upfrontPaidAt: eng.upfrontPaidAt,
-            stripeSyncedAt: now,
-          },
-        })
+        await db.engagement.update({ where: { id: eng.id }, data })
       }
       summary.stripe.synced.push({
         ...ref(eng),

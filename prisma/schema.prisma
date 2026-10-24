@@ -1121,7 +1121,8 @@ model Engagement {
   // What they bought. JSON string[] of "website" | "ads" | "missedcall" | "gbp"
   services Json @default("[]")
 
-  // prospect | paid_upfront | onboarding | active | paused | churned
+  // prospect | paid_upfront | onboarding | active | one_time | paused | churned | ignored
+  // one_time = paid upfront, no subscription by agreement; ignored = test or junk row
   stage String @default("prospect")
 
   // Stripe, written only by the ops sync. Business.stripeCustomerId is left alone.

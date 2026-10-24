@@ -17,6 +17,7 @@ export type OpsAlertCode =
   | 'no_platform_account'
   | 'onboarding_stale'
   | 'follow_up_due'
+  | 'no_owner_contact'
 
 export interface OpsAlert {
   code: OpsAlertCode
@@ -52,6 +53,9 @@ export interface DeliverableAlertInput {
 /** The subset of a Business row the rules read. */
 export interface BusinessAlertInput {
   subscriptionStatus: string
+  ownerEmail: string | null
+  ownerPhone: string | null
+  forwardingNumber: string | null
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000
@@ -69,13 +73,19 @@ export function computeEngagementAlerts(
   now: Date
 ): { alerts: OpsAlert[]; health: OpsHealth } {
   const e = engagement
+  // Ignored rows (test or junk) get no alerts at all; health is 'gray'.
+  if (e.stage === 'ignored') return { alerts: [], health: 'gray' }
+
   const T = OPS_ALERT_THRESHOLDS
   const sub = e.stripeSubscriptionStatus
   const services = Array.isArray(e.services) ? e.services : []
+  // one_time clients have no subscription by agreement.
+  const oneTime = e.stage === 'one_time'
   const alerts: OpsAlert[] = []
 
   // no_subscription (red)
   if (
+    !oneTime &&
     time(e.upfrontPaidAt) !== null &&
     sub !== 'active' &&
     sub !== 'trialing' &&
@@ -127,9 +137,24 @@ export function computeEngagementAlerts(
     })
   }
 
-  // onboarding_stale (yellow)
+  // no_owner_contact (red when nobody is reachable, yellow when half is missing)
+  if (business) {
+    const noEmail = !business.ownerEmail
+    const noPhone = !business.ownerPhone && !business.forwardingNumber
+    if (noEmail && noPhone) {
+      alerts.push({ code: 'no_owner_contact', severity: 'red', message: 'Leads would notify nobody' })
+    } else if (noEmail || noPhone) {
+      alerts.push({
+        code: 'no_owner_contact',
+        severity: 'yellow',
+        message: noEmail ? 'No owner email for lead alerts' : 'No owner phone or forwarding number for lead alerts',
+      })
+    }
+  }
+
+  // onboarding_stale (yellow) — never for one_time
   const created = time(e.createdAt)
-  if ((e.stage === 'paid_upfront' || e.stage === 'onboarding') && created !== null) {
+  if (!oneTime && (e.stage === 'paid_upfront' || e.stage === 'onboarding') && created !== null) {
     const days = Math.floor((now.getTime() - created) / DAY_MS)
     if (days > T.onboardingStaleDays) {
       alerts.push({ code: 'onboarding_stale', severity: 'yellow', message: `In ${e.stage.replace('_', ' ')} for ${days} days` })
@@ -146,7 +171,7 @@ export function computeEngagementAlerts(
 }
 
 export function computeOpsHealth(alerts: OpsAlert[], stage: string): OpsHealth {
-  if (stage === 'churned') return 'gray'
+  if (stage === 'churned' || stage === 'ignored') return 'gray'
   if (alerts.some((a) => a.severity === 'red')) return 'red'
   if (alerts.some((a) => a.severity === 'yellow')) return 'yellow'
   return 'green'
