@@ -1968,6 +1968,8 @@ const isPublicApiRoute = createRouteMatcher([
 
 32. **Client site configs must use the www URL for `/api/contact`** — Client sites POST cross-origin to `/api/contact`. A `site.config.ts` pointing at the bare domain fails the CORS preflight against the 308 → silent website-lead loss. Always use `https://www.alignandacquire.com` in client site configs.
 
+    - `GET /api/verify-slug?slug=…` exists solely for AA-Template's build gate (`scripts/verify.ts` check 3), which refuses to pass until the slug in a client `site.config.ts` resolves to a real `Business` row: 200 `{ ok: true }`, 404 `{ ok: false }`, 400 `{ ok: false, error: 'bad slug' }`, `Cache-Control: no-store`, and no business data in any response. Public and unauthenticated for the same reason `/api/contact` is; do not add fields to it.
+
 33. **No alerting on webhook delivery failure** — The July 2026 outage was discovered by a client complaint, not monitoring. A dead-man's-switch check (daily "was any Conversation created in the last 24h?" → alert Jacob if not) is planned but not built.
 
 ### Owner Groups
