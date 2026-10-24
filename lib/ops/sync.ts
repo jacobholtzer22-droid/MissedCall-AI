@@ -10,7 +10,8 @@
 //   e. Database-only OpsChecks
 //   f. Deliverable.computedStatus from its checks
 //
-// Writes ONLY Engagement, Deliverable and OpsCheck. Every other table is read.
+// Writes ONLY Engagement, Deliverable, OpsCheck and, for a promotion, one
+// OpsActivity status_change row. Every other table is read.
 // After an Engagement exists the sync touches only its sync-owned fields
 // (SYNC_OWNED_FIELDS); everything else on the row is edited by hand.
 //
@@ -123,6 +124,10 @@ export interface OpsSyncSummary {
       monthlyStartedAt: string | null
       upfrontAmount: number | null
       upfrontPaidAt: string | null
+      /** Where monthlyAmount came from this run; 'none' = Stripe had nothing, the stored value stands. */
+      amountSource: 'subscriptions' | 'schedule' | 'invoice' | 'none'
+      /** Every subscription on the customer with its monthly amount. */
+      subscriptions: SubscriptionAmount[]
     })[]
     unmatchedPayingCustomers: {
       customerId: string
@@ -133,6 +138,8 @@ export interface OpsSyncSummary {
     }[]
     errors: string[]
   }
+  /** Engagements moved to 'active' because Stripe shows an active subscription. */
+  promotions: (EngRef & { from: string })[]
   checksWritten: number
   checkTally: Record<string, { passed: number; failed: number; couldNotRun: number }>
   deliverableStatusChanges: (EngRef & { type: DeliverableType; from: string; to: DeliverableStatus })[]
@@ -245,6 +252,30 @@ function inferServices(b: ServiceSource, hasWebsiteLead: Set<string>): ServiceKe
   return services
 }
 
+/** Stages an active Stripe subscription promotes to 'active'. Never the reverse. */
+const PROMOTABLE_STAGES = ['prospect', 'paid_upfront', 'onboarding']
+
+/**
+ * Promotion only: an active Stripe subscription moves prospect / paid_upfront /
+ * onboarding to 'active' and logs it. Nothing ever demotes automatically; a
+ * canceled subscription on an active client stays a red alert for Jacob.
+ * Returns the old stage when it promoted, else null.
+ */
+async function promoteIfActive(eng: Eng, dryRun: boolean): Promise<string | null> {
+  if (eng.stripeSubscriptionStatus !== 'active' || !PROMOTABLE_STAGES.includes(eng.stage)) return null
+  const from = eng.stage
+  if (!dryRun && !eng.id.startsWith('dry:')) {
+    await db.$transaction([
+      db.engagement.update({ where: { id: eng.id }, data: { stage: 'active' } }),
+      db.opsActivity.create({
+        data: { engagementId: eng.id, kind: 'status_change', body: `stage: ${from} -> active (Stripe subscription active)` },
+      }),
+    ])
+  }
+  eng.stage = 'active'
+  return from
+}
+
 /**
  * Stage for an engagement inserted this run, from what the Stripe phase
  * learned. null = Stripe found nothing decisive, keep the insert stage.
@@ -316,6 +347,7 @@ export async function runOpsSync({ dryRun }: { dryRun: boolean }): Promise<OpsSy
       unmatchedPayingCustomers: [],
       errors: [],
     },
+    promotions: [],
     checksWritten: 0,
     checkTally: {},
     deliverableStatusChanges: [],
@@ -637,6 +669,16 @@ export async function runOpsSync({ dryRun }: { dryRun: boolean }): Promise<OpsSy
     eng.stage = next
   }
 
+  // ── Promotion: any row, any age; see promoteIfActive ─────────────────────
+  for (const eng of engs) {
+    const from = await promoteIfActive(eng, dryRun)
+    if (from) {
+      summary.promotions.push({ ...ref(eng), from })
+      const entry = createdEntries.get(eng.id)
+      if (entry) entry.stage = 'active'
+    }
+  }
+
   // ── e. Checks (database only) ───────────────────────────────────────────
   const d30 = new Date(now.getTime() - 30 * DAY_MS)
   const d7 = new Date(now.getTime() - 7 * DAY_MS)
@@ -887,47 +929,149 @@ async function upcomingSchedule(stripe: Stripe, customer: string, warnings: stri
   }
 }
 
+/** One subscription's contribution to monthlyAmount, for the sync summary. */
+export type SubscriptionAmount = { id: string; status: string; live: boolean; monthly: number; notes: string[] }
+
+/** Months per interval: a year price is /12, a week price x52/12, a day price x30. */
+const MONTHS_PER_INTERVAL: Record<string, number> = { month: 1, year: 1 / 12, week: 52 / 12, day: 30 }
+
+/**
+ * Monthly dollars for one subscription: the sum over its items of
+ * unit_amount x quantity, divided by interval_count and normalised to a month,
+ * then any percent_off discount on the subscription. Tiered and metered prices
+ * cannot be priced from the subscription alone, so they count 0 and are named
+ * in `notes`; so is an amount_off discount, which is not applied.
+ */
+export function subscriptionMonthly(sub: Stripe.Subscription): { monthly: number; notes: string[] } {
+  const notes: string[] = []
+  let cents = 0
+  for (const item of sub.items.data) {
+    const p = item.price
+    if (!p.recurring) {
+      notes.push(`${p.id}: one-time price on a subscription, counted 0`)
+      continue
+    }
+    if (p.billing_scheme === 'tiered' || p.recurring.usage_type === 'metered' || p.unit_amount == null) {
+      notes.push(`${p.id}: ${p.billing_scheme === 'tiered' ? 'tiered' : 'metered'} price, counted 0`)
+      continue
+    }
+    const perMonth = MONTHS_PER_INTERVAL[p.recurring.interval]
+    if (perMonth === undefined) {
+      notes.push(`${p.id}: unknown interval ${p.recurring.interval}, counted 0`)
+      continue
+    }
+    cents += ((p.unit_amount * (item.quantity ?? 1)) / (p.recurring.interval_count || 1)) * perMonth
+  }
+  for (const d of sub.discounts ?? []) {
+    if (typeof d === 'string') {
+      notes.push(`discount ${d} not expanded, not applied`)
+      continue
+    }
+    const coupon = d.source?.coupon
+    if (!coupon || typeof coupon === 'string') {
+      notes.push(`discount ${d.id}: coupon not expanded, not applied`)
+    } else if (coupon.percent_off) {
+      cents *= 1 - coupon.percent_off / 100
+      notes.push(`${coupon.percent_off}% off (${coupon.id})`)
+    } else if (coupon.amount_off) {
+      notes.push(`amount_off ${coupon.amount_off / 100} (${coupon.id}) not applied`)
+    }
+  }
+  return { monthly: dollars(Math.round(cents)), notes }
+}
+
+/**
+ * Every subscription for the customer, discounts expanded so percent_off can
+ * be applied. A key that cannot expand coupons falls back to the plain list
+ * with a warning rather than losing the subscriptions.
+ */
+async function listSubscriptions(stripe: Stripe, customer: string, warnings: string[]): Promise<Stripe.Subscription[]> {
+  const list = (expand?: string[]) =>
+    stripe.subscriptions.list({ customer, status: 'all', limit: 100, ...(expand ? { expand } : {}) }).autoPagingToArray({ limit: 1000 })
+  try {
+    return await list(['data.discounts.source.coupon'])
+  } catch (err) {
+    if ((err as { type?: string })?.type !== 'StripePermissionError') throw err
+    warnings.push(`subscription discounts not expanded (permission error), percent_off not applied: ${err instanceof Error ? err.message : String(err)}`)
+    return list()
+  }
+}
+
+/**
+ * An open or draft invoice that bills later and belongs to no subscription
+ * (a hand-made "first month" invoice), with the future date it bills on:
+ * due_date if that is ahead, else automatically_finalizes_at.
+ */
+function upcomingInvoice(invoices: Stripe.Invoice[], now: Date): { invoice: Stripe.Invoice; at: number } | null {
+  const nowSec = Math.floor(now.getTime() / 1000)
+  const candidates = invoices
+    .filter((i) => (i.status === 'open' || i.status === 'draft') && !i.parent?.subscription_details)
+    .map((i) => {
+      const at = i.due_date && i.due_date > nowSec ? i.due_date : i.automatically_finalizes_at && i.automatically_finalizes_at > nowSec ? i.automatically_finalizes_at : null
+      return at ? { invoice: i, at } : null
+    })
+    .filter((x): x is { invoice: Stripe.Invoice; at: number } => x !== null)
+    .sort((a, b) => a.at - b.at)
+  return candidates[0] ?? null
+}
+
 /**
  * Subscription and upfront payments for the engagement's linked customer.
- * Mutates `eng` and returns the update to write, plus non-fatal warnings.
- * Stripe never clears a value: the money fields are in the update only when
- * Stripe found something.
+ * Mutates `eng` and returns the update to write, the per-subscription amounts
+ * (summary only) and non-fatal warnings. Stripe never clears a value: a money
+ * field is in the update only when Stripe found something for it.
  *
- * With no live subscription, a not_started or active subscription schedule
- * makes the status 'scheduled', and its first phase supplies monthlyStartedAt
- * and (when that phase's first price is monthly) monthlyAmount.
+ * - stripeSubscriptionStatus / Id: the highest-priority subscription (SUB_PRIORITY).
+ * - monthlyAmount: the sum over every live subscription (active, trialing,
+ *   past_due, unpaid) of subscriptionMonthly; monthlyStartedAt the earliest
+ *   live start_date.
+ * - With no live subscription, 'scheduled' comes from a not_started or active
+ *   subscription schedule (first phase start and monthly price), else from an
+ *   upcomingInvoice (its date and total).
  */
 async function stripeFieldsFor(
   stripe: Stripe,
   eng: Eng,
   now: Date
-): Promise<{ data: Prisma.EngagementUncheckedUpdateInput; warnings: string[] }> {
+): Promise<{
+  data: Prisma.EngagementUncheckedUpdateInput
+  warnings: string[]
+  subscriptions: SubscriptionAmount[]
+  amountSource: 'subscriptions' | 'schedule' | 'invoice' | 'none'
+}> {
   const warnings: string[] = []
   const customer = eng.stripeCustomerId!
   const [subs, invoices, charges] = await Promise.all([
-    stripe.subscriptions.list({ customer, status: 'all', limit: 100 }).autoPagingToArray({ limit: 1000 }),
+    listSubscriptions(stripe, customer, warnings),
     stripe.invoices.list({ customer, limit: 100 }).autoPagingToArray({ limit: 1000 }),
     stripe.charges.list({ customer, limit: 100 }).autoPagingToArray({ limit: 1000 }),
   ])
 
   const data: Prisma.EngagementUncheckedUpdateInput = { stripeSyncedAt: now }
+  let amountSource: 'subscriptions' | 'schedule' | 'invoice' | 'none' = 'none'
 
   const sub = pickSubscription(subs)
   eng.stripeSubscriptionId = sub?.id ?? null
   eng.stripeSubscriptionStatus = sub?.status ?? 'none'
   data.stripeSubscriptionId = eng.stripeSubscriptionId
   data.stripeSubscriptionStatus = eng.stripeSubscriptionStatus
-  if (sub) {
-    const price = sub.items.data[0]?.price
-    if (price?.recurring?.interval === 'month' && price.unit_amount != null) {
-      eng.monthlyAmount = data.monthlyAmount = dollars(price.unit_amount)
-    }
-    eng.monthlyStartedAt = data.monthlyStartedAt = fromUnix(sub.start_date)
-  }
 
-  if (!sub || !LIVE_SUB_STATUSES.includes(sub.status)) {
+  const subscriptions: SubscriptionAmount[] = subs.map((s) => {
+    const { monthly, notes } = subscriptionMonthly(s)
+    return { id: s.id, status: s.status, live: LIVE_SUB_STATUSES.includes(s.status), monthly, notes }
+  })
+  const live = subs.filter((s) => LIVE_SUB_STATUSES.includes(s.status))
+  if (live.length > 0) {
+    amountSource = 'subscriptions'
+    eng.monthlyAmount = data.monthlyAmount = dollars(
+      Math.round(subscriptions.filter((x) => x.live).reduce((sum, x) => sum + x.monthly * 100, 0))
+    )
+    eng.monthlyStartedAt = data.monthlyStartedAt = fromUnix(Math.min(...live.map((s) => s.start_date)))
+  } else {
     const schedule = await upcomingSchedule(stripe, customer, warnings)
+    const invoice = schedule ? null : upcomingInvoice(invoices, now)
     if (schedule) {
+      amountSource = 'schedule'
       eng.stripeSubscriptionStatus = data.stripeSubscriptionStatus = 'scheduled'
       const phase = schedule.phases[0]
       if (phase) {
@@ -943,6 +1087,11 @@ async function stripeFieldsFor(
           eng.monthlyAmount = data.monthlyAmount = dollars((price as Stripe.Price).unit_amount!)
         }
       }
+    } else if (invoice) {
+      amountSource = 'invoice'
+      eng.stripeSubscriptionStatus = data.stripeSubscriptionStatus = 'scheduled'
+      eng.monthlyStartedAt = data.monthlyStartedAt = fromUnix(invoice.at)
+      eng.monthlyAmount = data.monthlyAmount = dollars(invoice.invoice.total)
     }
   }
 
@@ -951,7 +1100,7 @@ async function stripeFieldsFor(
     eng.upfrontAmount = data.upfrontAmount = dollars(upfront.reduce((s, p) => s + p.amount, 0))
     eng.upfrontPaidAt = data.upfrontPaidAt = new Date(Math.min(...upfront.map((p) => p.at.getTime())))
   }
-  return { data, warnings }
+  return { data, warnings, subscriptions, amountSource }
 }
 
 async function syncStripe(
@@ -998,7 +1147,7 @@ async function syncStripe(
   await eachLimited(engs.filter((e) => e.stripeCustomerId), STRIPE_CONCURRENCY, async (eng) => {
     const customer = eng.stripeCustomerId!
     try {
-      const { data, warnings } = await stripeFieldsFor(stripe, eng, now)
+      const { data, warnings, subscriptions, amountSource } = await stripeFieldsFor(stripe, eng, now)
       for (const w of warnings) summary.stripe.errors.push(`${eng.displayName} (${customer}): ${w}`)
 
       if (!dryRun && !eng.id.startsWith('dry:')) {
@@ -1013,6 +1162,8 @@ async function syncStripe(
         monthlyStartedAt: iso(eng.monthlyStartedAt),
         upfrontAmount: eng.upfrontAmount,
         upfrontPaidAt: iso(eng.upfrontPaidAt),
+        amountSource,
+        subscriptions,
       })
     } catch (err) {
       summary.stripe.errors.push(`${eng.displayName} (${customer}): ${err instanceof Error ? err.message : String(err)}`)
@@ -1118,7 +1269,15 @@ export async function listUnmatchedStripeCustomers(): Promise<UnmatchedPayingCus
 }
 
 export type StripeEngagementResult =
-  | { ok: true; customerId: string; matchedOn: 'email' | 'phone' | 'linked'; subscriptionStatus: string; warnings: string[] }
+  | {
+      ok: true
+      customerId: string
+      matchedOn: 'email' | 'phone' | 'linked'
+      subscriptionStatus: string
+      warnings: string[]
+      /** The stage it was promoted from, when an active subscription promoted it. */
+      promotedFrom: string | null
+    }
   | { ok: false; reason: string }
 
 /**
@@ -1162,7 +1321,9 @@ export async function syncStripeForEngagement(engagementId: string): Promise<Str
 
   const { data, warnings } = await stripeFieldsFor(stripe, eng, now)
   await db.engagement.update({ where: { id: eng.id }, data })
+  const promotedFrom = await promoteIfActive(eng, false)
   return {
+    promotedFrom,
     ok: true,
     customerId: eng.stripeCustomerId!,
     matchedOn,

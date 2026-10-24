@@ -100,6 +100,7 @@ export const DELIVERABLE_STATUS_LABELS: Record<DeliverableStatus, string> = {
   live: 'Live',
   in_progress: 'In progress',
   blocked: 'Blocked',
+  paused: 'Paused',
   not_started: 'Not started',
   unknown: 'Unknown',
 }
@@ -108,6 +109,7 @@ const CHIP_COLORS: Record<DeliverableStatus, string> = {
   live: 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30',
   in_progress: 'bg-amber-500/15 text-amber-300 border-amber-500/30',
   blocked: 'bg-red-500/15 text-red-300 border-red-500/40',
+  paused: 'bg-slate-500/20 text-slate-300 border-slate-400/40',
   not_started: 'bg-gray-700/60 text-gray-300 border-gray-600',
   unknown: 'bg-transparent text-gray-400 border-gray-600 border-dashed',
 }
@@ -172,6 +174,46 @@ export function toLocalInput(iso: string | null): string {
   const d = new Date(iso)
   const pad = (n: number) => String(n).padStart(2, '0')
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+
+// ── Stripe subscription status ─────────────────────────────────────────────
+// Like StatusPill in ../ui.tsx, plus the Ops-only values: 'scheduled' (billing
+// set up to start later), 'none', and the rarer Stripe states.
+
+const STRIPE_STATUS_COLORS: Record<string, string> = {
+  active: 'bg-green-500/10 text-green-400 border-green-500/20',
+  trialing: 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20',
+  scheduled: 'bg-sky-500/10 text-sky-300 border-sky-500/30',
+  past_due: 'bg-orange-500/10 text-orange-400 border-orange-500/20',
+  unpaid: 'bg-red-500/10 text-red-400 border-red-500/30',
+  paused: 'bg-slate-500/15 text-slate-300 border-slate-400/30',
+  canceled: 'bg-gray-500/10 text-gray-400 border-gray-500/20',
+  none: 'bg-transparent text-gray-500 border-gray-700 border-dashed',
+}
+
+const STRIPE_STATUS_LABELS: Record<string, string> = {
+  active: 'Active',
+  trialing: 'Trialing',
+  scheduled: 'Scheduled',
+  past_due: 'Past due',
+  unpaid: 'Unpaid',
+  paused: 'Paused',
+  canceled: 'Canceled',
+  none: 'No subscription',
+  incomplete: 'Incomplete',
+  incomplete_expired: 'Expired',
+}
+
+export function StripeStatusPill({ status }: { status: string }) {
+  return (
+    <span
+      className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs border whitespace-nowrap ${
+        STRIPE_STATUS_COLORS[status] ?? STRIPE_STATUS_COLORS.canceled
+      }`}
+    >
+      {STRIPE_STATUS_LABELS[status] ?? status}
+    </span>
+  )
 }
 
 export const ALERT_TONE = {
