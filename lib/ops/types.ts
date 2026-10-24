@@ -55,6 +55,11 @@ export const OPS_CHECK_KEYS = [
   'ads.campaign_enabled',
   'ads.geo_presence_only',
   'ads.spend_7d',
+  'missedcall.activity_30d',
+  'website.business_row',
+  'website.real_lead_30d',
+  'ads.customer_linked',
+  'ads.snapshot_7d',
 ] as const
 export type OpsCheckKey = (typeof OPS_CHECK_KEYS)[number]
 
