@@ -89,6 +89,7 @@ export function computeEngagementAlerts(
     time(e.upfrontPaidAt) !== null &&
     sub !== 'active' &&
     sub !== 'trialing' &&
+    sub !== 'scheduled' && // a subscription is set up to start later
     e.stage !== 'churned' &&
     e.stage !== 'paused'
   ) {

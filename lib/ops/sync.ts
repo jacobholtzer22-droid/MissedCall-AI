@@ -266,6 +266,31 @@ export function deriveDeliverableStatus(results: { passed: boolean | null }[]): 
   return 'in_progress'
 }
 
+type EngagementRow = Prisma.EngagementGetPayload<Record<string, never>>
+
+/** A pre-existing row as the sync's in-memory engagement. */
+function toEng(e: EngagementRow): Eng {
+  return {
+    id: e.id,
+    businessId: e.businessId,
+    pipelinePersonId: e.pipelinePersonId,
+    displayName: e.displayName,
+    email: e.email,
+    phone: e.phone,
+    stage: e.stage,
+    services: asServices(e.services),
+    createdAt: e.createdAt,
+    stripeCustomerId: e.stripeCustomerId,
+    stripeSubscriptionId: e.stripeSubscriptionId,
+    stripeSubscriptionStatus: e.stripeSubscriptionStatus,
+    upfrontPaidAt: e.upfrontPaidAt,
+    upfrontAmount: e.upfrontAmount,
+    monthlyAmount: e.monthlyAmount,
+    monthlyStartedAt: e.monthlyStartedAt,
+    createdThisRun: false,
+  }
+}
+
 // ── Sync ────────────────────────────────────────────────────────────────────
 
 export async function runOpsSync({ dryRun }: { dryRun: boolean }): Promise<OpsSyncSummary> {
@@ -303,25 +328,7 @@ export async function runOpsSync({ dryRun }: { dryRun: boolean }): Promise<OpsSy
   if (!marketing) summary.notes.push('No marketing business configured: no Business row is excluded from phase b.')
 
   const existing = await db.engagement.findMany({ include: { deliverables: { include: { checks: true } } } })
-  const engs: Eng[] = existing.map((e) => ({
-    id: e.id,
-    businessId: e.businessId,
-    pipelinePersonId: e.pipelinePersonId,
-    displayName: e.displayName,
-    email: e.email,
-    phone: e.phone,
-    stage: e.stage,
-    services: asServices(e.services),
-    createdAt: e.createdAt,
-    stripeCustomerId: e.stripeCustomerId,
-    stripeSubscriptionId: e.stripeSubscriptionId,
-    stripeSubscriptionStatus: e.stripeSubscriptionStatus,
-    upfrontPaidAt: e.upfrontPaidAt,
-    upfrontAmount: e.upfrontAmount,
-    monthlyAmount: e.monthlyAmount,
-    monthlyStartedAt: e.monthlyStartedAt,
-    createdThisRun: false,
-  }))
+  const engs: Eng[] = existing.map(toEng)
   const createdEntries = new Map<string, OpsSyncSummary['engagementsCreated'][number]>()
   const dels: Del[] = existing.flatMap((e) =>
     e.deliverables.map((d) => ({
@@ -829,6 +836,124 @@ function pickSubscription(subs: Stripe.Subscription[]): Stripe.Subscription | nu
   return [...subs].sort(newest)[0] ?? null // incomplete / paused only
 }
 
+async function loadCustomers(stripe: Stripe): Promise<Stripe.Customer[]> {
+  return (await stripe.customers.list({ limit: 100 }).autoPagingToArray({ limit: 10000 })).filter(
+    (c) => !(c as Stripe.Customer & { deleted?: boolean }).deleted
+  )
+}
+
+/** Email first, then phone. One unclaimed hit is a match; anything else carries the reason. */
+function decideCustomerMatch(
+  eng: Pick<Eng, 'email' | 'phone'>,
+  customers: Stripe.Customer[],
+  taken: Set<string>
+): { customerId: string; on: 'email' | 'phone' } | { reason: string } {
+  const email = emailKey(eng.email)
+  const phone = phoneKey(eng.phone)
+  if (!email && !phone) return { reason: 'no email or phone on the engagement' }
+  const byEmail = email ? customers.filter((c) => emailKey(c.email) === email) : []
+  const byPhone = phone ? customers.filter((c) => phoneKey(c.phone) === phone) : []
+  const [hits, on] = byEmail.length > 0 ? [byEmail, 'email' as const] : [byPhone, 'phone' as const]
+  if (hits.length === 0) return { reason: 'no Stripe customer with this email or phone' }
+  if (hits.length > 1) return { reason: `${hits.length} Stripe customers share this ${on}: ${hits.map((c) => c.id).join(', ')}` }
+  if (taken.has(hits[0].id)) return { reason: `${hits[0].id} is already linked to another engagement` }
+  return { customerId: hits[0].id, on }
+}
+
+/** A subscription in one of these states is live; anything else lets a schedule speak. */
+const LIVE_SUB_STATUSES: Stripe.Subscription.Status[] = ['active', 'trialing', 'past_due', 'unpaid']
+
+/**
+ * The customer's upcoming or running subscription schedule (status not_started
+ * or active), earliest first phase first. A failure here is recorded in
+ * `warnings` and treated as "no schedule": it never fails the customer or the
+ * run (a restricted key without Subscription Schedules read lands here).
+ */
+async function upcomingSchedule(stripe: Stripe, customer: string, warnings: string[]): Promise<Stripe.SubscriptionSchedule | null> {
+  try {
+    const schedules = await stripe.subscriptionSchedules
+      .list({ customer, limit: 100, expand: ['data.phases.items.price'] })
+      .autoPagingToArray({ limit: 1000 })
+    const firstStart = (s: Stripe.SubscriptionSchedule) => s.phases[0]?.start_date ?? Number.MAX_SAFE_INTEGER
+    return (
+      schedules
+        .filter((s) => s.status === 'not_started' || s.status === 'active')
+        .sort((a, b) => firstStart(a) - firstStart(b))[0] ?? null
+    )
+  } catch (err) {
+    const kind = (err as { type?: string })?.type === 'StripePermissionError' ? 'permission error' : 'error'
+    warnings.push(`subscription schedules skipped (${kind}): ${err instanceof Error ? err.message : String(err)}`)
+    return null
+  }
+}
+
+/**
+ * Subscription and upfront payments for the engagement's linked customer.
+ * Mutates `eng` and returns the update to write, plus non-fatal warnings.
+ * Stripe never clears a value: the money fields are in the update only when
+ * Stripe found something.
+ *
+ * With no live subscription, a not_started or active subscription schedule
+ * makes the status 'scheduled', and its first phase supplies monthlyStartedAt
+ * and (when that phase's first price is monthly) monthlyAmount.
+ */
+async function stripeFieldsFor(
+  stripe: Stripe,
+  eng: Eng,
+  now: Date
+): Promise<{ data: Prisma.EngagementUncheckedUpdateInput; warnings: string[] }> {
+  const warnings: string[] = []
+  const customer = eng.stripeCustomerId!
+  const [subs, invoices, charges] = await Promise.all([
+    stripe.subscriptions.list({ customer, status: 'all', limit: 100 }).autoPagingToArray({ limit: 1000 }),
+    stripe.invoices.list({ customer, limit: 100 }).autoPagingToArray({ limit: 1000 }),
+    stripe.charges.list({ customer, limit: 100 }).autoPagingToArray({ limit: 1000 }),
+  ])
+
+  const data: Prisma.EngagementUncheckedUpdateInput = { stripeSyncedAt: now }
+
+  const sub = pickSubscription(subs)
+  eng.stripeSubscriptionId = sub?.id ?? null
+  eng.stripeSubscriptionStatus = sub?.status ?? 'none'
+  data.stripeSubscriptionId = eng.stripeSubscriptionId
+  data.stripeSubscriptionStatus = eng.stripeSubscriptionStatus
+  if (sub) {
+    const price = sub.items.data[0]?.price
+    if (price?.recurring?.interval === 'month' && price.unit_amount != null) {
+      eng.monthlyAmount = data.monthlyAmount = dollars(price.unit_amount)
+    }
+    eng.monthlyStartedAt = data.monthlyStartedAt = fromUnix(sub.start_date)
+  }
+
+  if (!sub || !LIVE_SUB_STATUSES.includes(sub.status)) {
+    const schedule = await upcomingSchedule(stripe, customer, warnings)
+    if (schedule) {
+      eng.stripeSubscriptionStatus = data.stripeSubscriptionStatus = 'scheduled'
+      const phase = schedule.phases[0]
+      if (phase) {
+        eng.monthlyStartedAt = data.monthlyStartedAt = fromUnix(phase.start_date)
+        const price = phase.items[0]?.price
+        if (
+          price &&
+          typeof price === 'object' &&
+          !(price as { deleted?: boolean }).deleted &&
+          (price as Stripe.Price).recurring?.interval === 'month' &&
+          (price as Stripe.Price).unit_amount != null
+        ) {
+          eng.monthlyAmount = data.monthlyAmount = dollars((price as Stripe.Price).unit_amount!)
+        }
+      }
+    }
+  }
+
+  const upfront = await upfrontPayments(stripe, invoices, charges)
+  if (upfront.length > 0) {
+    eng.upfrontAmount = data.upfrontAmount = dollars(upfront.reduce((s, p) => s + p.amount, 0))
+    eng.upfrontPaidAt = data.upfrontPaidAt = new Date(Math.min(...upfront.map((p) => p.at.getTime())))
+  }
+  return { data, warnings }
+}
+
 async function syncStripe(
   stripe: Stripe,
   engs: Eng[],
@@ -837,9 +962,7 @@ async function syncStripe(
   now: Date,
   ref: (e: Eng) => EngRef
 ) {
-  const customers = (await stripe.customers.list({ limit: 100 }).autoPagingToArray({ limit: 10000 })).filter(
-    (c) => !(c as Stripe.Customer & { deleted?: boolean }).deleted
-  )
+  const customers = await loadCustomers(stripe)
   summary.stripe.customersLoaded = customers.length
   const taken = new Set(engs.map((e) => e.stripeCustomerId).filter((id): id is string => Boolean(id)))
 
@@ -850,27 +973,9 @@ async function syncStripe(
     // Ignored (test/junk) rows never claim a customer: stripeCustomerId is
     // unique, and a junk row holding one would block the real client.
     if (eng.stripeCustomerId || eng.stage === 'prospect' || eng.stage === 'ignored') continue
-    const email = emailKey(eng.email)
-    const phone = phoneKey(eng.phone)
-    if (!email && !phone) {
-      summary.stripe.unmatched.push({ ...ref(eng), reason: 'no email or phone on the engagement' })
-      continue
-    }
-    const byEmail = email ? customers.filter((c) => emailKey(c.email) === email) : []
-    const byPhone = phone ? customers.filter((c) => phoneKey(c.phone) === phone) : []
-    const [hits, on] = byEmail.length > 0 ? [byEmail, 'email' as const] : [byPhone, 'phone' as const]
-    if (hits.length === 0) {
-      summary.stripe.unmatched.push({ ...ref(eng), reason: 'no Stripe customer with this email or phone' })
-    } else if (hits.length > 1) {
-      summary.stripe.unmatched.push({
-        ...ref(eng),
-        reason: `${hits.length} Stripe customers share this ${on}: ${hits.map((c) => c.id).join(', ')}`,
-      })
-    } else if (taken.has(hits[0].id)) {
-      summary.stripe.unmatched.push({ ...ref(eng), reason: `${hits[0].id} is already linked to another engagement` })
-    } else {
-      proposals.push({ eng, customerId: hits[0].id, on })
-    }
+    const decision = decideCustomerMatch(eng, customers, taken)
+    if ('reason' in decision) summary.stripe.unmatched.push({ ...ref(eng), reason: decision.reason })
+    else proposals.push({ eng, customerId: decision.customerId, on: decision.on })
   }
   for (const p of proposals) {
     const rivals = proposals.filter((q) => q.customerId === p.customerId)
@@ -893,34 +998,8 @@ async function syncStripe(
   await eachLimited(engs.filter((e) => e.stripeCustomerId), STRIPE_CONCURRENCY, async (eng) => {
     const customer = eng.stripeCustomerId!
     try {
-      const [subs, invoices, charges] = await Promise.all([
-        stripe.subscriptions.list({ customer, status: 'all', limit: 100 }).autoPagingToArray({ limit: 1000 }),
-        stripe.invoices.list({ customer, limit: 100 }).autoPagingToArray({ limit: 1000 }),
-        stripe.charges.list({ customer, limit: 100 }).autoPagingToArray({ limit: 1000 }),
-      ])
-
-      // Stripe never clears a value: the money fields are written only when
-      // Stripe found something, otherwise whatever create set stays.
-      const data: Prisma.EngagementUncheckedUpdateInput = { stripeSyncedAt: now }
-
-      const sub = pickSubscription(subs)
-      eng.stripeSubscriptionId = sub?.id ?? null
-      eng.stripeSubscriptionStatus = sub?.status ?? 'none'
-      data.stripeSubscriptionId = eng.stripeSubscriptionId
-      data.stripeSubscriptionStatus = eng.stripeSubscriptionStatus
-      if (sub) {
-        const price = sub.items.data[0]?.price
-        if (price?.recurring?.interval === 'month' && price.unit_amount != null) {
-          eng.monthlyAmount = data.monthlyAmount = dollars(price.unit_amount)
-        }
-        eng.monthlyStartedAt = data.monthlyStartedAt = fromUnix(sub.start_date)
-      }
-
-      const upfront = await upfrontPayments(stripe, invoices, charges)
-      if (upfront.length > 0) {
-        eng.upfrontAmount = data.upfrontAmount = dollars(upfront.reduce((s, p) => s + p.amount, 0))
-        eng.upfrontPaidAt = data.upfrontPaidAt = new Date(Math.min(...upfront.map((p) => p.at.getTime())))
-      }
+      const { data, warnings } = await stripeFieldsFor(stripe, eng, now)
+      for (const w of warnings) summary.stripe.errors.push(`${eng.displayName} (${customer}): ${w}`)
 
       if (!dryRun && !eng.id.startsWith('dry:')) {
         await db.engagement.update({ where: { id: eng.id }, data })
@@ -929,7 +1008,7 @@ async function syncStripe(
         ...ref(eng),
         customerId: customer,
         subscriptionId: eng.stripeSubscriptionId,
-        subscriptionStatus: eng.stripeSubscriptionStatus,
+        subscriptionStatus: eng.stripeSubscriptionStatus ?? 'none', // always set by stripeFieldsFor
         monthlyAmount: eng.monthlyAmount,
         monthlyStartedAt: iso(eng.monthlyStartedAt),
         upfrontAmount: eng.upfrontAmount,
@@ -941,9 +1020,21 @@ async function syncStripe(
   })
 
   // Paying customers no engagement points at, last UNPAID_LOOKBACK_DAYS days.
-  // Reported only; 1C adds the link action.
+  // Reported only; /admin/ops links or creates them.
+  const linked = new Set(engs.map((e) => e.stripeCustomerId).filter((id): id is string => Boolean(id)))
+  summary.stripe.unmatchedPayingCustomers = await unmatchedPayingCustomers(stripe, customers, linked, now)
+}
+
+export type UnmatchedPayingCustomer = OpsSyncSummary['stripe']['unmatchedPayingCustomers'][number]
+
+/** Customers with a succeeded charge or paid invoice in the window that no engagement points at. */
+async function unmatchedPayingCustomers(
+  stripe: Stripe,
+  customers: Stripe.Customer[],
+  linked: Set<string>,
+  now: Date
+): Promise<UnmatchedPayingCustomer[]> {
   const cutoff = Math.floor((now.getTime() - UNPAID_LOOKBACK_DAYS * DAY_MS) / 1000)
-  const linked = new Set(engs.map((e) => e.stripeCustomerId).filter(Boolean))
   const [recentCharges, recentInvoices] = await Promise.all([
     stripe.charges.list({ created: { gte: cutoff }, limit: 100 }).autoPagingToArray({ limit: 10000 }),
     stripe.invoices.list({ status: 'paid', created: { gte: cutoff }, limit: 100 }).autoPagingToArray({ limit: 10000 }),
@@ -968,7 +1059,7 @@ async function syncStripe(
     add(idOf(ch.customer)!, ch.created, ch.amount - ch.amount_refunded)
   }
   const byId = new Map(customers.map((c) => [c.id, c]))
-  summary.stripe.unmatchedPayingCustomers = Array.from(totals.entries())
+  return Array.from(totals.entries())
     .map(([customerId, t]) => ({
       customerId,
       name: byId.get(customerId)?.name ?? null,
@@ -977,4 +1068,105 @@ async function syncStripe(
       total: dollars(t.cents),
     }))
     .sort((a, b) => b.lastPaymentAt.localeCompare(a.lastPaymentAt))
+}
+
+// ── Single-engagement entry points (/admin/ops) ─────────────────────────────
+// The same rules as the full run, applied to one row right after a hand edit.
+
+/**
+ * Create any missing Deliverable for these services. Create only, never
+ * delete, with the same sync-owned evidence phase c sets. Returns the types
+ * it created.
+ */
+export async function ensureDeliverables(engagementId: string, services: ServiceKey[]): Promise<DeliverableType[]> {
+  const eng = await db.engagement.findUnique({
+    where: { id: engagementId },
+    select: {
+      deliverables: { select: { type: true } },
+      business: { select: { telnyxPhoneNumber: true, googleAdsCustomerId: true } },
+    },
+  })
+  if (!eng) return []
+  const have = new Set(eng.deliverables.map((d) => d.type))
+  const known: Partial<Record<DeliverableType, Record<string, unknown>>> = {}
+  if (eng.business?.telnyxPhoneNumber) known.missedcall = { telnyxNumber: eng.business.telnyxPhoneNumber }
+  if (eng.business?.googleAdsCustomerId) known.ads = { adsCustomerId: eng.business.googleAdsCustomerId }
+
+  const missing = Array.from(new Set(services.flatMap((s) => DELIVERABLE_TYPES_FOR_SERVICE[s] ?? []))).filter(
+    (t) => !have.has(t)
+  )
+  await eachLimited(missing, DB_CONCURRENCY, async (type) => {
+    await db.deliverable.upsert({
+      where: { engagementId_type: { engagementId, type } },
+      create: { engagementId, type, evidence: (known[type] ?? {}) as Prisma.InputJsonObject },
+      update: {},
+    })
+  })
+  return missing
+}
+
+/** The sync summary's unmatched paying customers, computed on demand. null = no Stripe key. */
+export async function listUnmatchedStripeCustomers(): Promise<UnmatchedPayingCustomer[] | null> {
+  const stripe = getStripe()
+  if (!stripe) return null
+  const [customers, rows] = await Promise.all([
+    loadCustomers(stripe),
+    db.engagement.findMany({ where: { stripeCustomerId: { not: null } }, select: { stripeCustomerId: true } }),
+  ])
+  const linked = new Set(rows.map((r) => r.stripeCustomerId!))
+  return unmatchedPayingCustomers(stripe, customers, linked, new Date())
+}
+
+export type StripeEngagementResult =
+  | { ok: true; customerId: string; matchedOn: 'email' | 'phone' | 'linked'; subscriptionStatus: string; warnings: string[] }
+  | { ok: false; reason: string }
+
+/**
+ * Stripe match (when the row has no customer yet) and update for one
+ * engagement: the sync's per-engagement logic, read only against Stripe. A
+ * match that another unlinked engagement would also make is refused, exactly
+ * as the full run refuses it.
+ */
+export async function syncStripeForEngagement(engagementId: string): Promise<StripeEngagementResult> {
+  const stripe = getStripe()
+  if (!stripe) return { ok: false, reason: 'STRIPE_SECRET_KEY is not set' }
+  const row = await db.engagement.findUnique({ where: { id: engagementId } })
+  if (!row) return { ok: false, reason: 'engagement not found' }
+  const eng = toEng(row)
+  const now = new Date()
+  let matchedOn: 'email' | 'phone' | 'linked' = 'linked'
+
+  if (!eng.stripeCustomerId) {
+    if (eng.stage === 'prospect' || eng.stage === 'ignored') return { ok: false, reason: `stage ${eng.stage} is not matched` }
+    const [customers, all] = await Promise.all([loadCustomers(stripe), db.engagement.findMany()])
+    const taken = new Set(all.map((e) => e.stripeCustomerId).filter((id): id is string => Boolean(id)))
+    const decision = decideCustomerMatch(eng, customers, taken)
+    if ('reason' in decision) return { ok: false, reason: decision.reason }
+    const rivals = all
+      .filter((e) => e.id !== eng.id && !e.stripeCustomerId && e.stage !== 'prospect' && e.stage !== 'ignored')
+      .filter((e) => {
+        const d = decideCustomerMatch(e, customers, taken)
+        return 'customerId' in d && d.customerId === decision.customerId
+      })
+    if (rivals.length > 0) {
+      return { ok: false, reason: `${decision.customerId} also matches ${rivals.map((e) => e.displayName).join(', ')}` }
+    }
+    const claimed = await db.engagement.updateMany({
+      where: { id: eng.id, stripeCustomerId: null },
+      data: { stripeCustomerId: decision.customerId },
+    })
+    if (claimed.count === 0) return { ok: false, reason: 'engagement was linked by someone else meanwhile' }
+    eng.stripeCustomerId = decision.customerId
+    matchedOn = decision.on
+  }
+
+  const { data, warnings } = await stripeFieldsFor(stripe, eng, now)
+  await db.engagement.update({ where: { id: eng.id }, data })
+  return {
+    ok: true,
+    customerId: eng.stripeCustomerId!,
+    matchedOn,
+    subscriptionStatus: eng.stripeSubscriptionStatus ?? 'none',
+    warnings,
+  }
 }
