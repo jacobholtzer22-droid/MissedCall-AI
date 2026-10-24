@@ -1,5 +1,5 @@
 // ===========================================
-// PATCH /api/admin/ops/deliverables/[id] — manual status and evidence
+// PATCH /api/admin/ops/deliverables/[id] — step, manual status and evidence
 // ===========================================
 // Body (any of):
 //   manualStatus      DeliverableStatus, or null to clear. Stamps manualStatusAt
@@ -9,6 +9,12 @@
 //                     object, never replacing it. null removes that one key.
 //                     Only EVIDENCE_KEYS; the sync-owned keys (telnyxNumber,
 //                     adsCustomerId) are not editable here.
+//   step              a key from STEP_CATALOG for this deliverable's type, or
+//                     null to clear. Stamps stepUpdatedAt and sets waitingOn to
+//                     the step's owner (null for 'none'), unless waitingOn is
+//                     also sent.
+//   waitingOn         jacob | client | vendor | null: override who it waits on.
+//   waitingNote       string or null: the specifics ("phone plan change").
 // computedStatus is never written here; that is the sync's.
 
 import { NextResponse } from 'next/server'
@@ -17,6 +23,7 @@ import { db } from '@/lib/db'
 import { requireAdmin } from '@/lib/pipeline-server'
 import { DELIVERABLE_STATUSES } from '@/lib/ops/types'
 import { EVIDENCE_KEYS } from '@/lib/ops/evidence'
+import { STEP_CATALOG, WAITING_ON, defaultWaitingOn, stepFor } from '@/lib/ops/steps'
 import { BadRequest, nullableString, oneOf, readJsonObject, rejectUnknownKeys } from '@/lib/ops/validate'
 
 export const dynamic = 'force-dynamic'
@@ -28,9 +35,9 @@ export async function PATCH(request: Request, context: { params: { id: string } 
 
   try {
     const body = readJsonObject(await request.json())
-    rejectUnknownKeys(body, ['manualStatus', 'manualStatusNote', 'evidence'])
+    rejectUnknownKeys(body, ['manualStatus', 'manualStatusNote', 'evidence', 'step', 'waitingOn', 'waitingNote'])
 
-    const current = await db.deliverable.findUnique({ where: { id }, select: { evidence: true } })
+    const current = await db.deliverable.findUnique({ where: { id }, select: { evidence: true, type: true } })
     if (!current) return NextResponse.json({ error: 'Deliverable not found' }, { status: 404 })
 
     const data: Prisma.DeliverableUpdateInput = {}
@@ -40,6 +47,18 @@ export async function PATCH(request: Request, context: { params: { id: string } 
       data.manualStatusAt = status ? new Date() : null
     }
     if ('manualStatusNote' in body) data.manualStatusNote = nullableString(body.manualStatusNote, 'manualStatusNote', 500)
+    if ('step' in body) {
+      const key = body.step === null ? null : nullableString(body.step, 'step', 64)
+      if (key !== null && !stepFor(current.type, key)) {
+        const valid = (STEP_CATALOG[current.type as keyof typeof STEP_CATALOG] ?? []).map((st) => st.key)
+        throw new BadRequest(`step "${key}" is not a ${current.type} step. Valid: ${valid.join(', ')}`)
+      }
+      data.step = key
+      data.stepUpdatedAt = new Date()
+      if (!('waitingOn' in body)) data.waitingOn = defaultWaitingOn(current.type, key)
+    }
+    if ('waitingOn' in body) data.waitingOn = body.waitingOn === null ? null : oneOf(body.waitingOn, WAITING_ON, 'waitingOn')
+    if ('waitingNote' in body) data.waitingNote = nullableString(body.waitingNote, 'waitingNote', 500)
     if ('evidence' in body) {
       const patch = readJsonObject(body.evidence)
       rejectUnknownKeys(patch, EVIDENCE_KEYS, 'evidence key')

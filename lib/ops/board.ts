@@ -17,6 +17,7 @@ import { getMarketingBusiness } from '@/lib/marketing-funnel'
 import { computeEngagementAlerts, type OpsAlert, type OpsHealth } from '@/lib/ops/alerts'
 import type { DeliverableStatus } from '@/lib/ops/types'
 import { isVerifiedMrr, mrrBucketOf } from '@/lib/ops/money'
+import { effectiveStatusOf, stepFor, type StepOwner } from '@/lib/ops/steps'
 
 /** Ops runs on Jacob's day: "today" and "this month" are America/Detroit. */
 export const OPS_TIMEZONE = 'America/Detroit'
@@ -32,8 +33,18 @@ export type BoardDeliverable = {
   manualStatus: string | null
   manualStatusNote: string | null
   manualStatusAt: string | null
-  /** manualStatus ?? computedStatus: a hand-set status wins until it is cleared. */
+  /** effectiveStatusOf (lib/ops/steps.ts): manualStatus, else the step, else computedStatus. */
   effectiveStatus: DeliverableStatus
+  /** Waiting-on step (lib/ops/steps.ts). */
+  step: string | null
+  stepLabel: string | null
+  /** Catalog owner of the step: jacob | client | vendor | none. */
+  stepOwner: StepOwner | null
+  stepTerminal: boolean
+  /** Who it waits on now: the step's owner unless overridden by hand. */
+  waitingOn: string | null
+  waitingNote: string | null
+  stepUpdatedAt: string | null
   evidence: Record<string, unknown>
   checks: BoardCheck[]
 }
@@ -234,7 +245,14 @@ export async function getOpsBoard(): Promise<OpsBoard> {
       manualStatus: d.manualStatus,
       manualStatusNote: d.manualStatusNote,
       manualStatusAt: iso(d.manualStatusAt),
-      effectiveStatus: (d.manualStatus ?? d.computedStatus) as DeliverableStatus,
+      effectiveStatus: effectiveStatusOf(d),
+      step: d.step,
+      stepLabel: stepFor(d.type, d.step)?.label ?? null,
+      stepOwner: stepFor(d.type, d.step)?.owner ?? null,
+      stepTerminal: stepFor(d.type, d.step)?.terminal ?? false,
+      waitingOn: d.waitingOn,
+      waitingNote: d.waitingNote,
+      stepUpdatedAt: iso(d.stepUpdatedAt),
       evidence: asObject(d.evidence),
       checks: d.checks
         .map((c) => ({ key: c.key, passed: c.passed, detail: c.detail, lastRunAt: c.lastRunAt.toISOString() }))

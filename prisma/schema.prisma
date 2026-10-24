@@ -1171,6 +1171,15 @@ model Deliverable {
   manualStatusNote String?
   manualStatusAt   DateTime?
 
+  // Where the work stands: a step key from lib/ops/steps.ts STEP_CATALOG for
+  // this type, and who it is waiting on (jacob | client | vendor; null once the
+  // step is terminal). waitingOn defaults to the step's owner and can be
+  // overridden by hand. waitingNote is the specifics ("phone plan change").
+  step          String?
+  waitingOn     String?
+  waitingNote   String?
+  stepUpdatedAt DateTime?
+
   // Pointers the checks and agents read, keyed by type:
   // website: repoUrl, vercelProjectId, branch, previewUrl, productionUrl
   // domain: domain, registrar

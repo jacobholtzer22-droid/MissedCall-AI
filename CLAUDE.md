@@ -2890,9 +2890,10 @@ alerts, health and totals are computed only on the server.
 | `GET /api/admin/ops/stripe/unmatched` | `listUnmatchedStripeCustomers()`, cached 10 min per instance; `?refresh=1` skips the cache. |
 | `POST /api/admin/ops/sync` | The Sync button (same `runOpsSync`). |
 
-- **effectiveStatus = `manualStatus ?? computedStatus`.** A hand-set status wins
-  everywhere in the UI until it is cleared; the sync keeps updating
-  `computedStatus` underneath.
+- **effectiveStatus** (`effectiveStatusOf` in `lib/ops/steps.ts`): `manualStatus` if
+  set; else `live` when the step is terminal (except `paused_by_client` → `paused`);
+  else `in_progress` when any step is set; else `computedStatus`. A hand-set status
+  wins until cleared; the sync keeps updating `computedStatus` underneath.
 - **MRR is split Verified / Projected** (`lib/ops/money.ts`, shared by the board totals
   and the Money tab). Verified = `stripeSubscriptionStatus` `active` or `past_due`;
   Projected = every other row with a `monthlyAmount`. Bucket by stage (active →
@@ -2937,3 +2938,25 @@ alerts, health and totals are computed only on the server.
   (`StripeStatusPill` in `app/admin/ops/opsUi.tsx`).
 - `scripts/ops-apply-2026-10-23.ts` is the one-off standings apply (`--dry` first;
   idempotent, never undoes a promotion). Kept for the record; do not re-run blind.
+
+### Waiting-on steps (Oct 24 2026)
+
+Every Deliverable can sit at a **step** from `STEP_CATALOG` in `lib/ops/steps.ts`
+(fixed, ordered, per type). Each step has an owner: `jacob`, `client`, `vendor`, or
+`none` once done; `terminal` marks the end states (`live`, `running`,
+`paused_by_client`). Columns added by `scripts/sql/2026-10-24_add_deliverable_steps.sql`
+(applied by hand): `step`, `waitingOn`, `waitingNote`, `stepUpdatedAt`.
+
+- `PATCH /api/admin/ops/deliverables/[id]` accepts `step` (must be in the catalog for
+  that type; null clears), `waitingOn` (jacob | client | vendor | null, an override)
+  and `waitingNote`. Setting `step` stamps `stepUpdatedAt` and sets `waitingOn` to the
+  step's owner (null for `none`) unless `waitingOn` is sent too.
+- The board returns `step`, `stepLabel`, `stepOwner`, `stepTerminal`, `waitingOn`,
+  `waitingNote`, `stepUpdatedAt` per deliverable.
+- Today: **Problems** (red alerts), then **Waiting on you / clients / vendors**
+  (deliverables by `waitingOn`, oldest `stepUpdatedAt` first), then follow-ups,
+  booked today, yellow alerts.
+- Chips are coloured by step owner: you orange, client blue, vendor grey, done
+  green (`paused_by_client` keeps the paused slate). A `manualStatus` still wins.
+- The sync never reads or writes steps. `scripts/ops-apply-2026-10-24-steps.ts` is the
+  one-off seed (`--dry` first).

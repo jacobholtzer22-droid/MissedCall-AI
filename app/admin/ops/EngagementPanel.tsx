@@ -13,6 +13,7 @@ import type { BoardActivity, BoardDeliverable, BoardEngagement } from '@/lib/ops
 import type { UnmatchedPayingCustomer } from '@/lib/ops/sync'
 import { DELIVERABLE_STATUSES, ENGAGEMENT_STAGES, OPS_ACTIVITY_KINDS, SERVICE_KEYS, type DeliverableType } from '@/lib/ops/types'
 import { EVIDENCE_FIELDS_FOR_TYPE, SYNC_EVIDENCE_FOR_TYPE } from '@/lib/ops/evidence'
+import { STEP_CATALOG, defaultWaitingOn, effectiveStatusOf, stepFor } from '@/lib/ops/steps'
 import { formatPhoneNumber } from '@/lib/utils'
 import { Age, HealthDot } from '../ui'
 import { StripeCustomerPicker } from './Pickers'
@@ -20,7 +21,9 @@ import {
   ALERT_TONE,
   DELIVERABLE_STATUS_LABELS,
   DeliverableChip,
+  OWNER_LABELS,
   STAGE_LABELS,
+  StepChip,
   StripeStatusPill,
   detroitDate,
   money,
@@ -453,15 +456,77 @@ function DeliverableCard({ engagementId, d, actions }: { engagementId: string; d
   const save = (p: Record<string, unknown>, optimistic: Partial<BoardDeliverable>) =>
     actions.patchDeliverable(engagementId, d.id, p, optimistic)
 
+  /** The step fields a change implies, for the optimistic board update. */
+  const stepView = (key: string | null): Partial<BoardDeliverable> => {
+    const st = stepFor(type, key)
+    return {
+      step: key,
+      stepLabel: st?.label ?? null,
+      stepOwner: st?.owner ?? null,
+      stepTerminal: st?.terminal ?? false,
+      waitingOn: defaultWaitingOn(type, key),
+      stepUpdatedAt: new Date().toISOString(),
+      effectiveStatus: effectiveStatusOf({ type, manualStatus: d.manualStatus, computedStatus: d.computedStatus, step: key }),
+    }
+  }
+  const groups = (['jacob', 'client', 'vendor', 'done'] as const).map((g) => ({
+    g,
+    steps: (STEP_CATALOG[type] ?? []).filter((st) =>
+      g === 'done' ? st.terminal || st.owner === 'none' : !st.terminal && st.owner === g
+    ),
+  }))
+
   return (
     <div className="rounded-lg border border-gray-800 bg-gray-950 p-3 space-y-3">
       <div className="flex items-center justify-between gap-2">
-        <span className="flex items-center gap-2">
-          <DeliverableChip type={type} status={d.effectiveStatus} manual={Boolean(d.manualStatus)} />
+        <span className="flex flex-wrap items-center gap-2 min-w-0">
+          <DeliverableChip type={type} status={d.effectiveStatus} manual={Boolean(d.manualStatus)} view={d} />
           <span className="text-sm font-medium text-gray-100 capitalize">{d.type}</span>
-          <span className="text-xs text-gray-500">{DELIVERABLE_STATUS_LABELS[d.effectiveStatus] ?? d.effectiveStatus}</span>
+          <StepChip d={d} />
         </span>
-        <span className="text-xs text-gray-600">computed: {d.computedStatus}</span>
+        <span className="text-xs text-gray-600 shrink-0">computed: {d.computedStatus}</span>
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+        <label className="block">
+          <span className={label}>Step</span>
+          <select
+            value={d.step ?? ''}
+            onChange={(ev) => {
+              const key = ev.target.value || null
+              save({ step: key }, stepView(key))
+            }}
+            className={smallControl}
+          >
+            <option value="">No step set</option>
+            {groups.map(({ g, steps }) =>
+              steps.length === 0 ? null : (
+                <optgroup key={g} label={g === 'done' ? 'Done' : OWNER_LABELS[g]}>
+                  {steps.map((st) => (
+                    <option key={st.key} value={st.key}>
+                      {st.label}
+                    </option>
+                  ))}
+                </optgroup>
+              )
+            )}
+          </select>
+          <span className="mt-1 block text-xs text-gray-500">
+            {d.waitingOn ? `Waiting on ${OWNER_LABELS[d.waitingOn]?.toLowerCase() ?? d.waitingOn}` : 'Waiting on nobody'}
+            {d.stepUpdatedAt && (
+              <>
+                {' · '}
+                <Age iso={d.stepUpdatedAt} />
+              </>
+            )}
+          </span>
+        </label>
+        <BlurInput
+          label="Waiting note"
+          value={d.waitingNote}
+          placeholder="phone plan change, ~2 weeks"
+          onSave={(v) => save({ waitingNote: v }, { waitingNote: v })}
+        />
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
@@ -473,12 +538,15 @@ function DeliverableCard({ engagementId, d, actions }: { engagementId: string; d
               const v = ev.target.value || null
               save(
                 { manualStatus: v },
-                { manualStatus: v, effectiveStatus: (v ?? d.computedStatus) as BoardDeliverable['effectiveStatus'] }
+                {
+                  manualStatus: v,
+                  effectiveStatus: effectiveStatusOf({ type, manualStatus: v, computedStatus: d.computedStatus, step: d.step }),
+                }
               )
             }}
             className={smallControl}
           >
-            <option value="">None (use computed)</option>
+            <option value="">None (use step / computed)</option>
             {DELIVERABLE_STATUSES.filter((s) => s !== 'unknown').map((s) => (
               <option key={s} value={s}>
                 {DELIVERABLE_STATUS_LABELS[s]}

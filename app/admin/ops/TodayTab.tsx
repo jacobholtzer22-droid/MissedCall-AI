@@ -1,8 +1,9 @@
 'use client'
 
-// Today: what needs Jacob now. Four blocks, in this order: red alerts, follow-ups
-// due (clients and pipeline prospects), demo calls booked today, yellow alerts
-// grouped by code.
+// Today: what needs Jacob now, in this order: Problems (red alerts), Waiting
+// on you / clients / vendors (deliverable steps by waitingOn, oldest first),
+// follow-ups due (clients and pipeline prospects), demo calls booked today,
+// then yellow alerts grouped by code.
 
 import { useMemo, useState } from 'react'
 import Link from 'next/link'
@@ -10,7 +11,7 @@ import { ChevronDown, ExternalLink, Video } from 'lucide-react'
 import type { OpsBoard } from '@/lib/ops/board'
 import type { OpsAlertCode } from '@/lib/ops/alerts'
 import { formatPhoneNumber } from '@/lib/utils'
-import { HealthDot } from '../ui'
+import { Age, HealthDot } from '../ui'
 import { Empty, Section, StagePill, detroitTime, overdueLabel, smallButton, type OpsActions } from './opsUi'
 
 const ALERT_LABELS: Record<OpsAlertCode, string> = {
@@ -40,6 +41,26 @@ export function TodayTab({ board, actions }: { board: OpsBoard; actions: OpsActi
     [board.engagements]
   )
 
+  /** Every deliverable whose step waits on someone, grouped by who, oldest step first. */
+  const waiting = useMemo(() => {
+    const rows = board.engagements.flatMap((e) =>
+      e.deliverables
+        .filter((d) => d.waitingOn)
+        .map((d) => ({
+          engagementId: e.id,
+          client: e.displayName,
+          type: d.type,
+          label: d.stepLabel ?? d.step ?? '',
+          note: d.waitingNote,
+          at: d.stepUpdatedAt,
+          waitingOn: d.waitingOn as string,
+        }))
+    )
+    const oldestFirst = (a: { at: string | null }, b: { at: string | null }) => (a.at ?? '').localeCompare(b.at ?? '')
+    const of = (who: string) => rows.filter((r) => r.waitingOn === who).sort(oldestFirst)
+    return { jacob: of('jacob'), client: of('client'), vendor: of('vendor') }
+  }, [board.engagements])
+
   const yellowGroups = useMemo(() => {
     const groups = new Map<OpsAlertCode, { id: string; name: string; message: string }[]>()
     for (const e of board.engagements) {
@@ -55,8 +76,8 @@ export function TodayTab({ board, actions }: { board: OpsBoard; actions: OpsActi
 
   return (
     <div className="space-y-5">
-      {/* a. Needs you */}
-      <Section title="Needs you" count={needsYou.length}>
+      {/* Problems: every red alert */}
+      <Section title="Problems" count={needsYou.length}>
         {needsYou.length === 0 ? (
           <Empty>No red alerts.</Empty>
         ) : (
@@ -78,7 +99,11 @@ export function TodayTab({ board, actions }: { board: OpsBoard; actions: OpsActi
         )}
       </Section>
 
-      {/* b. Follow-ups due */}
+      <WaitingSection title="Waiting on you" rows={waiting.jacob} empty="Nothing waiting on you." onOpen={actions.openEngagement} />
+      <WaitingSection title="Waiting on clients" rows={waiting.client} empty="Nothing waiting on clients." onOpen={actions.openEngagement} />
+      <WaitingSection title="Waiting on vendors" rows={waiting.vendor} empty="Nothing waiting on vendors." onOpen={actions.openEngagement} />
+
+      {/* Follow-ups due */}
       <Section title="Follow-ups due" count={board.followUpsDue.length}>
         {board.followUpsDue.length === 0 ? (
           <Empty>Nothing due.</Empty>
@@ -91,7 +116,7 @@ export function TodayTab({ board, actions }: { board: OpsBoard; actions: OpsActi
         )}
       </Section>
 
-      {/* c. Booked today */}
+      {/* Booked today */}
       <Section title="Booked today" count={board.bookedToday.length}>
         {board.bookedToday.length === 0 ? (
           <Empty>No demo calls today.</Empty>
@@ -140,7 +165,7 @@ export function TodayTab({ board, actions }: { board: OpsBoard; actions: OpsActi
         )}
       </Section>
 
-      {/* d. Yellow alerts */}
+      {/* Yellow alerts */}
       <Section title="Yellow alerts" count={yellowGroups.reduce((n, [, l]) => n + l.length, 0)}>
         {yellowGroups.length === 0 ? (
           <Empty>No yellow alerts.</Empty>
@@ -153,6 +178,56 @@ export function TodayTab({ board, actions }: { board: OpsBoard; actions: OpsActi
         )}
       </Section>
     </div>
+  )
+}
+
+type WaitingRow = {
+  engagementId: string
+  client: string
+  type: string
+  label: string
+  note: string | null
+  at: string | null
+}
+
+function WaitingSection({
+  title,
+  rows,
+  empty,
+  onOpen,
+}: {
+  title: string
+  rows: WaitingRow[]
+  empty: string
+  onOpen: (id: string) => void
+}) {
+  return (
+    <Section title={title} count={rows.length}>
+      {rows.length === 0 ? (
+        <Empty>{empty}</Empty>
+      ) : (
+        <ul className="divide-y divide-gray-800">
+          {rows.map((r) => (
+            <li key={`${r.engagementId}:${r.type}`} className="flex flex-col sm:flex-row sm:items-center gap-2 px-4 py-3">
+              <div className="flex items-center gap-2 min-w-0 sm:w-72 shrink-0">
+                <span className="truncate text-sm font-medium text-gray-100">{r.client}</span>
+                <span className="shrink-0 text-[11px] uppercase tracking-wide text-gray-500">{r.type}</span>
+              </div>
+              <div className="flex-1 min-w-0 text-sm">
+                <span className="text-gray-200">{r.label}</span>
+                {r.note && <span className="text-gray-500"> · {r.note}</span>}
+              </div>
+              <span className="shrink-0 text-xs text-gray-500" title="Since the step was set">
+                <Age iso={r.at} />
+              </span>
+              <button type="button" onClick={() => onOpen(r.engagementId)} className={smallButton}>
+                Open
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </Section>
   )
 }
 
