@@ -215,6 +215,8 @@ async function eachLimited<T>(items: T[], limit: number, fn: (item: T) => Promis
 }
 
 const STRIPE_CONCURRENCY = 5
+/** Matches Prisma's default pool on a small lambda; more would only queue. */
+const DB_CONCURRENCY = 5
 
 const fromUnix = (s: number | null | undefined): Date | null => (s ? new Date(s * 1000) : null)
 const iso = (d: Date | null | undefined): string | null => (d ? d.toISOString() : null)
@@ -330,10 +332,15 @@ export async function runOpsSync({ dryRun }: { dryRun: boolean }): Promise<OpsSy
       evidence: asObject(d.evidence),
     }))
   )
-  // Existing check rows, so status derivation sees checks this run did not write.
+  // Existing check rows, so status derivation sees checks this run did not write,
+  // and so an unchanged result can skip its upsert (keyed `${deliverableId}|${key}`).
   const checksByDel = new Map<string, Map<string, boolean | null>>()
+  const existingChecks = new Map<string, { id: string; passed: boolean | null; detail: string | null }>()
   for (const e of existing) {
-    for (const d of e.deliverables) checksByDel.set(d.id, new Map(d.checks.map((c) => [c.key, c.passed])))
+    for (const d of e.deliverables) {
+      checksByDel.set(d.id, new Map(d.checks.map((c) => [c.key, c.passed])))
+      for (const c of d.checks) existingChecks.set(`${d.id}|${c.key}`, { id: c.id, passed: c.passed, detail: c.detail })
+    }
   }
 
   async function createEngagement(data: Prisma.EngagementUncheckedCreateInput, source: EngagementSource): Promise<Eng> {
@@ -546,6 +553,11 @@ export async function runOpsSync({ dryRun }: { dryRun: boolean }): Promise<OpsSy
   }
 
   // ── c. Deliverables ─────────────────────────────────────────────────────
+  // Planned first, written DB_CONCURRENCY at a time after the loop. A new
+  // deliverable gets its real id from its upsert before phase e needs it.
+  const newDels: Del[] = []
+  const toInsert: Del[] = []
+  const evidenceWrites: (() => Promise<unknown>)[] = []
   for (const eng of engs) {
     const business = eng.businessId ? businessById.get(eng.businessId) : undefined
     const known: Partial<Record<DeliverableType, Record<string, unknown>>> = {}
@@ -557,17 +569,10 @@ export async function runOpsSync({ dryRun }: { dryRun: boolean }): Promise<OpsSy
       const sync = known[type] ?? {}
       const del = dels.find((d) => d.engagementId === eng.id && d.type === type)
       if (!del) {
-        let id = nextDryId()
-        if (!dryRun && !eng.id.startsWith('dry:')) {
-          const row = await db.deliverable.upsert({
-            where: { engagementId_type: { engagementId: eng.id, type } },
-            create: { engagementId: eng.id, type, evidence: sync as Prisma.InputJsonObject },
-            update: {},
-          })
-          id = row.id
-        }
-        dels.push({ id, engagementId: eng.id, type, computedStatus: 'unknown', evidence: { ...sync } })
-        checksByDel.set(id, new Map())
+        const fresh: Del = { id: nextDryId(), engagementId: eng.id, type, computedStatus: 'unknown', evidence: { ...sync } }
+        dels.push(fresh)
+        newDels.push(fresh)
+        if (!dryRun && !eng.id.startsWith('dry:')) toInsert.push(fresh)
         summary.deliverablesCreated.push({ ...ref(eng), type })
         continue
       }
@@ -576,11 +581,24 @@ export async function runOpsSync({ dryRun }: { dryRun: boolean }): Promise<OpsSy
       if (changed.length === 0) continue
       del.evidence = { ...del.evidence, ...sync }
       if (!dryRun) {
-        await db.deliverable.update({ where: { id: del.id }, data: { evidence: del.evidence as Prisma.InputJsonObject } })
+        const { id, evidence } = del
+        evidenceWrites.push(() => db.deliverable.update({ where: { id }, data: { evidence: evidence as Prisma.InputJsonObject } }))
       }
       summary.evidenceUpdated.push({ ...ref(eng), type, keys: changed })
     }
   }
+  await eachLimited(toInsert, DB_CONCURRENCY, async (d) => {
+    const row = await db.deliverable.upsert({
+      where: { engagementId_type: { engagementId: d.engagementId, type: d.type } },
+      create: { engagementId: d.engagementId, type: d.type, evidence: d.evidence as Prisma.InputJsonObject },
+      update: {},
+    })
+    d.id = row.id
+  })
+  for (const d of newDels) checksByDel.set(d.id, new Map())
+  await eachLimited(evidenceWrites, DB_CONCURRENCY, async (write) => {
+    await write()
+  })
 
   // ── d. Stripe (read only) ───────────────────────────────────────────────
   const stripe = getStripe()
@@ -703,6 +721,12 @@ export async function runOpsSync({ dryRun }: { dryRun: boolean }): Promise<OpsSy
     }
   }
 
+  // Writes are collected, not awaited one by one: a check whose result did
+  // not change only needs lastRunAt, which one updateMany covers for all of
+  // them; everything else runs DB_CONCURRENCY at a time.
+  const unchangedCheckIds: string[] = []
+  const writes: (() => Promise<unknown>)[] = []
+
   for (const del of dels) {
     const eng = engs.find((e) => e.id === del.engagementId)
     if (!eng) continue
@@ -711,11 +735,18 @@ export async function runOpsSync({ dryRun }: { dryRun: boolean }): Promise<OpsSy
     checksByDel.set(del.id, rows)
     for (const r of results) {
       if (!dryRun && !del.id.startsWith('dry:')) {
-        await db.opsCheck.upsert({
-          where: { deliverableId_key: { deliverableId: del.id, key: r.key } },
-          create: { deliverableId: del.id, key: r.key, passed: r.passed, detail: r.detail, lastRunAt: now },
-          update: { passed: r.passed, detail: r.detail, lastRunAt: now },
-        })
+        const prev = existingChecks.get(`${del.id}|${r.key}`)
+        if (prev && prev.passed === r.passed && prev.detail === r.detail) {
+          unchangedCheckIds.push(prev.id)
+        } else {
+          writes.push(() =>
+            db.opsCheck.upsert({
+              where: { deliverableId_key: { deliverableId: del.id, key: r.key } },
+              create: { deliverableId: del.id, key: r.key, passed: r.passed, detail: r.detail, lastRunAt: now },
+              update: { passed: r.passed, detail: r.detail, lastRunAt: now },
+            })
+          )
+        }
       }
       rows.set(r.key, r.passed)
       summary.checksWritten++
@@ -729,12 +760,20 @@ export async function runOpsSync({ dryRun }: { dryRun: boolean }): Promise<OpsSy
     const next = deriveDeliverableStatus(Array.from(rows.values()).map((passed) => ({ passed })))
     if (next !== del.computedStatus) {
       if (!dryRun && !del.id.startsWith('dry:')) {
-        await db.deliverable.update({ where: { id: del.id }, data: { computedStatus: next } })
+        const id = del.id
+        writes.push(() => db.deliverable.update({ where: { id }, data: { computedStatus: next } }))
       }
       summary.deliverableStatusChanges.push({ ...ref(eng), type: del.type, from: del.computedStatus, to: next })
       del.computedStatus = next
     }
   }
+
+  if (unchangedCheckIds.length > 0) {
+    await db.opsCheck.updateMany({ where: { id: { in: unchangedCheckIds } }, data: { lastRunAt: now } })
+  }
+  await eachLimited(writes, DB_CONCURRENCY, async (write) => {
+    await write()
+  })
 
   summary.durationMs = Date.now() - started
   return summary
