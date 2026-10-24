@@ -51,6 +51,7 @@ function Chips({ e }: { e: BoardEngagement }) {
             status={d?.effectiveStatus ?? null}
             dim={!bought.has(t) && !d}
             manual={Boolean(d?.manualStatus)}
+            view={d}
           />
         )
       })}

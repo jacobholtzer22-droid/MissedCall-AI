@@ -114,26 +114,69 @@ const CHIP_COLORS: Record<DeliverableStatus, string> = {
   unknown: 'bg-transparent text-gray-400 border-gray-600 border-dashed',
 }
 
-/** Status chip; `dim` when the client did not buy this service. */
+// ── Waiting-on steps ─────────────────────────────────────────────────────────
+// Owner colours: you orange, client blue, vendor grey, done green. A paused_by_
+// client step keeps the paused slate: it is an end state, but not a good one.
+
+export const OWNER_LABELS: Record<string, string> = { jacob: 'You', client: 'Client', vendor: 'Vendor', none: 'Done' }
+
+const OWNER_COLORS: Record<string, string> = {
+  jacob: 'bg-orange-500/15 text-orange-300 border-orange-500/40',
+  client: 'bg-blue-500/15 text-blue-300 border-blue-500/40',
+  vendor: 'bg-gray-600/30 text-gray-300 border-gray-500',
+  done: 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30',
+}
+
+export type StepView = {
+  step: string | null
+  stepLabel: string | null
+  stepOwner: string | null
+  stepTerminal: boolean
+  manualStatus: string | null
+  effectiveStatus: DeliverableStatus
+}
+
+/** Chip colour: a hand-set manual status wins; else the step's owner; else the status. */
+export function chipTone(d: StepView): string {
+  if (d.manualStatus || !d.step) return CHIP_COLORS[d.effectiveStatus] ?? CHIP_COLORS.unknown
+  if (d.step === 'paused_by_client') return CHIP_COLORS.paused
+  if (d.stepTerminal || d.stepOwner === 'none') return OWNER_COLORS.done
+  return OWNER_COLORS[d.stepOwner ?? ''] ?? CHIP_COLORS.in_progress
+}
+
+/** Full-label chip for the panel: the step label in its owner colour. */
+export function StepChip({ d }: { d: StepView }) {
+  const text = d.manualStatus
+    ? `${DELIVERABLE_STATUS_LABELS[d.effectiveStatus] ?? d.effectiveStatus} (set by hand)`
+    : d.stepLabel ?? DELIVERABLE_STATUS_LABELS[d.effectiveStatus] ?? d.effectiveStatus
+  return (
+    <span className={`inline-flex items-center px-2 py-0.5 rounded border text-xs font-medium ${chipTone(d)}`}>{text}</span>
+  )
+}
+
+/** Status chip; `dim` when the client did not buy this service. With `view`, coloured by step owner. */
 export function DeliverableChip({
   type,
   status,
   dim = false,
   manual = false,
+  view,
 }: {
   type: DeliverableType
   status: DeliverableStatus | null
   dim?: boolean
   manual?: boolean
+  view?: StepView
 }) {
   const s = status ?? 'unknown'
-  const title = `${type}: ${dim ? 'not bought' : DELIVERABLE_STATUS_LABELS[s]}${manual ? ' (set by hand)' : ''}`
+  const state = view?.stepLabel && !view.manualStatus ? view.stepLabel : DELIVERABLE_STATUS_LABELS[s]
+  const title = `${type}: ${dim ? 'not bought' : state}${manual ? ' (set by hand)' : ''}`
   return (
     <span
       title={title}
       aria-label={title}
       className={`inline-flex items-center justify-center w-10 h-6 rounded border text-[10px] font-semibold uppercase tracking-wide ${
-        dim ? 'border-gray-800 text-gray-700' : CHIP_COLORS[s]
+        dim ? 'border-gray-800 text-gray-700' : view ? chipTone(view) : CHIP_COLORS[s]
       }`}
     >
       {DELIVERABLE_LABELS[type]}
