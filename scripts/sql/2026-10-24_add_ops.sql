@@ -14,6 +14,9 @@
 -- Business and PipelinePerson appear only as foreign-key targets, and no
 -- existing table gains, loses or changes a column. Nothing is dropped.
 -- Unlike the pipeline SQL there are no IF NOT EXISTS guards, so run it once.
+-- Wrapped in one transaction: a failure part way leaves nothing behind.
+
+BEGIN;
 
 -- CreateTable
 CREATE TABLE "Engagement" (
@@ -161,3 +164,4 @@ ALTER TABLE "AgentRun" ADD CONSTRAINT "AgentRun_engagementId_fkey" FOREIGN KEY (
 -- AddForeignKey
 ALTER TABLE "AgentRun" ADD CONSTRAINT "AgentRun_deliverableId_fkey" FOREIGN KEY ("deliverableId") REFERENCES "Deliverable"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
+COMMIT;
