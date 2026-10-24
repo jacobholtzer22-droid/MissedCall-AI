@@ -2819,3 +2819,51 @@ Vocabularies for every String column are in `lib/ops/types.ts`.
   schema → the branch's) so it cannot drift from `schema.prisma`, then run with
   `npx prisma db execute --file …`. `db push` diffs against one schema file and
   would drop columns other branches have already added to the database.
+
+### Sync (`lib/ops/sync.ts`, Oct 2026)
+
+`runOpsSync({ dryRun })`, run by `GET /api/cron/ops-sync` (every 4 hours, CRON_SECRET
+bearer or the admin, `?dry=1` writes nothing) and `POST /api/admin/ops/sync`
+(`requireAdmin`, same `?dry=1`). Phases in order: engagements from won
+`PipelinePerson` rows, engagements from `Business` rows (link to an unlinked
+engagement on exactly one phone/email match, otherwise create; two or more is
+reported as an ambiguity and nothing happens), deliverables for each
+engagement's services, Stripe, checks, status derivation. It writes only
+`Engagement`, `Deliverable` and `OpsCheck`.
+
+- **Sync-owned Engagement fields** (`SYNC_OWNED_FIELDS`), the only ones it changes
+  on an existing row: `businessId` (link only, never unlink), `stripeCustomerId`,
+  `stripeSubscriptionId`, `stripeSubscriptionStatus`, `upfrontPaidAt`,
+  `upfrontAmount`, `monthlyAmount`, `monthlyStartedAt`, `stripeSyncedAt`.
+  Everything else is set on create and then edited by hand only, with one
+  exception for rows inserted **in the same run**: their stage is finalized
+  after the Stripe phase (subscription active/trialing/past_due → `active`,
+  canceled → `churned`, upfront found and no subscription → `paid_upfront`,
+  nothing in Stripe → the insert stage), and a same-run link renames them to
+  `Business.name` and fills empty `services` from the Business row. Names in
+  `IGNORE_ON_CREATE` are inserted with stage `ignored`. On a
+  Deliverable it adds missing ones and merges `evidence.telnyxNumber` /
+  `evidence.adsCustomerId`; it never deletes a row or an evidence key.
+- **Check keys written** (database only): missedcall → `business.number_assigned`,
+  `business.owner_contact_set`, `missedcall.activity_30d`; website →
+  `website.business_row`, `business.owner_contact_set`, `lead.test_row` (a `ZZTEST…` lead exists),
+  `website.real_lead_30d`; ads → `ads.customer_linked`, `ads.snapshot_7d`,
+  `ads.spend_7d`. No checks yet for domain, email, gbp. With no linked
+  Business, every business-dependent check is `passed = null`, detail
+  "no platform account linked".
+- **Status derivation**: no check rows → `unknown`; every non-null result passed →
+  `live`; every non-null result failed → `not_started`; mixed → `in_progress`;
+  all null → `unknown`. `blocked` only ever comes from `manualStatus`, which the
+  sync never reads or writes.
+- ⚠️ **Stripe is read-only.** `STRIPE_SECRET_KEY` must be a restricted key with
+  READ access only (Customers, Charges, PaymentIntents, Checkout Sessions,
+  Invoices, Subscriptions). Unset key = Stripe phase skipped with a note. API
+  2026-09-30 has no `charge.invoice` or `invoice.subscription`: subscription
+  invoices are told apart by `invoice.parent.subscription_details`, and invoice
+  charges by the InvoicePayments API, so upfront money is never counted twice.
+  Upfront charges are net of refunds. **Stripe never clears a value**: the money
+  fields are written only when Stripe found something. Ignored rows never claim a
+  Stripe customer. Unmatched paying customers (last 120 days) are reported, never
+  created.
+- `lib/ops/alerts.ts` `computeEngagementAlerts` is the pure health/alert rules for
+  one engagement, in the style of `lib/admin-health.ts`. The sync does not call it.

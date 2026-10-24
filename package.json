@@ -43,6 +43,7 @@
     "recharts": "^3.8.1",
     "resend": "^6.9.3",
     "server-only": "^0.0.1",
+    "stripe": "^23.0.1",
     "tailwind-merge": "^2.6.0",
     "tailwindcss-animate": "^1.0.7",
     "telnyx": "^5.37.1",

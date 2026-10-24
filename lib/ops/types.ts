@@ -6,7 +6,16 @@
 // plain strings with the values in a comment, like the rest of the repo; these
 // arrays are the single typed copy. Pure and client-safe: no runtime logic.
 
-export const ENGAGEMENT_STAGES = ['prospect', 'paid_upfront', 'onboarding', 'active', 'paused', 'churned'] as const
+export const ENGAGEMENT_STAGES = [
+  'prospect',
+  'paid_upfront',
+  'onboarding',
+  'active',
+  'one_time', // paid upfront, no subscription by agreement
+  'paused',
+  'churned',
+  'ignored', // test or junk row, hidden from default views
+] as const
 export type EngagementStage = (typeof ENGAGEMENT_STAGES)[number]
 
 /** Funnel order, earliest first. Same members as ENGAGEMENT_STAGES. */
@@ -15,8 +24,10 @@ export const STAGE_ORDER: readonly EngagementStage[] = [
   'paid_upfront',
   'onboarding',
   'active',
+  'one_time',
   'paused',
   'churned',
+  'ignored',
 ]
 
 export const ENGAGEMENT_SOURCES = ['pipeline_won', 'business_row', 'stripe', 'manual'] as const
@@ -55,6 +66,11 @@ export const OPS_CHECK_KEYS = [
   'ads.campaign_enabled',
   'ads.geo_presence_only',
   'ads.spend_7d',
+  'missedcall.activity_30d',
+  'website.business_row',
+  'website.real_lead_30d',
+  'ads.customer_linked',
+  'ads.snapshot_7d',
 ] as const
 export type OpsCheckKey = (typeof OPS_CHECK_KEYS)[number]
 
