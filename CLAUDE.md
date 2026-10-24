@@ -2895,7 +2895,8 @@ alerts, health and totals are computed only on the server.
   and the Money tab). Verified = `stripeSubscriptionStatus` `active` or `past_due`;
   Projected = every other row with a `monthlyAmount`. Bucket by stage (active →
   Active; paid_upfront, onboarding → Pending; churned → Churned), except a
-  `scheduled` subscription, which is always Pending.
+  `scheduled` subscription, which is Pending unless the row is churned: a churned
+  row is always Churned, even with an open Stripe invoice still showing.
 - **`scheduled`**: with no live subscription (active, trialing, past_due, unpaid), a
   Stripe subscription schedule in `not_started` or `active` sets
   `stripeSubscriptionStatus = 'scheduled'`, `monthlyStartedAt` from its first phase
