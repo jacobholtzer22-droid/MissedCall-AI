@@ -103,10 +103,18 @@ export async function getFileContent(repo: string, path: string, ref?: string): 
   return typeof body === 'string' ? body : null
 }
 
-/** Create or replace one file on a branch; returns the new commit SHA. */
-export async function putFile(repo: string, path: string, content: string, message: string, branch: string): Promise<string> {
+/**
+ * Create or replace one file on a branch; returns the new commit SHA, or null
+ * when the branch already holds exactly this content (nothing is written, so a
+ * re-run does not stack empty commits).
+ */
+export async function putFile(repo: string, path: string, content: string, message: string, branch: string): Promise<string | null> {
   const full = repoFullName(repo)
-  const { body: existing } = await read<{ sha: string }>(`/repos/${full}/contents/${path}?ref=${encodeURIComponent(branch)}`, `stat ${path}`)
+  const { body: existing } = await read<{ sha: string; content?: string; encoding?: string }>(
+    `/repos/${full}/contents/${path}?ref=${encodeURIComponent(branch)}`,
+    `stat ${path}`
+  )
+  if (existing?.content && existing.encoding === 'base64' && Buffer.from(existing.content, 'base64').toString('utf8') === content) return null
   const { data } = await write<{ commit: { sha: string } }>('PUT', `/repos/${full}/contents/${path}`, `write ${path}`, {
     message,
     content: Buffer.from(content, 'utf8').toString('base64'),
@@ -129,14 +137,21 @@ export async function createBranchFromDefault(repo: string, branch: string): Pro
   return { created: true, base: info.defaultBranch }
 }
 
-export async function openPullRequest(repo: string, head: string, base: string, title: string, body: string): Promise<{ number: number; url: string }> {
+/** Open a PR, or return the open PR already proposing `head` into `base` (a re-run must not fail on GitHub's 422). */
+export async function openPullRequest(repo: string, head: string, base: string, title: string, body: string): Promise<{ number: number; url: string; reused: boolean }> {
+  const full = repoFullName(repo)
+  const { body: open } = await read<{ number: number; html_url: string }[]>(
+    `/repos/${full}/pulls?state=open&head=${encodeURIComponent(`${full.split('/')[0]}:${head}`)}&base=${encodeURIComponent(base)}`,
+    `open PRs for ${head}`
+  )
+  if (open && open.length > 0) return { number: open[0].number, url: open[0].html_url, reused: true }
   const { data } = await write<{ number: number; html_url: string }>('POST', `/repos/${repoFullName(repo)}/pulls`, `open PR ${head}`, {
     title,
     head,
     base,
     body,
   })
-  return { number: data!.number, url: data!.html_url }
+  return { number: data!.number, url: data!.html_url, reused: false }
 }
 
 export async function getPullRequest(repo: string, number: number) {
