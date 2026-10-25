@@ -17,7 +17,33 @@ import { createHmac, timingSafeEqual } from 'node:crypto'
 import type { Prisma } from '@prisma/client'
 import { db } from '@/lib/db'
 import { defaultWaitingOn } from '@/lib/ops/steps'
+import { getRepo, openPullRequest } from '@/lib/ops/github'
 import { mergeEvidence } from './shared'
+
+/**
+ * Open the PR the workflow could not. Repos default to "GitHub Actions may not
+ * create pull requests", so aa-build.yml pushes the branch and reports
+ * pr_url null; GITHUB_OPS_TOKEN can open it. Never throws: a failure is
+ * returned and lands in the run's output and the activity line.
+ */
+async function openPrForRun(
+  repo: string,
+  branch: string,
+  kind: string,
+  report: string | null
+): Promise<{ url: string | null; error: string | null }> {
+  try {
+    const info = await getRepo(repo)
+    if (!info) return { url: null, error: `repo ${repo} not found` }
+    const body = [report?.trim() || '(no BUILD-REPORT.md excerpt)', '', '---', 'Opened by the ops platform from the agent branch.'].join('\n')
+    const pr = await openPullRequest(repo, branch, info.defaultBranch, `${kind}: ${branch.replace(/^build\//, '')}`, body)
+    return { url: pr.url, error: null }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    // 422 "No commits between": the agent changed nothing. Not an error worth shouting about.
+    return { url: null, error: /no commits between/i.test(msg) ? 'branch has no changes; no PR' : msg }
+  }
+}
 
 export function signBody(rawBody: string, secret: string): string {
   return createHmac('sha256', secret).update(rawBody, 'utf8').digest('hex')
@@ -103,6 +129,15 @@ export async function applyCallback(raw: string): Promise<CallbackOutcome> {
     (await db.deliverable.findFirst({ where: { engagementId: run.engagementId, type: 'website' }, select: { id: true, type: true } }))
 
   if (website && body.branch) await mergeEvidence(website.id, { previewBranch: body.branch })
+
+  // The workflow could not open the PR (see openPrForRun): open it here.
+  const input = (run.input ?? {}) as { repo?: unknown }
+  if (succeeded && !output.prUrl && body.branch && typeof input.repo === 'string' && input.repo) {
+    const pr = await openPrForRun(input.repo, body.branch, body.kind, output.reportExcerpt)
+    const next = { ...output, prUrl: pr.url, prOpenedBy: pr.url ? 'platform' : null, prError: pr.error }
+    await db.agentRun.update({ where: { id: run.id }, data: { output: next as Prisma.InputJsonObject } })
+    output.prUrl = pr.url
+  }
 
   let stepSet: string | null = null
   if (succeeded && website && (body.kind === 'site_build' || body.kind === 'site_update')) {
