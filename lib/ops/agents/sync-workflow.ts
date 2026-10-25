@@ -116,15 +116,24 @@ export async function syncWorkflow(opts: { mode: 'pr' | 'direct'; only?: string[
       r.adds.push(opts.mode === 'pr' ? `branch ${CI_BRANCH} + PR into ${info.defaultBranch}` : `commit to ${info.defaultBranch}`)
       if (opts.dry || out.blocked.length > 0) return r
 
+      // Secrets first: they are the step most likely to be refused (the token
+      // needs Secrets: read and write), and failing here writes no files and
+      // opens no PR.
+      for (const s of REPO_SECRETS) await setRepoSecret(repo, s.name, secretValue(s.env))
+
       const branch = opts.mode === 'pr' ? CI_BRANCH : info.defaultBranch
       if (opts.mode === 'pr' && (needsWorkflow || needsSection)) await createBranchFromDefault(repo, CI_BRANCH)
-      let sha: string | undefined
-      if (needsWorkflow) sha = await putFile(repo, WORKFLOW_PATH, workflow!, 'ci: add aa-build workflow', branch)
+      let sha: string | null = null
+      if (needsWorkflow) sha = (await putFile(repo, WORKFLOW_PATH, workflow!, 'ci: add aa-build workflow', branch)) ?? sha
       if (needsSection) {
+        // Append to the default branch's AGENT.md, so a re-run writes the same
+        // bytes and putFile skips it.
         const next = agentMd ? `${agentMd.trimEnd()}\n\n${ciSection}\n` : `${ciSection}\n`
-        sha = await putFile(repo, 'AGENT.md', next, `ci: add "${CI_SECTION_HEADING}" to AGENT.md`, branch)
+        sha = (await putFile(repo, 'AGENT.md', next, `ci: add "${CI_SECTION_HEADING}" to AGENT.md`, branch)) ?? sha
       }
-      if (opts.mode === 'pr' && sha) {
+      if (opts.mode === 'pr' && (needsWorkflow || needsSection)) {
+        // Also when nothing changed: an earlier run may have pushed the branch
+        // and stopped before the PR. openPullRequest reuses an open one.
         const pr = await openPullRequest(
           repo,
           CI_BRANCH,
@@ -136,7 +145,6 @@ export async function syncWorkflow(opts: { mode: 'pr' | 'direct'; only?: string[
       } else if (sha) {
         r.commitSha = sha
       }
-      for (const s of REPO_SECRETS) await setRepoSecret(repo, s.name, secretValue(s.env))
       if (opts.mode === 'direct') await mergeEvidence(d.id, { repoHasWorkflow: true })
     } catch (err) {
       r.errors.push(err instanceof Error ? err.message : String(err))
