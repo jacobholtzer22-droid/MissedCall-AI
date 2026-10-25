@@ -15,6 +15,7 @@ import { effectiveStatusOf } from '@/lib/ops/steps'
 import type { OpsCheckKey } from '@/lib/ops/types'
 import { discover, matchDiscovery, type GithubRepo, type MatchableEngagement, type VercelProject } from './discover'
 import { EXTERNAL_CONCURRENCY, mapLimited } from './limit'
+import { listDeploymentsForBranch, type BranchDeployment } from '@/lib/ops/vercel'
 import { domainChecks, websiteChecks, type CheckResult } from './web'
 
 /** Evidence keys the web checks own and overwrite; every other key is left alone. */
@@ -30,7 +31,7 @@ export const WEBSITE_EVIDENCE_KEYS = [
   'productionUrl',
   'productionState',
   'previewUrl',
-  'previewBranch',
+  'previewState',
 ] as const
 export const DOMAIN_EVIDENCE_KEYS = ['domains', 'primaryDomain'] as const
 
@@ -165,6 +166,8 @@ export async function runWebChecks({ dryRun }: { dryRun: boolean }): Promise<Web
     primary: string | null
     websiteResults: CheckResult[]
     domainResults: CheckResult[]
+    /** Latest deployment of evidence.previewBranch (set by the agent callback), when there is one. */
+    branchPreview: BranchDeployment | null
   }
   const targets = engs.filter((e) => e.website || e.domain)
   const plans: Plan[] = await mapLimited(targets, EXTERNAL_CONCURRENCY, async (eng) => {
@@ -175,7 +178,16 @@ export async function runWebChecks({ dryRun }: { dryRun: boolean }): Promise<Web
       ? (await websiteChecks({ step: eng.website.step, businessSlug: eng.slug, repo, project, productionUrl: productionUrlOf(project, primary) })).results
       : []
     const domainResults = eng.domain && primary ? await domainChecks(primary, project) : []
-    return { eng, repo, project, primary, websiteResults, domainResults }
+    const previewBranch = typeof eng.website?.evidence.previewBranch === 'string' ? eng.website.evidence.previewBranch : null
+    let branchPreview: BranchDeployment | null = null
+    if (project && previewBranch) {
+      try {
+        branchPreview = (await listDeploymentsForBranch(project.id, previewBranch))[0] ?? null
+      } catch (err) {
+        discovery.errors.push(`preview for ${eng.name} branch ${previewBranch}: ${err instanceof Error ? err.message : String(err)}`)
+      }
+    }
+    return { eng, repo, project, primary, websiteResults, domainResults, branchPreview }
   })
 
   // ── Writes ────────────────────────────────────────────────────────────────
@@ -196,8 +208,10 @@ export async function runWebChecks({ dryRun }: { dryRun: boolean }): Promise<Web
         vercelGitLinked: project ? Boolean(project.gitRepo) : null,
         productionUrl: productionUrlOf(project, primary),
         productionState: project?.production?.state ?? null,
-        previewUrl: project?.preview?.url ?? null,
-        previewBranch: project?.preview?.branch ?? null,
+        // The agent's branch when the callback recorded one (previewBranch is
+        // owned by the callback, never written here), else the latest preview.
+        previewUrl: p.branchPreview?.url ?? (typeof eng.website.evidence.previewBranch === 'string' ? null : project?.preview?.url ?? null),
+        previewState: p.branchPreview?.state ?? (typeof eng.website.evidence.previewBranch === 'string' ? null : project?.preview?.state ?? null),
       }
       queueEvidence(eng.website, ev)
       touched.set(eng.website.id, { del: eng.website, client: eng.name, results: p.websiteResults })

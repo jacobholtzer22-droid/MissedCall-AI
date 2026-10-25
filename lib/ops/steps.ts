@@ -28,6 +28,7 @@ export const STEP_CATALOG: Record<DeliverableType, readonly Step[]> = {
   website: [
     step('brief', 'client', 'Waiting on client: intake answers or photos'),
     step('build', 'jacob', 'Build in progress'),
+    step('review', 'jacob', "Review the agent's PR and preview"),
     step('send_preview', 'jacob', 'Send the preview to the client'),
     step('client_review', 'client', 'Client reviewing the preview'),
     step('revisions', 'jacob', 'Revisions in progress'),

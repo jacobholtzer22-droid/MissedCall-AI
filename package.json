@@ -34,6 +34,7 @@
     "date-fns": "^4.1.0",
     "google-ads-api": "^23.0.0",
     "googleapis": "^171.4.0",
+    "libsodium-wrappers": "0.7.15",
     "lucide-react": "^0.469.0",
     "next": "14.2.21",
     "nodemailer": "^8.0.1",
@@ -50,6 +51,7 @@
     "xlsx": "^0.18.5"
   },
   "devDependencies": {
+    "@types/libsodium-wrappers": "^0.7.14",
     "@types/node": "^22.10.5",
     "@types/nodemailer": "^7.0.11",
     "@types/papaparse": "^5.5.2",

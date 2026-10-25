@@ -14,6 +14,7 @@ import type { UnmatchedPayingCustomer } from '@/lib/ops/sync'
 import { DELIVERABLE_STATUSES, ENGAGEMENT_STAGES, OPS_ACTIVITY_KINDS, SERVICE_KEYS, type DeliverableType } from '@/lib/ops/types'
 import { EVIDENCE_FIELDS_FOR_TYPE, SYNC_EVIDENCE_FOR_TYPE } from '@/lib/ops/evidence'
 import { STEP_CATALOG, defaultWaitingOn, effectiveStatusOf, stepFor } from '@/lib/ops/steps'
+import { RUN_KINDS, defaultRepoName, type RunKind } from '@/lib/ops/agents/names'
 import { formatPhoneNumber } from '@/lib/utils'
 import { Age, HealthDot } from '../ui'
 import { StripeCustomerPicker } from './Pickers'
@@ -46,9 +47,11 @@ interface Props {
   unmatchedLoading: boolean
   onLoadUnmatched: (refresh?: boolean) => void
   onClose: () => void
+  /** Refetch the board after an agent action wrote to it. */
+  onRefresh: () => Promise<void>
 }
 
-export function EngagementPanel({ engagement: e, focus, actions, unmatched, unmatchedLoading, onLoadUnmatched, onClose }: Props) {
+export function EngagementPanel({ engagement: e, focus, actions, unmatched, unmatchedLoading, onLoadUnmatched, onClose, onRefresh }: Props) {
   const activityRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -183,7 +186,14 @@ export function EngagementPanel({ engagement: e, focus, actions, unmatched, unma
             ) : (
               <div className="space-y-3">
                 {e.deliverables.map((d) => (
-                  <DeliverableCard key={d.id} engagementId={e.id} d={d} actions={actions} />
+                  <DeliverableCard
+                    key={d.id}
+                    engagementId={e.id}
+                    displayName={e.displayName}
+                    d={d}
+                    actions={actions}
+                    onRefresh={onRefresh}
+                  />
                 ))}
               </div>
             )}
@@ -449,7 +459,19 @@ function StripeSection({
 
 // ── Deliverables ────────────────────────────────────────────────────────────
 
-function DeliverableCard({ engagementId, d, actions }: { engagementId: string; d: BoardDeliverable; actions: OpsActions }) {
+function DeliverableCard({
+  engagementId,
+  displayName,
+  d,
+  actions,
+  onRefresh,
+}: {
+  engagementId: string
+  displayName: string
+  d: BoardDeliverable
+  actions: OpsActions
+  onRefresh: () => Promise<void>
+}) {
   const type = d.type as DeliverableType
   const editable = EVIDENCE_FIELDS_FOR_TYPE[type] ?? []
   const syncKeys = SYNC_EVIDENCE_FOR_TYPE[type] ?? []
@@ -605,7 +627,295 @@ function DeliverableCard({ engagementId, d, actions }: { engagementId: string; d
       ) : (
         <p className="text-xs text-gray-600 border-t border-gray-800 pt-2">No automated checks for this type yet.</p>
       )}
+
+      {d.type === 'website' && (
+        <WebsiteAgent engagementId={engagementId} displayName={displayName} d={d} toast={actions.toast} onRefresh={onRefresh} />
+      )}
     </div>
+  )
+}
+
+// ── Web designer agent (website deliverable only) ───────────────────────────
+// Provision (no repo yet), Run agent (repo exists), Sync workflow (repo lacks
+// aa-build.yml). Every write runs dry first: the dry result is shown, and the
+// real call needs a second, confirmed click.
+
+type PlanStep = { action: string; detail: string; result?: string; error?: string }
+
+async function postJson(url: string, body: unknown): Promise<{ ok: boolean; status: number; data: Record<string, unknown> }> {
+  try {
+    const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+    return { ok: res.ok, status: res.status, data: ((await res.json().catch(() => ({}))) as Record<string, unknown>) ?? {} }
+  } catch {
+    return { ok: false, status: 0, data: { error: 'Network error' } }
+  }
+}
+
+function WebsiteAgent({
+  engagementId,
+  displayName,
+  d,
+  toast,
+  onRefresh,
+}: {
+  engagementId: string
+  displayName: string
+  d: BoardDeliverable
+  toast: OpsActions['toast']
+  onRefresh: () => Promise<void>
+}) {
+  const repoUrl = typeof d.evidence.repoUrl === 'string' ? d.evidence.repoUrl : null
+  return (
+    <div className="border-t border-gray-800 pt-3 space-y-3">
+      <p className="text-xs font-medium text-gray-400">Web designer agent</p>
+      {!repoUrl ? (
+        <ProvisionForm engagementId={engagementId} displayName={displayName} toast={toast} onRefresh={onRefresh} />
+      ) : (
+        <>
+          <RunAgentForm engagementId={engagementId} repoUrl={repoUrl} toast={toast} onRefresh={onRefresh} />
+          {d.evidence.repoHasWorkflow === false && <SyncWorkflowButton engagementId={engagementId} toast={toast} onRefresh={onRefresh} />}
+        </>
+      )}
+    </div>
+  )
+}
+
+function PlanList({ steps, blocked }: { steps: PlanStep[]; blocked: string[] }) {
+  return (
+    <div className="space-y-1 text-xs">
+      {blocked.map((b) => (
+        <p key={b} className="text-red-300">
+          Blocked: {b}
+        </p>
+      ))}
+      <ol className="list-decimal pl-5 space-y-0.5 text-gray-300">
+        {steps.map((s, i) => (
+          <li key={i}>
+            <span className="text-gray-100">{s.action}</span> · {s.detail}
+            {s.result && <span className="text-emerald-300"> ✓ {s.result}</span>}
+            {s.error && <span className="text-red-300"> ✗ {s.error}</span>}
+          </li>
+        ))}
+      </ol>
+    </div>
+  )
+}
+
+function ProvisionForm({
+  engagementId,
+  displayName,
+  toast,
+  onRefresh,
+}: {
+  engagementId: string
+  displayName: string
+  toast: OpsActions['toast']
+  onRefresh: () => Promise<void>
+}) {
+  const [open, setOpen] = useState(false)
+  const [repoName, setRepoName] = useState(defaultRepoName(displayName))
+  const [plan, setPlan] = useState<{ steps: PlanStep[]; blocked: string[]; dry: boolean } | null>(null)
+  const [busy, setBusy] = useState(false)
+
+  const call = async (dry: boolean) => {
+    setBusy(true)
+    const r = await postJson(`/api/admin/ops/engagements/${engagementId}/provision`, { repoName, dry })
+    setBusy(false)
+    const steps = (r.data.steps as PlanStep[]) ?? []
+    const blocked = (r.data.blocked as string[]) ?? (r.data.error ? [String(r.data.error)] : [])
+    setPlan({ steps, blocked, dry })
+    if (!dry) {
+      toast(r.ok ? 'Site provisioned' : 'Provisioning stopped; see the steps', r.ok ? 'success' : 'error')
+      await onRefresh()
+    }
+  }
+
+  if (!open) {
+    return (
+      <button type="button" onClick={() => setOpen(true)} className={smallButton}>
+        Provision site
+      </button>
+    )
+  }
+  return (
+    <div className="rounded-md border border-gray-800 p-2 space-y-2">
+      <label className="block">
+        <span className={label}>Repo name (private, from AA-Template)</span>
+        <input
+          value={repoName}
+          onChange={(ev) => {
+            setRepoName(ev.target.value)
+            setPlan(null)
+          }}
+          className={smallControl}
+        />
+      </label>
+      {plan && <PlanList steps={plan.steps} blocked={plan.blocked} />}
+      <div className="flex flex-wrap gap-2">
+        <button type="button" disabled={busy || !repoName.trim()} onClick={() => call(true)} className={smallButton}>
+          {busy && !plan ? 'Checking…' : 'Preview (dry run)'}
+        </button>
+        <button
+          type="button"
+          disabled={busy || !plan || !plan.dry || plan.blocked.length > 0}
+          onClick={() => {
+            if (window.confirm(`Create the private repo ${repoName}, set its secrets and create the Vercel project?`)) void call(false)
+          }}
+          className={`${smallButton} border-blue-600 text-blue-200`}
+        >
+          {busy && plan ? 'Creating…' : 'Create'}
+        </button>
+        <button type="button" disabled={busy} onClick={() => { setOpen(false); setPlan(null) }} className={smallButton}>
+          Cancel
+        </button>
+      </div>
+    </div>
+  )
+}
+
+const RUN_KIND_LABELS: Record<RunKind, string> = {
+  site_build: 'Build the site (brief)',
+  site_update: 'Update the site (instructions)',
+  go_live: 'Go live (make indexable)',
+}
+
+function RunAgentForm({
+  engagementId,
+  repoUrl,
+  toast,
+  onRefresh,
+}: {
+  engagementId: string
+  repoUrl: string
+  toast: OpsActions['toast']
+  onRefresh: () => Promise<void>
+}) {
+  const [kind, setKind] = useState<RunKind>('site_update')
+  const [text, setText] = useState('')
+  const [preview, setPreview] = useState<{ blocked: string[]; payload: Record<string, unknown> | null } | null>(null)
+  const [busy, setBusy] = useState(false)
+  const needsText = kind !== 'go_live'
+
+  const body = (dry: boolean) => ({
+    kind,
+    ...(kind === 'site_build' ? { brief: text } : {}),
+    ...(kind === 'site_update' ? { instructions: text } : {}),
+    dry,
+  })
+  const run = async (dry: boolean) => {
+    setBusy(true)
+    const r = await postJson(`/api/admin/ops/engagements/${engagementId}/runs`, body(dry))
+    setBusy(false)
+    const blocked = (r.data.blocked as string[]) ?? (r.data.error ? [String(r.data.error)] : [])
+    if (dry) {
+      setPreview({ blocked, payload: (r.data.payload as Record<string, unknown>) ?? null })
+      return
+    }
+    setPreview(null)
+    if (r.ok) {
+      toast(`Agent ${kind} dispatched`, 'success')
+      setText('')
+    } else toast(String(r.data.error ?? blocked.join('; ') ?? 'Dispatch failed'), 'error')
+    await onRefresh()
+  }
+
+  return (
+    <div className="rounded-md border border-gray-800 p-2 space-y-2">
+      <p className="text-xs text-gray-500 break-all">Repo: {repoUrl.replace(/^https:\/\/github\.com\//, '')}</p>
+      <select
+        aria-label="Run kind"
+        value={kind}
+        onChange={(ev) => {
+          setKind(ev.target.value as RunKind)
+          setPreview(null)
+        }}
+        className={smallControl}
+      >
+        {RUN_KINDS.map((k) => (
+          <option key={k} value={k}>
+            {RUN_KIND_LABELS[k]}
+          </option>
+        ))}
+      </select>
+      {needsText && (
+        <textarea
+          aria-label={kind === 'site_build' ? 'Brief' : 'Instructions'}
+          rows={5}
+          value={text}
+          onChange={(ev) => {
+            setText(ev.target.value)
+            setPreview(null)
+          }}
+          placeholder={kind === 'site_build' ? 'BRIEF.md: business, services, areas, voice, photos…' : 'INSTRUCTIONS.md: the scoped change to make'}
+          className={`${smallControl} resize-y font-mono text-xs`}
+        />
+      )}
+      {preview && (
+        <div className="text-xs space-y-1">
+          {preview.blocked.map((b) => (
+            <p key={b} className="text-red-300">
+              Blocked: {b}
+            </p>
+          ))}
+          {preview.payload && (
+            <pre className="whitespace-pre-wrap break-all rounded bg-gray-900 p-2 text-gray-300">{JSON.stringify(preview.payload, null, 2)}</pre>
+          )}
+        </div>
+      )}
+      <div className="flex flex-wrap gap-2">
+        <button type="button" disabled={busy || (needsText && !text.trim())} onClick={() => run(true)} className={smallButton}>
+          Preview (dry run)
+        </button>
+        <button
+          type="button"
+          disabled={busy || !preview || preview.blocked.length > 0}
+          onClick={() => {
+            if (window.confirm(`Dispatch ${kind} to ${repoUrl}? The workflow opens a PR for review.`)) void run(false)
+          }}
+          className={`${smallButton} border-blue-600 text-blue-200`}
+        >
+          {busy ? 'Working…' : 'Dispatch'}
+        </button>
+      </div>
+    </div>
+  )
+}
+
+function SyncWorkflowButton({
+  engagementId,
+  toast,
+  onRefresh,
+}: {
+  engagementId: string
+  toast: OpsActions['toast']
+  onRefresh: () => Promise<void>
+}) {
+  const [busy, setBusy] = useState(false)
+  const sync = async () => {
+    setBusy(true)
+    const dry = await postJson('/api/admin/ops/agents/sync-workflow', { mode: 'pr', only: [engagementId], dry: true })
+    const blocked = (dry.data.blocked as string[]) ?? []
+    const repo = ((dry.data.repos as { repo: string; adds: string[] }[]) ?? [])[0]
+    if (!dry.ok || blocked.length > 0 || !repo) {
+      setBusy(false)
+      toast(blocked.join('; ') || String(dry.data.error ?? 'Nothing to sync for this client'), 'error')
+      return
+    }
+    if (!window.confirm(`Open a PR on ${repo.repo} adding:\n- ${repo.adds.join('\n- ')}`)) {
+      setBusy(false)
+      return
+    }
+    const live = await postJson('/api/admin/ops/agents/sync-workflow', { mode: 'pr', only: [engagementId], dry: false })
+    setBusy(false)
+    const result = ((live.data.repos as { prUrl?: string; errors: string[] }[]) ?? [])[0]
+    if (live.ok && result && result.errors.length === 0) toast(result.prUrl ? `PR opened: ${result.prUrl}` : 'Workflow synced', 'success')
+    else toast(result?.errors.join('; ') || String(live.data.error ?? 'Workflow sync failed'), 'error')
+    await onRefresh()
+  }
+  return (
+    <button type="button" disabled={busy} onClick={sync} className={smallButton}>
+      {busy ? 'Syncing workflow…' : 'Sync workflow (PR)'}
+    </button>
   )
 }
 
