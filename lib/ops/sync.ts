@@ -32,6 +32,7 @@ import { getStripe } from '@/lib/ops/stripe'
 import {
   DELIVERABLE_TYPES_FOR_SERVICE,
   SERVICE_KEYS,
+  isInformationalCheck,
   type DeliverableStatus,
   type DeliverableType,
   type EngagementSource,
@@ -289,8 +290,8 @@ function stageFromStripe(e: Pick<Eng, 'stripeSubscriptionStatus' | 'upfrontPaidA
 }
 
 /** Per the rules in CLAUDE.md §21: no rows unknown, all pass live, all fail not_started. */
-export function deriveDeliverableStatus(results: { passed: boolean | null }[]): DeliverableStatus {
-  const ran = results.filter((r) => r.passed !== null)
+export function deriveDeliverableStatus(results: { key?: string; passed: boolean | null }[]): DeliverableStatus {
+  const ran = results.filter((r) => r.passed !== null && !isInformationalCheck(r.key))
   if (ran.length === 0) return 'unknown'
   if (ran.every((r) => r.passed)) return 'live'
   if (ran.every((r) => !r.passed)) return 'not_started'
@@ -806,7 +807,7 @@ export async function runOpsSync({ dryRun }: { dryRun: boolean }): Promise<OpsSy
     }
 
     // ── f. Status derivation (manualStatus is never read or written) ─────
-    const next = deriveDeliverableStatus(Array.from(rows.values()).map((passed) => ({ passed })))
+    const next = deriveDeliverableStatus(Array.from(rows.entries()).map(([key, passed]) => ({ key, passed })))
     if (next !== del.computedStatus) {
       if (!dryRun && !del.id.startsWith('dry:')) {
         const id = del.id

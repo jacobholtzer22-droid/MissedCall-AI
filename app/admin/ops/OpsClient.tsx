@@ -11,7 +11,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { RefreshCw } from 'lucide-react'
+import { Globe, RefreshCw } from 'lucide-react'
 import type { BoardDeliverable, BoardEngagement, OpsBoard } from '@/lib/ops/board'
 import type { UnmatchedPayingCustomer } from '@/lib/ops/sync'
 import { Age } from '../ui'
@@ -209,6 +209,24 @@ export function OpsClient({ initialBoard, initialTab }: { initialBoard: OpsBoard
     if (unmatched !== null) void loadUnmatched(true)
   }
 
+  const [checking, setChecking] = useState(false)
+  const runWebChecks = async () => {
+    setChecking(true)
+    const { ok, data } = await send('/api/admin/ops/checks/web', 'POST')
+    setChecking(false)
+    if (!ok) {
+      toast(String(data.error ?? 'Web checks failed'), 'error')
+      return
+    }
+    const advances = Array.isArray(data.autoAdvances) ? data.autoAdvances.length : 0
+    const errs = Array.isArray(data.apiErrors) ? data.apiErrors.length : 0
+    toast(
+      `Web checks done${advances ? `, ${advances} step${advances === 1 ? '' : 's'} advanced` : ''}${errs ? `, ${errs} API error${errs === 1 ? '' : 's'}` : ''}`,
+      errs ? 'error' : 'success'
+    )
+    await refresh()
+  }
+
   const selectedEngagement = selected
     ? board.engagements.find((e) => e.id === selected.id) ?? board.ignored.find((e) => e.id === selected.id) ?? null
     : null
@@ -233,6 +251,10 @@ export function OpsClient({ initialBoard, initialTab }: { initialBoard: OpsBoard
             <button type="button" onClick={runSync} disabled={syncing} className={button}>
               <RefreshCw className={`h-3.5 w-3.5 ${syncing ? 'animate-spin' : ''}`} />
               {syncing ? 'Syncing…' : 'Sync'}
+            </button>
+            <button type="button" onClick={runWebChecks} disabled={checking} className={button}>
+              <Globe className={`h-3.5 w-3.5 ${checking ? 'animate-pulse' : ''}`} />
+              {checking ? 'Checking…' : 'Run web checks'}
             </button>
           </div>
         </div>

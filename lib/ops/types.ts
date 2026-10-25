@@ -75,8 +75,26 @@ export const OPS_CHECK_KEYS = [
   'website.real_lead_30d',
   'ads.customer_linked',
   'ads.snapshot_7d',
+  // Web checks (lib/ops/checks): website
+  'vercel.project_found',
+  'vercel.git_linked',
+  'repo.has_workflow',
+  'http.indexing_matches_step',
+  'http.homepage_200',
+  // Web checks: domain
+  'dns.apex_points_to_vercel',
+  'dns.www_cname',
+  'vercel.domain_verified',
+  'dns.mx_present',
+  'dns.txt_dmarc',
+  'http.https_200',
 ] as const
 export type OpsCheckKey = (typeof OPS_CHECK_KEYS)[number]
+
+/** Recorded for the panel only: never counted toward a deliverable's status. */
+export const INFORMATIONAL_CHECK_KEYS: readonly OpsCheckKey[] = ['repo.has_workflow', 'dns.mx_present', 'dns.txt_dmarc']
+export const isInformationalCheck = (key: string | undefined) =>
+  key !== undefined && (INFORMATIONAL_CHECK_KEYS as readonly string[]).includes(key)
 
 export const OPS_ACTIVITY_KINDS = [
   'note',

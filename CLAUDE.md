@@ -2960,3 +2960,45 @@ Every Deliverable can sit at a **step** from `STEP_CATALOG` in `lib/ops/steps.ts
   green (`paused_by_client` keeps the paused slate). A `manualStatus` still wins.
 - The sync never reads or writes steps. `scripts/ops-apply-2026-10-24-steps.ts` is the
   one-off seed (`--dry` first).
+
+### Web checks (`lib/ops/checks/`, Oct 24 2026)
+
+`runWebChecks({ dryRun })` (`lib/ops/checks/run-web.ts`), run by `GET /api/cron/ops-web-checks`
+(daily 11:17 UTC, CRON_SECRET bearer or the admin, `?dry=1`, maxDuration 120) and
+`POST /api/admin/ops/checks/web` (the "Run web checks" button). Read only against
+Vercel (`VERCEL_API_TOKEN`, `VERCEL_TEAM_ID`), GitHub (`GITHUB_OPS_TOKEN`, repos owned
+by `jacobholtzer22-droid`), DNS and the live sites; tokens are never logged. Every
+external call runs at most 5 at a time. Writes only Deliverable (evidence, computedStatus,
+forward steps), OpsCheck and OpsActivity.
+
+- **Discovery order** (`lib/ops/checks/discover.ts`), first hit wins: (a) a website
+  deliverable whose evidence already has the `repoUrl` / `vercelProjectId`; (b) the
+  repo's `site.config.ts` `businessSlug` equals a `Business.slug` that has an
+  Engagement; (c) the Vercel project's git link points at a matched repo; (d) a
+  Vercel project domain equals a domain deliverable's `evidence.domain` (that
+  project's git-linked repo comes along). **Never by name similarity**: the rest is
+  listed as `unmatchedRepos`, `unmatchedProjects`, `clientsWithoutProject`; two
+  candidates for one client are an ambiguity and neither is used.
+- **Evidence it owns** (set when found, never deleted, since some can be hand-entered):
+  website `repoUrl`, `repoDefaultBranch`, `repoHasWorkflow`, `siteConfigSlug`,
+  `siteIndexableFlag` (`launch.indexable`, else `!prelaunch`), `vercelProjectId`, `vercelProjectName`, `vercelGitLinked`,
+  `productionUrl`, `productionState`, `previewUrl`, `previewBranch`; domain `domains`
+  (`[{ name, verified }]`, custom domains only) and `primaryDomain` (the www host if
+  present, else the apex).
+- **Check keys**: website `vercel.project_found`, `vercel.git_linked`,
+  `vercel.prod_ready` (latest production deployment READY), `slug.matches_db`,
+  `repo.has_workflow`, `http.indexing_matches_step` (step `live` ⇒ no noindex in
+  X-Robots-Tag or robots meta; any other step ⇒ noindex), `http.homepage_200`. Domain,
+  only with a `primaryDomain`: `dns.apex_points_to_vercel` (A 76.76.21.21 or Vercel's
+  newer 216.150.1.x / 216.150.16.x / 216.198.79.x ranges, or CNAME `*.vercel-dns*.com`), `dns.www_cname`,
+  `vercel.domain_verified`, `dns.mx_present`, `dns.txt_spf` (fail when MX and no
+  v=spf1; null with no MX), `dns.txt_dmarc`, `http.https_200`. DNS uses a 5s resolver;
+  resolver errors are `passed = null`. `repo.has_workflow`, `dns.mx_present` and
+  `dns.txt_dmarc` are informational (`INFORMATIONAL_CHECK_KEYS` in `lib/ops/types.ts`):
+  `deriveDeliverableStatus` skips them, in the sync and the web checks alike.
+- **Auto-advance is forward only.** A domain at `propagating` or `dns_records` moves
+  to `live` when `dns.apex_points_to_vercel`, `vercel.domain_verified` and
+  `http.https_200` all pass. A website at `approved` moves to `live` when
+  `vercel.prod_ready` and `slug.matches_db` pass and the domain deliverable is live.
+  Each writes an `OpsActivity` (`system`). Never backward, never a terminal step,
+  never a deliverable with a manualStatus.
