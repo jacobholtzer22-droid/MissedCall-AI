@@ -304,6 +304,7 @@ export function OpsClient({ initialBoard, initialTab }: { initialBoard: OpsBoard
           unmatchedLoading={unmatchedLoading}
           onLoadUnmatched={loadUnmatched}
           onClose={() => setSelected(null)}
+          onRefresh={refresh}
         />
       )}
 

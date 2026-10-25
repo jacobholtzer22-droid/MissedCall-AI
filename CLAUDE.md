@@ -2982,7 +2982,7 @@ forward steps), OpsCheck and OpsActivity.
 - **Evidence it owns** (set when found, never deleted, since some can be hand-entered):
   website `repoUrl`, `repoDefaultBranch`, `repoHasWorkflow`, `siteConfigSlug`,
   `siteIndexableFlag` (`launch.indexable`, else `!prelaunch`), `vercelProjectId`, `vercelProjectName`, `vercelGitLinked`,
-  `productionUrl`, `productionState`, `previewUrl`, `previewBranch`; domain `domains`
+  `productionUrl`, `productionState`, `previewUrl`, `previewState`; domain `domains`
   (`[{ name, verified }]`, custom domains only) and `primaryDomain` (the www host if
   present, else the apex).
 - **Check keys**: website `vercel.project_found`, `vercel.git_linked`,
@@ -3002,3 +3002,66 @@ forward steps), OpsCheck and OpsActivity.
   `vercel.prod_ready` and `slug.matches_db` pass and the domain deliverable is live.
   Each writes an `OpsActivity` (`system`). Never backward, never a terminal step,
   never a deliverable with a manualStatus.
+- **Preview by branch.** `previewBranch` is owned by the build callback, not the web
+  checks. When it is set and a Vercel project is matched, `previewUrl` / `previewState`
+  come from the newest preview deployment of that branch (`listDeploymentsForBranch`);
+  with no `previewBranch` they come from the latest preview deployment.
+
+### Web designer dispatch (`lib/ops/agents/`, Oct 25 2026)
+
+The agent is the `aa-build.yml` workflow in each client repo (from AA-Template). The
+platform provisions repos, dispatches runs and records a signed callback. Clients:
+`lib/ops/github.ts` (GITHUB_OPS_TOKEN; reads through `api()` in `checks/discover.ts`,
+writes through a local helper, secrets sealed with `libsodium-wrappers`) and
+`lib/ops/vercel.ts` (VERCEL_API_TOKEN, VERCEL_TEAM_ID). Env read by name only:
+`ANTHROPIC_API_KEY_BUILDS` and `OPS_CALLBACK_SECRET` become the repo secrets
+`ANTHROPIC_API_KEY` and `OPS_CALLBACK_SECRET`. **Every GitHub or Vercel write has a
+dry mode** (`dry` defaults to true in every route) that returns the plan and writes
+nothing; the UI always shows the dry result before a confirmed live call.
+
+- **Provision** `POST /api/admin/ops/engagements/[id]/provision` `{ repoName?, dry }`
+  (`provision.ts`). Blocked (409) without a website service and deliverable, a linked
+  Business, or the two env vars, or when `evidence.repoUrl` exists or the repo name is
+  already taken (an existing repo is **never** reused). Live, in order, stopping at
+  the first failure (502 with the steps so far): private repo
+  `jacobholtzer22-droid/<repoName>` from AA-Template (default branch only); the two
+  secrets; a Vercel project named the lowercased repo name, git-linked, framework
+  null, `npm run build`, output `out`; evidence `repoUrl`, `repoDefaultBranch`,
+  `vercelProjectId`, `vercelProjectName`, `vercelGitLinked: true`, `productionUrl`
+  (`https://<project>.vercel.app`); website step `build` (waiting on Jacob); an
+  activity. Default repo name: `AA-` + the PascalCased display name
+  (`defaultRepoName`, `lib/ops/agents/names.ts`).
+- **Dispatch** `POST /api/admin/ops/engagements/[id]/runs` `{ kind, brief?, instructions?, dry }`
+  (`dispatch.ts`). Kinds `site_build` (needs `brief`), `site_update` (needs
+  `instructions`), `go_live`. Needs `evidence.repoUrl` and a linked Business (the
+  workflow requires `business_slug`). Live: AgentRun `queued` (input `{ kind, repo,
+  brief|instructions }`), then `repository_dispatch` event `aa-build` with
+  `client_payload` `{ kind, run_id, brief (base64), instructions (base64),
+  business_slug, callback_url }`; 204 ⇒ `dispatched` + `startedAt`, anything else ⇒
+  `failed`. Both write an activity. Dry shows the payload with brief/instructions as
+  character counts. `callback_url` is always
+  `https://www.alignandacquire.com/api/ops/build-callback` (GitHub cannot reach dev).
+- **Callback** `POST /api/ops/build-callback`, public (middleware does not cover
+  `/api/ops`). Header `X-AA-Signature` = hex HMAC-SHA256 of the raw body keyed with
+  `OPS_CALLBACK_SECRET` (`sha256=` prefix tolerated), compared in constant time before
+  parsing; unset secret or bad signature ⇒ 401. Body `{ run_id, kind, status
+  (success|failure|cancelled), branch, pr_url, verify_passed, failing_checks,
+  report_excerpt, run_url? }`. 400 bad body, 404 unknown run. Idempotent: a finished
+  run answers 200 `duplicate: true`; the update claims the run with
+  `finishedAt IS NULL`. Sets status `succeeded`/`failed`, `output` (`prUrl`, `branch`,
+  `verifyPassed`, `failingChecks`, `reportExcerpt`, `runUrl`), `externalId` = run URL;
+  merges `previewBranch` into the website evidence; on success of `site_build` or
+  `site_update` sets the website step to **`review`** (waiting on Jacob: "Review the
+  agent's PR and preview", between `build` and `send_preview`). `go_live` leaves the step.
+- **Sync workflow** `POST /api/admin/ops/agents/sync-workflow` `{ mode: 'pr'|'direct', only?, dry }`
+  (`sync-workflow.ts`, maxDuration 120). For website deliverables with `repoUrl` and
+  `repoHasWorkflow === false` (unrecorded ⇒ skipped: run web checks first): adds
+  `.github/workflows/aa-build.yml` and AGENT.md's "Non-interactive (CI) mode" section,
+  both copied from AA-Template at `TEMPLATE_REF` (`main`), on branch `ci/aa-build` + a
+  PR, or straight to the default branch (then `repoHasWorkflow: true`); sets the two
+  secrets either way. Blocked when the template ref lacks either file. 3 repos at a time.
+- **UI**: the website deliverable card shows Provision site (no `repoUrl`), Run agent
+  (kind, brief or instructions, dry preview, Dispatch) and Sync workflow (PR mode, when
+  `repoHasWorkflow === false`). The Agents tab reads `GET /api/admin/ops/agents`:
+  runs newest first with PR / preview / run links, rows expand to the input and report
+  excerpt, and "Sync workflow to all repos" runs dry, then takes a mode and confirms.

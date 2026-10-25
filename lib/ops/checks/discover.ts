@@ -22,8 +22,8 @@
 import { EXTERNAL_CONCURRENCY, errMessage, fetchWithTimeout, mapLimited } from './limit'
 
 export const GITHUB_OWNER = 'jacobholtzer22-droid'
-const VERCEL = 'https://api.vercel.com'
-const GITHUB = 'https://api.github.com'
+export const VERCEL = 'https://api.vercel.com'
+export const GITHUB = 'https://api.github.com'
 
 // ── Shapes ──────────────────────────────────────────────────────────────────
 
@@ -67,7 +67,8 @@ export type Discovery = {
 
 // ── HTTP ────────────────────────────────────────────────────────────────────
 
-async function api<T>(url: string, token: string, label: string, errors: string[], accept?: string): Promise<{ status: number; body: T | null }> {
+/** GET helper shared with lib/ops/github.ts and lib/ops/vercel.ts. 404 is { status: 404, body: null }, not an error. */
+export async function api<T>(url: string, token: string, label: string, errors: string[], accept?: string): Promise<{ status: number; body: T | null }> {
   try {
     const res = await fetchWithTimeout(url, {
       headers: { Authorization: `Bearer ${token}`, 'User-Agent': 'aa-ops-web-checks', ...(accept ? { Accept: accept } : {}) },
