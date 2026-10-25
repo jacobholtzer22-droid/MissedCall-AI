@@ -3053,6 +3053,8 @@ nothing; the UI always shows the dry result before a confirmed live call.
   merges `previewBranch` into the website evidence; on success of `site_build` or
   `site_update` sets the website step to **`review`** (waiting on Jacob: "Review the
   agent's PR and preview", between `build` and `send_preview`). `go_live` leaves the step.
+  **When `pr_url` is null on a successful run, the callback opens the PR itself** (`openPrForRun`, GITHUB_OPS_TOKEN) from the pushed branch into the default branch, and records `prOpenedBy: 'platform'` or `prError` on the run's output. Repos default to "GitHub Actions may not create pull requests", so this is the normal path; the workflow's PR step is `continue-on-error`.
+- **Workflow requirements learned on the first live run (Oct 25 2026, Prestige):** the Claude step must pass `github_token: ${{ secrets.GITHUB_TOKEN }}` (otherwise claude-code-action tries an OIDC exchange and fails) and allow Bash (AGENT.md runs npm build/verify and commits); `git push` stays denied. Node comes from `.nvmrc` when present, else 20. `sync-workflow` only adds a missing workflow; it does not update an outdated copy, so a template workflow fix must be copied into already-synced repos by hand (Prestige is current as of AA-Template 5aee24d).
 - **Sync workflow** `POST /api/admin/ops/agents/sync-workflow` `{ mode: 'pr'|'direct', only?, dry }`
   (`sync-workflow.ts`, maxDuration 120). For website deliverables with `repoUrl` and
   `repoHasWorkflow === false` (unrecorded ⇒ skipped: run web checks first): adds
