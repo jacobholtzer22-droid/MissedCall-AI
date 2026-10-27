@@ -2810,7 +2810,7 @@ Vocabularies for every String column are in `lib/ops/types.ts`.
 
 ### Rules
 
-- **Ops reads existing models and writes only its own five tables.** It never
+- **Ops reads existing models and writes only its own tables** (the five above plus the Ops HQ tables: `OpsJob`, `OpsMessage`, `AgentEvent`, `OpsApproval`). It never
   writes `Business`, `PipelinePerson`, `WebsiteLead`, `Appointment` or any other
   pre-existing model. `Business.stripeCustomerId` is left alone; Ops keeps its
   own copy on `Engagement`. The only change to existing models is the two
@@ -3067,3 +3067,106 @@ nothing; the UI always shows the dry result before a confirmed live call.
   `repoHasWorkflow === false`). The Agents tab reads `GET /api/admin/ops/agents`:
   runs newest first with PR / preview / run links, rows expand to the input and report
   excerpt, and "Sync workflow to all repos" runs dry, then takes a mode and confirms.
+
+### Ops HQ (`?tab=hq`, `lib/ops/hq/`, branch `ops-hq`, Oct 26 2026)
+
+Jacob talks to a chief agent; the chief hands work to specialists (ads, web); every
+step streams into a live feed; each job ends with a report and approvals Jacob
+pushes or rejects. Built checkpoint by checkpoint; this section grows with each.
+
+**Tables** (`scripts/sql/2026-10-26_add_ops_hq.sql`, applied Oct 26 2026):
+
+| Model | Purpose |
+|---|---|
+| `OpsJob` | One request from Jacob: `prompt`, `status` (planning, running, awaiting_approval, done, failed, cancelled), the chief's final `summary`, `engagementIds` in scope. |
+| `OpsMessage` | The HQ chat log, `role` jacob or chief. `jobId` is optional so plain chat works. |
+| `AgentEvent` | The live feed: one row per completed content block or status change of a run. `kind` status, thinking, tool_call, tool_result, text, error; `label` is one line (~140 chars); `detail` the payload, never a secret. Index (runId, createdAt). |
+| `OpsApproval` | A proposed change waiting for Push: `kind` ads_change or web_push, the exact action list or PR info in `detail`, `expected`, `status` pending, approved, rejected, applied, failed. |
+
+`AgentRun` gained three nullable columns: `jobId`, `agent` (chief, ads, web; null on
+rows from before HQ, which are web) and `mode` (work, apply).
+`scripts/sql/2026-10-26_ops_hq_chief_runs.sql` (applied Oct 26 2026) makes
+`AgentRun.engagementId` nullable: a chief run spans the whole board. Only chief runs
+have no client. The board and the Agents tab list client runs only
+(`engagementId not null`); the build callback answers 400 for a run with no client.
+
+**Runtime** (`lib/ops/hq/`):
+
+- `anthropic.ts`: raw `fetch` to `/v1/messages` with `stream: true`, SSE parsed by
+  hand. Do **not** swap in `@anthropic-ai/sdk`: the repo pins 0.52 for the SMS webhook.
+  Each content block is rebuilt from its start + deltas and handed to `onBlock` when it
+  stops. Every request: adaptive thinking with `display: "summarized"` (the feed shows
+  the summaries), `output_config.effort`, the system prompt cached. `claude-opus-5-5` and
+  `claude-sonnet-5-5` also send `fallbacks: "default"` (beta
+  `server-side-fallback-2026-07-01`): on a policy decline the API re-runs the request on
+  a fallback model and the feed shows "Switched to …". No MCP connector: every agent
+  works through client tools. 429, 529 and 5xx are retried with backoff. Key
+  `ANTHROPIC_API_KEY_BUILDS`, never logged.
+- `loop.ts` `runAgentLoop`: at most 60 model turns per run. Client `tool_use` blocks run
+  here (inputs strictly parsed and checked against the tool's schema; a bad or cut-off
+  input goes back as an error result and is never run); `pause_turn` re-sends the
+  conversation as is; `refusal` fails the run. History is append-only (assistant blocks
+  go back exactly as received). The run row is read before every turn; `cancelled`
+  stops it.
+- `events.ts`: one `AgentEvent` per completed block (thinking summary, text, tool call,
+  tool result, fallback switch) plus status rows. A tool that writes its own event
+  (an ads write) returns `label: null` so the loop does not add a second line. Labels are one
+  line, at most 140 chars; details are capped at 20k chars. `noEmDash` strips em dashes
+  from every label, chat message and report.
+- `runs.ts`: `createRun` (status running, a Started event), `finishRun` (a cancelled
+  run stays cancelled), `failRun` (status failed plus an error event).
+
+**The chief** (`lib/ops/hq/chief.ts`, `OPS_CHIEF_MODEL`, default `claude-opus-5-5`,
+effort medium). Its context is the last 40 HQ messages (jacob → user, chief →
+assistant) and today's date in America/Detroit. Tools:
+
+| Tool | What it does |
+|---|---|
+| `get_board` | Compact rows from `getOpsBoard()` (ignored rows left out): stage, services, each deliverable's step, waitingOn, note and status, ads customer id, repo URL, alerts, decisions; plus `waitingTotals` per owner (computed, so the chief never counts by hand) and follow-ups due. |
+| `get_client` | One client in full, its valid step keys per deliverable, decisions, last 10 activities, last 5 agent runs. |
+| `log_update` | An `OpsActivity` (note) in Jacob's words, an optional step change (validated like the deliverables PATCH; sets `stepUpdatedAt` and the default `waitingOn`), an optional next follow-up. One transaction. |
+| `record_decision` | An `OpsActivity` kind `system`, body `DECISION: …`. Every decision for the clients in scope is handed to specialists. |
+| `start_ads_task` | One ads specialist run per account under the current job (`'all_ads_clients'` = every client with `ads` in services and a customer id). Never-touch clients and clients without a customer id are skipped with a reason; missing Google Ads credentials stop the call ("offline: Google Ads credentials not set") and the chief tells Jacob. |
+| `start_web_task` | Offline for now (returns an error the chief relays); wired at checkpoint 5. |
+| `finish_job` | `OpsJob.summary` = JSON `{ text, sections[], pendingApprovals }`; status `awaiting_approval` when approvals are pending, else `done`. |
+
+The chief's last text becomes an `OpsMessage` (role chief). A thrown error fails the
+run and posts "I hit an error and stopped: …" in the chat.
+
+**The ads specialist** (`lib/ops/hq/ads.ts` + `ads-tools.ts`, `OPS_AGENT_MODEL`, default
+`claude-sonnet-5-5`, effort high; checkpoint 3 landed Oct 27 2026). One `AgentRun` per
+account (agent ads, kind ads_task, mode work or apply). A plain tool_use loop over the
+**platform's own Google Ads API credentials** through `getGoogleAdsClient()` in
+`lib/google-ads.ts`: `GOOGLE_ADS_DEVELOPER_TOKEN`, `GOOGLE_ADS_CLIENT_ID`,
+`GOOGLE_ADS_CLIENT_SECRET`, `GOOGLE_ADS_REFRESH_TOKEN`, `GOOGLE_ADS_MCC_ID` (read by
+name; any missing ⇒ offline). Every call takes `customerId`, must equal the run's
+account, and logs in with `login_customer_id = GOOGLE_ADS_MCC_ID`. Explorer access:
+2,880 operations a day across everything, so one run is capped at 150 Google calls.
+No Sapt, no MCP. System prompt `lib/ops/hq/prompts/ads.md` (Jacob's playbook; its
+"Known limits" section replaced the Sapt one Oct 27 2026).
+
+| Tools | Mode |
+|---|---|
+| `list_campaigns`, `campaign_performance(days)`, `search_terms(days, minCost, campaignId?)`, `keyword_performance(days)`, `conversion_actions_and_goals`, `campaign_settings(campaignId?)` (budget and whether shared, bidding and its limits, location option, networks, dates, locations, ad groups with bids, campaign negatives), `change_history(days ≤ 30)` | both |
+| `add_campaign_negatives` (PHRASE, ≤ 50), `pause_campaign`, `exclude_conversion_goal(category, origin)` (account goal `biddable: false`), `set_ad_group_cpc` (lower only), `set_location_option(PRESENCE)`, `create_search_campaign(spec)` (always PAUSED, one atomic mutate) | work |
+| `set_campaign_budget` (refuses a shared budget), `enable_campaign`, `set_campaign_end_date`, `set_ad_group_cpc` (any direction), `set_bidding_strategy` (MAXIMIZE_CLICKS + ceiling, MANUAL_CPC, MAXIMIZE_CONVERSIONS), `remove_campaign_criterion` | apply, only the tools in `input.allow` (the approved proposal's) |
+
+Every write goes through `mutate()`: `validate_only` when the tool is called with
+`validateOnly: true` or the run is `dry`, and one `AgentEvent` with the exact
+operations and Google's response ("Changed: …" / "Checked, no change made: …"; on a
+rejection an error event with Google's error list). Work runs make the AUTO changes;
+anything else comes back in the closing JSON as a proposal whose `action` is the apply
+tool and `args` its arguments, and becomes an `OpsApproval` (ads_change, pending).
+`parseAdsReport` reads the last json fence (or the last `{"done"` object). Notes:
+enums come back from the library as numbers (`en()` maps them to names); the library
+builds update masks from the resource's fields, so an empty sub-object (e.g.
+`manual_cpc: {}`) would mask nothing, which is why bidding sets a field inside it;
+`change_event` refuses a start more than 30 days back.
+
+**Routes** (all `requireAdmin()`):
+
+| Route | What it does |
+|---|---|
+| `POST /api/admin/ops/hq/message` | `{ body }` → saves the message, starts a chief run, returns `{ messageId, runId }` at once; the run continues under `waitUntil` (`maxDuration` 800). |
+| `GET /api/admin/ops/hq/feed?since=` | New messages and events since `since` (events max 200; without `since`, the last 50 / 200), active runs plus runs finished in the last 30 min with their latest event, pending approvals, the last 20 jobs with parsed reports, and `cursor` for the next poll. |
+| `POST /api/admin/ops/hq/runs/[id]/cancel` | queued, running or dispatched → cancelled; the loop stops before its next turn. 409 when already finished. |

@@ -108,8 +108,31 @@ export const OPS_ACTIVITY_KINDS = [
 ] as const
 export type OpsActivityKind = (typeof OPS_ACTIVITY_KINDS)[number]
 
-export const AGENT_RUN_KINDS = ['site_build', 'site_update', 'seo_pass', 'ads_setup', 'ads_audit', 'other'] as const
+export const AGENT_RUN_KINDS = ['site_build', 'site_update', 'go_live', 'seo_pass', 'ads_setup', 'ads_audit', 'chief', 'ads_task', 'other'] as const
 export type AgentRunKind = (typeof AGENT_RUN_KINDS)[number]
 
 export const AGENT_RUN_STATUSES = ['queued', 'dispatched', 'running', 'succeeded', 'failed', 'cancelled'] as const
 export type AgentRunStatus = (typeof AGENT_RUN_STATUSES)[number]
+
+// ── Ops HQ ──────────────────────────────────────────────────────────────────
+
+export const HQ_AGENTS = ['chief', 'ads', 'web'] as const
+export type HqAgent = (typeof HQ_AGENTS)[number]
+
+export const AGENT_RUN_MODES = ['work', 'apply'] as const
+export type AgentRunMode = (typeof AGENT_RUN_MODES)[number]
+
+export const OPS_JOB_STATUSES = ['planning', 'running', 'awaiting_approval', 'done', 'failed', 'cancelled'] as const
+export type OpsJobStatus = (typeof OPS_JOB_STATUSES)[number]
+
+export const OPS_MESSAGE_ROLES = ['jacob', 'chief'] as const
+export type OpsMessageRole = (typeof OPS_MESSAGE_ROLES)[number]
+
+export const AGENT_EVENT_KINDS = ['status', 'thinking', 'tool_call', 'tool_result', 'text', 'error'] as const
+export type AgentEventKind = (typeof AGENT_EVENT_KINDS)[number]
+
+export const OPS_APPROVAL_KINDS = ['ads_change', 'web_push'] as const
+export type OpsApprovalKind = (typeof OPS_APPROVAL_KINDS)[number]
+
+export const OPS_APPROVAL_STATUSES = ['pending', 'approved', 'rejected', 'applied', 'failed'] as const
+export type OpsApprovalStatus = (typeof OPS_APPROVAL_STATUSES)[number]
