@@ -558,6 +558,273 @@ const WORK_WRITES: Def[] = [
   SET_AD_GROUP_CPC,
   SET_LOCATION_OPTION,
   {
+    name: 'create_conversion_action',
+    description:
+      'Create a conversion action. AD_CALL counts calls from the call asset on an ad (give callDurationSeconds); WEBPAGE is a page or form the site tag fires; WEBSITE_CALL is a click-to-call on the site. Creating it gives the tag a label to fire; it records nothing until the tag is on the site.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        customerId: customerIdProp,
+        name: { type: 'string', description: 'What Jacob will see in the account, e.g. "Calls from ads".' },
+        type: { type: 'string', enum: ['AD_CALL', 'WEBPAGE', 'WEBSITE_CALL', 'CLICK_TO_CALL'], description: 'AD_CALL for calls from the ad call asset.' },
+        category: { type: 'string', description: 'PHONE_CALL_LEAD, SUBMIT_LEAD_FORM, QUALIFIED_LEAD, CONVERTED_LEAD or DEFAULT.' },
+        primary: { type: 'boolean', description: 'Primary (counted in Conversions and used for bidding). Default true.' },
+        countingType: { type: 'string', enum: ['ONE_PER_CLICK', 'MANY_PER_CLICK'], description: 'Default ONE_PER_CLICK, which is right for a lead.' },
+        callDurationSeconds: { type: 'number', description: 'AD_CALL and WEBSITE_CALL only: how long a call must last to count. Google requires 0 to 600.' },
+        validateOnly: validateOnlyProp,
+      },
+      required: ['customerId', 'name', 'type', 'category'],
+    },
+    run: async (ctx, i) => {
+      const name = String(i.name).trim()
+      if (!name) throw new Error('name is required')
+      const type = String(i.type).toUpperCase()
+      const category = String(i.category).toUpperCase()
+      if (!(type in enums.ConversionActionType)) throw new Error(`unknown type ${type}`)
+      if (!(category in enums.ConversionActionCategory)) throw new Error(`unknown category ${category}`)
+      const counting = String(i.countingType ?? 'ONE_PER_CLICK').toUpperCase()
+      if (!(counting in enums.ConversionActionCountingType)) throw new Error(`unknown countingType ${counting}`)
+      const callType = type === 'AD_CALL' || type === 'WEBSITE_CALL'
+      if (i.callDurationSeconds !== undefined) {
+        if (!callType) throw new Error('callDurationSeconds applies only to AD_CALL and WEBSITE_CALL')
+        if (!(i.callDurationSeconds >= 0 && i.callDurationSeconds <= 600)) throw new Error('callDurationSeconds must be 0 to 600')
+      }
+      const primary = i.primary !== false
+      const resource: Record<string, unknown> = {
+        name,
+        type: enums.ConversionActionType[type as keyof typeof enums.ConversionActionType],
+        category: enums.ConversionActionCategory[category as keyof typeof enums.ConversionActionCategory],
+        status: enums.ConversionActionStatus.ENABLED,
+        counting_type: enums.ConversionActionCountingType[counting as keyof typeof enums.ConversionActionCountingType],
+        primary_for_goal: primary,
+        include_in_conversions_metric: primary,
+      }
+      if (callType && i.callDurationSeconds !== undefined) resource.phone_call_duration_seconds = Math.round(Number(i.callDurationSeconds))
+      const what = `conversion action "${name}" (${type} / ${category}${primary ? ', primary' : ', secondary'})`
+      const r = await mutate(ctx, what, [{ entity: 'conversion_action', operation: 'create', resource }], i.validateOnly)
+      return { result: { ...r, name, type, category, primary }, label: null }
+    },
+  },
+  {
+    name: 'add_call_asset',
+    description:
+      'Put a phone number on a campaign as a call asset, optionally reporting calls to an AD_CALL conversion action. Creates the asset and links it to the campaign in one all-or-nothing change.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        customerId: customerIdProp,
+        campaignId: campaignIdProp,
+        phoneNumber: { type: 'string', description: 'The number as the client publishes it, e.g. "+1 954-790-8436".' },
+        countryCode: { type: 'string', description: 'Two-letter country code, default US.' },
+        conversionActionId: { type: 'string', description: 'Optional: an AD_CALL conversion action id, so calls from this asset are counted.' },
+        validateOnly: validateOnlyProp,
+      },
+      required: ['customerId', 'campaignId', 'phoneNumber'],
+    },
+    run: async (ctx, i) => {
+      const campaignId = digits(i.campaignId, 'campaignId')
+      const phone = String(i.phoneNumber).trim()
+      if (!phone) throw new Error('phoneNumber is required')
+      const country = String(i.countryCode ?? 'US').toUpperCase()
+      if (!/^[A-Z]{2}$/.test(country)) throw new Error('countryCode must be two letters')
+      const asset = res(ctx, 'assets', '-1')
+      const call: Record<string, unknown> = { phone_number: phone, country_code: country }
+      if (i.conversionActionId) {
+        call.call_conversion_action = res(ctx, 'conversionActions', digits(i.conversionActionId, 'conversionActionId'))
+        call.call_conversion_reporting_state = enums.CallConversionReportingState.USE_RESOURCE_LEVEL_CALL_CONVERSION_ACTION
+      } else {
+        call.call_conversion_reporting_state = enums.CallConversionReportingState.USE_ACCOUNT_LEVEL_CALL_CONVERSION_ACTION
+      }
+      const ops: MutateOperation<any>[] = [
+        { entity: 'asset', operation: 'create', resource: { resource_name: asset, name: `Call ${phone}`, type: enums.AssetType.CALL, call_asset: call } },
+        { entity: 'campaign_asset', operation: 'create', resource: { campaign: res(ctx, 'campaigns', campaignId), asset, field_type: enums.AssetFieldType.CALL, status: enums.AssetLinkStatus.ENABLED } },
+      ]
+      const what = `call asset ${phone} on campaign ${campaignId}${i.conversionActionId ? ` reporting to conversion action ${i.conversionActionId}` : ''}`
+      const r = await mutate(ctx, what, ops, i.validateOnly)
+      return { result: { ...r, phone, campaignId }, label: null }
+    },
+  },
+  {
+    name: 'set_network_settings',
+    description: 'Choose which networks a Search campaign shows on. Search partners and the Display network are usually off for a local service account.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        customerId: customerIdProp,
+        campaignId: campaignIdProp,
+        googleSearch: { type: 'boolean', description: 'Google Search itself. Default true.' },
+        searchPartners: { type: 'boolean', description: 'Google Search partners. Default false.' },
+        displayNetwork: { type: 'boolean', description: 'The Display network. Default false.' },
+        validateOnly: validateOnlyProp,
+      },
+      required: ['customerId', 'campaignId'],
+    },
+    run: async (ctx, i) => {
+      const id = digits(i.campaignId, 'campaignId')
+      const search = i.googleSearch !== false
+      const partners = i.searchPartners === true
+      const display = i.displayNetwork === true
+      if (!search && !partners && !display) throw new Error('a campaign must show on at least one network')
+      const what = `campaign ${id} networks: search ${search ? 'on' : 'off'}, partners ${partners ? 'on' : 'off'}, display ${display ? 'on' : 'off'}`
+      const r = await mutate(
+        ctx,
+        what,
+        [
+          {
+            entity: 'campaign',
+            operation: 'update',
+            resource: {
+              resource_name: res(ctx, 'campaigns', id),
+              network_settings: { target_google_search: search, target_search_network: partners, target_content_network: display, target_partner_search_network: false },
+            },
+          },
+        ],
+        i.validateOnly
+      )
+      return { result: r, label: null }
+    },
+  },
+  {
+    name: 'create_ad_group',
+    description: 'Add a Search ad group to an existing campaign, with its default max CPC. Keywords and the ad go in afterwards with add_keywords and upsert_rsa.',
+    input_schema: {
+      type: 'object',
+      properties: { customerId: customerIdProp, campaignId: campaignIdProp, name: { type: 'string' }, cpc: { type: 'number', description: 'Default max CPC in dollars.' }, validateOnly: validateOnlyProp },
+      required: ['customerId', 'campaignId', 'name', 'cpc'],
+    },
+    run: async (ctx, i) => {
+      const campaignId = digits(i.campaignId, 'campaignId')
+      const name = String(i.name).trim()
+      if (!name) throw new Error('name is required')
+      if (!(i.cpc > 0)) throw new Error('cpc must be more than 0')
+      const what = `ad group "${name}" on campaign ${campaignId} at $${i.cpc} max CPC`
+      const r = await mutate(
+        ctx,
+        what,
+        [
+          {
+            entity: 'ad_group',
+            operation: 'create',
+            resource: { name, campaign: res(ctx, 'campaigns', campaignId), status: enums.AdGroupStatus.ENABLED, type: enums.AdGroupType.SEARCH_STANDARD, cpc_bid_micros: micros(i.cpc) },
+          },
+        ],
+        i.validateOnly
+      )
+      return { result: { ...r, name }, label: null }
+    },
+  },
+  {
+    name: 'add_keywords',
+    description: 'Add keywords to an ad group. Phrase and exact are the useful match types for a local service account; broad spends on anything.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        customerId: customerIdProp,
+        adGroupId: { type: 'string', description: 'Ad group id, digits only.' },
+        keywords: {
+          type: 'array',
+          description: 'Up to 100 per call: [{ text, matchType: "PHRASE" | "EXACT" | "BROAD" }].',
+          items: { type: 'object', properties: { text: { type: 'string' }, matchType: { type: 'string', enum: ['PHRASE', 'EXACT', 'BROAD'] } }, required: ['text'] },
+        },
+        validateOnly: validateOnlyProp,
+      },
+      required: ['customerId', 'adGroupId', 'keywords'],
+    },
+    run: async (ctx, i) => {
+      const adGroupId = digits(i.adGroupId, 'adGroupId')
+      const list = (i.keywords as { text?: unknown; matchType?: unknown }[]) ?? []
+      if (!Array.isArray(list) || !list.length) throw new Error('keywords is empty')
+      if (list.length > 100) throw new Error('at most 100 keywords per call')
+      const seen = new Set<string>()
+      const ops = list.map((k) => {
+        const text = String(k.text ?? '').trim().toLowerCase()
+        if (!text) throw new Error('every keyword needs text')
+        const mt = String(k.matchType ?? 'PHRASE').toUpperCase()
+        if (!['PHRASE', 'EXACT', 'BROAD'].includes(mt)) throw new Error(`unknown matchType ${mt}`)
+        const key = `${mt}:${text}`
+        if (seen.has(key)) throw new Error(`"${text}" is listed twice as ${mt}`)
+        seen.add(key)
+        return {
+          entity: 'ad_group_criterion' as const,
+          operation: 'create' as const,
+          resource: { ad_group: res(ctx, 'adGroups', adGroupId), status: enums.AdGroupCriterionStatus.ENABLED, keyword: { text, match_type: enums.KeywordMatchType[mt as 'PHRASE' | 'EXACT' | 'BROAD'] } },
+        }
+      })
+      const what = `${ops.length} keyword${ops.length === 1 ? '' : 's'} on ad group ${adGroupId} (${oneLine(list.map((k) => String(k.text)).join(', '), 80)})`
+      const r = await mutate(ctx, what, ops, i.validateOnly)
+      return { result: { ...r, count: ops.length }, label: null }
+    },
+  },
+  {
+    name: 'upsert_rsa',
+    description:
+      'Put a responsive search ad in an ad group. Google does not allow editing an RSA\u2019s text, so this creates a new one; with replaceExisting it removes the ad group\u2019s current enabled RSAs in the same change. 3 to 15 headlines (30 chars each), 2 to 4 descriptions (90 chars each).',
+    input_schema: {
+      type: 'object',
+      properties: {
+        customerId: customerIdProp,
+        adGroupId: { type: 'string', description: 'Ad group id, digits only.' },
+        finalUrl: { type: 'string', description: 'The landing page this ad sends to.' },
+        headlines: { type: 'array', items: { type: 'string' }, description: '3 to 15, each at most 30 characters.' },
+        descriptions: { type: 'array', items: { type: 'string' }, description: '2 to 4, each at most 90 characters.' },
+        path1: { type: 'string', description: 'Optional display path, at most 15 characters.' },
+        path2: { type: 'string', description: 'Optional second display path, at most 15 characters.' },
+        replaceExisting: { type: 'boolean', description: 'Remove the ad group\u2019s current enabled RSAs in the same change. Default false.' },
+        validateOnly: validateOnlyProp,
+      },
+      required: ['customerId', 'adGroupId', 'finalUrl', 'headlines', 'descriptions'],
+    },
+    run: async (ctx, i) => {
+      const adGroupId = digits(i.adGroupId, 'adGroupId')
+      const url = String(i.finalUrl).trim()
+      if (!/^https?:\/\//i.test(url)) throw new Error('finalUrl must start with http:// or https://')
+      const headlines = (i.headlines as unknown[]).map((h) => String(h).trim()).filter(Boolean)
+      const descriptions = (i.descriptions as unknown[]).map((d) => String(d).trim()).filter(Boolean)
+      if (headlines.length < 3 || headlines.length > 15) throw new Error('3 to 15 headlines')
+      if (descriptions.length < 2 || descriptions.length > 4) throw new Error('2 to 4 descriptions')
+      const longHeadline = headlines.find((h) => h.length > 30)
+      if (longHeadline) throw new Error(`headline over 30 characters: "${longHeadline}" (${longHeadline.length})`)
+      const longDescription = descriptions.find((d) => d.length > 90)
+      if (longDescription) throw new Error(`description over 90 characters: "${oneLine(longDescription, 40)}" (${longDescription.length})`)
+      for (const [field, v] of [['path1', i.path1], ['path2', i.path2]] as const) {
+        if (v !== undefined && String(v).length > 15) throw new Error(`${field} is at most 15 characters`)
+      }
+      const ops: MutateOperation<any>[] = []
+      let removed = 0
+      if (i.replaceExisting) {
+        const rows = await query(
+          ctx,
+          `SELECT ad_group_ad.ad.id FROM ad_group_ad
+           WHERE ad_group.id = ${adGroupId} AND ad_group_ad.status = 'ENABLED' AND ad_group_ad.ad.type = 'RESPONSIVE_SEARCH_AD'`
+        )
+        for (const row of rows) {
+          ops.push({ entity: 'ad_group_ad', operation: 'remove', resource: res(ctx, 'adGroupAds', `${adGroupId}~${row.ad_group_ad.ad.id}`) })
+          removed++
+        }
+      }
+      ops.push({
+        entity: 'ad_group_ad',
+        operation: 'create',
+        resource: {
+          ad_group: res(ctx, 'adGroups', adGroupId),
+          status: enums.AdGroupAdStatus.ENABLED,
+          ad: {
+            final_urls: [url],
+            responsive_search_ad: {
+              headlines: headlines.map((text) => ({ text })),
+              descriptions: descriptions.map((text) => ({ text })),
+              ...(i.path1 ? { path1: String(i.path1) } : {}),
+              ...(i.path2 ? { path2: String(i.path2) } : {}),
+            },
+          },
+        },
+      })
+      const what = `responsive search ad on ad group ${adGroupId} (${headlines.length} headlines, ${descriptions.length} descriptions${removed ? `, replacing ${removed}` : ''})`
+      const r = await mutate(ctx, what, ops, i.validateOnly)
+      return { result: { ...r, removed, headlines: headlines.length, descriptions: descriptions.length }, label: null }
+    },
+  },
+  {
     name: 'create_search_campaign',
     description:
       'Build a NEW Search campaign from a spec Jacob approved, always PAUSED: budget, bidding, locations (Presence), ad groups with keywords and one responsive search ad each, campaign negatives. All or nothing. Run it with validateOnly first.',
