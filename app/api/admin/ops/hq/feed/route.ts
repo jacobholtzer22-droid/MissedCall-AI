@@ -5,12 +5,15 @@
 // chat messages and agent events newer than it (events capped at 200). Without
 // since: the last 50 messages and the last 200 events. Always: active runs plus
 // runs finished in the last 30 minutes (agent, client, status, latest event),
-// pending approvals newest first, and the last 20 jobs with their reports.
-// cursor is the newest timestamp returned; pass it back as since.
+// each HQ agent's most recent run whenever it was (the idle desks), approvals
+// that are pending or were decided in the last 30 minutes (so a pushed card can
+// show Applying, then Applied or the error), and the last 20 jobs with their
+// reports. cursor is the newest timestamp returned; pass it back as since.
 
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { requireAdmin } from '@/lib/pipeline-server'
+import { HQ_AGENTS } from '@/lib/ops/types'
 
 export const dynamic = 'force-dynamic'
 
@@ -34,7 +37,12 @@ export async function GET(request: Request) {
     const since = raw ? new Date(raw) : null
     if (since && Number.isNaN(since.getTime())) return NextResponse.json({ error: 'since is not a date' }, { status: 400 })
 
-    const [messages, events, runs, approvals, jobs] = await Promise.all([
+    const recent = new Date(Date.now() - RECENT_MS)
+    const runInclude = {
+      engagement: { select: { displayName: true } },
+      events: { orderBy: { createdAt: 'desc' as const }, take: 1, select: { label: true, kind: true, createdAt: true } },
+    }
+    const [messages, events, runs, approvals, jobs, lastRuns] = await Promise.all([
       since
         ? db.opsMessage.findMany({ where: { createdAt: { gt: since } }, orderBy: { createdAt: 'asc' }, take: 200 })
         : db.opsMessage.findMany({ orderBy: { createdAt: 'desc' }, take: 50 }).then((r) => r.reverse()),
@@ -44,22 +52,35 @@ export async function GET(request: Request) {
       db.agentRun.findMany({
         where: {
           agent: { not: null },
-          OR: [{ status: { in: ACTIVE } }, { finishedAt: { gt: new Date(Date.now() - RECENT_MS) } }],
+          OR: [{ status: { in: ACTIVE } }, { finishedAt: { gt: recent } }],
         },
         orderBy: { createdAt: 'desc' },
         take: 30,
-        include: {
-          engagement: { select: { displayName: true } },
-          events: { orderBy: { createdAt: 'desc' }, take: 1, select: { label: true, kind: true, createdAt: true } },
-        },
+        include: runInclude,
       }),
       db.opsApproval.findMany({
-        where: { status: 'pending' },
+        where: { OR: [{ status: 'pending' }, { decidedAt: { gt: recent } }] },
         orderBy: { createdAt: 'desc' },
         include: { run: { select: { engagementId: true, engagement: { select: { displayName: true } } } } },
       }),
       db.opsJob.findMany({ orderBy: { createdAt: 'desc' }, take: 20 }),
+      Promise.all(HQ_AGENTS.map((agent) => db.agentRun.findFirst({ where: { agent }, orderBy: { createdAt: 'desc' }, include: runInclude }))),
     ])
+    type RunRow = (typeof runs)[number]
+    const runView = (r: RunRow) => ({
+      id: r.id,
+      agent: r.agent,
+      mode: r.mode,
+      kind: r.kind,
+      jobId: r.jobId,
+      engagementId: r.engagementId,
+      client: r.engagement?.displayName.trim() ?? null,
+      status: r.status,
+      error: r.error,
+      startedAt: r.startedAt?.toISOString() ?? null,
+      finishedAt: r.finishedAt?.toISOString() ?? null,
+      latest: r.events[0] ? { kind: r.events[0].kind, label: r.events[0].label, at: r.events[0].createdAt.toISOString() } : null,
+    })
 
     const stamps = [...messages.map((m) => m.createdAt), ...events.map((e) => e.createdAt)].map((d) => d.getTime())
     const cursor = stamps.length ? new Date(Math.max(...stamps)).toISOString() : (since?.toISOString() ?? null)
@@ -68,20 +89,8 @@ export async function GET(request: Request) {
       cursor,
       messages: messages.map((m) => ({ id: m.id, jobId: m.jobId, role: m.role, body: m.body, createdAt: m.createdAt.toISOString() })),
       events: events.map((e) => ({ id: e.id, runId: e.runId, kind: e.kind, label: e.label, detail: e.detail, createdAt: e.createdAt.toISOString() })),
-      runs: runs.map((r) => ({
-        id: r.id,
-        agent: r.agent,
-        mode: r.mode,
-        kind: r.kind,
-        jobId: r.jobId,
-        engagementId: r.engagementId,
-        client: r.engagement?.displayName.trim() ?? null,
-        status: r.status,
-        error: r.error,
-        startedAt: r.startedAt?.toISOString() ?? null,
-        finishedAt: r.finishedAt?.toISOString() ?? null,
-        latest: r.events[0] ? { kind: r.events[0].kind, label: r.events[0].label, at: r.events[0].createdAt.toISOString() } : null,
-      })),
+      runs: runs.map(runView),
+      lastRuns: Object.fromEntries(HQ_AGENTS.map((agent, n) => [agent, lastRuns[n] ? runView(lastRuns[n]!) : null])),
       approvals: approvals.map((a) => ({
         id: a.id,
         jobId: a.jobId,
@@ -94,6 +103,9 @@ export async function GET(request: Request) {
         detail: a.detail,
         expected: a.expected,
         status: a.status,
+        error: a.error,
+        decidedAt: a.decidedAt?.toISOString() ?? null,
+        appliedAt: a.appliedAt?.toISOString() ?? null,
         createdAt: a.createdAt.toISOString(),
       })),
       jobs: jobs.map((j) => ({

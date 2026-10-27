@@ -29,24 +29,20 @@ import path from 'node:path'
 import type { Prisma } from '@prisma/client'
 import { db } from '@/lib/db'
 import { AGENT_MODEL_DEFAULT, type ApiMessage } from './anthropic'
-import { ADS_APPLY_TOOLS, adsTools, checkProposal, missingAdsEnv, type AdsToolContext } from './ads-tools'
+import { ADS_APPLY_TOOLS, adsTools, checkProposal, isNeverTouch, missingAdsEnv, type AdsToolContext } from './ads-tools'
 import { DECISION_PREFIX } from './decisions'
 import { emit, noEmDash, oneLine } from './events'
 import { runAgentLoop } from './loop'
+import { onSpecialistRunEnded } from './jobs'
 import { createRun, failRun, finishRun } from './runs'
 
 const PLAYBOOK = path.join(process.cwd(), 'lib/ops/hq/prompts/ads.md')
-
-/** Accounts the playbook says never to touch. Matched on the client name, case-insensitive. */
-const NEVER_TOUCH = ['mk2 auto spa', "g's elite dump", 'g’s elite dump', 'valor', 'hail recovery', 'evergreen construction', 'apply nex']
 
 export class AdsOffline extends Error {}
 
 export const ADS_OFFLINE = 'offline: Google Ads credentials not set'
 
 const agentModel = () => process.env.OPS_AGENT_MODEL?.trim() || AGENT_MODEL_DEFAULT
-
-const isNeverTouch = (name: string) => NEVER_TOUCH.some((n) => name.toLowerCase().includes(n))
 
 // ── Report parsing ──────────────────────────────────────────────────────────
 
@@ -150,7 +146,8 @@ export async function startAdsRun(opts: {
   if (isNeverTouch(client)) throw new Error(`${client} is on the never-touch list`)
   const ev = e.deliverables[0]?.evidence as Record<string, unknown> | null
   const customerId = (e.business?.googleAdsCustomerId ?? (typeof ev?.adsCustomerId === 'string' ? ev.adsCustomerId : ''))?.replace(/-/g, '')
-  if (!customerId) throw new Error(`${client} has no Google Ads customer id on the board`)
+  // No id on the board: a work run finds the account under the manager and binds it (bind_account).
+  if (!customerId && mode === 'apply') throw new Error(`${client} has no Google Ads customer id on the board`)
   const input: AdsInput = {
     instructions: opts.instructions,
     customerId,
@@ -178,8 +175,11 @@ function taskMessage(input: AdsInput, mode: 'work' | 'apply', decisions: string[
           '"ui_steps" are only for work no tool can do: call conversions, call assets, sitelinks, billing, advertiser verification, conversion tracking setup, keyword-level bids. A bidding strategy, location option, end date, budget, enabling a campaign or an ad group bid is never a UI step: propose it. Advice (what not to do yet) goes in "expected", not in ui_steps.',
         ].join(' ')
       : `Apply run: Jacob approved one change. Call ${input.approval?.action} with exactly ${JSON.stringify(input.approval?.args ?? {})} (plus customerId), then confirm it with a read and report it in "done". Change nothing else; any other write is refused.`
+  const accountLine = input.customerId
+    ? `Account: ${input.client}, Google Ads customer ${input.customerId}. Pass customerId ${input.customerId} on every tool call; the tools log in through the manager account for you.`
+    : `Client: ${input.client}. The board has no Google Ads account for this client yet. Find it under the manager with find_client_account (try the business name, then the owner's name or trade) and bind_account it before anything else; that also records the id on the platform. If none matches, stop and say so; never create an account. After binding, pass that customerId on every tool call.`
   return [
-    `Account: ${input.client}, Google Ads customer ${input.customerId}. Pass customerId ${input.customerId} on every tool call; the tools log in through the manager account for you.`,
+    accountLine,
     `Standing decisions for this client:\n${decisions.length ? decisions.map((d) => `- ${DECISION_PREFIX} ${d}`).join('\n') : '- none'}`,
     `Task from Jacob's chief:\n${input.instructions}`,
     modeLine,
@@ -235,6 +235,8 @@ export async function runAdsTask(runId: string) {
       runId,
       customerId: input.customerId,
       client: input.client,
+      engagementId: run.engagementId,
+      findAccount: !input.customerId,
       mode,
       dry: input.dry,
       allow: input.allow,
@@ -286,7 +288,7 @@ export async function runAdsTask(runId: string) {
             agent: 'ads',
             kind: 'ads_change',
             title: oneLine(p.title, 200),
-            detail: { ...p, customerId: input.customerId } as Prisma.InputJsonObject,
+            detail: { ...p, customerId: ctx.customerId } as Prisma.InputJsonObject,
             expected: p.expected || null,
           },
         })
@@ -329,4 +331,7 @@ export async function runAdsTask(runId: string) {
     const message = await failRun(runId, err)
     if (approvalId) await db.opsApproval.updateMany({ where: { id: approvalId, status: 'approved' }, data: { status: 'failed', error: message } })
   }
+  // Last specialist run of a job to finish: the chief writes the report (or the job closes after an apply).
+  const job = await db.agentRun.findUnique({ where: { id: runId }, select: { jobId: true } })
+  if (job?.jobId) await onSpecialistRunEnded(job.jobId).catch((err) => console.error('[hq] job report failed:', err instanceof Error ? err.message : err))
 }

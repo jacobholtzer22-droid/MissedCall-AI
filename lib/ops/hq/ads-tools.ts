@@ -19,9 +19,12 @@
 // GOOGLE_ADS_CLIENT_ID, GOOGLE_ADS_CLIENT_SECRET, GOOGLE_ADS_REFRESH_TOKEN,
 // GOOGLE_ADS_MCC_ID.
 
+import type { Prisma } from '@prisma/client'
 import { enums, type MutateOperation } from 'google-ads-api'
+import { db } from '@/lib/db'
 import { getGoogleAdsClient } from '@/lib/google-ads'
-import { emit, oneLine } from './events'
+import { STEP_CATALOG, defaultWaitingOn, stepFor } from '@/lib/ops/steps'
+import { emit, noEmDash, oneLine } from './events'
 import { validate, type ClientTool } from './loop'
 
 const ENV = ['GOOGLE_ADS_DEVELOPER_TOKEN', 'GOOGLE_ADS_CLIENT_ID', 'GOOGLE_ADS_CLIENT_SECRET', 'GOOGLE_ADS_REFRESH_TOKEN', 'GOOGLE_ADS_MCC_ID'] as const
@@ -34,10 +37,19 @@ export function missingAdsEnv(): string[] {
 /** Google API calls one run may make (Explorer access allows 2,880 a day across everything). */
 const MAX_CALLS = 150
 
+/** Accounts the playbook says never to touch. Matched on a client or account name, case-insensitive. */
+const NEVER_TOUCH = ['mk2 auto spa', "g's elite dump", 'g’s elite dump', 'valor', 'hail recovery', 'evergreen construction', 'apply nex']
+export const isNeverTouch = (name: string) => NEVER_TOUCH.some((n) => name.toLowerCase().includes(n))
+
 export type AdsToolContext = {
   runId: string
+  /** The run's account. Empty until bind_account when the board had no customer id. */
   customerId: string
   client: string
+  /** The client this run works for (Ops engagement); set_ads_step and bind_account write to it. */
+  engagementId: string | null
+  /** The run started with no account: find_client_account and bind_account stay in its tool list. */
+  findAccount?: boolean
   mode: 'work' | 'apply'
   /** Every write is sent validate_only: Google checks it and changes nothing. */
   dry: boolean
@@ -52,10 +64,10 @@ export type AdsToolContext = {
 
 // ── Plumbing ────────────────────────────────────────────────────────────────
 
-function customer(ctx: AdsToolContext) {
+function customer(ctx: AdsToolContext, customerId = ctx.customerId) {
   if (++ctx.calls > MAX_CALLS) throw new Error(`this run has used its ${MAX_CALLS} Google Ads calls; finish with what you have`)
   return getGoogleAdsClient().Customer({
-    customer_id: ctx.customerId,
+    customer_id: customerId,
     refresh_token: process.env.GOOGLE_ADS_REFRESH_TOKEN!,
     login_customer_id: process.env.GOOGLE_ADS_MCC_ID,
   })
@@ -485,6 +497,97 @@ const SET_LOCATION_OPTION: Def = {
   },
 }
 
+// ── Finding the account, recording progress ───────────────────────────────
+
+/** Client accounts directly under the MCC (customer_client, level 1, not managers). */
+async function mccClients(ctx: AdsToolContext) {
+  const mcc = process.env.GOOGLE_ADS_MCC_ID!.replace(/-/g, '')
+  let rows: any[]
+  try {
+    rows = await customer(ctx, mcc).query(
+      `SELECT customer_client.id, customer_client.descriptive_name, customer_client.status, customer_client.manager
+       FROM customer_client WHERE customer_client.level = 1 AND customer_client.manager = FALSE`
+    )
+  } catch (err) {
+    throw new Error(`Google Ads query failed: ${adsError(err)}`)
+  }
+  return rows.map((r) => ({ id: String(r.customer_client.id), name: String(r.customer_client.descriptive_name ?? ''), status: en(enums.CustomerStatus, r.customer_client.status) }))
+}
+
+const FIND_CLIENT_ACCOUNT: Def = {
+  name: 'find_client_account',
+  description: 'Search the client accounts under the Align and Acquire manager by name. Use it when this run has no account yet; then bind_account the right one. Never create an account.',
+  input_schema: { type: 'object', properties: { query: { type: 'string', description: 'Part of the account name, e.g. "Prestige" or "blinds".' } }, required: ['query'] },
+  run: async (ctx, i) => {
+    const words = String(i.query).toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length > 1)
+    if (!words.length) throw new Error('query is empty')
+    const all = await mccClients(ctx)
+    const matches = all.filter((a) => words.some((w) => a.name.toLowerCase().includes(w)))
+    return { result: { matches }, label: `${matches.length} account${matches.length === 1 ? '' : 's'} under the manager match "${oneLine(String(i.query), 40)}"` }
+  },
+}
+
+const BIND_ACCOUNT: Def = {
+  name: 'bind_account',
+  description:
+    'Make an account under the manager this run’s account, once. It also records the customer id on the client’s platform account and the ads deliverable, if they have none. Every other tool then takes this customerId.',
+  input_schema: { type: 'object', properties: { customerId: { type: 'string', description: 'The account id from find_client_account, digits only.' } }, required: ['customerId'] },
+  run: async (ctx, i) => {
+    if (ctx.customerId) throw new Error(`this run is already on ${ctx.client} (customer ${ctx.customerId})`)
+    const id = digits(i.customerId, 'customerId')
+    const account = (await mccClients(ctx)).find((a) => a.id === id)
+    if (!account) throw new Error(`${id} is not a client account under the manager`)
+    if (account.status !== 'ENABLED') throw new Error(`${account.name} is ${account.status}, not enabled`)
+    if (isNeverTouch(account.name)) throw new Error(`${account.name} is on the never-touch list`)
+    if (!ctx.engagementId) throw new Error('this run has no client to record the account on')
+    const e = await db.engagement.findUnique({
+      where: { id: ctx.engagementId },
+      select: { businessId: true, business: { select: { googleAdsCustomerId: true } }, deliverables: { where: { type: 'ads' }, select: { id: true, evidence: true } } },
+    })
+    const onBusiness = e?.business?.googleAdsCustomerId?.replace(/-/g, '') || null
+    if (onBusiness && onBusiness !== id) throw new Error(`the platform account already has Google Ads customer ${onBusiness}; Jacob must fix that by hand`)
+
+    // The one Business write HQ makes: the customer id, only when it is empty.
+    let recorded = false
+    if (e?.businessId && !onBusiness) {
+      const done = await db.business.updateMany({ where: { id: e.businessId, googleAdsCustomerId: null }, data: { googleAdsCustomerId: id } })
+      recorded = done.count > 0
+    }
+    const ads = e?.deliverables[0]
+    if (ads) {
+      const evidence = (ads.evidence ?? {}) as Record<string, unknown>
+      if (evidence.adsCustomerId !== id) await db.deliverable.update({ where: { id: ads.id }, data: { evidence: { ...evidence, adsCustomerId: id } as Prisma.InputJsonObject } })
+    }
+    ctx.customerId = id
+    const run = await db.agentRun.findUnique({ where: { id: ctx.runId }, select: { input: true } })
+    await db.agentRun.update({ where: { id: ctx.runId }, data: { input: { ...((run?.input ?? {}) as Record<string, unknown>), customerId: id } as Prisma.InputJsonObject } })
+    return {
+      result: { ok: true, customerId: id, account: account.name, recordedOnPlatform: recorded },
+      label: `Working in ${account.name} (${id})${recorded ? ', customer id recorded on the platform account' : ''}`,
+    }
+  },
+}
+
+const SET_ADS_STEP: Def = {
+  name: 'set_ads_step',
+  description: `Move this client’s ads deliverable to a step on the Ops board, with a short note Jacob will read. Steps: ${STEP_CATALOG.ads.map((st) => st.key).join(', ')}.`,
+  input_schema: { type: 'object', properties: { step: { type: 'string' }, note: { type: 'string', description: 'One line, e.g. "Built paused Oct 27; waiting on Jacob\u2019s Push".' } }, required: ['step', 'note'] },
+  run: async (ctx, i) => {
+    const key = String(i.step).trim()
+    if (!stepFor('ads', key)) throw new Error(`"${key}" is not an ads step. Valid: ${STEP_CATALOG.ads.map((st) => st.key).join(', ')}`)
+    if (!ctx.engagementId) throw new Error('this run has no client')
+    const note = noEmDash(String(i.note).trim())
+    if (!note) throw new Error('note is empty')
+    const d = await db.deliverable.findUnique({ where: { engagementId_type: { engagementId: ctx.engagementId, type: 'ads' } }, select: { id: true } })
+    if (!d) throw new Error(`${ctx.client} has no ads deliverable`)
+    await db.$transaction([
+      db.deliverable.update({ where: { id: d.id }, data: { step: key, stepUpdatedAt: new Date(), waitingOn: defaultWaitingOn('ads', key), waitingNote: note } }),
+      db.opsActivity.create({ data: { engagementId: ctx.engagementId, kind: 'note', body: `Ads: ${note}` } }),
+    ])
+    return { result: { ok: true, step: key }, label: `Ads step for ${ctx.client} set to ${key}: ${note}` }
+  },
+}
+
 const WORK_WRITES: Def[] = [
   {
     name: 'add_campaign_negatives',
@@ -596,8 +699,8 @@ const WORK_WRITES: Def[] = [
         category: enums.ConversionActionCategory[category as keyof typeof enums.ConversionActionCategory],
         status: enums.ConversionActionStatus.ENABLED,
         counting_type: enums.ConversionActionCountingType[counting as keyof typeof enums.ConversionActionCountingType],
+        // include_in_conversions_metric is output only (Google derives it from primary_for_goal); sending it is rejected as immutable.
         primary_for_goal: primary,
-        include_in_conversions_metric: primary,
       }
       if (callType && i.callDurationSeconds !== undefined) resource.phone_call_duration_seconds = Math.round(Number(i.callDurationSeconds))
       const what = `conversion action "${name}" (${type} / ${category}${primary ? ', primary' : ', secondary'})`
@@ -835,7 +938,7 @@ const WORK_WRITES: Def[] = [
         spec: {
           type: 'object',
           description:
-            '{ name, dailyBudget, bidding: "MANUAL_CPC" | "MAXIMIZE_CLICKS" | "MAXIMIZE_CONVERSIONS", cpcCeiling?, geoTargetConstantIds?: string[], radius?: {latitude, longitude, miles}, negatives?: string[], adGroups: [{ name, cpc, keywords: [{ text, matchType: "PHRASE" | "EXACT" | "BROAD" }], ad: { headlines: string[3-15], descriptions: string[2-4], finalUrl, path1?, path2? } }] }',
+            '{ name, dailyBudget, bidding: "MANUAL_CPC" | "MAXIMIZE_CLICKS" | "MAXIMIZE_CONVERSIONS", cpcCeiling?, geoTargetConstantIds?: string[], languageIds?: string[] (1000 = English), radius?: {latitude, longitude, miles}, negatives?: string[], adGroups: [{ name, cpc, keywords: [{ text, matchType: "PHRASE" | "EXACT" | "BROAD" }], ad: { headlines: string[3-15], descriptions: string[2-4], finalUrl, path1?, path2? } }] }',
         },
         validateOnly: validateOnlyProp,
       },
@@ -851,6 +954,7 @@ const WORK_WRITES: Def[] = [
       if (!['MANUAL_CPC', 'MAXIMIZE_CLICKS', 'MAXIMIZE_CONVERSIONS'].includes(s.bidding)) fail('bidding must be MANUAL_CPC, MAXIMIZE_CLICKS or MAXIMIZE_CONVERSIONS')
       const geos: string[] = (s.geoTargetConstantIds ?? []).map((g: unknown) => digits(g, 'geoTargetConstantIds'))
       if (!geos.length && !s.radius) fail('give geoTargetConstantIds or radius')
+      const languages: string[] = (s.languageIds ?? []).map((l: unknown) => digits(l, 'languageIds'))
       if (!Array.isArray(s.adGroups) || !s.adGroups.length) fail('at least one ad group')
 
       const budget = res(ctx, 'campaignBudgets', '-1')
@@ -879,6 +983,7 @@ const WORK_WRITES: Def[] = [
           },
         },
         ...geos.map((g) => ({ entity: 'campaign_criterion' as const, operation: 'create' as const, resource: { campaign, location: { geo_target_constant: `geoTargetConstants/${g}` } } })),
+        ...languages.map((l) => ({ entity: 'campaign_criterion' as const, operation: 'create' as const, resource: { campaign, language: { language_constant: `languageConstants/${l}` } } })),
         ...(s.radius
           ? [
               {
@@ -1044,15 +1149,19 @@ function sameArg(a: unknown, b: unknown): boolean {
 
 /** The tools for one run: reads plus the mode's writes (apply: only ctx.allow). Every call is locked to ctx.customerId. */
 export function adsTools(ctx: AdsToolContext): ClientTool[] {
-  const writes = ctx.mode === 'work' ? WORK_WRITES : APPLY_WRITES.filter((t) => ctx.allow?.includes(t.name))
+  const writes = ctx.mode === 'work' ? [...WORK_WRITES, SET_ADS_STEP] : APPLY_WRITES.filter((t) => ctx.allow?.includes(t.name))
+  // A work run with no account yet starts by finding and binding one.
+  const account = ctx.mode === 'work' && ctx.findAccount ? [FIND_CLIENT_ACCOUNT, BIND_ACCOUNT] : []
+  const unlocked = new Set([...account, SET_ADS_STEP].map((t) => t.name))
   if (ctx.mode === 'apply' && !writes.length) throw new Error('apply mode needs the approved proposal’s tool in allow')
-  const writeNames = new Set(writes.map((t) => t.name))
-  return [...READS, ...writes].map((t) => ({
+  const writeNames = new Set(writes.filter((t) => t !== SET_ADS_STEP).map((t) => t.name))
+  return [...account, ...READS, ...writes].map((t) => ({
     name: t.name,
     description: t.description,
     input_schema: t.input_schema,
     run: async (input) => {
-      if (String(input.customerId ?? '').replace(/-/g, '') !== ctx.customerId) {
+      if (!unlocked.has(t.name) && !ctx.customerId) throw new Error('this run has no account yet: find_client_account, then bind_account')
+      if (!unlocked.has(t.name) && String(input.customerId ?? '').replace(/-/g, '') !== ctx.customerId) {
         throw new Error(`this run works only on ${ctx.client} (customer ${ctx.customerId})`)
       }
       const isWrite = writeNames.has(t.name)

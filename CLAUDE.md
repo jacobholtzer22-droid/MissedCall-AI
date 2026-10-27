@@ -2812,7 +2812,8 @@ Vocabularies for every String column are in `lib/ops/types.ts`.
 
 - **Ops reads existing models and writes only its own tables** (the five above plus the Ops HQ tables: `OpsJob`, `OpsMessage`, `AgentEvent`, `OpsApproval`). It never
   writes `Business`, `PipelinePerson`, `WebsiteLead`, `Appointment` or any other
-  pre-existing model. `Business.stripeCustomerId` is left alone; Ops keeps its
+  pre-existing model, with one exception: the HQ ads specialist's `bind_account` sets
+  `Business.googleAdsCustomerId` when it is empty (never overwrites; see Ops HQ). `Business.stripeCustomerId` is left alone; Ops keeps its
   own copy on `Engagement`. The only change to existing models is the two
   back-relation lines (`Business.engagement`, `PipelinePerson.engagement`), which
   add no columns.
@@ -3148,7 +3149,8 @@ No Sapt, no MCP. System prompt `lib/ops/hq/prompts/ads.md` (Jacob's playbook; it
 | Tools | Mode |
 |---|---|
 | `list_campaigns`, `campaign_performance(days)`, `search_terms(days, minCost, campaignId?)`, `keyword_performance(days)`, `conversion_actions_and_goals`, `campaign_settings(campaignId?)` (budget and whether shared, bidding and its limits, location option, networks, dates, locations, ad groups with bids, campaign negatives), `change_history(days ≤ 30)` | both |
-| `add_campaign_negatives` (PHRASE, ≤ 50), `pause_campaign`, `exclude_conversion_goal(category, origin)` (account goal `biddable: false`), `set_ad_group_cpc` (lower only), `set_location_option(PRESENCE)`, `create_search_campaign(spec)` (always PAUSED, one atomic mutate) | work |
+| `add_campaign_negatives` (PHRASE, ≤ 50), `pause_campaign`, `exclude_conversion_goal(category, origin)` (account goal `biddable: false`), `set_ad_group_cpc` (lower only), `set_location_option(PRESENCE)`, `create_search_campaign(spec)` (always PAUSED, one atomic mutate; `languageIds` add language criteria), `create_conversion_action` (AD_CALL, WEBPAGE, WEBSITE_CALL, CLICK_TO_CALL; never send `include_in_conversions_metric`, Google rejects it as immutable), `add_call_asset` (asset + campaign link, optional AD_CALL action), `set_network_settings`, `create_ad_group`, `add_keywords` (≤ 100), `upsert_rsa`, `set_ads_step(step, note)` (the client's ads deliverable step, waitingOn, waitingNote and a note activity) | work |
+| `find_client_account(query)`, `bind_account(customerId)` | work, only in a run that started with no customer id on the board |
 | `set_campaign_budget` (refuses a shared budget), `enable_campaign`, `set_campaign_end_date`, `set_ad_group_cpc` (any direction), `set_location_option`, `set_bidding_strategy` (MAXIMIZE_CLICKS + ceiling, MANUAL_CPC, MAXIMIZE_CONVERSIONS), `remove_campaign_criterion` | apply: only the approved proposal's tool, only with its exact args (anything else is refused) |
 
 Every write goes through `mutate()`: `validate_only` when the tool is called with
@@ -3158,6 +3160,28 @@ rejection an error event with Google's error list). Work runs make the AUTO chan
 anything else comes back in the closing JSON as a proposal whose `action` is the apply
 tool and `args` its arguments, and becomes an `OpsApproval` (ads_change, pending).
 `parseAdsReport` reads the last json fence (or the last `{"done"` object).
+
+**Runs with no account yet.** `startAdsRun` accepts a client with no Google Ads customer
+id (work mode only). The run starts with `find_client_account` (customer_client
+under the MCC, level 1, not managers, matched on name words) and `bind_account`, which
+checks the account is under the MCC, enabled and not on the never-touch list, then
+binds the run (`input.customerId` is updated), sets `Business.googleAdsCustomerId`
+when it is empty (the single HQ write to `Business`; a different id already there is
+refused for Jacob to fix by hand) and `evidence.adsCustomerId` on the ads
+deliverable. Every other tool refuses until the run is bound.
+
+**Job report** (`lib/ops/hq/jobs.ts`). When an ads (or web) run ends, `onSpecialistRunEnded`
+checks its job: if no specialist run in it is still active, it claims the job
+(`running` → `reporting`, conditional) and `runChiefReport` re-invokes the chief once
+with each run's parsed report, links (Google Ads account) and approvals. The chief
+calls `finish_job` (sections per agent: did, expect, links, waitingForPush) and posts
+a short chat message. If it does not, a report built from the runs is written. A job
+already at `awaiting_approval` becomes `done` once no approval in it is pending or being
+applied. `finish_job` refuses while a specialist run in the job is active.
+
+**Specs.** The chief's `read_spec(path)` reads `.md` files under `docs/ads-specs/` only
+(realpath checked) and passes the full text into `start_ads_task`. `next.config.js`
+traces `docs/ads-specs/**/*.md` into the message route for Vercel.
 
 **Report check (work runs).** Before approvals are made, every proposal must name an
 apply tool with args that pass that tool's schema (`checkProposal`), and no
@@ -3188,11 +3212,26 @@ builds update masks from the resource's fields, so an empty sub-object (e.g.
 `manual_cpc: {}`) would mask nothing, which is why bidding sets a field inside it;
 `change_event` refuses a start more than 30 days back.
 
+**The HQ tab** (`app/admin/ops/HqTab.tsx`, `?tab=hq`, first tab; Oct 27 2026). Desktop:
+chat with the chief on the left, the office and Waiting for you on the right; mobile:
+office, Waiting for you, then chat. One poll, `GET /hq/feed?since=`, every 2 s visible
+and 15 s hidden, and at once after a send, Push, Reject or Stop.
+
+| File | What it is |
+|---|---|
+| `lib/ops/hq/personas.ts` | `{ key, name, role, color, avatarLetter, idleLine }` per agent (Chief, Ads, Web). Rename or recolour an agent here only. |
+| `app/admin/ops/HqOffice.tsx` | One desk per persona. State: Working (an active run; green pill with a slow pulse) beats Waiting for you (pending approvals for that agent; amber) beats Failed (last run failed; red) beats Idle (idleLine and time since the last run). Working shows the client, elapsed time, the latest event label typed in (CSS clip-path steps, one line, ellipsis) and a 44px Stop (cancel route). A click opens `RunDrawer`: every event with its offset from the start, tool calls mono, results muted, errors red, details expandable, live events appended from the poll, auto-scroll while running and pinned to the bottom. |
+| `app/admin/ops/HqChat.tsx` | Jacob right, chief left with `Markdown` (bold, italics, code, links, lists, headings; React nodes, no HTML). "Chief is thinking" while a chief run is active. The job report renders as a card (per agent: Did, Expect, Waiting for Push, links) under the job's last chief message. Composer pinned at the bottom: Enter sends, Shift+Enter is a new line. Empty state: "Tell the chief what happened or what you need." |
+| `app/admin/ops/HqApprovals.tsx` | Approval cards newest first: agent, client, title, the exact change (action in mono and its args), why, expected, the cost line from `monthlyCostChange`, links (Google Ads account, PR, preview), Push and Reject (44px). After Push: Applying… (approved), then Applied or Failed with the error. |
+| `app/admin/ops/hqShared.tsx` | Feed types, formatters, `Avatar`, `Markdown`, and the two keyframes (typing, pulse; both off under `prefers-reduced-motion`). |
+| `lib/ops/hq/links.ts` | `adsAccountUrl(customerId)` (`ads.google.com/aw/overview?__e=`). |
+
 **Routes** (all `requireAdmin()`):
 
 | Route | What it does |
 |---|---|
 | `POST /api/admin/ops/hq/message` | `{ body }` → saves the message, starts a chief run, returns `{ messageId, runId }` at once; the run continues under `waitUntil` (`maxDuration` 800). |
-| `GET /api/admin/ops/hq/feed?since=` | New messages and events since `since` (events max 200; without `since`, the last 50 / 200), active runs plus runs finished in the last 30 min with their latest event, pending approvals, the last 20 jobs with parsed reports, and `cursor` for the next poll. |
+| `GET /api/admin/ops/hq/feed?since=` | New messages and events since `since` (events max 200; without `since`, the last 50 / 200), active runs plus runs finished in the last 30 min with their latest event, `lastRuns` (each HQ agent's most recent run, any age), approvals pending or decided in the last 30 min, the last 20 jobs with parsed reports, and `cursor` for the next poll. |
 | `POST /api/admin/ops/hq/approvals/[id]` | `{ decision }` → `decideApproval()`; an approved ads_change starts the apply run under `waitUntil` and answers `{ applyRunId }`. |
+| `GET /api/admin/ops/hq/runs/[id]/events` | One run and every event it wrote (up to 2,000), for the desk drawer. |
 | `POST /api/admin/ops/hq/runs/[id]/cancel` | queued, running or dispatched → cancelled; the loop stops before its next turn. 409 when already finished. |

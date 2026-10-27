@@ -122,7 +122,7 @@ export type HqAgent = (typeof HQ_AGENTS)[number]
 export const AGENT_RUN_MODES = ['work', 'apply'] as const
 export type AgentRunMode = (typeof AGENT_RUN_MODES)[number]
 
-export const OPS_JOB_STATUSES = ['planning', 'running', 'awaiting_approval', 'done', 'failed', 'cancelled'] as const
+export const OPS_JOB_STATUSES = ['planning', 'running', 'reporting', 'awaiting_approval', 'done', 'failed', 'cancelled'] as const
 export type OpsJobStatus = (typeof OPS_JOB_STATUSES)[number]
 
 export const OPS_MESSAGE_ROLES = ['jacob', 'chief'] as const

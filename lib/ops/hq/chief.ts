@@ -7,6 +7,8 @@
 //
 // Model: OPS_CHIEF_MODEL (default claude-opus-5-5), key ANTHROPIC_API_KEY_BUILDS.
 
+import { readFile, realpath } from 'node:fs/promises'
+import path from 'node:path'
 import { db } from '@/lib/db'
 import { OPS_TIMEZONE, getOpsBoard, type BoardEngagement } from '@/lib/ops/board'
 import { STEP_CATALOG, defaultWaitingOn, stepFor } from '@/lib/ops/steps'
@@ -17,6 +19,7 @@ import { type ApiMessage, CHIEF_MODEL_DEFAULT } from './anthropic'
 import { DECISION_PREFIX, decisionsByEngagement } from './decisions'
 import { noEmDash, oneLine } from './events'
 import { type ClientTool, runAgentLoop } from './loop'
+import { adsAccountUrl } from './links'
 import { createRun, failRun, finishRun } from './runs'
 
 const HISTORY_MESSAGES = 40
@@ -32,7 +35,8 @@ What you do:
 - Record what Jacob tells you ("Cole approved the site", "Ronny's budget is $500") with log_update, in his words. When the update moves a deliverable, pass the step, using a step key from that client's step list in get_client.
 - Record standing decisions ("keep X off", "don't raise Y") with record_decision. Specialists read them and must follow them.
 - Hand off work Jacob asks for: start_ads_task for Google Ads work, start_web_task for a change to a client's website. Each one starts a specialist run under the current job. Write instructions a specialist can act on without asking back: the client, the goal, the limits, and Jacob's decisions.
-- When every run in a job has finished you will be asked for the report. Write it with finish_job.
+- When Jacob points at a spec under docs/ads-specs/, read it with read_spec and pass its full text in the start_ads_task instructions, after one line with Jacob's own instructions (e.g. "Build it paused and queue the enable for my approval."). Do not shorten the spec.
+- After you start specialists, tell Jacob in a line or two what you started. Do not call finish_job then: when every run in the job has finished you will be asked for the report, and you write it with finish_job.
 
 Rules:
 - Never say a specialist did something until its run says so. Say it started, not that it is done.
@@ -148,6 +152,29 @@ async function clientDetail(engagementId: string) {
       output: r.output,
     })),
   }
+}
+
+// ── Specs ───────────────────────────────────────────────────────────────────
+
+const SPEC_DIR = path.join(process.cwd(), 'docs', 'ads-specs')
+
+/** A .md file under docs/ads-specs/, nothing else (no other folder, no link out of it). */
+async function readSpec(input: string): Promise<{ rel: string; text: string }> {
+  const cleaned = input.replace(/^\.?\//, '')
+  if (!cleaned) throw new Error('path is empty')
+  const full = path.resolve(cleaned.includes('/') ? process.cwd() : SPEC_DIR, cleaned)
+  const inside = (p: string, dir: string) => p.startsWith(dir + path.sep)
+  if (!inside(full, SPEC_DIR) || !full.endsWith('.md')) throw new Error('read_spec reads only .md files under docs/ads-specs/')
+  let real: string
+  try {
+    real = await realpath(full)
+  } catch {
+    throw new Error(`no spec at docs/ads-specs/${path.basename(full)}`)
+  }
+  if (!inside(real, await realpath(SPEC_DIR))) throw new Error('read_spec reads only .md files under docs/ads-specs/')
+  const text = await readFile(real, 'utf8')
+  if (text.length > 100_000) throw new Error('that spec is over 100,000 characters')
+  return { rel: path.relative(process.cwd(), full), text }
 }
 
 // ── Tools ───────────────────────────────────────────────────────────────────
@@ -270,6 +297,15 @@ function chiefTools(ctx: ChiefContext): ClientTool[] {
       },
     },
     {
+      name: 'read_spec',
+      description: 'Read a markdown spec Jacob wrote, from docs/ads-specs/ only (e.g. "docs/ads-specs/prestige-blinds-2026-10.md" or just the file name). Returns its full text.',
+      input_schema: { type: 'object', properties: { path: { type: 'string' } }, required: ['path'] },
+      run: async (input) => {
+        const { rel, text } = await readSpec(str(input.path))
+        return { result: { path: rel, text }, label: `Read ${rel} (${text.split('\n').length} lines)` }
+      },
+    },
+    {
       name: 'start_ads_task',
       description:
         "Start the ads specialist on one client's Google Ads account, or on every ads client with engagementId 'all_ads_clients'. It reads, makes safe changes itself, and returns anything that raises spend or turns something on as a proposal for Jacob's Push.",
@@ -341,6 +377,8 @@ function chiefTools(ctx: ChiefContext): ClientTool[] {
       },
       run: async (input) => {
         if (!ctx.jobId) throw new Error('there is no job in this conversation to finish')
+        const active = await db.agentRun.count({ where: { jobId: ctx.jobId, agent: { in: ['ads', 'web'] }, status: { in: ['queued', 'running', 'dispatched'] } } })
+        if (active) throw new Error(`${active} specialist run${active === 1 ? ' is' : 's are'} still working; the report is asked for when they finish`)
         const pending = await db.opsApproval.count({ where: { jobId: ctx.jobId, status: 'pending' } })
         const report = { text: noEmDash(str(input.summary)), sections: Array.isArray(input.sections) ? input.sections : [], pendingApprovals: pending }
         await db.opsJob.update({
@@ -400,4 +438,93 @@ export async function runChief(runId: string) {
     const message = await failRun(runId, err)
     await db.opsMessage.create({ data: { role: 'chief', body: `I hit an error and stopped: ${message}`, jobId: ctx.jobId } })
   }
+}
+
+// ── The job report ──────────────────────────────────────────────────────────
+
+
+/** What each specialist run in a job did, for the report prompt and the fallback report. */
+async function jobRuns(jobId: string) {
+  const [runs, approvals] = await Promise.all([
+    db.agentRun.findMany({
+      where: { jobId, agent: { in: ['ads', 'web'] } },
+      orderBy: { createdAt: 'asc' },
+      select: { id: true, agent: true, mode: true, status: true, error: true, input: true, output: true, engagement: { select: { displayName: true } } },
+    }),
+    db.opsApproval.findMany({ where: { jobId }, orderBy: { createdAt: 'asc' }, select: { runId: true, title: true, status: true, detail: true } }),
+  ])
+  return runs.map((r) => {
+    const out = (r.output ?? {}) as Record<string, unknown>
+    const input = (r.input ?? {}) as Record<string, unknown>
+    const customerId = typeof input.customerId === 'string' && input.customerId ? input.customerId : null
+    return {
+      agent: r.agent,
+      client: r.engagement?.displayName.trim() ?? null,
+      mode: r.mode,
+      status: r.status,
+      error: r.error,
+      report: out.report ?? null,
+      links: customerId ? [{ label: 'Google Ads account', url: adsAccountUrl(customerId) }] : [],
+      approvals: approvals
+        .filter((a) => a.runId === r.id)
+        .map((a) => ({ title: a.title, status: a.status, monthlyCostChange: (a.detail as Record<string, unknown>)?.monthlyCostChange ?? null })),
+    }
+  })
+}
+
+type ReportSection = { agent: string; client: string | null; did: string[]; expect: string; links: { label: string; url: string }[]; waitingForPush: string[] }
+
+/** The report the chief failed to write, built from the runs themselves. */
+function fallbackSections(runs: Awaited<ReturnType<typeof jobRuns>>): ReportSection[] {
+  return runs.map((r) => {
+    const rep = (r.report ?? {}) as { done?: { change?: string }[]; expected?: string }
+    return {
+      agent: r.agent ?? 'ads',
+      client: r.client,
+      did: r.status === 'succeeded' ? (rep.done ?? []).map((d) => String(d.change ?? '')).filter(Boolean) : [`Run ${r.status}${r.error ? `: ${r.error}` : ''}`],
+      expect: String(rep.expected ?? ''),
+      links: r.links,
+      waitingForPush: r.approvals.filter((a) => a.status === 'pending').map((a) => a.title),
+    }
+  })
+}
+
+/** Re-invoke the chief once to write a finished job's report (OpsJob.summary + a chief message). */
+export async function runChiefReport(jobId: string) {
+  const job = await db.opsJob.findUniqueOrThrow({ where: { id: jobId }, select: { prompt: true } })
+  const runs = await jobRuns(jobId)
+  const run = await createRun({ agent: 'chief', kind: 'chief', mode: 'work', engagementId: null, jobId, input: { report: true, jobId } })
+  const ctx: ChiefContext = { runId: run.id, messageId: null, prompt: job.prompt, jobId }
+  const prompt = [
+    `Every specialist run in this job has finished. Jacob asked: "${job.prompt}"`,
+    `The runs, with each one's parsed report, links and approvals:\n${JSON.stringify(runs, null, 1)}`,
+    'Call finish_job once. sections: one per run, { agent, client, did: [what was done, one line each], expect: what to expect and when, links: [{ label, url }] (use the links given), waitingForPush: [titles of pending approvals] }. Then reply to Jacob in two or three plain sentences: what is done and what waits for his Push. No em dashes.',
+  ].join('\n\n')
+  try {
+    const result = await runAgentLoop({
+      runId: run.id,
+      model: chiefModel(),
+      system: `${SYSTEM}\n\nToday is ${today()} (${OPS_TIMEZONE}).`,
+      messages: [{ role: 'user', content: prompt }],
+      tools: chiefTools(ctx).filter((t) => t.name === 'finish_job' || t.name === 'get_client'),
+      effort: 'medium',
+    })
+    await writeFallbackIfNeeded(jobId, runs)
+    const reply = result.finalText || 'The job is finished. The report is below.'
+    await db.opsMessage.create({ data: { role: 'chief', body: reply, jobId } })
+    await finishRun(run.id, { report: true, reply: oneLine(reply, 500), turns: result.turns, jobId })
+  } catch (err) {
+    const message = await failRun(run.id, err)
+    await writeFallbackIfNeeded(jobId, runs)
+    await db.opsMessage.create({ data: { role: 'chief', body: `The job finished but I could not write the report: ${message}. The runs' own results are below.`, jobId } })
+  }
+}
+
+/** A job still at reporting after the chief ran gets the plain report built from its runs. */
+async function writeFallbackIfNeeded(jobId: string, runs: Awaited<ReturnType<typeof jobRuns>>) {
+  const job = await db.opsJob.findUnique({ where: { id: jobId }, select: { status: true } })
+  if (job?.status !== 'reporting') return
+  const pending = await db.opsApproval.count({ where: { jobId, status: 'pending' } })
+  const report = { text: 'Report built from the runs.', sections: fallbackSections(runs), pendingApprovals: pending }
+  await db.opsJob.update({ where: { id: jobId }, data: { summary: JSON.stringify(report), status: pending > 0 ? 'awaiting_approval' : 'done' } })
 }
