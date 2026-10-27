@@ -3149,7 +3149,7 @@ No Sapt, no MCP. System prompt `lib/ops/hq/prompts/ads.md` (Jacob's playbook; it
 |---|---|
 | `list_campaigns`, `campaign_performance(days)`, `search_terms(days, minCost, campaignId?)`, `keyword_performance(days)`, `conversion_actions_and_goals`, `campaign_settings(campaignId?)` (budget and whether shared, bidding and its limits, location option, networks, dates, locations, ad groups with bids, campaign negatives), `change_history(days ≤ 30)` | both |
 | `add_campaign_negatives` (PHRASE, ≤ 50), `pause_campaign`, `exclude_conversion_goal(category, origin)` (account goal `biddable: false`), `set_ad_group_cpc` (lower only), `set_location_option(PRESENCE)`, `create_search_campaign(spec)` (always PAUSED, one atomic mutate) | work |
-| `set_campaign_budget` (refuses a shared budget), `enable_campaign`, `set_campaign_end_date`, `set_ad_group_cpc` (any direction), `set_bidding_strategy` (MAXIMIZE_CLICKS + ceiling, MANUAL_CPC, MAXIMIZE_CONVERSIONS), `remove_campaign_criterion` | apply, only the tools in `input.allow` (the approved proposal's) |
+| `set_campaign_budget` (refuses a shared budget), `enable_campaign`, `set_campaign_end_date`, `set_ad_group_cpc` (any direction), `set_location_option`, `set_bidding_strategy` (MAXIMIZE_CLICKS + ceiling, MANUAL_CPC, MAXIMIZE_CONVERSIONS), `remove_campaign_criterion` | apply: only the approved proposal's tool, only with its exact args (anything else is refused) |
 
 Every write goes through `mutate()`: `validate_only` when the tool is called with
 `validateOnly: true` or the run is `dry`, and one `AgentEvent` with the exact
@@ -3157,7 +3157,32 @@ operations and Google's response ("Changed: …" / "Checked, no change made: …
 rejection an error event with Google's error list). Work runs make the AUTO changes;
 anything else comes back in the closing JSON as a proposal whose `action` is the apply
 tool and `args` its arguments, and becomes an `OpsApproval` (ads_change, pending).
-`parseAdsReport` reads the last json fence (or the last `{"done"` object). Notes:
+`parseAdsReport` reads the last json fence (or the last `{"done"` object).
+
+**Report check (work runs).** Before approvals are made, every proposal must name an
+apply tool with args that pass that tool's schema (`checkProposal`), and no
+`ui_step` may describe a change a tool can make (bidding strategy, location option,
+end date, budget, enabling a campaign, an ad group bid: the `API_DOABLE` patterns in
+`ads.ts`). `ui_steps` are only for UI-only work (conversion setup, call assets,
+sitelinks, billing, verification, keyword-level bids); advice goes in `expected`. On a
+failure the model gets one turn to resend the JSON; proposals still invalid after
+that get no approval and the feed shows an error.
+
+**Approvals and apply mode** (checkpoint 4, Oct 27 2026). `decideApproval()` in
+`lib/ops/hq/approvals.ts`, called by `POST /api/admin/ops/hq/approvals/[id]`
+`{ decision: 'approve' | 'reject' }`. Only a pending approval can be decided (the flip
+is conditional; 404 / 409 otherwise). Reject: status rejected. Approve (ads_change):
+status approved, then an apply-mode ads run under the same job with
+`input.approval = { id, action, args }`; the route runs it under `waitUntil` and
+answers `{ applyRunId }` at once; `detail.applyRunId` links them. The run gets the
+reads plus that one tool, and the tool wrapper refuses any call whose args differ
+from the approved ones. When it ends the approval becomes `applied` (`appliedAt`) only
+if that tool changed the account, else `failed` with the reason; a run that cannot
+start fails the approval at once. web_push answers 400 until checkpoint 5. First
+apply: OC Water Pros campaign 24328356850, Maximize Conversions → Maximize Clicks
+with an $8 ceiling (approval cmvquz7hk000wri0jto5hhxca, applied Oct 27 2026).
+
+Notes:
 enums come back from the library as numbers (`en()` maps them to names); the library
 builds update masks from the resource's fields, so an empty sub-object (e.g.
 `manual_cpc: {}`) would mask nothing, which is why bidding sets a field inside it;
@@ -3169,4 +3194,5 @@ builds update masks from the resource's fields, so an empty sub-object (e.g.
 |---|---|
 | `POST /api/admin/ops/hq/message` | `{ body }` → saves the message, starts a chief run, returns `{ messageId, runId }` at once; the run continues under `waitUntil` (`maxDuration` 800). |
 | `GET /api/admin/ops/hq/feed?since=` | New messages and events since `since` (events max 200; without `since`, the last 50 / 200), active runs plus runs finished in the last 30 min with their latest event, pending approvals, the last 20 jobs with parsed reports, and `cursor` for the next poll. |
+| `POST /api/admin/ops/hq/approvals/[id]` | `{ decision }` → `decideApproval()`; an approved ads_change starts the apply run under `waitUntil` and answers `{ applyRunId }`. |
 | `POST /api/admin/ops/hq/runs/[id]/cancel` | queued, running or dispatched → cancelled; the loop stops before its next turn. 409 when already finished. |

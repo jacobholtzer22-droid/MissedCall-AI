@@ -8,9 +8,10 @@
 //   reads         both modes
 //   work writes   the playbook's AUTO list (negatives, pause, goal exclusion,
 //                 lowering an ad group bid, Presence, a PAUSED new campaign)
-//   apply writes  apply mode only, and only the tools the approved proposal
-//                 names (ctx.allow): budget, enable, end date, raising a bid,
-//                 bidding strategy, removing a campaign criterion
+//   apply writes  apply mode only, and only the tool the approved proposal
+//                 names (ctx.allow), called with exactly the approved args
+//                 (ctx.approved): budget, enable, end date, any bid change,
+//                 bidding strategy, location option, removing a criterion
 //
 // Every write goes through mutate(): validate_only when asked (always in a dry
 // run), and the exact operations plus Google's response land in the feed as an
@@ -21,7 +22,7 @@
 import { enums, type MutateOperation } from 'google-ads-api'
 import { getGoogleAdsClient } from '@/lib/google-ads'
 import { emit, oneLine } from './events'
-import type { ClientTool } from './loop'
+import { validate, type ClientTool } from './loop'
 
 const ENV = ['GOOGLE_ADS_DEVELOPER_TOKEN', 'GOOGLE_ADS_CLIENT_ID', 'GOOGLE_ADS_CLIENT_SECRET', 'GOOGLE_ADS_REFRESH_TOKEN', 'GOOGLE_ADS_MCC_ID'] as const
 
@@ -42,7 +43,11 @@ export type AdsToolContext = {
   dry: boolean
   /** Apply mode: the apply tools the approved proposal names. */
   allow?: string[]
+  /** Apply mode: the approved call. A write must carry exactly these args. */
+  approved?: { action: string; args: Record<string, unknown> }
   calls: number
+  /** Every write tool call that reached Google, in order. */
+  writes: { tool: string; changed: boolean }[]
 }
 
 // ── Plumbing ────────────────────────────────────────────────────────────────
@@ -458,6 +463,28 @@ const SET_AD_GROUP_CPC: Def = {
   },
 }
 
+/** set_location_option: an AUTO change in a work run, or an approved proposal in apply mode. */
+const SET_LOCATION_OPTION: Def = {
+  name: 'set_location_option',
+  description: 'Set a campaign to show only to people in or regularly in its locations (Presence), instead of people interested in them.',
+  input_schema: {
+    type: 'object',
+    properties: { customerId: customerIdProp, campaignId: campaignIdProp, option: { type: 'string', enum: ['PRESENCE'] }, validateOnly: validateOnlyProp },
+    required: ['customerId', 'campaignId', 'option'],
+  },
+  run: async (ctx, i) => {
+    const id = digits(i.campaignId, 'campaignId')
+    const what = `campaign ${id} location option to Presence`
+    const r = await mutate(
+      ctx,
+      what,
+      [{ entity: 'campaign', operation: 'update', resource: { resource_name: res(ctx, 'campaigns', id), geo_target_type_setting: { positive_geo_target_type: enums.PositiveGeoTargetType.PRESENCE } } }],
+      i.validateOnly
+    )
+    return { result: r, label: null }
+  },
+}
+
 const WORK_WRITES: Def[] = [
   {
     name: 'add_campaign_negatives',
@@ -529,26 +556,7 @@ const WORK_WRITES: Def[] = [
     },
   },
   SET_AD_GROUP_CPC,
-  {
-    name: 'set_location_option',
-    description: 'Set a campaign to show only to people in or regularly in its locations (Presence), instead of people interested in them.',
-    input_schema: {
-      type: 'object',
-      properties: { customerId: customerIdProp, campaignId: campaignIdProp, option: { type: 'string', enum: ['PRESENCE'] }, validateOnly: validateOnlyProp },
-      required: ['customerId', 'campaignId', 'option'],
-    },
-    run: async (ctx, i) => {
-      const id = digits(i.campaignId, 'campaignId')
-      const what = `campaign ${id} location option to Presence`
-      const r = await mutate(
-        ctx,
-        what,
-        [{ entity: 'campaign', operation: 'update', resource: { resource_name: res(ctx, 'campaigns', id), geo_target_type_setting: { positive_geo_target_type: enums.PositiveGeoTargetType.PRESENCE } } }],
-        i.validateOnly
-      )
-      return { result: r, label: null }
-    },
-  },
+  SET_LOCATION_OPTION,
   {
     name: 'create_search_campaign',
     description:
@@ -700,6 +708,7 @@ const APPLY_WRITES: Def[] = [
     },
   },
   SET_AD_GROUP_CPC,
+  SET_LOCATION_OPTION,
   {
     name: 'set_bidding_strategy',
     description: 'Switch a campaign’s bidding: MAXIMIZE_CLICKS with a max CPC ceiling, MANUAL_CPC, or MAXIMIZE_CONVERSIONS (optional target CPA).',
@@ -747,21 +756,51 @@ const APPLY_WRITES: Def[] = [
 
 export const ADS_READ_TOOLS = READS.map((t) => t.name)
 export const ADS_WORK_TOOLS = WORK_WRITES.map((t) => t.name)
+/** The tools a proposal's action may name: each one runs in apply mode after Jacob's Push. */
 export const ADS_APPLY_TOOLS = APPLY_WRITES.map((t) => t.name)
+
+/** A proposal's action and args, checked against the apply tool's schema (customerId is added at apply time). */
+export function checkProposal(action: string, args: Record<string, unknown>): string | null {
+  const tool = APPLY_WRITES.find((t) => t.name === action)
+  if (!tool) return `action "${action}" is not one of ${ADS_APPLY_TOOLS.join(', ')}`
+  if ('customerId' in args || 'validateOnly' in args) return 'args must not carry customerId or validateOnly'
+  const schema = { ...tool.input_schema, required: (tool.input_schema.required ?? []).filter((k) => k !== 'customerId') }
+  const invalid = validate(schema, args)
+  return invalid ? `${action}: ${invalid}` : null
+}
+
+/** Same value for the apply lock: ids compare as digit strings, numbers by value. */
+function sameArg(a: unknown, b: unknown): boolean {
+  if (typeof a === 'number' || typeof b === 'number') return Number(a) === Number(b)
+  return String(a ?? '').replace(/-/g, '').toUpperCase() === String(b ?? '').replace(/-/g, '').toUpperCase()
+}
 
 /** The tools for one run: reads plus the mode's writes (apply: only ctx.allow). Every call is locked to ctx.customerId. */
 export function adsTools(ctx: AdsToolContext): ClientTool[] {
   const writes = ctx.mode === 'work' ? WORK_WRITES : APPLY_WRITES.filter((t) => ctx.allow?.includes(t.name))
   if (ctx.mode === 'apply' && !writes.length) throw new Error('apply mode needs the approved proposal’s tool in allow')
+  const writeNames = new Set(writes.map((t) => t.name))
   return [...READS, ...writes].map((t) => ({
     name: t.name,
     description: t.description,
     input_schema: t.input_schema,
-    run: (input) => {
+    run: async (input) => {
       if (String(input.customerId ?? '').replace(/-/g, '') !== ctx.customerId) {
-        return Promise.reject(new Error(`this run works only on ${ctx.client} (customer ${ctx.customerId})`))
+        throw new Error(`this run works only on ${ctx.client} (customer ${ctx.customerId})`)
       }
-      return t.run(ctx, input)
+      const isWrite = writeNames.has(t.name)
+      if (isWrite && ctx.mode === 'apply') {
+        const ok = ctx.approved?.action === t.name
+        const want = ctx.approved?.args ?? {}
+        const extra = Object.keys(input).filter((k) => k !== 'customerId' && k !== 'validateOnly' && !(k in want))
+        const differ = Object.keys(want).filter((k) => !sameArg(input[k], want[k]))
+        if (!ok || extra.length || differ.length) {
+          throw new Error(`apply mode makes only the approved call: ${ctx.approved?.action}(${JSON.stringify(want)})`)
+        }
+      }
+      const out = await t.run(ctx, input)
+      if (isWrite) ctx.writes.push({ tool: t.name, changed: Boolean((out.result as { changed?: boolean })?.changed) })
+      return out
     },
   }))
 }

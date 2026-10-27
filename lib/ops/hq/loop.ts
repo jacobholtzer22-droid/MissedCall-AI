@@ -18,7 +18,7 @@ import { emit, noEmDash, oneLine } from './events'
 
 export const MAX_TURNS = 60
 
-type JsonSchema = { type: 'object'; properties: Record<string, { type?: string; enum?: string[]; description?: string; items?: unknown }>; required?: string[] }
+export type JsonSchema = { type: 'object'; properties: Record<string, { type?: string; enum?: string[]; description?: string; items?: unknown }>; required?: string[] }
 
 export type ClientTool = {
   name: string
@@ -138,7 +138,7 @@ async function runClientTool(use: Block, tools: Map<string, ClientTool>, runId: 
 }
 
 /** Required keys, primitive types and enums. Enough for our own small schemas. */
-function validate(schema: JsonSchema, input: Record<string, unknown>): string | null {
+export function validate(schema: JsonSchema, input: Record<string, unknown>): string | null {
   for (const key of schema.required ?? []) if (input[key] === undefined || input[key] === null) return `missing required "${key}"`
   for (const [key, value] of Object.entries(input)) {
     const prop = schema.properties[key]
