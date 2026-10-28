@@ -1,7 +1,9 @@
 'use client'
 
-// Waiting for you: approval cards newest first. Pending cards carry Push and
-// Reject; after Push the card follows the approval through the feed poll:
+// Approval cards. Pending cards carry Push and Reject; a proposal the ads
+// specialist marked with hold shows the reason in amber, and its Push asks
+// again (Push anyway). After Push the card follows the approval through the
+// feed poll:
 // Applying… (approved, the apply run is working), then Applied or the error.
 // Cards decided in the last 30 minutes stay so the outcome is visible.
 
@@ -45,11 +47,23 @@ function argLines(args: unknown): [string, string][] {
   return Object.entries(args as Record<string, unknown>).map(([k, v]) => [k, typeof v === 'object' ? JSON.stringify(v) : String(v)])
 }
 
-function ApprovalCard({ approval: a, onDecide }: { approval: FeedApproval; onDecide: (id: string, decision: 'approve' | 'reject') => Promise<string | null> }) {
+/** compact (Home's Needs you): title, cost and the buttons; the exact change sits behind Details. */
+export function ApprovalCard({
+  approval: a,
+  onDecide,
+  compact = false,
+}: {
+  approval: FeedApproval
+  onDecide: (id: string, decision: 'approve' | 'reject') => Promise<string | null>
+  compact?: boolean
+}) {
   const [busy, setBusy] = useState<'approve' | 'reject' | null>(null)
   const [error, setError] = useState<string | null>(null)
+  // A held proposal needs a second click: Push, then Push anyway.
+  const [confirming, setConfirming] = useState(false)
   const persona = personaFor(a.agent)
   const d = a.detail ?? {}
+  const hold = typeof d.hold === 'string' && d.hold.trim() ? d.hold.trim() : null
   const customerId = typeof d.customerId === 'string' ? d.customerId : null
   const links = [
     customerId ? { label: 'Google Ads account', url: adsAccountUrl(customerId) } : null,
@@ -58,6 +72,11 @@ function ApprovalCard({ approval: a, onDecide }: { approval: FeedApproval; onDec
   ].filter((l): l is { label: string; url: string } => Boolean(l && /^https?:\/\//.test(l.url)))
 
   const decide = async (decision: 'approve' | 'reject') => {
+    if (decision === 'approve' && hold && !confirming) {
+      setConfirming(true)
+      return
+    }
+    setConfirming(false)
     setBusy(decision)
     setError(null)
     const err = await onDecide(a.id, decision)
@@ -65,19 +84,8 @@ function ApprovalCard({ approval: a, onDecide }: { approval: FeedApproval; onDec
     if (err) setError(err)
   }
 
-  return (
-    <article className="rounded-lg border border-gray-800 bg-gray-950 p-3 space-y-3 text-sm">
-      <div className="flex items-start gap-3 min-w-0">
-        {persona && <Avatar persona={persona} size={28} />}
-        <div className="min-w-0 flex-1">
-          <div className="text-xs text-gray-500 truncate">
-            {persona?.name ?? a.agent}
-            {a.client ? `, ${a.client}` : ''}
-          </div>
-          <h3 className="font-medium text-gray-100 break-words">{a.title}</h3>
-        </div>
-      </div>
-
+  const details = (
+    <>
       {typeof d.action === 'string' && (
         <div className="rounded-lg border border-gray-800 bg-gray-900 px-3 py-2">
           <div className="font-mono text-[12px] text-gray-200">{d.action}</div>
@@ -101,8 +109,6 @@ function ApprovalCard({ approval: a, onDecide }: { approval: FeedApproval; onDec
         </div>
       )}
 
-      <p className="text-gray-200 tabular-nums">{costLine(d.monthlyCostChange)}</p>
-
       {links.length > 0 && (
         <div className="flex flex-wrap gap-x-4">
           {links.map((l) => (
@@ -112,6 +118,43 @@ function ApprovalCard({ approval: a, onDecide }: { approval: FeedApproval; onDec
           ))}
         </div>
       )}
+    </>
+  )
+
+  return (
+    <article className="rounded-lg border border-gray-800 bg-gray-950 p-3 space-y-3 text-sm">
+      <div className="flex items-start gap-3 min-w-0">
+        {persona && <Avatar persona={persona} size={28} />}
+        <div className="min-w-0 flex-1">
+          <div className="text-xs text-gray-500 truncate">
+            {persona?.name ?? a.agent}
+            {a.client ? `, ${a.client}` : ''}
+          </div>
+          <h3 className="font-medium text-gray-100 break-words">{a.title}</h3>
+        </div>
+      </div>
+
+      {hold && (
+        <p className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-amber-200 break-words">
+          <span className="font-medium">Hold: </span>
+          {hold}
+        </p>
+      )}
+
+      {compact ? (
+        <>
+          <p className="text-gray-200 tabular-nums">{costLine(d.monthlyCostChange)}</p>
+          <details className="rounded-lg border border-gray-800">
+            <summary className="cursor-pointer list-none px-3 min-h-[44px] flex items-center text-xs text-gray-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 rounded-lg">Details</summary>
+            <div className="px-3 pb-3 space-y-3">{details}</div>
+          </details>
+        </>
+      ) : (
+        <>
+          {details}
+          <p className="text-gray-200 tabular-nums">{costLine(d.monthlyCostChange)}</p>
+        </>
+      )}
 
       {a.status === 'pending' ? (
         <div className="grid grid-cols-2 gap-2">
@@ -119,17 +162,19 @@ function ApprovalCard({ approval: a, onDecide }: { approval: FeedApproval; onDec
             type="button"
             disabled={busy !== null}
             onClick={() => decide('approve')}
-            className="min-h-[44px] rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-medium disabled:opacity-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300"
+            className={`min-h-[44px] rounded-lg text-white font-medium disabled:opacity-50 focus:outline-none focus-visible:ring-2 ${
+              confirming ? 'bg-amber-600 hover:bg-amber-500 focus-visible:ring-amber-300' : 'bg-emerald-600 hover:bg-emerald-500 focus-visible:ring-emerald-300'
+            }`}
           >
-            {busy === 'approve' ? 'Pushing…' : 'Push'}
+            {busy === 'approve' ? 'Pushing…' : confirming ? 'Push anyway' : 'Push'}
           </button>
           <button
             type="button"
             disabled={busy !== null}
-            onClick={() => decide('reject')}
+            onClick={() => (confirming ? setConfirming(false) : decide('reject'))}
             className="min-h-[44px] rounded-lg border border-gray-700 bg-gray-800 hover:bg-gray-700 text-gray-100 font-medium disabled:opacity-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
           >
-            {busy === 'reject' ? 'Rejecting…' : 'Reject'}
+            {busy === 'reject' ? 'Rejecting…' : confirming ? 'Cancel' : 'Reject'}
           </button>
         </div>
       ) : (

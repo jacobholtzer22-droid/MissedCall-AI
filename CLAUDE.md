@@ -2954,9 +2954,10 @@ Every Deliverable can sit at a **step** from `STEP_CATALOG` in `lib/ops/steps.ts
   step's owner (null for `none`) unless `waitingOn` is sent too.
 - The board returns `step`, `stepLabel`, `stepOwner`, `stepTerminal`, `waitingOn`,
   `waitingNote`, `stepUpdatedAt` per deliverable.
-- Today: **Problems** (red alerts), then **Waiting on you / clients / vendors**
-  (deliverables by `waitingOn`, oldest `stepUpdatedAt` first), then follow-ups,
-  booked today, yellow alerts.
+- Home's **Needs you** (`rankNeedsYou`, see "Ops command center" below) ranks
+  approvals, red alerts, steps waiting on Jacob (oldest `stepUpdatedAt` first),
+  follow-ups, today's calls and yellow alerts; steps waiting on clients and vendors
+  sit collapsed under it. (The Today tab that listed these was folded into Home.)
 - Chips are coloured by step owner: you orange, client blue, vendor grey, done
   green (`paused_by_client` keeps the paused slate). A `manualStatus` still wins.
 - The sync never reads or writes steps. `scripts/ops-apply-2026-10-24-steps.ts` is the
@@ -3125,7 +3126,10 @@ assistant) and today's date in America/Detroit. Tools:
 |---|---|
 | `get_board` | Compact rows from `getOpsBoard()` (ignored rows left out): stage, services, each deliverable's step, waitingOn, note and status, ads customer id, repo URL, alerts, decisions; plus `waitingTotals` per owner (computed, so the chief never counts by hand) and follow-ups due. |
 | `get_client` | One client in full, its valid step keys per deliverable, decisions, last 10 activities, last 5 agent runs. |
-| `log_update` | An `OpsActivity` (note) in Jacob's words, an optional step change (validated like the deliverables PATCH; sets `stepUpdatedAt` and the default `waitingOn`), an optional next follow-up. One transaction. |
+| `log_update` | An `OpsActivity` (note) in Jacob's words, an optional step change (validated like the deliverables PATCH; sets `stepUpdatedAt` and the default `waitingOn`), an optional next follow-up (Detroit time; a date alone is 9:00, `lib/ops/dates.ts`), an optional `statusLine` (a `status` activity: the client card's status line). One transaction. |
+| `get_needs_you` | `rankNeedsYou` over the board and pending approvals: the same ranked list as Home's Needs you. "What should I do" is answered from it, in order. |
+| `get_timeline(engagementId?, days?, kinds?)` | `getTimeline` (last 7 days by default, ≤ 100 rows): approvals with who decided and when they applied, jobs, runs, activities. "What did I approve this week" is answered from it. |
+| `set_client_amounts(engagementId, monthlyAmount?, upfrontAmount?, clear?)` | Writes `monthlyAmount` / `upfrontAmount` through the PATCH's `nullableNumber` check and logs a `system` activity with old and new values. |
 | `record_decision` | An `OpsActivity` kind `system`, body `DECISION: …`. Every decision for the clients in scope is handed to specialists. |
 | `start_ads_task` | One ads specialist run per account under the current job (`'all_ads_clients'` = every client with `ads` in services and a customer id). Never-touch clients and clients without a customer id are skipped with a reason; missing Google Ads credentials stop the call ("offline: Google Ads credentials not set") and the chief tells Jacob. |
 | `start_web_task` | Offline for now (returns an error the chief relays); wired at checkpoint 5. |
@@ -3149,7 +3153,7 @@ No Sapt, no MCP. System prompt `lib/ops/hq/prompts/ads.md` (Jacob's playbook; it
 | Tools | Mode |
 |---|---|
 | `list_campaigns`, `campaign_performance(days)`, `search_terms(days, minCost, campaignId?)`, `keyword_performance(days)`, `conversion_actions_and_goals`, `campaign_settings(campaignId?)` (budget and whether shared, bidding and its limits, location option, networks, dates, locations, ad groups with bids, campaign negatives), `change_history(days ≤ 30)` | both |
-| `add_campaign_negatives` (PHRASE, ≤ 50), `pause_campaign`, `exclude_conversion_goal(category, origin)` (account goal `biddable: false`), `set_ad_group_cpc` (lower only), `set_location_option(PRESENCE)`, `create_search_campaign(spec)` (always PAUSED, one atomic mutate; `languageIds` add language criteria), `create_conversion_action` (AD_CALL, WEBPAGE, WEBSITE_CALL, CLICK_TO_CALL; never send `include_in_conversions_metric`, Google rejects it as immutable), `add_call_asset` (asset + campaign link, optional AD_CALL action), `set_network_settings`, `create_ad_group`, `add_keywords` (≤ 100), `upsert_rsa`, `set_ads_step(step, note)` (the client's ads deliverable step, waitingOn, waitingNote and a note activity) | work |
+| `add_campaign_negatives` (PHRASE, ≤ 50), `pause_campaign`, `exclude_conversion_goal(category, origin)` (account goal `biddable: false`), `set_ad_group_cpc` (lower only), `set_location_option(PRESENCE)`, `create_search_campaign(spec)` (always PAUSED, one atomic mutate; `languageIds` add language criteria), `create_conversion_action` (AD_CALL, WEBPAGE, WEBSITE_CALL, CLICK_TO_CALL; never send `include_in_conversions_metric`, Google rejects it as immutable), `add_call_asset` (asset + campaign link, optional AD_CALL action), `set_network_settings`, `create_ad_group`, `add_keywords` (≤ 100), `upsert_rsa`, `pause_ad_group` / `enable_ad_group(campaignId, adGroupId)` (checks the group is in that campaign), `set_ads_step(step, note)` (the client's ads deliverable step, waitingOn, waitingNote and a note activity) | work |
 | `find_client_account(query)`, `bind_account(customerId)` | work, only in a run that started with no customer id on the board |
 | `set_campaign_budget` (refuses a shared budget), `enable_campaign`, `set_campaign_end_date`, `set_ad_group_cpc` (any direction), `set_location_option`, `set_bidding_strategy` (MAXIMIZE_CLICKS + ceiling, MANUAL_CPC, MAXIMIZE_CONVERSIONS), `remove_campaign_criterion` | apply: only the approved proposal's tool, only with its exact args (anything else is refused) |
 
@@ -3212,18 +3216,17 @@ builds update masks from the resource's fields, so an empty sub-object (e.g.
 `manual_cpc: {}`) would mask nothing, which is why bidding sets a field inside it;
 `change_event` refuses a start more than 30 days back.
 
-**The HQ tab** (`app/admin/ops/HqTab.tsx`, `?tab=hq`, first tab; Oct 27 2026). Desktop:
-chat with the chief on the left, the office and Waiting for you on the right; mobile:
-office, Waiting for you, then chat. One poll, `GET /hq/feed?since=`, every 2 s visible
-and 15 s hidden, and at once after a send, Push, Reject or Stop.
+**The HQ pieces** (Oct 27 2026; since Oct 28 they live on Home, see "Ops command
+center" below). One poll, `GET /hq/feed?since=` (`app/admin/ops/useHqFeed.ts`, held by
+the Ops shell), every 2 s while Home is open and visible, 15 s otherwise, and at once
+after a send, Push, Reject or Stop.
 
 | File | What it is |
 |---|---|
 | `lib/ops/hq/personas.ts` | `{ key, name, role, color, avatarLetter, idleLine }` per agent (Chief, Ads, Web). Rename or recolour an agent here only. |
 | `app/admin/ops/HqOffice.tsx` | One desk per persona. State: Working (an active run; green pill with a slow pulse) beats Waiting for you (pending approvals for that agent; amber) beats Failed (last run failed; red) beats Idle (idleLine and time since the last run). Working shows the client, elapsed time, the latest event label typed in (CSS clip-path steps, one line, ellipsis) and a 44px Stop (cancel route). A click opens `RunDrawer`: every event with its offset from the start, tool calls mono, results muted, errors red, details expandable, live events appended from the poll, auto-scroll while running and pinned to the bottom. |
 | `app/admin/ops/HqChat.tsx` | Jacob right, chief left with `Markdown` (bold, italics, code, links, lists, headings; React nodes, no HTML). "Chief is thinking" while a chief run is active. The job report renders as a card (per agent: Did, Expect, Waiting for Push, links) under the job's last chief message. Composer pinned at the bottom: Enter sends, Shift+Enter is a new line. Empty state: "Tell the chief what happened or what you need." |
-| `app/admin/ops/HqApprovals.tsx` | Approval cards newest first: agent, client, title, the exact change (action in mono and its args), why, expected, the cost line from `monthlyCostChange`, links (Google Ads account, PR, preview), Push and Reject (44px). After Push: Applying… (approved), then Applied or Failed with the error. |
-| `app/admin/ops/HqHistory.tsx` | History, read only: OpsJobs newest first (20 a page, Load older jobs). Each row: date, Jacob's message, the chief's summary collapsed (text plus the report as a snapshot: no pending count, "Queued for Push"), the runs (agent, client, status, duration, Open for the drawer) and every approval with its outcome and when it was pushed and applied. Full width under the HQ grid, reloading when the feed sees a job, run or approval move; also in the client panel as "Jobs" (`engagementId`), where it opens its own drawer. |
+| `app/admin/ops/HqApprovals.tsx` | `ApprovalCard`: agent, client, title, the exact change (action in mono and its args), why, expected, the cost line from `monthlyCostChange`, links (Google Ads account, PR, preview), Push and Reject (44px). `compact` (Home) puts the change behind Details. A proposal with `detail.hold` shows the reason in amber and Push turns into an amber "Push anyway" that needs a second click. After Push: Applying… (approved), then Applied or Failed with the error. |
 | `app/admin/ops/hqShared.tsx` | Feed types, formatters, `Avatar`, `Markdown`, and the two keyframes (typing, pulse; both off under `prefers-reduced-motion`). |
 | `lib/ops/hq/links.ts` | `adsAccountUrl(customerId)` (`ads.google.com/aw/overview?__e=`). |
 
@@ -3234,6 +3237,90 @@ and 15 s hidden, and at once after a send, Push, Reject or Stop.
 | `POST /api/admin/ops/hq/message` | `{ body }` → saves the message, starts a chief run, returns `{ messageId, runId }` at once; the run continues under `waitUntil` (`maxDuration` 800). |
 | `GET /api/admin/ops/hq/feed?since=` | New messages and events since `since` (events max 200; without `since`, the last 50 / 200), active runs plus runs finished in the last 30 min with their latest event, `lastRuns` (each HQ agent's most recent run, any age), approvals pending or decided in the last 30 min, the last 20 jobs with parsed reports, and `cursor` for the next poll. |
 | `POST /api/admin/ops/hq/approvals/[id]` | `{ decision }` → `decideApproval()`; an approved ads_change starts the apply run under `waitUntil` and answers `{ applyRunId }`. |
-| `GET /api/admin/ops/hq/jobs?engagementId=&before=&limit=` | Job history: jobs newest first with their runs and approvals, `nextBefore` for the next page. With `engagementId`, jobs whose `engagementIds` or runs include that client. |
+| `GET /api/admin/ops/hq/jobs?engagementId=&before=&limit=` | Job history: jobs newest first with their runs and approvals, `nextBefore` for the next page. With `engagementId`, jobs whose `engagementIds` or runs include that client. No screen uses it since the Timeline (below); kept for scripts. |
 | `GET /api/admin/ops/hq/runs/[id]/events` | One run and every event it wrote (up to 2,000), for the desk drawer. |
 | `POST /api/admin/ops/hq/runs/[id]/cancel` | queued, running or dispatched → cancelled; the loop stops before its next turn. 409 when already finished. |
+
+### Ops command center (branch `ops-command-center`, Oct 28 2026)
+
+One dashboard for agents, clients, what to do and what happened. Tabs: **Home**
+(default), **Clients**, **Money**, **Timeline**, **Agents**. `?tab=hq` and `?tab=today`
+redirect to Home; nothing those tabs did was dropped. No schema change.
+
+**Home** (`HomeTab.tsx`). A fleet line (active clients, Verified and Projected MRR
+behind the `adminShowRevenue` cookie, agents working, waiting for Push, clients with
+red alerts), then three columns on xl (lg: two, clients below; mobile: Needs you,
+office, chat, clients):
+- **Needs you** (`NeedsYou.tsx`): `rankNeedsYou(board, approvals)` in `lib/ops/needs-you.ts`,
+  pure, also the chief's `get_needs_you`. Rank: 1 pending approvals (compact cards,
+  oldest first), 2 red alerts (one row per client), 3 steps with `waitingOn = jacob`
+  (oldest `stepUpdatedAt` first), 4 follow-ups due (client and prospect), 5 today's
+  calls (counted only while unmarked), 6 yellow alerts (`follow_up_due` left out).
+  Each row has its one action (Push/Reject, Open, Log contact + 1d/3d/7d, Showed/No-show).
+  Approvals decided in the last 30 min sit on top as one line each, uncounted. Steps
+  waiting on clients and vendors are a collapsed list at the bottom. The count is on
+  the Home tab label.
+- The office and the chat (unchanged components), the job report in the chat.
+- Clients as cards (`ClientCard.tsx`), health then latest activity, 12 then Show all.
+
+**Client card.** Health dot, name, stage, the status line, what waits on whom
+(`waitingLine`), services, the ads state (`adsState`: Running $X/day from
+`evidence.dailyBudget`, Built paused, Account needed, or the step), last contact, next
+follow-up, the monthly amount (revenue shown), and the desks' green pulse with
+"Ads is working" while an HQ run for that client is active. Helpers in
+`lib/ops/client-status.ts`.
+
+**Status line convention.** A client's current status is the newest `OpsActivity` with
+`kind = 'status'` (added to `OPS_ACTIVITY_KINDS`). The board carries it as `statusLine`
+and `statusAt` (one `distinct` query). The chief sets it with `log_update`'s
+`statusLine`; Jacob sets it in the panel's Status input (the activities POST with
+`kind: 'status'`). Without one, `derivedStatusLine` phrases the oldest open step
+("Website: Review the agent's PR and preview"), or what is live when nothing is open;
+the card shows a derived line dimmer.
+
+**Clients tab** (`ClientsTab.tsx`). Counts by stage (each filters), Verified MRR and
+Projected MRR large (`headlineMrr` in `lib/ops/money.ts`: verified = active verified +
+pending verified; projected = verified + active projected + pending projected, the
+same buckets as the Money cards, so they agree to the dollar), the pending clients
+itemised with monthly and upfront editable in place (`AmountInput`, the engagement
+PATCH; the panel's Stripe block edits them too), the unmatched Stripe strip, then the
+card grid with search, stage, service, health, sort and Show ignored, each card adding
+the deliverable chips and Stripe status.
+
+**Timeline** (`Timeline.tsx`, `lib/ops/timeline.ts`). `getTimeline({ before, from,
+engagementId, agent, kinds, limit })`: four findMany with one cursor, merged and sorted
+in code. Rows: approvals (at = applied, else decided, else created; who decided, when
+applied, cost, error), jobs (prompt, report, run count), runs (agent, client, status,
+duration), activities (`decision` for `DECISION:` rows). Kinds filter: approvals, jobs,
+runs, notes, decisions. The tab adds client, agent and a Detroit date range; grouped by
+day; 50 a page. The client panel shows it fixed to that client.
+`GET /api/admin/ops/timeline?before=&client=&agent=&kinds=&from=&limit=`.
+
+**Who pushed.** `decideApproval(id, decision, by = { decidedBy: 'jacob', decidedVia: 'hq' })`
+writes both into the approval's `detail`; apply runs carry `approvalId` in their input.
+Approvals decided before Oct 28 2026 have neither; the chief reports them as Jacob's
+(only Jacob can decide).
+
+**Chief prompt.** Jacob reports what he did in plain language; the chief records it
+(`log_update` with step and `statusLine`, `record_decision`, `set_client_amounts`) and
+reflects it back in one line. "What should I do" comes from `get_needs_you` in rank
+order; "what did I approve" from `get_timeline`.
+
+**Fixes from Oct 27.**
+- Follow-ups from `log_update` are Detroit time; a date alone is 9:00 (they were
+  midnight UTC, 8 pm the evening before).
+- After an apply run's `enable_campaign` changes the account, the ads step moves to
+  `running` with `evidence.dailyBudget` (sum of enabled campaigns). After a work run's
+  `pause_campaign` with no campaign left enabled, it moves to `paused_by_client`, unless
+  the agent set the step itself. `syncAdsStep` in `lib/ops/hq/ads.ts`; write records
+  now carry their args.
+- Proposals may carry `hold: "<reason>"` (playbook, report parser); the card holds Push
+  behind "Push anyway".
+- `pause_ad_group` / `enable_ad_group` (work mode).
+- `adsError` adds the field path and Google's request id, and names the case where
+  Google answers `request_error=UNKNOWN`, "The error code is not in this version": the
+  real reason is a code newer than the library's API (google-ads-api 23.0.0), so it is
+  hidden; try the same change in the Ads UI. That is what CM Home Services'
+  (2035901601) AD_CALL conversion action hit on Oct 27; the raw error was already
+  logged with the event.
+

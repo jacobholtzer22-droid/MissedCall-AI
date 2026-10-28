@@ -13,6 +13,14 @@ import { db } from '@/lib/db'
 import { OPS_TIMEZONE, getOpsBoard, type BoardEngagement } from '@/lib/ops/board'
 import { STEP_CATALOG, defaultWaitingOn, stepFor } from '@/lib/ops/steps'
 import { DELIVERABLE_TYPES } from '@/lib/ops/types'
+import { rankNeedsYou } from '@/lib/ops/needs-you'
+import { TIMELINE_KINDS, getTimeline, type TimelineKind } from '@/lib/ops/timeline'
+import { nullableNumber } from '@/lib/ops/validate'
+import { parseLocalDateTime } from '@/lib/ops/dates'
+
+/** "Tue Nov 3, 9:00 AM" in Detroit, for feed lines and results. */
+const detroitWhen = (d: Date) =>
+  d.toLocaleString('en-US', { timeZone: OPS_TIMEZONE, weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
 import { waitUntil } from '@vercel/functions'
 import { AdsOffline, adsClients, runAdsTask, startAdsRun } from './ads'
 import { type ApiMessage, CHIEF_MODEL_DEFAULT } from './anthropic'
@@ -32,8 +40,10 @@ How you talk: short and plain. No preamble, no filler, no em dashes. Name client
 
 What you do:
 - Look before you answer. Read the board with get_board, or one client in full with get_client. Never answer about a client from memory.
-- Record what Jacob tells you ("Cole approved the site", "Ronny's budget is $500") with log_update, in his words. When the update moves a deliverable, pass the step, using a step key from that client's step list in get_client.
+- Record what Jacob tells you ("Cole approved the site", "Ronny's budget is $500") with log_update, in his words. When the update moves a deliverable, pass the step, using a step key from that client's step list in get_client. When it changes where the client stands, pass statusLine: one sentence, the client's status now.
 - Record standing decisions ("keep X off", "don't raise Y") with record_decision. Specialists read them and must follow them.
+- Jacob reports what he did in plain language ("talked to Cole, he wants Friday", "Josue is on $350 from December"). Your job is to record it: log_update (with the step and statusLine when they change), record_decision for standing rules, set_client_amounts for money. Then reflect it back in one line: what you recorded, on whom.
+- "What should I do" is answered from get_needs_you, in its rank order, never from memory. "What did I approve", "what happened with X" is answered from get_timeline; it says who pushed each approval and when it applied.
 - Hand off work Jacob asks for: start_ads_task for Google Ads work, start_web_task for a change to a client's website. Each one starts a specialist run under the current job. Write instructions a specialist can act on without asking back: the client, the goal, the limits, and Jacob's decisions.
 - When Jacob points at a spec under docs/ads-specs/, read it with read_spec and pass its full text in the start_ads_task instructions, after one line with Jacob's own instructions (e.g. "Build it paused and queue the enable for my approval."). Do not shorten the spec.
 - After you start specialists, tell Jacob in a line or two what you started. Do not call finish_job then: when every run in the job has finished you will be asked for the report, and you write it with finish_job.
@@ -77,6 +87,7 @@ async function compactBoard() {
       name: e.displayName,
       stage: e.stage,
       services: e.services,
+      statusLine: e.statusLine,
       adsCustomerId: adsCustomerId(e),
       repoUrl: repoUrl(e),
       nextFollowUpAt: e.nextFollowUpAt,
@@ -100,7 +111,7 @@ async function clientDetail(engagementId: string) {
   const board = await getOpsBoard()
   const e = board.engagements.find((x) => x.id === engagementId) ?? board.ignored.find((x) => x.id === engagementId)
   if (!e) throw new Error(`no client with id ${engagementId}`)
-  const [activities, runs, decisions] = await Promise.all([
+  const [activities, runs, decisions, approvals] = await Promise.all([
     db.opsActivity.findMany({ where: { engagementId }, orderBy: { createdAt: 'desc' }, take: 10, select: { kind: true, body: true, createdAt: true } }),
     db.agentRun.findMany({
       where: { engagementId },
@@ -109,6 +120,12 @@ async function clientDetail(engagementId: string) {
       select: { agent: true, kind: true, status: true, output: true, error: true, createdAt: true, finishedAt: true },
     }),
     decisionsByEngagement([engagementId]),
+    db.opsApproval.findMany({
+      where: { run: { engagementId } },
+      orderBy: { createdAt: 'desc' },
+      take: 10,
+      select: { title: true, status: true, error: true, detail: true, createdAt: true, decidedAt: true, appliedAt: true },
+    }),
   ])
   return {
     id: e.id,
@@ -120,6 +137,8 @@ async function clientDetail(engagementId: string) {
     location: e.location,
     stage: e.stage,
     services: e.services,
+    statusLine: e.statusLine,
+    statusAt: e.statusAt,
     notes: e.notes,
     monthlyAmount: e.monthlyAmount,
     upfrontAmount: e.upfrontAmount,
@@ -151,6 +170,23 @@ async function clientDetail(engagementId: string) {
       finishedAt: r.finishedAt?.toISOString() ?? null,
       output: r.output,
     })),
+    recentApprovals: approvals.map((a) => approvalView(a)),
+  }
+}
+
+/** An approval as the chief sees it: who decided, through what, and when it applied. */
+function approvalView(a: { title: string; status: string; error: string | null; detail: unknown; createdAt: Date; decidedAt: Date | null; appliedAt: Date | null }) {
+  const d = (a.detail ?? {}) as Record<string, unknown>
+  return {
+    title: a.title,
+    status: a.status,
+    proposedAt: a.createdAt.toISOString(),
+    decidedAt: a.decidedAt?.toISOString() ?? null,
+    // Only Jacob can push or reject (the route is admin only); rows from before Oct 28 2026 did not record it.
+    decidedBy: a.decidedAt ? (typeof d.decidedBy === 'string' ? d.decidedBy : 'jacob (not recorded, only Jacob can decide)') : null,
+    decidedVia: typeof d.decidedVia === 'string' ? d.decidedVia : null,
+    appliedAt: a.appliedAt?.toISOString() ?? null,
+    error: a.error,
   }
 }
 
@@ -224,16 +260,125 @@ function chiefTools(ctx: ChiefContext): ClientTool[] {
       },
     },
     {
+      name: 'get_needs_you',
+      description:
+        "What Jacob should do now, in rank order: the same list as the Needs you column on Home. Pending approvals, red alerts, deliverable steps waiting on Jacob (oldest first), follow-ups due, today's demo calls, yellow alerts; plus what waits on clients and vendors. Answer \"what should I do\" from this, in this order.",
+      input_schema: { type: 'object', properties: {} },
+      run: async () => {
+        const [board, pending] = await Promise.all([
+          getOpsBoard(),
+          db.opsApproval.findMany({
+            where: { status: 'pending' },
+            include: { run: { select: { engagementId: true, engagement: { select: { displayName: true } } } } },
+          }),
+        ])
+        const ranked = rankNeedsYou(
+          board,
+          pending.map((a) => ({
+            id: a.id,
+            title: a.title,
+            agent: a.agent,
+            status: a.status,
+            client: a.run.engagement?.displayName.trim() ?? null,
+            engagementId: a.run.engagementId,
+            createdAt: a.createdAt.toISOString(),
+          }))
+        )
+        return {
+          result: {
+            count: ranked.count,
+            items: ranked.items.map((i) => ({ rank: i.rank, kind: i.kind, client: i.client, what: i.what, since: i.at, engagementId: i.engagementId, counts: i.counts })),
+            waitingOnOthers: ranked.waitingOnOthers.map((w) => ({ client: w.client, waitingOn: w.waitingOn, what: w.what, since: w.at })),
+          },
+          label: `Read Needs you: ${ranked.count} item${ranked.count === 1 ? '' : 's'}`,
+        }
+      },
+    },
+    {
+      name: 'get_timeline',
+      description:
+        'What happened, newest first: approvals (who pushed or rejected, when, when applied), jobs (Jacob\'s message and the report), agent runs, and activities (notes, contacts, status lines, decisions). Use it for "what did I approve this week", "what happened with X". At most 100 rows.',
+      input_schema: {
+        type: 'object',
+        properties: {
+          engagementId: { type: 'string', description: 'Only this client.' },
+          days: { type: 'number', description: 'Only the last N days (default 7).' },
+          kinds: { type: 'array', items: { type: 'string', enum: [...TIMELINE_KINDS] }, description: 'Only these kinds; all when omitted.' },
+        },
+      },
+      run: async (input) => {
+        const days = Math.min(365, Math.max(1, Number(input.days) || 7))
+        const kinds = Array.isArray(input.kinds) ? (input.kinds as string[]).filter((k): k is TimelineKind => (TIMELINE_KINDS as readonly string[]).includes(k)) : []
+        const { items } = await getTimeline({
+          from: new Date(Date.now() - days * 86_400_000),
+          engagementId: input.engagementId ? str(input.engagementId) : null,
+          kinds,
+          limit: 100,
+        })
+        const rows = items.map((i) => {
+          if (i.type === 'approval') {
+            return { type: i.type, at: i.at, client: i.client, title: i.title, status: i.status, decidedBy: i.decidedAt ? i.decidedBy ?? 'jacob (not recorded, only Jacob can decide)' : null, decidedVia: i.decidedVia, decidedAt: i.decidedAt, appliedAt: i.appliedAt, error: i.error }
+          }
+          if (i.type === 'job') return { type: i.type, at: i.at, status: i.status, prompt: i.prompt, report: i.report?.text ?? null }
+          if (i.type === 'run') return { type: i.type, at: i.at, agent: i.agent, mode: i.mode, client: i.client, status: i.status, finishedAt: i.finishedAt, error: i.error }
+          return { type: i.type, at: i.at, kind: i.kind, client: i.client, body: i.body }
+        })
+        return { result: { days, rows }, label: `Read the timeline: ${rows.length} row${rows.length === 1 ? '' : 's'}, last ${days} day${days === 1 ? '' : 's'}` }
+      },
+    },
+    {
+      name: 'set_client_amounts',
+      description:
+        'Record a client\'s monthly and/or upfront amount in dollars when Jacob tells you ("Josue is on $350 a month"). These feed Verified and Projected MRR. Writes the same fields the panel edits and logs the change on the client. Use clear to remove one.',
+      input_schema: {
+        type: 'object',
+        properties: {
+          engagementId: { type: 'string' },
+          monthlyAmount: { type: 'number', description: 'Dollars a month.' },
+          upfrontAmount: { type: 'number', description: 'Dollars, one time.' },
+          clear: { type: 'array', items: { type: 'string', enum: ['monthlyAmount', 'upfrontAmount'] }, description: 'Amounts to remove.' },
+        },
+        required: ['engagementId'],
+      },
+      run: async (input) => {
+        const engagementId = str(input.engagementId)
+        const current = await db.engagement.findUnique({ where: { id: engagementId }, select: { displayName: true, monthlyAmount: true, upfrontAmount: true } })
+        if (!current) throw new Error(`no client with id ${engagementId}`)
+        const data: { monthlyAmount?: number | null; upfrontAmount?: number | null } = {}
+        const clear = Array.isArray(input.clear) ? (input.clear as string[]) : []
+        for (const key of ['monthlyAmount', 'upfrontAmount'] as const) {
+          if (clear.includes(key)) data[key] = null
+          else if (key in input) data[key] = nullableNumber(input[key], key)
+        }
+        if (!Object.keys(data).length) throw new Error('pass monthlyAmount, upfrontAmount or both')
+        const dollars = (n: number | null | undefined) => (n == null ? 'none' : `$${n}`)
+        const changes = [
+          'monthlyAmount' in data ? `monthly ${dollars(current.monthlyAmount)} to ${dollars(data.monthlyAmount)}` : null,
+          'upfrontAmount' in data ? `upfront ${dollars(current.upfrontAmount)} to ${dollars(data.upfrontAmount)}` : null,
+        ].filter(Boolean)
+        const name = current.displayName.trim()
+        await db.$transaction([
+          db.engagement.update({ where: { id: engagementId }, data }),
+          db.opsActivity.create({ data: { engagementId, kind: 'system', body: `Amounts set by the chief: ${changes.join(', ')}` } }),
+        ])
+        return { result: { ok: true, client: name, ...data }, label: `Amounts for ${name}: ${changes.join(', ')}` }
+      },
+    },
+    {
       name: 'log_update',
       description:
-        "Record an update Jacob gave about a client, in his words, as an activity. Optionally move one deliverable to a new step (a key from that deliverable's steps in get_client) and set the next follow-up date.",
+        "Record an update Jacob gave about a client, in his words, as an activity. Optionally move one deliverable to a new step (a key from that deliverable's steps in get_client), set the next follow-up date, and replace the client's status line.",
       input_schema: {
         type: 'object',
         properties: {
           engagementId: { type: 'string' },
           body: { type: 'string', description: 'What happened, short and plain.' },
           step: { type: 'object', description: '{ deliverableType, step } to move a deliverable.' },
-          nextFollowUpAt: { type: 'string', description: 'ISO date or date-time for the next follow-up.' },
+          nextFollowUpAt: { type: 'string', description: 'Next follow-up in Detroit time: YYYY-MM-DD (means 9:00 am) or YYYY-MM-DDTHH:mm. No Z, no offset.' },
+          statusLine: {
+            type: 'string',
+            description: "The client's current status in one sentence, as it stands after this update (e.g. \"Ads running at $16/day; waiting on the Google tag\"). Shown on the client's card. Pass it whenever the update changes where the client stands.",
+          },
         },
         required: ['engagementId', 'body'],
       },
@@ -257,14 +402,17 @@ function chiefTools(ctx: ChiefContext): ClientTool[] {
           if (!d) throw new Error(`${name} has no ${type} deliverable`)
           stepChange = { deliverableId: d.id, type, key }
         }
+        const statusLine = input.statusLine ? noEmDash(str(input.statusLine)).slice(0, 300) : null
         let followUp: Date | null = null
         if (input.nextFollowUpAt) {
-          followUp = new Date(str(input.nextFollowUpAt))
-          if (Number.isNaN(followUp.getTime())) throw new Error('nextFollowUpAt is not a date')
+          // Detroit time; a date alone is 9:00 that morning (lib/ops/dates.ts).
+          followUp = parseLocalDateTime(str(input.nextFollowUpAt), OPS_TIMEZONE)
+          if (!followUp) throw new Error('nextFollowUpAt must be YYYY-MM-DD or YYYY-MM-DDTHH:mm (Detroit time)')
         }
 
         await db.$transaction(async (tx) => {
           await tx.opsActivity.create({ data: { engagementId, kind: 'note', body, followUpAt: followUp } })
+          if (statusLine) await tx.opsActivity.create({ data: { engagementId, kind: 'status', body: statusLine } })
           if (followUp) await tx.engagement.update({ where: { id: engagementId }, data: { nextFollowUpAt: followUp } })
           if (stepChange) {
             await tx.deliverable.update({
@@ -275,8 +423,12 @@ function chiefTools(ctx: ChiefContext): ClientTool[] {
         })
         const parts = [`Logged on ${name}`]
         if (stepChange) parts.push(`${stepChange.type} step to ${stepChange.key}`)
-        if (followUp) parts.push(`follow-up ${followUp.toISOString().slice(0, 10)}`)
-        return { result: { ok: true, client: name, step: stepChange && `${stepChange.type}: ${stepChange.key}`, followUp: followUp?.toISOString() ?? null }, label: parts.join(', ') }
+        if (followUp) parts.push(`follow-up ${detroitWhen(followUp)}`)
+        if (statusLine) parts.push(`status: ${statusLine}`)
+        return {
+          result: { ok: true, client: name, step: stepChange && `${stepChange.type}: ${stepChange.key}`, followUp: followUp ? `${detroitWhen(followUp)} Detroit` : null, statusLine },
+          label: parts.join(', '),
+        }
       },
     },
     {

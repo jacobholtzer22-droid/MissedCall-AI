@@ -22,3 +22,20 @@ export function mrrBucketOf(e: { stage: string; stripeSubscriptionStatus: string
   if (e.stage === 'paid_upfront' || e.stage === 'onboarding') return 'pending'
   return null
 }
+
+type Split = { verified: { total: number }; projected: { total: number } }
+
+/**
+ * The two headline numbers on Home and Clients, built only from the board's
+ * MRR buckets (the same ones the Money tab's cards show), so they always add
+ * up to the Money tab to the dollar.
+ *   verified:  Stripe-verified MRR of active and pending rows
+ *              (MRR active verified + MRR pending verified).
+ *   projected: MRR once everyone who paid upfront is on a subscription: every
+ *              active and pending row, verified or not
+ *              (verified + MRR active projected + MRR pending projected).
+ */
+export function headlineMrr(m: { mrrActive: Split; mrrPending: Split }): { verified: number; projected: number } {
+  const verified = m.mrrActive.verified.total + m.mrrPending.verified.total
+  return { verified, projected: verified + m.mrrActive.projected.total + m.mrrPending.projected.total }
+}

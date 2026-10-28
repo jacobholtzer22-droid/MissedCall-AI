@@ -58,8 +58,10 @@ export type AdsToolContext = {
   /** Apply mode: the approved call. A write must carry exactly these args. */
   approved?: { action: string; args: Record<string, unknown> }
   calls: number
-  /** Every write tool call that reached Google, in order. */
-  writes: { tool: string; changed: boolean }[]
+  /** set_ads_step ran in this run: the agent placed the step itself, so ads.ts leaves it. */
+  stepSet?: boolean
+  /** Every write tool call that reached Google, in order, with its args (ads.ts moves the board after enable and pause). */
+  writes: { tool: string; changed: boolean; args: Record<string, unknown> }[]
 }
 
 // ── Plumbing ────────────────────────────────────────────────────────────────
@@ -73,17 +75,31 @@ function customer(ctx: AdsToolContext, customerId = ctx.customerId) {
   })
 }
 
-/** Google's error list as one readable line (GoogleAdsFailure carries errors[]). */
+/**
+ * Google's error in one line: each error's message, code, the field it points
+ * at and its trigger, then the request id (Google support can look a request
+ * up by it). The full raw error is logged with the event by mutate().
+ * request_error=UNKNOWN with "not in this version" means Google answered with
+ * an error code newer than the API version this library speaks, so the real
+ * reason is hidden; the line says so.
+ */
 export function adsError(err: unknown): string {
-  const errors = (err as { errors?: { message?: string; error_code?: Record<string, unknown>; trigger?: { string_value?: string } }[] })?.errors
+  const failure = err as {
+    errors?: { message?: string; error_code?: Record<string, unknown>; trigger?: { string_value?: string }; location?: { field_path_elements?: { field_name?: string; index?: number }[] } }[]
+    request_id?: string
+  }
+  const errors = failure?.errors
   if (Array.isArray(errors) && errors.length) {
-    return errors
-      .map((e) => {
-        const code = e.error_code ? Object.entries(e.error_code).map(([k, v]) => `${k}=${v}`).join(',') : ''
-        const trigger = e.trigger?.string_value ? ` (trigger: ${e.trigger.string_value})` : ''
-        return `${e.message ?? 'error'}${code ? ` [${code}]` : ''}${trigger}`
-      })
-      .join('; ')
+    const lines = errors.map((e) => {
+      const code = e.error_code ? Object.entries(e.error_code).map(([k, v]) => `${k}=${v}`).join(',') : ''
+      const trigger = e.trigger?.string_value ? ` (trigger: ${e.trigger.string_value})` : ''
+      const path = (e.location?.field_path_elements ?? []).map((f) => `${f.field_name}${f.index !== undefined ? `[${f.index}]` : ''}`).join('.')
+      const unknown = /not in this version/i.test(e.message ?? '')
+        ? ' (Google used an error code newer than this API version, so the reason is hidden; try the same change in the Ads UI to see it)'
+        : ''
+      return `${e.message ?? 'error'}${code ? ` [${code}]` : ''}${path ? ` at ${path}` : ''}${trigger}${unknown}`
+    })
+    return `${lines.join('; ')}${failure.request_id ? ` (request id ${failure.request_id})` : ''}`
   }
   return err instanceof Error ? err.message : String(err)
 }
@@ -578,14 +594,34 @@ const SET_ADS_STEP: Def = {
     if (!ctx.engagementId) throw new Error('this run has no client')
     const note = noEmDash(String(i.note).trim())
     if (!note) throw new Error('note is empty')
-    const d = await db.deliverable.findUnique({ where: { engagementId_type: { engagementId: ctx.engagementId, type: 'ads' } }, select: { id: true } })
-    if (!d) throw new Error(`${ctx.client} has no ads deliverable`)
-    await db.$transaction([
-      db.deliverable.update({ where: { id: d.id }, data: { step: key, stepUpdatedAt: new Date(), waitingOn: defaultWaitingOn('ads', key), waitingNote: note } }),
-      db.opsActivity.create({ data: { engagementId: ctx.engagementId, kind: 'note', body: `Ads: ${note}` } }),
-    ])
+    await setAdsStep(ctx.engagementId, ctx.client, key, note)
+    ctx.stepSet = true
     return { result: { ok: true, step: key }, label: `Ads step for ${ctx.client} set to ${key}: ${note}` }
   },
+}
+
+/**
+ * Move a client's ads deliverable to a step with Jacob's note, and log it as
+ * an activity. evidence merges into the deliverable's evidence (e.g. the daily
+ * budget once a campaign runs). Ops tables only.
+ */
+export async function setAdsStep(engagementId: string, client: string, key: string, note: string, evidence?: Record<string, unknown>) {
+  const d = await db.deliverable.findUnique({ where: { engagementId_type: { engagementId, type: 'ads' } }, select: { id: true, evidence: true } })
+  if (!d) throw new Error(`${client} has no ads deliverable`)
+  const merged = evidence ? { ...((d.evidence ?? {}) as Record<string, unknown>), ...evidence } : undefined
+  await db.$transaction([
+    db.deliverable.update({
+      where: { id: d.id },
+      data: { step: key, stepUpdatedAt: new Date(), waitingOn: defaultWaitingOn('ads', key), waitingNote: note, ...(merged ? { evidence: merged as Prisma.InputJsonObject } : {}) },
+    }),
+    db.opsActivity.create({ data: { engagementId, kind: 'note', body: `Ads: ${note}` } }),
+  ])
+}
+
+/** Campaigns in the run's account that are not removed: id, status name, daily budget in dollars. */
+export async function campaignStates(ctx: AdsToolContext): Promise<{ id: string; status: string | null; dailyBudget: number | null }[]> {
+  const rows = await query(ctx, `SELECT campaign.id, campaign.status, campaign_budget.amount_micros FROM campaign WHERE campaign.status != 'REMOVED'`)
+  return rows.map((r) => ({ id: String(r.campaign.id), status: en(enums.CampaignStatus, r.campaign.status), dailyBudget: usd(r.campaign_budget?.amount_micros) }))
 }
 
 const WORK_WRITES: Def[] = [
@@ -629,6 +665,31 @@ const WORK_WRITES: Def[] = [
       return { result: r, label: null }
     },
   },
+  ...(['pause', 'enable'] as const).map(
+    (verb): Def => ({
+      name: `${verb}_ad_group`,
+      description:
+        verb === 'pause'
+          ? 'Pause one ad group in a campaign (e.g. a seasonal service out of season) and leave the rest of the campaign running.'
+          : 'Turn a paused ad group back on.',
+      input_schema: {
+        type: 'object',
+        properties: { customerId: customerIdProp, campaignId: campaignIdProp, adGroupId: { type: 'string', description: 'Ad group id (digits).' }, validateOnly: validateOnlyProp },
+        required: ['customerId', 'campaignId', 'adGroupId'],
+      },
+      run: async (ctx, i) => {
+        const campaignId = digits(i.campaignId, 'campaignId')
+        const adGroupId = digits(i.adGroupId, 'adGroupId')
+        const rows = await query(ctx, `SELECT ad_group.id, ad_group.name, ad_group.status FROM ad_group WHERE ad_group.id = ${adGroupId} AND campaign.id = ${campaignId}`)
+        if (!rows.length) throw new Error(`ad group ${adGroupId} is not in campaign ${campaignId}`)
+        const name = rows[0].ad_group.name
+        const status = verb === 'pause' ? enums.AdGroupStatus.PAUSED : enums.AdGroupStatus.ENABLED
+        const what = `${verb} ad group "${name}" (${adGroupId}) in campaign ${campaignId}`
+        const r = await mutate(ctx, what, [{ entity: 'ad_group', operation: 'update', resource: { resource_name: res(ctx, 'adGroups', adGroupId), status } }], i.validateOnly)
+        return { result: { ...r, adGroup: name }, label: null }
+      },
+    })
+  ),
   {
     name: 'exclude_conversion_goal',
     description:
@@ -1175,7 +1236,7 @@ export function adsTools(ctx: AdsToolContext): ClientTool[] {
         }
       }
       const out = await t.run(ctx, input)
-      if (isWrite) ctx.writes.push({ tool: t.name, changed: Boolean((out.result as { changed?: boolean })?.changed) })
+      if (isWrite) ctx.writes.push({ tool: t.name, changed: Boolean((out.result as { changed?: boolean })?.changed), args: input })
       return out
     },
   }))

@@ -29,7 +29,7 @@ import path from 'node:path'
 import type { Prisma } from '@prisma/client'
 import { db } from '@/lib/db'
 import { AGENT_MODEL_DEFAULT, type ApiMessage } from './anthropic'
-import { ADS_APPLY_TOOLS, adsTools, checkProposal, isNeverTouch, missingAdsEnv, type AdsToolContext } from './ads-tools'
+import { ADS_APPLY_TOOLS, adsTools, campaignStates, checkProposal, isNeverTouch, missingAdsEnv, setAdsStep, type AdsToolContext } from './ads-tools'
 import { DECISION_PREFIX } from './decisions'
 import { emit, noEmDash, oneLine } from './events'
 import { runAgentLoop } from './loop'
@@ -55,6 +55,8 @@ export type AdsProposal = {
   monthlyCostChange: number
   why: string
   expected: string
+  /** Why Jacob should not push it yet (e.g. "do not push until cmhomeservicesnj.com is live"); the card holds Push behind a second confirm. */
+  hold?: string
 }
 export type AdsReport = {
   done: { account: string; campaignId: string; change: string }[]
@@ -94,6 +96,7 @@ export function parseAdsReport(text: string): { report: AdsReport | null; error:
         monthlyCostChange: Number(p?.monthlyCostChange) || 0,
         why: s(p?.why),
         expected: s(p?.expected),
+        ...(s(p?.hold) ? { hold: s(p?.hold) } : {}),
       }))
       .filter((p) => p.title && p.action),
     ui_steps: arr(j.ui_steps).map(s).filter(Boolean),
@@ -102,10 +105,45 @@ export function parseAdsReport(text: string): { report: AdsReport | null; error:
   return { report, error: null }
 }
 
+// ── Board sync after a run ──────────────────────────────────────────────────
+
+/**
+ * After a campaign is turned on or off, move the client's ads step so nobody
+ * has to do it by hand (Ops tables only):
+ *   apply run, enable_campaign changed the account → running, with the
+ *     enabled campaigns' daily budget in evidence.dailyBudget.
+ *   work run, pause_campaign changed it and no campaign is left enabled →
+ *     paused_by_client (the catalog's one paused step), unless the agent set
+ *     the step itself with set_ads_step.
+ */
+async function syncAdsStep(runId: string, ctx: AdsToolContext, mode: 'work' | 'apply') {
+  if (!ctx.engagementId || ctx.dry) return
+  const changed = (tool: string) => ctx.writes.filter((w) => w.tool === tool && w.changed)
+  const enabled = mode === 'apply' ? changed('enable_campaign') : []
+  const paused = mode === 'work' && !ctx.stepSet ? changed('pause_campaign') : []
+  if (!enabled.length && !paused.length) return
+
+  const states = await campaignStates(ctx)
+  const live = states.filter((c) => c.status === 'ENABLED')
+  const budget = Math.round(live.reduce((n, c) => n + (c.dailyBudget ?? 0), 0) * 100) / 100
+  const ids = (ws: typeof enabled) => ws.map((w) => String(w.args.campaignId)).join(', ')
+  const day = new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'America/Detroit' })
+
+  if (enabled.length) {
+    await setAdsStep(ctx.engagementId, ctx.client, 'running', `Running since ${day}: campaign ${ids(enabled)} enabled after Jacob's Push, $${budget}/day`, { dailyBudget: budget })
+    await emit(runId, 'status', `Ads step for ${ctx.client} set to running ($${budget}/day)`)
+  } else if (!live.length) {
+    await setAdsStep(ctx.engagementId, ctx.client, 'paused_by_client', `Paused ${day}: campaign ${ids(paused)} paused by the ads specialist; nothing is running`, { dailyBudget: 0 })
+    await emit(runId, 'status', `Ads step for ${ctx.client} set to paused: no campaign is running`)
+  } else {
+    await emit(runId, 'status', `Ads step for ${ctx.client} left as is: ${live.length} campaign${live.length === 1 ? '' : 's'} still running`)
+  }
+}
+
 // ── Starting and running ────────────────────────────────────────────────────
 
 type AdsApproval = { id: string; action: string; args: Record<string, unknown> }
-type AdsInput = { instructions: string; customerId: string; client: string; dry: boolean; allow?: string[]; approval?: AdsApproval }
+type AdsInput = { instructions: string; customerId: string; client: string; dry: boolean; allow?: string[]; approval?: AdsApproval; approvalId?: string }
 
 export async function adsClients(): Promise<{ id: string; name: string; customerId: string }[]> {
   const rows = await db.engagement.findMany({
@@ -153,7 +191,7 @@ export async function startAdsRun(opts: {
     customerId,
     client,
     dry: Boolean(opts.dry),
-    ...(mode === 'apply' && opts.approval ? { allow: [opts.approval.action], approval: opts.approval } : {}),
+    ...(mode === 'apply' && opts.approval ? { allow: [opts.approval.action], approval: opts.approval, approvalId: opts.approval.id } : {}),
   }
   return createRun({
     agent: 'ads',
@@ -313,6 +351,9 @@ export async function runAdsTask(runId: string) {
       })
       await emit(runId, made ? 'status' : 'error', made ? 'Approval applied' : 'Approval failed: the approved change was not made')
     }
+
+    // Keep the board's ads step in line with what changed in the account.
+    await syncAdsStep(runId, ctx, mode).catch((err) => emit(runId, 'error', `Could not move the ads step: ${err instanceof Error ? err.message : String(err)}`))
 
     await finishRun(runId, {
       mode,
