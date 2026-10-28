@@ -171,7 +171,17 @@ export function EngagementPanel({ engagement: e, focus, actions, unmatched, unma
 
           {e.business && <PlatformAccountSection e={e} actions={actions} onRefresh={onRefresh} />}
 
-          {e.services.includes('website') && <BriefField value={e.brief} onSave={(v) => patch({ brief: v })} />}
+          {e.services.includes('website') && (
+            <div className="space-y-2">
+              <Link
+                href={`/admin/ops/intake/${e.id}`}
+                className="inline-flex items-center gap-1 min-h-[44px] text-sm text-blue-400 hover:text-blue-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 rounded"
+              >
+                Intake: client info, old site, photos and logo <ExternalLink className="h-3 w-3" />
+              </Link>
+              <BriefField value={e.brief} onSave={(v) => patch({ brief: v })} />
+            </div>
+          )}
 
           {/* Alerts */}
           <section>
@@ -296,7 +306,7 @@ function BriefField({ value, onSave }: { value: string | null; onSave: (v: strin
           {open ? 'Hide' : value ? 'Show' : 'Write'}
         </button>
       </div>
-      {!value && !open && <p className="text-xs text-gray-500">Ask the chief: it asks for what the brief needs in one message and writes it. A build needs it.</p>}
+      {!value && !open && <p className="text-xs text-gray-500">Ask the chief: it writes the brief from the intake and asks for whatever is missing. A build needs it.</p>}
       {open && (
         <textarea
           id="ops-brief"

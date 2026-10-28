@@ -33,6 +33,7 @@ import { GITHUB_OWNER, TEMPLATE_REPO, deleteBranch, getFileContent, getPullReque
 import { defaultWaitingOn } from '@/lib/ops/steps'
 import { addProjectDomain, domainRecords, listDeploymentsForBranch } from '@/lib/ops/vercel'
 import { emit } from './events'
+import { payloadAssets, payloadOldSite, readIntake } from '@/lib/ops/intake'
 import { createRun, failRun, finishRun } from './runs'
 
 export const WEB_TASK_KINDS = ['provision', 'site_build', 'site_update', 'review', 'merge', 'go_live', 'connect_domain'] as const
@@ -146,6 +147,8 @@ export async function startWebTask(opts: {
   instructions?: string
   domain?: string
   dnsHeldBy?: 'client' | 'jacob'
+  /** site_build: Jacob said to build with stock photos. */
+  withStock?: boolean
   /** The chief run and its job, which own approvals and runs. */
   runId: string
   jobId: () => Promise<string>
@@ -165,6 +168,12 @@ export async function startWebTask(opts: {
     case 'site_update': {
       const jobId = await opts.jobId()
       if (opts.kind === 'site_build' && !w.brief?.trim()) throw new Error(`${w.name} has no brief yet; write it with set_brief first`)
+      // Real photos lead; stock-only builds are a second run Jacob asks for.
+      const intake = readIntake((await db.engagement.findUnique({ where: { id: w.id }, select: { intake: true } }))?.intake)
+      const photos = (intake.assets ?? []).filter((a) => a.kind === 'photo').length
+      if (opts.kind === 'site_build' && !photos && intake.oldSite?.use !== 'verbatim' && !opts.withStock) {
+        throw new Error(`No photos on file for ${w.name} and no old site to copy; add them at the intake page (/admin/ops/intake/${w.id}) or say build with stock`)
+      }
       if (opts.kind === 'site_update' && !opts.instructions?.trim()) throw new Error('site_update needs instructions')
       const started: string[] = []
       if (!w.repoUrl) {
@@ -173,10 +182,20 @@ export async function startWebTask(opts: {
         await provisionRun(w.id, jobId)
         started.push('provision (done)')
       }
-      const d = await dispatchRun(w.id, { kind: opts.kind, brief: w.brief ?? undefined, instructions: opts.instructions, dry: false, jobId })
+      // Assets come only from this client's own intake, never from free text.
+      const d = await dispatchRun(w.id, {
+        kind: opts.kind,
+        brief: w.brief ?? undefined,
+        instructions: opts.instructions,
+        dry: false,
+        jobId,
+        assets: payloadAssets(intake),
+        oldSite: payloadOldSite(intake),
+        withStock: Boolean(opts.withStock),
+      })
       if (d.blocked.length) throw new Error(`blocked: ${d.blocked.join('; ')}`)
       if (!d.ok) throw new Error(d.error ?? 'dispatch failed')
-      started.push(`${opts.kind} dispatched to ${d.repo}`)
+      started.push(`${opts.kind} dispatched to ${d.repo} with ${photos} photo${photos === 1 ? '' : 's'}${d.assetsInBriefOnly ? ' (asset list in the brief only: payload too large)' : ''}`)
       return { done: `${opts.kind} is running for ${w.name}. The report comes when the workflow calls back.`, started }
     }
 

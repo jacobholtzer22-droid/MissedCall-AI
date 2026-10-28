@@ -9,6 +9,7 @@
 // open step (shown dimmer).
 
 import type { ReactNode } from 'react'
+import Link from 'next/link'
 import type { BoardEngagement } from '@/lib/ops/board'
 import { adsState, derivedStatusLine, waitingLine } from '@/lib/ops/client-status'
 import { Age, HealthDot } from '../ui'
@@ -34,6 +35,7 @@ export function ClientCard({
   const ads = adsState(e)
   const due = e.nextFollowUpAt && new Date(e.nextFollowUpAt) <= new Date()
   return (
+    <div>
     <button
       type="button"
       onClick={() => onOpen(e.id)}
@@ -84,5 +86,14 @@ export function ClientCard({
       </span>
       {extra}
     </button>
+    {e.services.includes('website') && (
+      <Link
+        href={`/admin/ops/intake/${e.id}`}
+        className="inline-flex items-center min-h-[44px] px-1 text-xs text-blue-400 hover:text-blue-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 rounded"
+      >
+        Intake: info and photos for the site
+      </Link>
+    )}
+    </div>
   )
 }

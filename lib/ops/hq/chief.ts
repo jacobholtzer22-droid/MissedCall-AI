@@ -23,6 +23,8 @@ import { BUSINESS_PATCH_FIELDS } from '@/lib/admin-business-patch'
 import { BadRequest } from '@/lib/ops/validate'
 import { ROUTING_FIELDS, updateBusiness } from './admin-change'
 import { WEB_TASK_KINDS, briefTemplate, startWebTask, type WebTaskKind } from './web'
+import { INTAKE_KEYS, intakeSummary, readIntake, withAssetSections } from '@/lib/ops/intake'
+import { loadIntake, patchIntake } from '@/lib/ops/intake-server'
 
 /** "Tue Nov 3, 9:00 AM" in Detroit, for feed lines and results. */
 const detroitWhen = (d: Date) =>
@@ -52,7 +54,8 @@ What you do:
 - Jacob reports what he did in plain language ("talked to Cole, he wants Friday", "Josue is on $350 from December"). Your job is to record it: log_update (with the step and statusLine when they change), record_decision for standing rules, set_client_amounts for money. Then reflect it back in one line: what you recorded, on whom.
 - "What should I do" is answered from get_needs_you: the Today clients in their order, then Get done, never from memory. Count clients, not items. "What did I approve", "what happened with X" is answered from get_timeline; it says who pushed each approval and when it applied.
 - New clients: when Jacob names one ("New client: ..."), create it with create_client (createBusiness when the client gets a website, ads or missed-call texting), then say in one line what was created. Platform account changes go through update_business; routing fields wait for Push.
-- Website clients: the site builds from a brief. When a client has the website service and no brief (get_client shows brief: null), ask Jacob for everything get_brief_template needs in ONE message, grouped: business name and display name, trade, service area (main city and other towns), phone, email for the site, services (and what each includes), hours, what makes them different, reviews (with links), photos and logo (yes or no, where), pages wanted, a reference site they like, colours. He answers in prose or pastes the client's intake. Then write the whole brief in the template's shape (unknowns under UNKNOWN, never invented, businessSlug from the platform account) and show it back in one message; store it with set_brief only after he says it looks good or gives edits.
+- Website clients: the site builds from a brief, and the brief is written from the client's intake (get_client's intake: answers, files, old site, and summary.missing). Photos, the logo and the old site are added on the intake page (/admin/ops/intake/<id>); point Jacob there for files. When a website client has no brief: read the intake, then ask Jacob in ONE grouped message only for what is still empty of what get_brief_template needs. Save his answers with save_intake. Then write the whole brief in the template's shape (unknowns under UNKNOWN, never invented, businessSlug from the platform account; set_brief adds the Assets and Old site sections) and show it back in one message; store it with set_brief only after he says it looks good or gives edits.
+- A build needs real photos: with none on file and no old site set to verbatim, site_build is refused. Tell Jacob to add photos at the intake page, or build with stock only if he says so (withStock).
 - Website work: start_web_task. "Build X's site": site_build (it provisions first if needed). After a build reports back: review, which posts the preview and PR. "Merge it" / "take it live" / "connect example.com": merge, go_live, connect_domain, each waiting for Push. Never claim a site is built, merged or live before its run or Push says so.
 - Hand off work Jacob asks for: start_ads_task for Google Ads work, start_web_task for a change to a client's website. Each one starts a specialist run under the current job. Write instructions a specialist can act on without asking back: the client, the goal, the limits, and Jacob's decisions.
 - When Jacob points at a spec under docs/ads-specs/, read it with read_spec and pass its full text in the start_ads_task instructions, after one line with Jacob's own instructions (e.g. "Build it paused and queue the enable for my approval."). Do not shorten the spec.
@@ -121,7 +124,7 @@ async function clientDetail(engagementId: string) {
   const board = await getOpsBoard()
   const e = board.engagements.find((x) => x.id === engagementId) ?? board.ignored.find((x) => x.id === engagementId)
   if (!e) throw new Error(`no client with id ${engagementId}`)
-  const [activities, runs, decisions, approvals] = await Promise.all([
+  const [activities, runs, decisions, approvals, intakeRow] = await Promise.all([
     db.opsActivity.findMany({ where: { engagementId }, orderBy: { createdAt: 'desc' }, take: 10, select: { kind: true, body: true, createdAt: true } }),
     db.agentRun.findMany({
       where: { engagementId },
@@ -136,6 +139,7 @@ async function clientDetail(engagementId: string) {
       take: 10,
       select: { title: true, status: true, error: true, detail: true, createdAt: true, decidedAt: true, appliedAt: true },
     }),
+    db.engagement.findUnique({ where: { id: engagementId }, select: { intake: true } }),
   ])
   return {
     id: e.id,
@@ -158,6 +162,7 @@ async function clientDetail(engagementId: string) {
     lastContactedAt: e.lastContactedAt,
     nextFollowUpAt: e.nextFollowUpAt,
     brief: e.brief,
+    intake: intakeForChief(intakeRow?.intake),
     platformAccount: e.business
       ? {
           businessId: e.business.id,
@@ -196,6 +201,17 @@ async function clientDetail(engagementId: string) {
       output: r.output,
     })),
     recentApprovals: approvals.map((a) => approvalView(a)),
+  }
+}
+
+/** The intake as the chief sees it: every answer, the files as captions and tags (no URLs), and what is still empty. */
+function intakeForChief(raw: unknown) {
+  const i = readIntake(raw)
+  const { assets, ...answers } = i
+  return {
+    ...answers,
+    files: (assets ?? []).map((a) => ({ kind: a.kind, filename: a.filename, caption: a.caption ?? null, heroCandidate: Boolean(a.heroCandidate), service: a.service ?? null, beforeAfter: a.beforeAfter ?? null })),
+    summary: intakeSummary(i),
   }
 }
 
@@ -653,15 +669,43 @@ function chiefTools(ctx: ChiefContext): ClientTool[] {
       run: async () => ({ result: { template: await briefTemplate() }, label: 'Read the brief template' }),
     },
     {
+      name: 'save_intake',
+      description: `Save what Jacob tells you about a client's site into the client's intake (the same record the intake page edits), so it lives in one place. Keys: ${INTAKE_KEYS.filter((k) => k !== 'assets').join(', ')}. Objects merge one level deep (business, reviews, oldSite, socials, style, domain); lists replace whole (services, differentiators, serviceArea). Files are added only on the intake page, never here.`,
+      input_schema: {
+        type: 'object',
+        properties: {
+          engagementId: { type: 'string' },
+          intake: {
+            type: 'object',
+            description:
+              'e.g. {"business": {"phone": "+16125551234", "serviceArea": ["Rochester, MN", "Byron"]}, "services": [{"name": "Gutter cleaning", "description": "..."}], "about": "...", "oldSite": {"url": "https://...", "use": "facts_only"}}',
+          },
+        },
+        required: ['engagementId', 'intake'],
+      },
+      run: async (input) => {
+        const engagementId = str(input.engagementId)
+        const raw = input.intake && typeof input.intake === 'object' && !Array.isArray(input.intake) ? (input.intake as Record<string, unknown>) : null
+        if (!raw) throw new Error('intake must be an object')
+        const unknown = Object.keys(raw).filter((k) => !(INTAKE_KEYS as readonly string[]).includes(k) || k === 'assets')
+        if (unknown.length) throw new Error(`not intake keys: ${unknown.join(', ')}`)
+        const clean = JSON.parse(noEmDash(JSON.stringify(raw)))
+        const next = await patchIntake(engagementId, clean)
+        await ensureJob(ctx, [engagementId])
+        const sum = intakeSummary(next)
+        return { result: { ok: true, saved: Object.keys(raw), stillMissing: sum.missing }, label: `Saved intake (${Object.keys(raw).join(', ')}) for ${await engagementName(engagementId)}` }
+      },
+    },
+    {
       name: 'set_brief',
       description:
-        "Store a client's site brief: the full BRIEF.template.md filled from what Jacob or the client actually said (businessSlug from get_client's platformAccount.slug; unknowns listed under UNKNOWN, never invented; launch.indexable stays false). Only after Jacob has seen it and said it looks good. Optionally the structured answers as intake. Moves the website step from brief (or none) to build.",
+        "Store a client's site brief: the full BRIEF.template.md filled from what Jacob or the client actually said (businessSlug from get_client's platformAccount.slug; unknowns listed under UNKNOWN, never invented; launch.indexable stays false). Only after Jacob has seen it and said it looks good. Answers Jacob gave in chat go in intake as well. The brief's Assets and Old site sections are written for you from the intake. Moves the website step from brief (or none) to build.",
       input_schema: {
         type: 'object',
         properties: {
           engagementId: { type: 'string' },
           brief: { type: 'string', description: 'The whole brief, markdown, in the template shape.' },
-          intake: { type: 'object', description: 'The answers behind it, as key to value.' },
+          intake: { type: 'object', description: 'Answers Jacob gave in chat that are not in the intake yet, in save_intake shape; saved to the intake too.' },
         },
         required: ['engagementId', 'brief'],
       },
@@ -676,17 +720,29 @@ function chiefTools(ctx: ChiefContext): ClientTool[] {
         })
         if (!e) throw new Error(`no client with id ${engagementId}`)
         if (e.business?.slug && !brief.includes(e.business.slug)) throw new Error(`the brief must carry businessSlug ${e.business.slug} exactly`)
-        const intake = input.intake && typeof input.intake === 'object' && !Array.isArray(input.intake) ? (input.intake as Prisma.InputJsonObject) : undefined
+        // Answers given here go into the intake too, so nothing lives in two places.
+        if (input.intake && typeof input.intake === 'object' && !Array.isArray(input.intake)) {
+          const raw = input.intake as Record<string, unknown>
+          const allowed = Object.fromEntries(Object.entries(raw).filter(([k]) => (INTAKE_KEYS as readonly string[]).includes(k) && k !== 'assets'))
+          if (Object.keys(allowed).length) await patchIntake(engagementId, allowed)
+        }
+        // The brief ends with this client's own files and old site, written from the intake.
+        const stored = await loadIntake(engagementId)
+        const full = withAssetSections(brief, stored?.intake ?? {})
         const site = e.deliverables[0]
         await db.$transaction(async (tx) => {
-          await tx.engagement.update({ where: { id: engagementId }, data: { brief, ...(intake ? { intake } : {}) } })
+          await tx.engagement.update({ where: { id: engagementId }, data: { brief: full } })
           await tx.opsActivity.create({ data: { engagementId, kind: 'note', body: `Site brief saved (${brief.length} characters). Ready to build.` } })
           if (site && (!site.step || site.step === 'brief')) {
             await tx.deliverable.update({ where: { id: site.id }, data: { step: 'build', stepUpdatedAt: new Date(), waitingOn: defaultWaitingOn('website', 'build'), waitingNote: 'Brief saved; ready to build' } })
           }
         })
         await ensureJob(ctx, [engagementId])
-        return { result: { ok: true, client: e.displayName.trim(), chars: brief.length }, label: `Saved the brief for ${e.displayName.trim()}` }
+        const sum = intakeSummary(stored?.intake ?? {})
+        return {
+          result: { ok: true, client: e.displayName.trim(), chars: full.length, photos: sum.photos, logo: sum.logo, oldSite: sum.oldSite },
+          label: `Saved the brief for ${e.displayName.trim()} (${sum.photos} photo${sum.photos === 1 ? '' : 's'}${sum.logo ? ', logo' : ''})`,
+        }
       },
     },
     {
@@ -710,6 +766,7 @@ function chiefTools(ctx: ChiefContext): ClientTool[] {
           instructions: { type: 'string', description: 'site_update: the exact change, written for the site agent.' },
           domain: { type: 'string', description: 'connect_domain: e.g. example.com' },
           dnsHeldBy: { type: 'string', enum: ['client', 'jacob'], description: 'connect_domain: who adds the DNS records. Default client.' },
+          withStock: { type: 'boolean', description: 'site_build only: true only when Jacob said to build with stock photos. Without photos on file (and no old site to copy) the build is refused otherwise.' },
         },
         required: ['engagementId', 'kind'],
       },
@@ -721,6 +778,7 @@ function chiefTools(ctx: ChiefContext): ClientTool[] {
           instructions: input.instructions ? noEmDash(str(input.instructions)) : undefined,
           domain: input.domain ? str(input.domain) : undefined,
           dnsHeldBy: input.dnsHeldBy === 'jacob' ? 'jacob' : 'client',
+          withStock: input.withStock === true,
           runId: ctx.runId,
           jobId: () => ensureJob(ctx, [engagementId]),
         })
