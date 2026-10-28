@@ -12,6 +12,9 @@
 //            route under waitUntil); the run marks the approval applied or
 //            failed. If the run cannot start, the approval fails with the reason.
 //            web_push: wired at checkpoint 5.
+// Either way the approval's detail records who decided and through what
+// ({ decidedBy: 'jacob', decidedVia: 'hq' }), so the timeline and the chief
+// can say who pushed it.
 
 import type { Prisma } from '@prisma/client'
 import { db } from '@/lib/db'
@@ -22,7 +25,13 @@ export type DecideResult =
   | { ok: true; status: 'approved'; applyRunId: string }
   | { ok: false; httpStatus: number; error: string }
 
-export async function decideApproval(id: string, decision: 'approve' | 'reject'): Promise<DecideResult> {
+export type DecidedBy = { decidedBy: string; decidedVia: string }
+
+export async function decideApproval(
+  id: string,
+  decision: 'approve' | 'reject',
+  by: DecidedBy = { decidedBy: 'jacob', decidedVia: 'hq' }
+): Promise<DecideResult> {
   const approval = await db.opsApproval.findUnique({
     where: { id },
     include: { run: { select: { engagementId: true } } },
@@ -38,9 +47,11 @@ export async function decideApproval(id: string, decision: 'approve' | 'reject')
     data: { status: decision === 'approve' ? 'approved' : 'rejected', decidedAt: new Date() },
   })
   if (flipped.count === 0) return { ok: false, httpStatus: 409, error: 'Approval was decided a moment ago' }
+
+  const detail: Record<string, unknown> = { ...(approval.detail as Record<string, unknown>), decidedBy: by.decidedBy, decidedVia: by.decidedVia }
+  await db.opsApproval.update({ where: { id }, data: { detail: detail as Prisma.InputJsonObject } })
   if (decision === 'reject') return { ok: true, status: 'rejected' }
 
-  const detail = approval.detail as Record<string, unknown>
   const action = String(detail.action ?? '')
   const args = (detail.args && typeof detail.args === 'object' ? detail.args : {}) as Record<string, unknown>
   try {

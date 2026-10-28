@@ -105,7 +105,7 @@ export function parseAdsReport(text: string): { report: AdsReport | null; error:
 // ── Starting and running ────────────────────────────────────────────────────
 
 type AdsApproval = { id: string; action: string; args: Record<string, unknown> }
-type AdsInput = { instructions: string; customerId: string; client: string; dry: boolean; allow?: string[]; approval?: AdsApproval }
+type AdsInput = { instructions: string; customerId: string; client: string; dry: boolean; allow?: string[]; approval?: AdsApproval; approvalId?: string }
 
 export async function adsClients(): Promise<{ id: string; name: string; customerId: string }[]> {
   const rows = await db.engagement.findMany({
@@ -153,7 +153,7 @@ export async function startAdsRun(opts: {
     customerId,
     client,
     dry: Boolean(opts.dry),
-    ...(mode === 'apply' && opts.approval ? { allow: [opts.approval.action], approval: opts.approval } : {}),
+    ...(mode === 'apply' && opts.approval ? { allow: [opts.approval.action], approval: opts.approval, approvalId: opts.approval.id } : {}),
   }
   return createRun({
     agent: 'ads',

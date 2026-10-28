@@ -20,7 +20,7 @@ import { HomeTab, workingByClient } from './HomeTab'
 import { ClientsTab } from './ClientsTab'
 import { MoneyTab } from './MoneyTab'
 import { AgentsTab } from './AgentsTab'
-import { History } from './HqHistory'
+import { Timeline } from './Timeline'
 import { EngagementPanel } from './EngagementPanel'
 import { useHqFeed } from './useHqFeed'
 import { button, type OpsActions } from './opsUi'
@@ -101,6 +101,12 @@ export function OpsClient({
 
   const hq = useHqFeed({ fast: tab === 'home', toast, onRunSettled: () => void refresh() })
   const needs = useMemo(() => rankNeedsYou(board, hq.feed?.approvals ?? []), [board, hq.feed])
+  // The timeline reloads its first page when a job, run or approval moves.
+  const timelineKey = [
+    ...(hq.feed?.jobs ?? []).map((j) => `${j.id}:${j.status}:${j.updatedAt}`),
+    ...(hq.feed?.approvals ?? []).map((a) => `${a.id}:${a.status}`),
+    ...(hq.feed?.runs ?? []).map((r) => `${r.id}:${r.status}`),
+  ].join('|')
 
   const loadUnmatched = useCallback(
     async (fresh = false) => {
@@ -332,7 +338,7 @@ export function OpsClient({
           />
         )}
         {tab === 'money' && <MoneyTab board={board} actions={actions} />}
-        {tab === 'timeline' && <History title="Timeline" />}
+        {tab === 'timeline' && <Timeline engagements={[...board.engagements, ...board.ignored]} refreshKey={timelineKey} />}
         {tab === 'agents' && <AgentsTab board={board} actions={actions} />}
       </main>
 

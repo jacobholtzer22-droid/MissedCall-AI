@@ -2,7 +2,7 @@
 
 // Right-side detail panel for one engagement, same shell as
 // app/admin/ClientDetailPanel. Top to bottom: header fields, Stripe, alerts,
-// deliverables, HQ jobs, notes, activity, links. Every field saves on its own
+// deliverables, the client's timeline, notes, activity, links. Every field saves on its own
 // (change for selects and checkboxes, blur for text) through OpsActions,
 // which updates the board optimistically and reverts on failure.
 
@@ -18,7 +18,7 @@ import { STEP_CATALOG, defaultWaitingOn, effectiveStatusOf, stepFor } from '@/li
 import { RUN_KINDS, defaultRepoName, type RunKind } from '@/lib/ops/agents/names'
 import { formatPhoneNumber } from '@/lib/utils'
 import { Age, HealthDot } from '../ui'
-import { History } from './HqHistory'
+import { Timeline } from './Timeline'
 import { StripeCustomerPicker } from './Pickers'
 import {
   ALERT_TONE,
@@ -206,8 +206,8 @@ export function EngagementPanel({ engagement: e, focus, actions, unmatched, unma
             )}
           </section>
 
-          {/* Ops HQ jobs that touched this client (read only) */}
-          <History engagementId={e.id} title="Jobs" />
+          {/* Everything that happened for this client (read only) */}
+          <Timeline engagementId={e.id} />
 
           {/* Notes */}
           <section>
