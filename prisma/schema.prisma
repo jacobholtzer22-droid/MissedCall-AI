@@ -1140,6 +1140,12 @@ model Engagement {
   nextFollowUpAt  DateTime?
   notes           String?   @db.Text
 
+  // The site brief (markdown in the shape of AA-Template's BRIEF.template.md),
+  // written by the chief from Jacob's answers or the client's intake; the
+  // site_build dispatch sends it. intake: the structured answers behind it.
+  brief  String? @db.Text
+  intake Json?
+
   deliverables Deliverable[]
   activities   OpsActivity[]
   agentRuns    AgentRun[]

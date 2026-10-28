@@ -22,6 +22,7 @@ import { MoneyTab } from './MoneyTab'
 import { AgentsTab } from './AgentsTab'
 import { Timeline } from './Timeline'
 import { EngagementPanel } from './EngagementPanel'
+import { NewClientDialog } from './NewClientDialog'
 import { useHqFeed } from './useHqFeed'
 import { button, type OpsActions } from './opsUi'
 
@@ -79,6 +80,7 @@ export function OpsClient({
   const [unmatched, setUnmatched] = useState<UnmatchedPayingCustomer[] | null>(null)
   const [unmatchedLoading, setUnmatchedLoading] = useState(false)
   const [showRevenue, setShowRevenue] = useState(initialShowRevenue)
+  const [creating, setCreating] = useState(false)
 
   const toggleRevenue = () =>
     setShowRevenue((prev) => {
@@ -223,6 +225,7 @@ export function OpsClient({
       return String(data.engagementId)
     },
     openEngagement: (id, focus) => setSelected({ id, focus, key: Date.now() }),
+    newClient: () => setCreating(true),
     toast,
   }
 
@@ -353,6 +356,21 @@ export function OpsClient({
           onLoadUnmatched={loadUnmatched}
           onClose={() => setSelected(null)}
           onRefresh={refresh}
+        />
+      )}
+
+      {creating && (
+        <NewClientDialog
+          onClose={() => setCreating(false)}
+          onCreate={async (body) => {
+            const { ok, data } = await send('/api/admin/ops/engagements', 'POST', body)
+            if (!ok) return String(data.error ?? 'Could not create the client')
+            setCreating(false)
+            await refresh()
+            toast(`${String(data.displayName ?? 'Client')} created`, 'success')
+            setSelected({ id: String(data.engagementId), key: Date.now() })
+            return null
+          }}
         />
       )}
 

@@ -20,6 +20,11 @@ export const dynamic = 'force-dynamic'
 const ACTIVE = ['queued', 'running', 'dispatched']
 const RECENT_MS = 30 * 60 * 1000
 
+function detailString(detail: unknown, key: string): string | null {
+  const v = (detail as Record<string, unknown> | null)?.[key]
+  return typeof v === 'string' ? v : null
+}
+
 function parseReport(summary: string | null) {
   if (!summary) return null
   try {
@@ -97,8 +102,9 @@ export async function GET(request: Request) {
         runId: a.runId,
         agent: a.agent,
         kind: a.kind,
-        client: a.run.engagement?.displayName.trim() ?? null,
-        engagementId: a.run.engagementId,
+        // A chief approval (admin_change) has no client on its run; its detail names one.
+        client: a.run.engagement?.displayName.trim() ?? detailString(a.detail, 'client'),
+        engagementId: a.run.engagementId ?? detailString(a.detail, 'engagementId'),
         title: a.title,
         detail: a.detail,
         expected: a.expected,

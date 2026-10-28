@@ -8,7 +8,7 @@
 // old table had.
 
 import { useMemo, useState } from 'react'
-import { ChevronDown, Eye, RefreshCw } from 'lucide-react'
+import { ChevronDown, Eye, Plus, RefreshCw } from 'lucide-react'
 import type { BoardEngagement, OpsBoard } from '@/lib/ops/board'
 import { headlineMrr, mrrBucketOf } from '@/lib/ops/money'
 import type { UnmatchedPayingCustomer } from '@/lib/ops/sync'
@@ -22,6 +22,7 @@ import {
   StagePill,
   StripeStatusPill,
   control,
+  primaryButton,
   detroitDate,
   money,
   smallButton,
@@ -127,6 +128,9 @@ export function ClientsTab({
     <div className="space-y-4">
       {/* Counts by stage; each filters the grid below */}
       <div className="flex flex-wrap gap-2" role="group" aria-label="Clients by stage">
+        <button type="button" onClick={actions.newClient} className={primaryButton}>
+          <Plus className="h-4 w-4" /> New client
+        </button>
         {[...stageButtons, 'ignored'].map((s) => {
           const n = s === 'ignored' ? board.ignored.length : counts[s] ?? 0
           const on = stage === s

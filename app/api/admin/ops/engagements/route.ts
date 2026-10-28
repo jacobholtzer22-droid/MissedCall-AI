@@ -1,10 +1,18 @@
 // ===========================================
-// POST /api/admin/ops/engagements — create a client from a Stripe customer
+// POST /api/admin/ops/engagements — create a client
 // ===========================================
-// Body: { stripeCustomerId }. For the "Create client" action on an unmatched
-// paying customer. Reads the customer from Stripe (read only), creates the
-// Engagement with source 'stripe' and stage 'paid_upfront', then pulls its
-// subscription and payments. 409 when any engagement already has the customer.
+// Two body shapes.
+//   { stripeCustomerId } alone: the "Create client" action on an unmatched
+//     paying customer. Reads the customer from Stripe (read only), creates the
+//     Engagement with source 'stripe' and stage 'paid_upfront', then pulls its
+//     subscription and payments. 409 when any engagement already has it.
+//   { displayName, contactName?, email?, phone?, trade?, location?, services,
+//     stage?, upfrontAmount?, upfrontPaidAt?, monthlyAmount?, stripeCustomerId?,
+//     createBusiness?, notes? }: the "New client" form, for a client with no
+//     Stripe customer or signup. createClient() in lib/ops/clients.ts: source
+//     'manual', stage onboarding by default, deliverables for the services, the
+//     platform Business when createBusiness, the Stripe link and sync when a
+//     customer id is given. 409 when the name, email or customer is taken.
 
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
@@ -12,6 +20,7 @@ import { requireAdmin } from '@/lib/pipeline-server'
 import { normalizeToE164 } from '@/lib/phone-utils'
 import { getStripe } from '@/lib/ops/stripe'
 import { syncStripeForEngagement } from '@/lib/ops/sync'
+import { Conflict, createClient, parseNewClient } from '@/lib/ops/clients'
 import { BadRequest, STRIPE_CUSTOMER_ID, readJsonObject, rejectUnknownKeys } from '@/lib/ops/validate'
 
 export const dynamic = 'force-dynamic'
@@ -23,6 +32,10 @@ export async function POST(request: Request) {
 
   try {
     const body = readJsonObject(await request.json())
+    if ('displayName' in body) {
+      const created = await createClient(parseNewClient(body), 'New client form')
+      return NextResponse.json({ ok: true, ...created })
+    }
     rejectUnknownKeys(body, ['stripeCustomerId'])
     const customerId = typeof body.stripeCustomerId === 'string' ? body.stripeCustomerId.trim() : ''
     if (!STRIPE_CUSTOMER_ID.test(customerId)) throw new BadRequest('stripeCustomerId must be a cus_ id')
@@ -55,6 +68,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: true, engagementId: engagement.id, stripe: stripeResult })
   } catch (err) {
     if (err instanceof BadRequest) return NextResponse.json({ error: err.message }, { status: 400 })
+    if (err instanceof Conflict) return NextResponse.json({ error: err.message }, { status: 409 })
     if ((err as { code?: string })?.code === 'P2002') {
       return NextResponse.json({ error: 'That Stripe customer is already linked to another engagement' }, { status: 409 })
     }

@@ -110,7 +110,8 @@ export async function getTimeline(q: TimelineQuery): Promise<{ items: TimelineIt
           // Any of its three times may fall in range; the exact `at` is checked below.
           where: {
             ...(q.agent ? { agent: q.agent } : {}),
-            ...(eid ? { run: { engagementId: eid } } : {}),
+            // A chief approval (admin_change) names its client in detail, not on its run.
+            ...(eid ? { AND: [{ OR: [{ run: { engagementId: eid } }, { detail: { path: ['engagementId'], equals: eid } }] }] } : {}),
             ...(before || from ? { OR: [range('createdAt'), range('decidedAt'), range('appliedAt')] } : {}),
           },
           orderBy: { createdAt: 'desc' },
@@ -177,8 +178,8 @@ export async function getTimeline(q: TimelineQuery): Promise<{ items: TimelineIt
       type: 'approval',
       id: a.id,
       at: at.toISOString(),
-      engagementId: a.run.engagementId,
-      client: name(a.run.engagement),
+      engagementId: a.run.engagementId ?? (typeof d.engagementId === 'string' ? d.engagementId : null),
+      client: name(a.run.engagement) ?? (typeof d.client === 'string' ? d.client : null),
       agent: a.agent,
       title: a.title,
       status: a.status,

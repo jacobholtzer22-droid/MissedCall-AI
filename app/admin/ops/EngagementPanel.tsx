@@ -169,6 +169,8 @@ export function EngagementPanel({ engagement: e, focus, actions, unmatched, unma
             onLoadUnmatched={onLoadUnmatched}
           />
 
+          {e.business && <PlatformAccountSection e={e} actions={actions} onRefresh={onRefresh} />}
+
           {/* Alerts */}
           <section>
             <h3 className="text-sm font-semibold text-gray-100 mb-2">Alerts</h3>
@@ -264,6 +266,49 @@ export function EngagementPanel({ engagement: e, focus, actions, unmatched, unma
         </div>
       </div>
     </>
+  )
+}
+
+// ── Platform account ────────────────────────────────────────────────────────
+
+/**
+ * The linked Business's Telnyx number, forwarding number and Google Ads id,
+ * edited in place through PATCH /api/admin/businesses/[id] (the admin page's
+ * own validation and phone normalisation). Jacob's own edits apply at once;
+ * only the chief's routing changes wait for Push.
+ */
+function PlatformAccountSection({ e, actions, onRefresh }: { e: BoardEngagement; actions: OpsActions; onRefresh: () => Promise<void> }) {
+  const b = e.business!
+  const save = async (field: string, value: string | null) => {
+    try {
+      const res = await fetch(`/api/admin/businesses/${b.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ [field]: value }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(String(data.error ?? 'Could not save'))
+      actions.toast('Saved', 'success')
+    } catch (err) {
+      actions.toast(err instanceof Error ? err.message : 'Could not save', 'error')
+    }
+    await onRefresh()
+  }
+  return (
+    <section>
+      <h3 className="text-sm font-semibold text-gray-100 mb-2">
+        Platform account <span className="font-normal text-gray-500">{b.slug}</span>
+      </h3>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <TextField label="Telnyx number" type="tel" value={b.telnyxPhoneNumber} placeholder="+1…" onSave={(v) => save('telnyxPhoneNumber', v)} />
+        <TextField label="Forwarding number" type="tel" value={b.forwardingNumber} placeholder="Owner's phone" onSave={(v) => save('forwardingNumber', v)} />
+        <TextField label="Google Ads customer id" value={b.googleAdsCustomerId} placeholder="10 digits" onSave={(v) => save('googleAdsCustomerId', v ? v.replace(/\D/g, '') : null)} />
+        <div>
+          <span className={label}>Platform status</span>
+          <p className="text-sm text-gray-300 min-h-[36px] flex items-center">{b.subscriptionStatus}</p>
+        </div>
+      </div>
+    </section>
   )
 }
 

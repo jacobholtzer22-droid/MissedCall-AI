@@ -86,6 +86,17 @@ export function ApprovalCard({
 
   const details = (
     <>
+      {typeof d.field === 'string' && (
+        <div className="rounded-lg border border-gray-800 bg-gray-900 px-3 py-2">
+          <div className="font-mono text-[12px] text-gray-200">{d.field}</div>
+          <div className="text-xs text-gray-400 break-words tabular-nums">
+            {d.from == null || d.from === '' ? 'empty' : String(d.from)} <span className="text-gray-600">to</span>{' '}
+            <span className="text-gray-200">{d.to == null || d.to === '' ? 'empty' : String(d.to)}</span>
+          </div>
+          {typeof d.words === 'string' && d.words && <div className="mt-1 text-xs text-gray-500 break-words">Jacob: &ldquo;{d.words}&rdquo;</div>}
+        </div>
+      )}
+
       {typeof d.action === 'string' && (
         <div className="rounded-lg border border-gray-800 bg-gray-900 px-3 py-2">
           <div className="font-mono text-[12px] text-gray-200">{d.action}</div>

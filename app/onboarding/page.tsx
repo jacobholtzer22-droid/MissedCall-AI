@@ -27,6 +27,37 @@ export default async function OnboardingPage() {
     redirect('/dashboard')
   }
 
+  // A platform account Jacob created from Ops (no signup yet) is claimed by the
+  // first user who signs up with its owner email, verified by Clerk. Only a
+  // Business with no users at all can be claimed.
+  const verifiedEmails = clerkUser.emailAddresses
+    .filter((e) => e.verification?.status === 'verified')
+    .map((e) => e.emailAddress.trim().toLowerCase())
+  if (verifiedEmails.length) {
+    const claimable = await db.business.findFirst({
+      where: { OR: verifiedEmails.map((e) => ({ ownerEmail: { equals: e, mode: 'insensitive' as const } })), users: { none: {} } },
+      orderBy: { createdAt: 'asc' },
+      select: { id: true, ownerEmail: true },
+    })
+    if (claimable) {
+      const email = claimable.ownerEmail?.toLowerCase() ?? verifiedEmails[0]
+      await db.user.upsert({
+        where: { clerkId: userId },
+        update: { businessId: claimable.id, email },
+        create: {
+          clerkId: userId,
+          businessId: claimable.id,
+          email,
+          firstName: clerkUser.firstName,
+          lastName: clerkUser.lastName,
+          imageUrl: clerkUser.imageUrl,
+          role: 'owner',
+        },
+      })
+      redirect('/dashboard')
+    }
+  }
+
   async function createBusiness(formData: FormData) {
     'use server'
 

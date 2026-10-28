@@ -6,6 +6,7 @@
 // below. Mobile: Needs you, office, chat, clients.
 
 import { useEffect, useMemo, useState } from 'react'
+import { Plus } from 'lucide-react'
 import type { BoardEngagement, OpsBoard } from '@/lib/ops/board'
 import { headlineMrr } from '@/lib/ops/money'
 import type { rankNeedsYou } from '@/lib/ops/needs-you'
@@ -129,10 +130,19 @@ export function HomeTab({
         </div>
 
         <section aria-label="Clients" className="min-w-0 lg:col-span-2 xl:col-span-1 space-y-2">
-          <h2 className="text-sm font-semibold text-gray-100 px-1">
-            Clients
-            <span className="ml-2 text-gray-500 font-normal tabular-nums">{clients.length}</span>
-          </h2>
+          <div className="flex items-center justify-between gap-2 px-1">
+            <h2 className="text-sm font-semibold text-gray-100">
+              Clients
+              <span className="ml-2 text-gray-500 font-normal tabular-nums">{clients.length}</span>
+            </h2>
+            <button
+              type="button"
+              onClick={actions.newClient}
+              className="inline-flex items-center gap-1 px-2 min-h-[44px] rounded-lg text-sm text-blue-400 hover:text-blue-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+            >
+              <Plus className="h-4 w-4" /> New client
+            </button>
+          </div>
           <ul className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-1">
             {(allClients ? clients : clients.slice(0, FIRST_CLIENTS)).map((e) => (
               <li key={e.id}>

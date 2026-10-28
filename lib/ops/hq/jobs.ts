@@ -26,3 +26,15 @@ export async function onSpecialistRunEnded(jobId: string) {
   const { runChiefReport } = await import('./chief')
   await runChiefReport(jobId)
 }
+
+/**
+ * A job waiting on approvals with no specialist run (e.g. the chief's
+ * admin_change) closes as done once none is pending or being applied.
+ */
+export async function closeJobIfSettled(jobId: string) {
+  const [active, waiting] = await Promise.all([
+    db.agentRun.count({ where: { jobId, agent: { in: ['ads', 'web'] }, status: { in: ACTIVE } } }),
+    db.opsApproval.count({ where: { jobId, status: { in: ['pending', 'approved'] } } }),
+  ])
+  if (!active && !waiting) await db.opsJob.updateMany({ where: { id: jobId, status: 'awaiting_approval' }, data: { status: 'done' } })
+}

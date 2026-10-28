@@ -17,6 +17,10 @@ import { rankNeedsYou } from '@/lib/ops/needs-you'
 import { TIMELINE_KINDS, getTimeline, type TimelineKind } from '@/lib/ops/timeline'
 import { nullableNumber } from '@/lib/ops/validate'
 import { parseLocalDateTime } from '@/lib/ops/dates'
+import { Conflict, NEW_CLIENT_FIELDS, createClient, parseNewClient } from '@/lib/ops/clients'
+import { BUSINESS_PATCH_FIELDS } from '@/lib/admin-business-patch'
+import { BadRequest } from '@/lib/ops/validate'
+import { ROUTING_FIELDS, updateBusiness } from './admin-change'
 
 /** "Tue Nov 3, 9:00 AM" in Detroit, for feed lines and results. */
 const detroitWhen = (d: Date) =>
@@ -44,6 +48,7 @@ What you do:
 - Record standing decisions ("keep X off", "don't raise Y") with record_decision. Specialists read them and must follow them.
 - Jacob reports what he did in plain language ("talked to Cole, he wants Friday", "Josue is on $350 from December"). Your job is to record it: log_update (with the step and statusLine when they change), record_decision for standing rules, set_client_amounts for money. Then reflect it back in one line: what you recorded, on whom.
 - "What should I do" is answered from get_needs_you, in its rank order, never from memory. "What did I approve", "what happened with X" is answered from get_timeline; it says who pushed each approval and when it applied.
+- New clients: when Jacob names one ("New client: ..."), create it with create_client (createBusiness when the client gets a website, ads or missed-call texting), then say in one line what was created. Platform account changes go through update_business; routing fields wait for Push.
 - Hand off work Jacob asks for: start_ads_task for Google Ads work, start_web_task for a change to a client's website. Each one starts a specialist run under the current job. Write instructions a specialist can act on without asking back: the client, the goal, the limits, and Jacob's decisions.
 - When Jacob points at a spec under docs/ads-specs/, read it with read_spec and pass its full text in the start_ads_task instructions, after one line with Jacob's own instructions (e.g. "Build it paused and queue the enable for my approval."). Do not shorten the spec.
 - After you start specialists, tell Jacob in a line or two what you started. Do not call finish_job then: when every run in the job has finished you will be asked for the report, and you write it with finish_job.
@@ -54,7 +59,7 @@ Rules:
 - Never count by hand. Totals come from the board's waitingTotals; if you split items into groups, say how many are in each group and make the groups add up.
 - If a tool says a specialist is offline or blocked, tell Jacob in one line and what would unblock it.
 - Anything that raises spend, turns something on, or goes to production waits for Jacob's Push. You never approve it yourself.
-- You write only Ops records (activities, steps, follow-ups, jobs). You never change a client's platform account, pipeline, leads or appointments.`
+- You write Ops records (clients, activities, steps, follow-ups, jobs) and, through create_client and update_business only, platform accounts. You never touch pipeline, leads or appointments.`
 
 type ChiefContext = { runId: string; messageId: string | null; prompt: string; jobId: string | null }
 
@@ -145,7 +150,19 @@ async function clientDetail(engagementId: string) {
     stripeSubscriptionStatus: e.stripeSubscriptionStatus,
     lastContactedAt: e.lastContactedAt,
     nextFollowUpAt: e.nextFollowUpAt,
-    platformAccount: e.business ? { name: e.business.name, slug: e.business.slug, googleAdsCustomerId: e.business.googleAdsCustomerId } : null,
+    platformAccount: e.business
+      ? {
+          businessId: e.business.id,
+          name: e.business.name,
+          slug: e.business.slug,
+          subscriptionStatus: e.business.subscriptionStatus,
+          ownerEmail: e.business.ownerEmail,
+          ownerPhone: e.business.ownerPhone,
+          telnyxPhoneNumber: e.business.telnyxPhoneNumber,
+          forwardingNumber: e.business.forwardingNumber,
+          googleAdsCustomerId: e.business.googleAdsCustomerId,
+        }
+      : null,
     adsCustomerId: adsCustomerId(e),
     deliverables: e.deliverables.map((d) => ({
       type: d.type,
@@ -257,6 +274,78 @@ function chiefTools(ctx: ChiefContext): ClientTool[] {
       run: async (input) => {
         const detail = await clientDetail(str(input.engagementId))
         return { result: detail, label: `Read ${detail.name}` }
+      },
+    },
+    {
+      name: 'create_client',
+      description:
+        "Put a new client on the board when Jacob says so (\"New client: Bryan, In and Out Property Care, ...\"). Creates the Ops client (source manual, stage onboarding unless told), its deliverables for the services, and with createBusiness the platform account too (no signup needed; the owner claims it later by signing up with the same email). Refuses a client whose name, email or Stripe customer is already on the board: then use that client instead.",
+      input_schema: {
+        type: 'object',
+        properties: {
+          displayName: { type: 'string', description: 'The business name, e.g. "In and Out Property Care".' },
+          contactName: { type: 'string' },
+          email: { type: 'string' },
+          phone: { type: 'string' },
+          trade: { type: 'string', description: 'e.g. property care, painting.' },
+          location: { type: 'string', description: 'City, ST.' },
+          services: { type: 'array', items: { type: 'string', enum: ['website', 'ads', 'missedcall', 'gbp'] } },
+          stage: { type: 'string', description: 'Default onboarding.' },
+          upfrontAmount: { type: 'number', description: 'Dollars paid upfront.' },
+          upfrontPaidAt: { type: 'string', description: 'YYYY-MM-DD the upfront was paid.' },
+          monthlyAmount: { type: 'number', description: 'Dollars a month once on a subscription.' },
+          stripeCustomerId: { type: 'string', description: 'cus_ id when Jacob gives one; links and syncs Stripe.' },
+          createBusiness: { type: 'boolean', description: 'Also create the platform account (needed for a website build, missed-call texting or an ads id).' },
+          notes: { type: 'string', description: "Anything else Jacob said about the client, in his words." },
+        },
+        required: ['displayName', 'services'],
+      },
+      run: async (input) => {
+        const body: Record<string, unknown> = {}
+        for (const k of NEW_CLIENT_FIELDS) if (input[k] !== undefined) body[k] = typeof input[k] === 'string' ? noEmDash(input[k] as string) : input[k]
+        if (typeof body.upfrontPaidAt === 'string') body.upfrontPaidAt = parseLocalDateTime(body.upfrontPaidAt, OPS_TIMEZONE)?.toISOString() ?? body.upfrontPaidAt
+        try {
+          const created = await createClient(parseNewClient(body), 'the chief')
+          await ensureJob(ctx, [created.engagementId])
+          return {
+            result: created,
+            label: `Created ${created.displayName}${created.business ? ` with platform account ${created.business.slug}` : ''}, ${created.deliverables.length} deliverable${created.deliverables.length === 1 ? '' : 's'}`,
+          }
+        } catch (err) {
+          if (err instanceof BadRequest || err instanceof Conflict) throw new Error(err.message)
+          throw err
+        }
+      },
+    },
+    {
+      name: 'update_business',
+      description: `Change a client's platform account (the Business row: get_client's platformAccount.businessId). Fields: ${BUSINESS_PATCH_FIELDS.join(', ')}. Validated exactly like the admin page. ${ROUTING_FIELDS.join(', ')} reroute live calls or texts, so they are NOT written: each becomes an approval waiting for Jacob's Push, and you tell him so. Everything else is written at once and logged on the client.`,
+      input_schema: {
+        type: 'object',
+        properties: {
+          businessId: { type: 'string' },
+          fields: { type: 'object', description: 'Field name to new value, e.g. {"ownerPhone": "+17025551234", "forwardingNumber": "+17025551234"}.' },
+          words: { type: 'string', description: "Jacob's words for this change, quoted on the client's log and the approval." },
+        },
+        required: ['businessId', 'fields', 'words'],
+      },
+      run: async (input) => {
+        const fields = input.fields && typeof input.fields === 'object' && !Array.isArray(input.fields) ? (input.fields as Record<string, unknown>) : null
+        if (!fields || !Object.keys(fields).length) throw new Error('fields is empty')
+        const businessId = str(input.businessId)
+        const eng = await db.engagement.findUnique({ where: { businessId }, select: { id: true } })
+        const r = await updateBusiness({
+          businessId,
+          fields,
+          words: noEmDash(str(input.words)),
+          runId: ctx.runId,
+          jobId: () => ensureJob(ctx, eng ? [eng.id] : []),
+        })
+        const parts = [
+          r.written.length ? `wrote ${r.written.map((w) => w.field).join(', ')}` : null,
+          r.waitingForPush.length ? `${r.waitingForPush.map((w) => w.field).join(', ')} waiting for Push` : null,
+        ].filter(Boolean)
+        return { result: r, label: `${r.business}: ${parts.join('; ') || 'nothing changed'}` }
       },
     },
     {

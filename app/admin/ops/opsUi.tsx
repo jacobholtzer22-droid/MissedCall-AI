@@ -23,15 +23,19 @@ export interface OpsActions {
   setShowStatus: (bookingId: string, showStatus: string) => Promise<boolean>
   createFromStripe: (customerId: string) => Promise<string | null>
   openEngagement: (id: string, focus?: 'activity') => void
+  /** Opens the New client dialog. */
+  newClient: () => void
   toast: (message: string, type: 'success' | 'error') => void
 }
 
 export const control =
   'bg-gray-900 border border-gray-800 rounded-lg px-3 text-sm text-gray-100 min-h-[44px] focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500'
 export const smallControl =
-  'bg-gray-950 border border-gray-800 rounded-md px-2 py-1.5 text-sm text-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 w-full'
+  'bg-gray-950 border border-gray-800 rounded-md px-2 py-1.5 text-sm text-gray-100 placeholder:text-gray-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 w-full'
 export const button =
   'inline-flex items-center justify-center gap-1.5 px-3 min-h-[44px] rounded-lg border border-gray-700 bg-gray-800 hover:bg-gray-700 text-sm font-medium text-gray-100 transition disabled:opacity-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500'
+export const primaryButton =
+  'inline-flex items-center justify-center gap-1.5 px-3 min-h-[44px] rounded-lg bg-blue-600 hover:bg-blue-500 text-sm font-medium text-white transition disabled:opacity-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-300'
 export const smallButton =
   'inline-flex items-center justify-center gap-1 px-2.5 min-h-[36px] rounded-md border border-gray-700 bg-gray-800 hover:bg-gray-700 text-xs font-medium text-gray-200 transition disabled:opacity-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500'
 
