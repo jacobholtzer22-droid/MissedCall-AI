@@ -9,7 +9,14 @@
 //   waitingLine: what is waiting and on whom, one line.
 //   adsState: Running, Built paused, Account needed, or the ads step's label.
 
-import { DELIVERABLE_NAMES } from './needs-you'
+export const DELIVERABLE_NAMES: Record<string, string> = {
+  website: 'Website',
+  domain: 'Domain',
+  email: 'Email',
+  missedcall: 'Missed call',
+  ads: 'Ads',
+  gbp: 'Google Business Profile',
+}
 
 type Deliverable = {
   type: string

@@ -28,6 +28,8 @@ export interface OpsAlert {
 export const OPS_ALERT_THRESHOLDS = {
   /** onboarding_stale: paid_upfront / onboarding for longer than this many days */
   onboardingStaleDays: 14,
+  /** no_subscription: yellow until this many days after upfrontPaidAt, red after. */
+  noSubscriptionGraceDays: 30,
 }
 
 type DateLike = Date | string | null
@@ -83,20 +85,23 @@ export function computeEngagementAlerts(
   const oneTime = e.stage === 'one_time'
   const alerts: OpsAlert[] = []
 
-  // no_subscription (red)
+  // no_subscription: yellow for the first month after the upfront payment
+  // (the normal wait before the subscription starts), red after it.
+  const paidAt = time(e.upfrontPaidAt)
   if (
     !oneTime &&
-    time(e.upfrontPaidAt) !== null &&
+    paidAt !== null &&
     sub !== 'active' &&
     sub !== 'trialing' &&
     sub !== 'scheduled' && // a subscription is set up to start later
     e.stage !== 'churned' &&
     e.stage !== 'paused'
   ) {
+    const days = Math.max(0, Math.floor((now.getTime() - paidAt) / DAY_MS))
     alerts.push({
       code: 'no_subscription',
-      severity: 'red',
-      message: `Paid upfront but subscription is ${sub ?? 'not synced'}`,
+      severity: days > T.noSubscriptionGraceDays ? 'red' : 'yellow',
+      message: `Paid upfront ${days} day${days === 1 ? '' : 's'} ago, no subscription yet`,
     })
   }
 
@@ -120,8 +125,10 @@ export function computeEngagementAlerts(
     alerts.push({ code: 'stripe_unlinked', severity: 'yellow', message: 'No Stripe customer linked' })
   }
 
-  // status_mismatch (yellow)
-  if (business && (business.subscriptionStatus === 'active') !== (sub === 'active')) {
+  // status_mismatch (yellow): only the platform serving a client Stripe is not
+  // billing. Business.subscriptionStatus defaults to trialing and nobody keeps
+  // it current, so "platform trialing, Stripe active" is not a problem.
+  if (business && business.subscriptionStatus === 'active' && (sub === null || sub === 'canceled' || sub === 'past_due' || sub === 'unpaid')) {
     alerts.push({
       code: 'status_mismatch',
       severity: 'yellow',

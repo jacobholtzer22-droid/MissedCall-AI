@@ -14,7 +14,7 @@ import Link from 'next/link'
 import { Eye, EyeOff, Globe, RefreshCw } from 'lucide-react'
 import type { BoardDeliverable, BoardEngagement, OpsBoard } from '@/lib/ops/board'
 import type { UnmatchedPayingCustomer } from '@/lib/ops/sync'
-import { rankNeedsYou } from '@/lib/ops/needs-you'
+import { bucketClients } from '@/lib/ops/triage'
 import { Age } from '../ui'
 import { HomeTab, workingByClient } from './HomeTab'
 import { ClientsTab } from './ClientsTab'
@@ -102,7 +102,8 @@ export function OpsClient({
   }, [toast])
 
   const hq = useHqFeed({ fast: tab === 'home', toast, onRunSettled: () => void refresh() })
-  const needs = useMemo(() => rankNeedsYou(board, hq.feed?.approvals ?? []), [board, hq.feed])
+  // Home's one client list; the badge counts the clients in Today.
+  const triage = useMemo(() => bucketClients(board, hq.feed?.approvals ?? [], new Date()), [board, hq.feed])
   // The timeline reloads its first page when a job, run or approval moves.
   const timelineKey = [
     ...(hq.feed?.jobs ?? []).map((j) => `${j.id}:${j.status}:${j.updatedAt}`),
@@ -320,14 +321,14 @@ export function OpsClient({
               }`}
             >
               {t.label}
-              {t.key === 'home' && needs.count > 0 && <span className="ml-1.5 text-gray-500 font-normal tabular-nums">{needs.count}</span>}
+              {t.key === 'home' && triage.today.length > 0 && <span className="ml-1.5 text-gray-500 font-normal tabular-nums">{triage.today.length}</span>}
             </button>
           ))}
         </nav>
       </header>
 
       <main className="max-w-screen-2xl mx-auto px-3 sm:px-6 py-4 sm:py-6">
-        {tab === 'home' && <HomeTab board={board} actions={actions} hq={hq} needs={needs} showRevenue={showRevenue} />}
+        {tab === 'home' && <HomeTab board={board} actions={actions} hq={hq} triage={triage} showRevenue={showRevenue} />}
         {tab === 'clients' && (
           <ClientsTab
             board={board}
@@ -338,6 +339,7 @@ export function OpsClient({
             showRevenue={showRevenue}
             onShowRevenue={toggleRevenue}
             working={workingByClient(hq)}
+            triage={triage}
           />
         )}
         {tab === 'money' && <MoneyTab board={board} actions={actions} />}

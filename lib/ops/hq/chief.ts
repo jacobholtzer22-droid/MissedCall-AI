@@ -14,7 +14,7 @@ import { db } from '@/lib/db'
 import { OPS_TIMEZONE, getOpsBoard, type BoardEngagement } from '@/lib/ops/board'
 import { STEP_CATALOG, defaultWaitingOn, stepFor } from '@/lib/ops/steps'
 import { DELIVERABLE_TYPES } from '@/lib/ops/types'
-import { rankNeedsYou } from '@/lib/ops/needs-you'
+import { bucketClients } from '@/lib/ops/triage'
 import { TIMELINE_KINDS, getTimeline, type TimelineKind } from '@/lib/ops/timeline'
 import { nullableNumber } from '@/lib/ops/validate'
 import { parseLocalDateTime } from '@/lib/ops/dates'
@@ -50,7 +50,7 @@ What you do:
 - Record what Jacob tells you ("Cole approved the site", "Ronny's budget is $500") with log_update, in his words. When the update moves a deliverable, pass the step, using a step key from that client's step list in get_client. When it changes where the client stands, pass statusLine: one sentence, the client's status now.
 - Record standing decisions ("keep X off", "don't raise Y") with record_decision. Specialists read them and must follow them.
 - Jacob reports what he did in plain language ("talked to Cole, he wants Friday", "Josue is on $350 from December"). Your job is to record it: log_update (with the step and statusLine when they change), record_decision for standing rules, set_client_amounts for money. Then reflect it back in one line: what you recorded, on whom.
-- "What should I do" is answered from get_needs_you, in its rank order, never from memory. "What did I approve", "what happened with X" is answered from get_timeline; it says who pushed each approval and when it applied.
+- "What should I do" is answered from get_needs_you: the Today clients in their order, then Get done, never from memory. Count clients, not items. "What did I approve", "what happened with X" is answered from get_timeline; it says who pushed each approval and when it applied.
 - New clients: when Jacob names one ("New client: ..."), create it with create_client (createBusiness when the client gets a website, ads or missed-call texting), then say in one line what was created. Platform account changes go through update_business; routing fields wait for Push.
 - Website clients: the site builds from a brief. When a client has the website service and no brief (get_client shows brief: null), ask Jacob for everything get_brief_template needs in ONE message, grouped: business name and display name, trade, service area (main city and other towns), phone, email for the site, services (and what each includes), hours, what makes them different, reviews (with links), photos and logo (yes or no, where), pages wanted, a reference site they like, colours. He answers in prose or pastes the client's intake. Then write the whole brief in the template's shape (unknowns under UNKNOWN, never invented, businessSlug from the platform account) and show it back in one message; store it with set_brief only after he says it looks good or gives edits.
 - Website work: start_web_task. "Build X's site": site_build (it provisions first if needed). After a build reports back: review, which posts the preview and PR. "Merge it" / "take it live" / "connect example.com": merge, go_live, connect_domain, each waiting for Push. Never claim a site is built, merged or live before its run or Push says so.
@@ -398,35 +398,38 @@ function chiefTools(ctx: ChiefContext): ClientTool[] {
     {
       name: 'get_needs_you',
       description:
-        "What Jacob should do now, in rank order: the same list as the Needs you column on Home. Pending approvals, red alerts, deliverable steps waiting on Jacob (oldest first), follow-ups due, today's demo calls, yellow alerts; plus what waits on clients and vendors. Answer \"what should I do\" from this, in this order.",
+        "What Jacob should do, as Home shows it: every client in one bucket. today (urgent: approvals waiting for Push, past due, leads going nowhere while something is live, follow-ups due), getDone (steps on Jacob, onboarding not started, no subscription, Stripe unlinked), waitingOnClient, live; each with its reasons, oldest first. sales: prospect follow-ups and demo calls today. Answer \"what should I do\" from today, in its order, then getDone.",
       input_schema: { type: 'object', properties: {} },
       run: async () => {
         const [board, pending] = await Promise.all([
           getOpsBoard(),
           db.opsApproval.findMany({
             where: { status: 'pending' },
-            include: { run: { select: { engagementId: true, engagement: { select: { displayName: true } } } } },
+            select: { id: true, title: true, status: true, detail: true, createdAt: true, run: { select: { engagementId: true } } },
           }),
         ])
-        const ranked = rankNeedsYou(
+        const t = bucketClients(
           board,
-          pending.map((a) => ({
-            id: a.id,
-            title: a.title,
-            agent: a.agent,
-            status: a.status,
-            client: a.run.engagement?.displayName.trim() ?? null,
-            engagementId: a.run.engagementId,
-            createdAt: a.createdAt.toISOString(),
-          }))
+          pending.map((a) => {
+            const d = (a.detail ?? {}) as Record<string, unknown>
+            return { id: a.id, title: a.title, status: a.status, engagementId: a.run.engagementId ?? (typeof d.engagementId === 'string' ? d.engagementId : null), createdAt: a.createdAt.toISOString() }
+          }),
+          new Date()
         )
+        const view = (list: typeof t.today) => list.map((e) => ({ client: e.name, engagementId: e.engagementId, reasons: e.reasons.map((r) => r.text) }))
         return {
           result: {
-            count: ranked.count,
-            items: ranked.items.map((i) => ({ rank: i.rank, kind: i.kind, client: i.client, what: i.what, since: i.at, engagementId: i.engagementId, counts: i.counts })),
-            waitingOnOthers: ranked.waitingOnOthers.map((w) => ({ client: w.client, waitingOn: w.waitingOn, what: w.what, since: w.at })),
+            counts: { today: t.today.length, getDone: t.getDone.length, waitingOnClient: t.waitingOnClient.length, live: t.live.length, churned: t.churnedCount },
+            today: view(t.today),
+            getDone: view(t.getDone),
+            waitingOnClient: view(t.waitingOnClient),
+            live: t.live.map((e) => e.name),
+            sales: {
+              prospectFollowUps: t.sales.prospectFollowUps.map((p) => ({ name: p.name, dueAt: p.dueAt })),
+              demoCallsToday: t.sales.demoCallsToday.map((b) => ({ name: b.customerName, at: b.scheduledAt, showStatus: b.showStatus })),
+            },
           },
-          label: `Read Needs you: ${ranked.count} item${ranked.count === 1 ? '' : 's'}`,
+          label: `Read Home: ${t.today.length} today, ${t.getDone.length} to get done, ${t.waitingOnClient.length} waiting on clients, ${t.live.length} live`,
         }
       },
     },

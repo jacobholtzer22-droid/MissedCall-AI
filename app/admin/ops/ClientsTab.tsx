@@ -11,6 +11,7 @@ import { useMemo, useState } from 'react'
 import { ChevronDown, Eye, Plus, RefreshCw } from 'lucide-react'
 import type { BoardEngagement, OpsBoard } from '@/lib/ops/board'
 import { headlineMrr, mrrBucketOf } from '@/lib/ops/money'
+import { BUCKET_LABELS, type BucketKey, type Triage } from '@/lib/ops/triage'
 import type { UnmatchedPayingCustomer } from '@/lib/ops/sync'
 import { DELIVERABLE_TYPES, DELIVERABLE_TYPES_FOR_SERVICE, SERVICE_KEYS, STAGE_ORDER, type DeliverableType, type ServiceKey } from '@/lib/ops/types'
 import { ClientCard } from './ClientCard'
@@ -67,6 +68,7 @@ export function ClientsTab({
   showRevenue,
   onShowRevenue,
   working,
+  triage,
 }: {
   board: OpsBoard
   actions: OpsActions
@@ -77,6 +79,8 @@ export function ClientsTab({
   onShowRevenue: () => void
   /** engagementId → the HQ agent running for it now. */
   working: Map<string, string>
+  /** Home's buckets, for the bucket chips. */
+  triage: Triage
 }) {
   const [stage, setStage] = useState('all')
   const [service, setService] = useState('all')
@@ -84,6 +88,11 @@ export function ClientsTab({
   const [q, setQ] = useState('')
   const [sort, setSort] = useState<SortKey>('health')
   const [showIgnored, setShowIgnored] = useState(false)
+  const [bucket, setBucket] = useState<BucketKey | 'all'>('all')
+  const bucketIds = useMemo(
+    () => (bucket === 'all' ? null : new Set(triage[bucket].map((t) => t.engagementId))),
+    [bucket, triage]
+  )
 
   const counts = board.money.countsByStage
   const stageButtons = [
@@ -96,6 +105,7 @@ export function ClientsTab({
     const digits = needle.replace(/\D/g, '')
     const list = [...board.engagements, ...(showIgnored || stage === 'ignored' ? board.ignored : [])]
       .filter((e) => stage === 'all' || e.stage === stage)
+      .filter((e) => !bucketIds || bucketIds.has(e.id))
       .filter((e) => service === 'all' || e.services.includes(service))
       .filter((e) => health === 'all' || e.health === health)
       .filter(
@@ -122,7 +132,7 @@ export function ClientsTab({
           return (HEALTH_ORDER[a.health] ?? 9) - (HEALTH_ORDER[b.health] ?? 9) || b.alerts.length - a.alerts.length || byName(a, b)
       }
     })
-  }, [board.engagements, board.ignored, stage, service, health, q, sort, showIgnored])
+  }, [board.engagements, board.ignored, stage, service, health, q, sort, showIgnored, bucketIds])
 
   return (
     <div className="space-y-4">
@@ -146,6 +156,27 @@ export function ClientsTab({
             >
               <span className="text-lg font-semibold tabular-nums text-gray-100">{n}</span>
               {STAGE_LABELS[s]}
+            </button>
+          )
+        })}
+      </div>
+
+      {/* Home's buckets; each filters the grid below */}
+      <div className="flex flex-wrap gap-2" role="group" aria-label="Clients by bucket">
+        {(['today', 'getDone', 'waitingOnClient', 'live'] as const).map((k) => {
+          const on = bucket === k
+          return (
+            <button
+              key={k}
+              type="button"
+              aria-pressed={on}
+              onClick={() => setBucket(on ? 'all' : k)}
+              className={`inline-flex items-baseline gap-2 px-3 min-h-[44px] rounded-full border text-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
+                on ? 'border-blue-500 bg-blue-500/10 text-blue-200' : 'border-gray-800 text-gray-400 hover:text-gray-200'
+              }`}
+            >
+              {BUCKET_LABELS[k]}
+              <span className="tabular-nums text-gray-500">{triage[k].length}</span>
             </button>
           )
         })}
