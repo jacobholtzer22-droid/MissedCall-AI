@@ -17,7 +17,7 @@ import { normalizeToE164 } from '@/lib/phone-utils'
 import { slugify } from '@/lib/utils'
 import { ensureDeliverables, syncStripeForEngagement, type StripeEngagementResult } from './sync'
 import { ENGAGEMENT_STAGES, SERVICE_KEYS, type ServiceKey } from './types'
-import { BadRequest, STRIPE_CUSTOMER_ID, listOf, nullableDate, nullableNumber, nullableString, oneOf, rejectUnknownKeys } from './validate'
+import { BadRequest, STRIPE_CUSTOMER_ID, listOf, nullableDate, nullableNumber, nullableString, oneOf, optionalString, rejectUnknownKeys } from './validate'
 
 export const NEW_CLIENT_FIELDS = [
   'displayName',
@@ -56,22 +56,22 @@ export type NewClient = {
 /** Validate the new-client body (the form, the route and the chief send the same shape). */
 export function parseNewClient(body: Record<string, unknown>): NewClient {
   rejectUnknownKeys(body, NEW_CLIENT_FIELDS)
-  const displayName = nullableString(body.displayName, 'displayName', 200)
+  const displayName = optionalString(body.displayName, 'displayName', 200)
   if (!displayName) throw new BadRequest('displayName is required')
   const stripe = body.stripeCustomerId == null || body.stripeCustomerId === '' ? null : String(body.stripeCustomerId).trim()
   if (stripe && !STRIPE_CUSTOMER_ID.test(stripe)) throw new BadRequest('stripeCustomerId must be a cus_ id')
-  const email = nullableString(body.email, 'email', 200)?.toLowerCase() ?? null
+  const email = optionalString(body.email, 'email', 200)?.toLowerCase() ?? null
   if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new BadRequest('email is not an email address')
-  const rawPhone = nullableString(body.phone, 'phone', 40)
+  const rawPhone = optionalString(body.phone, 'phone', 40)
   const phone = rawPhone ? normalizeToE164(rawPhone) || null : null
   if (rawPhone && !phone) throw new BadRequest('phone is not a US phone number')
   return {
     displayName,
-    contactName: nullableString(body.contactName, 'contactName', 200),
+    contactName: optionalString(body.contactName, 'contactName', 200),
     email,
     phone,
-    trade: nullableString(body.trade, 'trade', 200),
-    location: nullableString(body.location, 'location', 200),
+    trade: optionalString(body.trade, 'trade', 200),
+    location: optionalString(body.location, 'location', 200),
     services: body.services === undefined ? [] : listOf(body.services, SERVICE_KEYS, 'services'),
     stage: body.stage === undefined ? 'onboarding' : oneOf(body.stage, ENGAGEMENT_STAGES, 'stage'),
     upfrontAmount: body.upfrontAmount === undefined ? null : nullableNumber(body.upfrontAmount, 'upfrontAmount'),
@@ -79,7 +79,7 @@ export function parseNewClient(body: Record<string, unknown>): NewClient {
     monthlyAmount: body.monthlyAmount === undefined ? null : nullableNumber(body.monthlyAmount, 'monthlyAmount'),
     stripeCustomerId: stripe,
     createBusiness: body.createBusiness === true,
-    notes: nullableString(body.notes, 'notes', 20000),
+    notes: optionalString(body.notes, 'notes', 20000),
   }
 }
 

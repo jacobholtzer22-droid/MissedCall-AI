@@ -33,6 +33,7 @@ import { noEmDash, oneLine } from './events'
 import { type ClientTool, runAgentLoop } from './loop'
 import { adsAccountUrl } from './links'
 import { createRun, failRun, finishRun } from './runs'
+import { onSpecialistRunEnded } from './jobs'
 
 const HISTORY_MESSAGES = 40
 
@@ -146,7 +147,9 @@ async function clientDetail(engagementId: string) {
     statusAt: e.statusAt,
     notes: e.notes,
     monthlyAmount: e.monthlyAmount,
+    monthlyStartedAt: e.monthlyStartedAt,
     upfrontAmount: e.upfrontAmount,
+    upfrontPaidAt: e.upfrontPaidAt,
     stripeSubscriptionStatus: e.stripeSubscriptionStatus,
     lastContactedAt: e.lastContactedAt,
     nextFollowUpAt: e.nextFollowUpAt,
@@ -462,7 +465,11 @@ function chiefTools(ctx: ChiefContext): ClientTool[] {
         properties: {
           engagementId: { type: 'string' },
           body: { type: 'string', description: 'What happened, short and plain.' },
-          step: { type: 'object', description: '{ deliverableType, step } to move a deliverable.' },
+          step: {
+            type: 'object',
+            description:
+              "{ deliverableType, step?, waitingNote? }. step moves the deliverable (a key from get_client's steps) and clears its old waiting note unless you pass a new one. waitingNote alone replaces the note on the current step (\"\" clears it). Keep the note current: it is what the board shows under the step.",
+          },
           nextFollowUpAt: { type: 'string', description: 'Next follow-up in Detroit time: YYYY-MM-DD (means 9:00 am) or YYYY-MM-DDTHH:mm. No Z, no offset.' },
           statusLine: {
             type: 'string',
@@ -477,19 +484,22 @@ function chiefTools(ctx: ChiefContext): ClientTool[] {
         const body = noEmDash(str(input.body))
         if (!body) throw new Error('body is empty')
 
-        let stepChange: { deliverableId: string; type: string; key: string } | null = null
+        let stepChange: { deliverableId: string; type: string; key: string | null; note: string | null | undefined } | null = null
         if (input.step) {
           const s = input.step as Record<string, unknown>
           const type = str(s.deliverableType)
-          const key = str(s.step)
+          const key = str(s.step) || null
+          // undefined: leave the note (only when the step does not move); '' or text: set it.
+          const note = typeof s.waitingNote === 'string' ? noEmDash(s.waitingNote.trim()).slice(0, 500) || null : undefined
           if (!(DELIVERABLE_TYPES as readonly string[]).includes(type)) throw new Error(`deliverableType must be one of ${DELIVERABLE_TYPES.join(', ')}`)
-          if (!stepFor(type, key)) {
+          if (!key && note === undefined) throw new Error('step needs a step key, a waitingNote, or both')
+          if (key && !stepFor(type, key)) {
             const valid = (STEP_CATALOG[type as keyof typeof STEP_CATALOG] ?? []).map((st) => st.key)
             throw new Error(`step "${key}" is not a ${type} step. Valid: ${valid.join(', ')}`)
           }
           const d = await db.deliverable.findUnique({ where: { engagementId_type: { engagementId, type } }, select: { id: true } })
           if (!d) throw new Error(`${name} has no ${type} deliverable`)
-          stepChange = { deliverableId: d.id, type, key }
+          stepChange = { deliverableId: d.id, type, key, note }
         }
         const statusLine = input.statusLine ? noEmDash(str(input.statusLine)).slice(0, 300) : null
         let followUp: Date | null = null
@@ -506,16 +516,20 @@ function chiefTools(ctx: ChiefContext): ClientTool[] {
           if (stepChange) {
             await tx.deliverable.update({
               where: { id: stepChange.deliverableId },
-              data: { step: stepChange.key, stepUpdatedAt: new Date(), waitingOn: defaultWaitingOn(stepChange.type, stepChange.key) },
+              data: stepChange.key
+                ? // A new step starts with a new note: the old one described the old step.
+                  { step: stepChange.key, stepUpdatedAt: new Date(), waitingOn: defaultWaitingOn(stepChange.type, stepChange.key), waitingNote: stepChange.note ?? null }
+                : { waitingNote: stepChange.note ?? null },
             })
           }
         })
         const parts = [`Logged on ${name}`]
-        if (stepChange) parts.push(`${stepChange.type} step to ${stepChange.key}`)
+        if (stepChange?.key) parts.push(`${stepChange.type} step to ${stepChange.key}`)
+        if (stepChange && stepChange.note !== undefined) parts.push(stepChange.note ? `${stepChange.type} note: ${stepChange.note}` : `${stepChange.type} note cleared`)
         if (followUp) parts.push(`follow-up ${detroitWhen(followUp)}`)
         if (statusLine) parts.push(`status: ${statusLine}`)
         return {
-          result: { ok: true, client: name, step: stepChange && `${stepChange.type}: ${stepChange.key}`, followUp: followUp ? `${detroitWhen(followUp)} Detroit` : null, statusLine },
+          result: { ok: true, client: name, step: stepChange && `${stepChange.type}: ${stepChange.key ?? '(unchanged)'}`, waitingNote: stepChange?.note, followUp: followUp ? `${detroitWhen(followUp)} Detroit` : null, statusLine },
           label: parts.join(', '),
         }
       },
@@ -679,6 +693,9 @@ export async function runChief(runId: string) {
     const message = await failRun(runId, err)
     await db.opsMessage.create({ data: { role: 'chief', body: `I hit an error and stopped: ${message}`, jobId: ctx.jobId } })
   }
+  // Specialists this turn started may all have finished while it was still
+  // talking; the report waits for the turn, so check once it has ended.
+  if (ctx.jobId) await onSpecialistRunEnded(ctx.jobId).catch((err) => console.error('[hq] job report failed:', err instanceof Error ? err.message : err))
 }
 
 // ── The job report ──────────────────────────────────────────────────────────

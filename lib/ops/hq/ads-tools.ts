@@ -530,16 +530,69 @@ async function mccClients(ctx: AdsToolContext) {
   return rows.map((r) => ({ id: String(r.customer_client.id), name: String(r.customer_client.descriptive_name ?? ''), status: en(enums.CustomerStatus, r.customer_client.status) }))
 }
 
+/** Customer id (digits) → the board client it is bound to, from the platform account or the ads deliverable. */
+async function boundAccounts(): Promise<Map<string, string>> {
+  const rows = await db.engagement.findMany({
+    select: { displayName: true, business: { select: { googleAdsCustomerId: true } }, deliverables: { where: { type: 'ads' }, select: { evidence: true } } },
+  })
+  const map = new Map<string, string>()
+  for (const r of rows) {
+    const ids = [r.business?.googleAdsCustomerId, (r.deliverables[0]?.evidence as Record<string, unknown> | null)?.adsCustomerId]
+    for (const id of ids) if (typeof id === 'string' && id.trim()) map.set(id.replace(/\D/g, ''), r.displayName.trim())
+  }
+  return map
+}
+
 const FIND_CLIENT_ACCOUNT: Def = {
   name: 'find_client_account',
-  description: 'Search the client accounts under the Align and Acquire manager by name. Use it when this run has no account yet; then bind_account the right one. Never create an account.',
-  input_schema: { type: 'object', properties: { query: { type: 'string', description: 'Part of the account name, e.g. "Prestige" or "blinds".' } }, required: ['query'] },
+  description:
+    'The client accounts under the Align and Acquire manager: with a query, those whose name matches; with no query, every one. Each says which board client it is already bound to (boundTo), if any. Use peek_account to see what is inside a candidate, then bind_account the right one. Never create an account.',
+  input_schema: { type: 'object', properties: { query: { type: 'string', description: 'Part of the account name, e.g. "Prestige" or "blinds". Leave out to list every account.' } } },
   run: async (ctx, i) => {
-    const words = String(i.query).toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length > 1)
-    if (!words.length) throw new Error('query is empty')
-    const all = await mccClients(ctx)
-    const matches = all.filter((a) => words.some((w) => a.name.toLowerCase().includes(w)))
-    return { result: { matches }, label: `${matches.length} account${matches.length === 1 ? '' : 's'} under the manager match "${oneLine(String(i.query), 40)}"` }
+    const words = String(i.query ?? '').toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length > 1)
+    const [all, bound] = await Promise.all([mccClients(ctx), boundAccounts()])
+    const hits = words.length ? all.filter((a) => words.some((w) => a.name.toLowerCase().includes(w))) : all
+    const matches = hits.map((a) => ({ ...a, boundTo: bound.get(a.id) ?? null, neverTouch: isNeverTouch(a.name) }))
+    const what = words.length ? `match "${oneLine(String(i.query), 40)}"` : 'in all'
+    return { result: { matches }, label: `${matches.length} account${matches.length === 1 ? '' : 's'} under the manager ${what}` }
+  },
+}
+
+const PEEK_ACCOUNT: Def = {
+  name: 'peek_account',
+  description:
+    'Read only, without binding: one account under the manager, its campaigns (status, daily budget) and the last 30 days of cost, clicks and conversions. Use it to tell two candidate accounts apart before bind_account. Refuses never-touch accounts.',
+  input_schema: { type: 'object', properties: { customerId: { type: 'string', description: 'An account id from find_client_account.' } }, required: ['customerId'] },
+  run: async (ctx, i) => {
+    const id = digits(i.customerId, 'customerId')
+    const account = (await mccClients(ctx)).find((a) => a.id === id)
+    if (!account) throw new Error(`${id} is not a client account under the manager`)
+    if (isNeverTouch(account.name)) throw new Error(`${account.name} is on the never-touch list`)
+    let rows: any[]
+    try {
+      rows = await customer(ctx, id).query(
+        `SELECT campaign.id, campaign.name, campaign.status, campaign_budget.amount_micros, metrics.cost_micros, metrics.clicks, metrics.conversions
+         FROM campaign WHERE campaign.status != 'REMOVED' AND segments.date DURING LAST_30_DAYS`
+      )
+    } catch (err) {
+      throw new Error(`Google Ads query failed: ${adsError(err)}`)
+    }
+    // Rows come per campaign per day; sum them per campaign.
+    const byId = new Map<string, { id: string; name: string; status: string | null; dailyBudget: number | null; cost30d: number; clicks30d: number; conversions30d: number }>()
+    for (const r of rows) {
+      const cid = String(r.campaign.id)
+      const c = byId.get(cid) ?? { id: cid, name: r.campaign.name, status: en(enums.CampaignStatus, r.campaign.status), dailyBudget: usd(r.campaign_budget?.amount_micros), cost30d: 0, clicks30d: 0, conversions30d: 0 }
+      c.cost30d += usd(r.metrics?.cost_micros) ?? 0
+      c.clicks30d += Number(r.metrics?.clicks ?? 0)
+      c.conversions30d += Number(r.metrics?.conversions ?? 0)
+      byId.set(cid, c)
+    }
+    const campaigns = Array.from(byId.values()).map((c) => ({ ...c, cost30d: Math.round(c.cost30d * 100) / 100 }))
+    const cost = Math.round(campaigns.reduce((n, c) => n + c.cost30d, 0) * 100) / 100
+    return {
+      result: { account: { ...account }, campaignsWithActivity: campaigns, cost30d: cost, note: 'Only campaigns with a row in the last 30 days are listed; an account with none shows an empty list.' },
+      label: `${account.name} (${id}): ${campaigns.length} campaign${campaigns.length === 1 ? '' : 's'} active in 30 days, $${cost} spent`,
+    }
   },
 }
 
@@ -556,6 +609,8 @@ const BIND_ACCOUNT: Def = {
     if (account.status !== 'ENABLED') throw new Error(`${account.name} is ${account.status}, not enabled`)
     if (isNeverTouch(account.name)) throw new Error(`${account.name} is on the never-touch list`)
     if (!ctx.engagementId) throw new Error('this run has no client to record the account on')
+    const boundTo = (await boundAccounts()).get(id)
+    if (boundTo && boundTo !== ctx.client) throw new Error(`${account.name} (${id}) is already bound to ${boundTo}`)
     const e = await db.engagement.findUnique({
       where: { id: ctx.engagementId },
       select: { businessId: true, business: { select: { googleAdsCustomerId: true } }, deliverables: { where: { type: 'ads' }, select: { id: true, evidence: true } } },
@@ -1212,7 +1267,7 @@ function sameArg(a: unknown, b: unknown): boolean {
 export function adsTools(ctx: AdsToolContext): ClientTool[] {
   const writes = ctx.mode === 'work' ? [...WORK_WRITES, SET_ADS_STEP] : APPLY_WRITES.filter((t) => ctx.allow?.includes(t.name))
   // A work run with no account yet starts by finding and binding one.
-  const account = ctx.mode === 'work' && ctx.findAccount ? [FIND_CLIENT_ACCOUNT, BIND_ACCOUNT] : []
+  const account = ctx.mode === 'work' && ctx.findAccount ? [FIND_CLIENT_ACCOUNT, PEEK_ACCOUNT, BIND_ACCOUNT] : []
   const unlocked = new Set([...account, SET_ADS_STEP].map((t) => t.name))
   if (ctx.mode === 'apply' && !writes.length) throw new Error('apply mode needs the approved proposal’s tool in allow')
   const writeNames = new Set(writes.filter((t) => t !== SET_ADS_STEP).map((t) => t.name))

@@ -17,6 +17,11 @@ export function rejectUnknownKeys(obj: Record<string, unknown>, allowed: readonl
   if (unknown.length > 0) throw new BadRequest(`Unknown ${label}${unknown.length > 1 ? 's' : ''}: ${unknown.join(', ')}`)
 }
 
+/** An optional field: left out (undefined) reads as null, otherwise nullableString. */
+export function optionalString(v: unknown, field: string, max = 2000): string | null {
+  return v === undefined ? null : nullableString(v, field, max)
+}
+
 /** Trimmed string, '' becomes null. */
 export function nullableString(v: unknown, field: string, max = 2000): string | null {
   if (v === null) return null

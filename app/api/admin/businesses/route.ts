@@ -4,7 +4,7 @@ import { getAdminBusinesses } from '@/lib/admin-stats'
 import { db } from '@/lib/db'
 import { createBusinessRow } from '@/lib/ops/clients'
 import { SERVICE_KEYS } from '@/lib/ops/types'
-import { BadRequest, listOf, nullableString, readJsonObject, rejectUnknownKeys } from '@/lib/ops/validate'
+import { BadRequest, listOf, optionalString, readJsonObject, rejectUnknownKeys } from '@/lib/ops/validate'
 
 const ADMIN_USER_ID = process.env.ADMIN_USER_ID
 
@@ -39,7 +39,7 @@ export async function POST(request: Request) {
   try {
     const body = readJsonObject(await request.json())
     rejectUnknownKeys(body, ['name', 'ownerEmail', 'ownerPhone', 'businessType', 'timezone', 'services'])
-    const name = nullableString(body.name, 'name', 200)
+    const name = optionalString(body.name, 'name', 200)
     if (!name) throw new BadRequest('name is required')
     const services = body.services === undefined ? [] : listOf(body.services, SERVICE_KEYS, 'services')
     const business = await db.$transaction((tx) =>
@@ -47,10 +47,10 @@ export async function POST(request: Request) {
         tx,
         {
           name,
-          ownerEmail: nullableString(body.ownerEmail, 'ownerEmail', 200),
-          ownerPhone: nullableString(body.ownerPhone, 'ownerPhone', 40),
-          businessType: nullableString(body.businessType, 'businessType', 100),
-          timezone: nullableString(body.timezone, 'timezone', 64),
+          ownerEmail: optionalString(body.ownerEmail, 'ownerEmail', 200),
+          ownerPhone: optionalString(body.ownerPhone, 'ownerPhone', 40),
+          businessType: optionalString(body.businessType, 'businessType', 100),
+          timezone: optionalString(body.timezone, 'timezone', 64),
         },
         services
       )
