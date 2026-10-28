@@ -29,7 +29,7 @@ import type { Prisma } from '@prisma/client'
 import { db } from '@/lib/db'
 import { dispatchRun } from '@/lib/ops/agents/dispatch'
 import { provisionSite } from '@/lib/ops/agents/provision'
-import { GITHUB_OWNER, TEMPLATE_REPO, deleteBranch, getFileContent, getPullRequest, mergePullRequest, repoFullName } from '@/lib/ops/github'
+import { GITHUB_OWNER, TEMPLATE_REPO, deleteBranch, getFileContent, getPullRequest, mergePullRequest, repoFullName, vercelBotNote } from '@/lib/ops/github'
 import { defaultWaitingOn } from '@/lib/ops/steps'
 import { addProjectDomain, domainRecords, listDeploymentsForBranch } from '@/lib/ops/vercel'
 import { emit } from './events'
@@ -202,16 +202,31 @@ export async function startWebTask(opts: {
     case 'review': {
       const pr = await latestPr(w.id)
       if (!pr) throw new Error(`${w.name} has no finished build with a PR yet`)
-      // A callback handled by older code records no preview: ask Vercel for the branch's newest deployment.
-      const preview =
-        pr.previewUrl ??
-        w.previewUrl ??
-        (w.projectId && pr.branch ? await listDeploymentsForBranch(w.projectId, pr.branch).then((d) => d[0]?.url ?? null).catch(() => null) : null)
-      await setStep(w.site.id, 'website', 'send_preview', `Preview ${preview ?? '(not deployed yet)'}; PR ${pr.prUrl}`)
-      await db.opsActivity.create({ data: { engagementId: w.id, kind: 'note', body: `Website ready to send: preview ${preview ?? 'not deployed yet'}, PR ${pr.prUrl}` } })
+      // The branch the workflow pushed (recorded from git on the callback), never a name from the agent's report.
+      const deployments = w.projectId && pr.branch ? await listDeploymentsForBranch(w.projectId, pr.branch).catch(() => null) : null
+      const ready = deployments?.find((d) => d.state === 'READY') ?? null
+      const latest = deployments?.[0] ?? null
+      const preview = ready?.url ?? pr.previewUrl ?? null
+      let missing: string | null = null
+      if (!preview) {
+        const why = await vercelBotNote(pr.repo, pr.prNumber).catch(() => null)
+        missing =
+          latest && latest.state !== 'READY'
+            ? `Vercel's preview for ${pr.branch} is ${latest.state}${why ? `: ${why}` : ''}`
+            : `Vercel has no preview for this branch (${pr.branch ?? 'unknown branch'})${why ? `: ${why}` : ''}`
+      }
+      if (preview && w.site) {
+        const ev = await db.deliverable.findUnique({ where: { id: w.site.id }, select: { evidence: true } })
+        await db.deliverable.update({ where: { id: w.site.id }, data: { evidence: { ...((ev?.evidence ?? {}) as Record<string, unknown>), previewUrl: preview } as Prisma.InputJsonObject } })
+      }
+      const note = preview ? `Preview ${preview}; PR ${pr.prUrl}` : `${missing}. PR ${pr.prUrl}`
+      await setStep(w.site.id, 'website', 'send_preview', note)
+      await db.opsActivity.create({ data: { engagementId: w.id, kind: 'note', body: `Website review: ${note}` } })
       const gate = pr.verifyPassed === null ? 'gate not reported' : pr.verifyPassed ? 'gate passed' : `gate FAILED: ${pr.failingChecks.join(', ') || 'see the PR'}`
       return {
-        done: `Website step is send_preview (${gate}).`,
+        done: preview
+          ? `Website step is send_preview (${gate}). Preview: ${preview} (branch ${pr.branch}).`
+          : `Website step is send_preview (${gate}), but there is no preview to send: ${missing}.`,
         links: [...(preview ? [{ label: 'Preview', url: preview }] : []), { label: `PR #${pr.prNumber}`, url: pr.prUrl }],
       }
     }

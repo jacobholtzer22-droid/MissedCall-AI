@@ -25,7 +25,7 @@ import {
   setRepoSecret,
 } from '@/lib/ops/github'
 import { mapLimited } from '@/lib/ops/checks/limit'
-import { CI_SECTION_HEADING, REPO_SECRETS, TEMPLATE_REF, WORKFLOW_PATH, asObject, mergeEvidence, missingSecretEnv, secretValue } from './shared'
+import { CI_SECTION_HEADING, TEMPLATE_REF, repoSecretsToSet, WORKFLOW_PATH, asObject, mergeEvidence, missingSecretEnv, secretValue } from './shared'
 
 export const CI_BRANCH = 'ci/aa-build'
 
@@ -112,14 +112,14 @@ export async function syncWorkflow(opts: { mode: 'pr' | 'direct'; only?: string[
       const needsSection = !agentMd || !agentMd.includes(CI_SECTION_HEADING)
       if (needsWorkflow) r.adds.push(WORKFLOW_PATH)
       if (needsSection) r.adds.push(agentMd ? `AGENT.md: append "${CI_SECTION_HEADING}"` : `AGENT.md: create with "${CI_SECTION_HEADING}"`)
-      r.adds.push(...REPO_SECRETS.map((s) => `secret ${s.name}`))
+      r.adds.push(...repoSecretsToSet().map((s) => `secret ${s.name}`))
       r.adds.push(opts.mode === 'pr' ? `branch ${CI_BRANCH} + PR into ${info.defaultBranch}` : `commit to ${info.defaultBranch}`)
       if (opts.dry || out.blocked.length > 0) return r
 
       // Secrets first: they are the step most likely to be refused (the token
       // needs Secrets: read and write), and failing here writes no files and
       // opens no PR.
-      for (const s of REPO_SECRETS) await setRepoSecret(repo, s.name, secretValue(s.env))
+      for (const s of repoSecretsToSet()) await setRepoSecret(repo, s.name, secretValue(s.env))
 
       const branch = opts.mode === 'pr' ? CI_BRANCH : info.defaultBranch
       if (opts.mode === 'pr' && (needsWorkflow || needsSection)) await createBranchFromDefault(repo, CI_BRANCH)

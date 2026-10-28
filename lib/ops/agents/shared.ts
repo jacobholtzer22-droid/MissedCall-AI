@@ -25,6 +25,18 @@ export const REPO_SECRETS = [
   { name: 'OPS_CALLBACK_SECRET', env: 'OPS_CALLBACK_SECRET' },
 ] as const
 
+/**
+ * Secrets set on a client repo only when the platform has them. PEXELS_API_KEY
+ * lets a "with stock" build fetch trade-matched stock photos; without it the
+ * build runs without images, so its absence never blocks provisioning.
+ */
+export const OPTIONAL_REPO_SECRETS = [{ name: 'PEXELS_API_KEY', env: 'PEXELS_API_KEY' }] as const
+
+/** The required secrets plus every optional one whose env var is set. */
+export function repoSecretsToSet(): { name: string; env: string }[] {
+  return [...REPO_SECRETS, ...OPTIONAL_REPO_SECRETS.filter((s) => process.env[s.env]?.trim())]
+}
+
 /** Names of the env vars a secret-setting action needs that are missing or empty. */
 export function missingSecretEnv(): string[] {
   return REPO_SECRETS.filter((s) => !process.env[s.env]?.trim()).map((s) => s.env)

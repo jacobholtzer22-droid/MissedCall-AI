@@ -1,7 +1,8 @@
 // ===========================================
 // /admin/ops agents — provision a client site
 // ===========================================
-// One private repo from AA-Template, its two Actions secrets, a Vercel project
+// One private repo from AA-Template, its Actions secrets (the two required
+// ones, plus PEXELS_API_KEY when the platform has it), a Vercel project
 // linked to it (static export: npm run build → out), the website evidence,
 // step build, and an activity. Steps run in that order and stop at the first
 // failure, reporting what was done so far. A repo that already exists under
@@ -13,7 +14,7 @@ import { db } from '@/lib/db'
 import { GITHUB_OWNER, TEMPLATE_REPO, createRepoFromTemplate, repoExists, setRepoSecret } from '@/lib/ops/github'
 import { SITE_PROJECT_SETTINGS, createProjectLinkedToRepo, vercelProjectName } from '@/lib/ops/vercel'
 import { defaultWaitingOn } from '@/lib/ops/steps'
-import { REPO_SECRETS, defaultRepoName, loadWebsiteEngagement, mergeEvidence, missingSecretEnv, secretValue, type PlanStep } from './shared'
+import { defaultRepoName, repoSecretsToSet, loadWebsiteEngagement, mergeEvidence, missingSecretEnv, secretValue, type PlanStep } from './shared'
 
 export type ProvisionResult = {
   ok: boolean
@@ -45,9 +46,10 @@ export async function provisionSite(engagementId: string, opts: { repoName?: str
   if (missing.length > 0) out.blocked.push(`env not set: ${missing.join(', ')}`)
   if (out.blocked.length === 0 && (await repoExists(fullName))) out.blocked.push(`${fullName} already exists; not reusing it`)
 
+  const secrets = repoSecretsToSet()
   out.steps = [
     { action: 'create repo', detail: `private ${fullName} from ${GITHUB_OWNER}/${TEMPLATE_REPO} (default branch only)` },
-    ...REPO_SECRETS.map((s) => ({ action: 'set secret', detail: `${s.name} on ${fullName} (value from ${s.env})` })),
+    ...secrets.map((s) => ({ action: 'set secret', detail: `${s.name} on ${fullName} (value from ${s.env})` })),
     {
       action: 'create Vercel project',
       detail: `${projectName} linked to ${fullName}; framework null, build "${SITE_PROJECT_SETTINGS.buildCommand}", output "${SITE_PROJECT_SETTINGS.outputDirectory}"`,
@@ -84,15 +86,15 @@ export async function provisionSite(engagementId: string, opts: { repoName?: str
     created.push(`repo ${r.fullName}`)
     return r.url
   }))) return out
-  for (let k = 0; k < REPO_SECRETS.length; k++) {
-    const s = REPO_SECRETS[k]
+  for (let k = 0; k < secrets.length; k++) {
+    const s = secrets[k]
     if (!(await run(1 + k, async () => {
       await setRepoSecret(fullName, s.name, secretValue(s.env))
       created.push(`secret ${s.name}`)
       return 'set'
     }))) return out
   }
-  const vi = 1 + REPO_SECRETS.length
+  const vi = 1 + secrets.length
   let project: { id: string; name: string; productionUrl: string } | null = null
   if (!(await run(vi, async () => {
     project = await createProjectLinkedToRepo(projectName, fullName)

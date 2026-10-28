@@ -182,6 +182,34 @@ export async function deleteBranch(repo: string, branch: string): Promise<boolea
   }
 }
 
+/**
+ * Why Vercel did not deploy a PR's branch, from the Vercel bot's comments on
+ * the PR. The bot writes an explanation ("@aa-build must be a member of the
+ * ... team on Vercel to deploy.") and a status table behind a hidden "[vc]:"
+ * line. Prefer the explanation's first line; else the table's status word
+ * ("Vercel marked the deployment Blocked"). Plain text, at most 300 characters;
+ * null when the bot said nothing.
+ */
+export async function vercelBotNote(repo: string, number: number): Promise<string | null> {
+  const { body } = await read<{ user?: { login?: string }; body?: string }[]>(`/repos/${repoFullName(repo)}/issues/${number}/comments?per_page=50`, `comments on #${number}`)
+  const bot = (body ?? []).filter((c) => /^vercel(\[bot\])?$/i.test(c.user?.login ?? '') && c.body)
+  const plain = (t: string) =>
+    t
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/!?\[([^\]]*)\]\([^)]*\)/g, '$1')
+      .replace(/[*_`#>]/g, '')
+      .replace(/\s+/g, ' ')
+      .trim()
+  const explained = bot.filter((c) => !/^\[vc\]:/m.test(c.body!)).pop()
+  if (explained) {
+    const first = explained.body!.split('\n').map(plain).find(Boolean)
+    if (first) return first.slice(0, 300)
+  }
+  const table = bot.filter((c) => /^\[vc\]:/m.test(c.body!)).pop()
+  const status = table && /!\[(Blocked|Error|Canceled|Building|Queued|Ready)\]/i.exec(table.body!)?.[1]
+  return status ? `Vercel marked the deployment ${status}` : null
+}
+
 // ── Secrets ─────────────────────────────────────────────────────────────────
 
 /** Set an Actions secret, sealed to the repo's public key (libsodium sealed box). */

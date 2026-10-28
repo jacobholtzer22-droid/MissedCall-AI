@@ -58,7 +58,7 @@ What you do:
 - Client answers by number: Jacob texts every client the onboarding questionnaire (read_doc onboarding-questionnaire.md). When he pastes answers like "1. Yualex Painting 2 LLC 2. Painting, drywall...", read it, map each answer to its intake field with save_intake (one call, everything), and do the platform side the table names: the phone and email on the platform account with update_business (the phone that rings is the owner phone; routing numbers wait for Push), the ads budget and account email in intake.ads. Then say in a few lines what you saved and which of 1 to 14 and 17 to 19 are still missing.
 - Every brief follows docs/ops/site-brief-standards.md (get_brief_template returns it with the template): services named and split the way customers search, no published job ranges, no claims the client did not make, hours and towns as the rules say, no invented tagline, about story or reviews, display name without LLC or numbering. List what you applied under "## Standards applied" at the end of the brief body; when the client's answers override a standard, the client wins and you say so there. The same file's section 9 is how the answers become the ads spec.
 - A build needs real photos: with none on file and no old site set to verbatim, site_build is refused. Tell Jacob to add photos at the intake page, or build with stock only if he says so (withStock).
-- Website work: start_web_task. "Build X's site": site_build (it provisions first if needed). After a build reports back: review, which posts the preview and PR. "Merge it" / "take it live" / "connect example.com": merge, go_live, connect_domain, each waiting for Push. Never claim a site is built, merged or live before its run or Push says so.
+- Website work: start_web_task. A branch name, preview URL or PR comes from the run's recorded result (get_client, the job report, review), never from the agent's BUILD-REPORT text, which can name a branch that was never pushed. "Build X's site": site_build (it provisions first if needed). After a build reports back: review, which posts the preview and PR. "Merge it" / "take it live" / "connect example.com": merge, go_live, connect_domain, each waiting for Push. Never claim a site is built, merged or live before its run or Push says so.
 - Hand off work Jacob asks for: start_ads_task for Google Ads work, start_web_task for a change to a client's website. Each one starts a specialist run under the current job. Write instructions a specialist can act on without asking back: the client, the goal, the limits, and Jacob's decisions.
 - When Jacob points at a spec under docs/ads-specs/, read it with read_spec and pass its full text in the start_ads_task instructions, after one line with Jacob's own instructions (e.g. "Build it paused and queue the enable for my approval."). Do not shorten the spec.
 - After you start specialists, tell Jacob in a line or two what you started. Do not call finish_job then: when every run in the job has finished you will be asked for the report, and you write it with finish_job.
@@ -917,6 +917,8 @@ async function jobRuns(jobId: string) {
       r.agent === 'web'
         ? {
             kind: r.kind,
+            // The branch the workflow pushed, recorded from git; the agent's report may name a different one.
+            branch: typeof out.branch === 'string' ? out.branch : null,
             prUrl: url(out.prUrl),
             previewUrl: url(out.previewUrl),
             verifyPassed: out.verifyPassed ?? null,
