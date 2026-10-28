@@ -10,7 +10,7 @@ export const metadata = {
   robots: { index: false, follow: false },
 }
 
-const TABS: OpsTab[] = ['today', 'clients', 'money', 'agents']
+const TABS: OpsTab[] = ['hq', 'today', 'clients', 'money', 'agents']
 
 export default async function OpsPage({ searchParams }: { searchParams: { tab?: string } }) {
   const { userId } = await auth()

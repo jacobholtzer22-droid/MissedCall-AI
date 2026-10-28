@@ -217,7 +217,13 @@ export async function getOpsBoard(): Promise<OpsBoard> {
           },
         })
       : [],
-    db.agentRun.findMany({ orderBy: { createdAt: 'desc' }, take: 200, include: { engagement: { select: { displayName: true } } } }),
+    // Client runs only: an Ops HQ chief run has no engagement and lives in the HQ feed.
+    db.agentRun.findMany({
+      where: { engagementId: { not: null } },
+      orderBy: { createdAt: 'desc' },
+      take: 200,
+      include: { engagement: { select: { displayName: true } } },
+    }),
   ])
 
   // Prospect names: the latest lead or booking per person, two queries total.
@@ -382,7 +388,7 @@ export async function getOpsBoard(): Promise<OpsBoard> {
     followUpsDue,
     bookedToday: bookings.map((b) => ({ ...b, scheduledAt: b.scheduledAt.toISOString() })),
     money,
-    agentRuns: runs.map((r) => ({
+    agentRuns: runs.flatMap((r) => (r.engagementId && r.engagement ? [{ ...r, engagementId: r.engagementId, engagement: r.engagement }] : [])).map((r) => ({
       id: r.id,
       engagementId: r.engagementId,
       engagementName: r.engagement.displayName.trim(),

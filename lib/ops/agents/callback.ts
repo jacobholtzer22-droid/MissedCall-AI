@@ -88,6 +88,9 @@ export async function applyCallback(raw: string): Promise<CallbackOutcome> {
 
   const run = await db.agentRun.findUnique({ where: { id: body.run_id } })
   if (!run) return { status: 404, body: { error: `no agent run ${body.run_id}` } }
+  // Only web runs reach this route, and they always carry a client (chief runs do not).
+  const engagementId = run.engagementId
+  if (!engagementId) return { status: 400, body: { error: `agent run ${run.id} has no client` } }
   if (run.finishedAt && (run.status === 'succeeded' || run.status === 'failed')) {
     return { status: 200, body: { ok: true, runId: run.id, runStatus: run.status, duplicate: true } }
   }
@@ -126,7 +129,7 @@ export async function applyCallback(raw: string): Promise<CallbackOutcome> {
     (run.deliverableId
       ? await db.deliverable.findUnique({ where: { id: run.deliverableId }, select: { id: true, type: true } })
       : null) ??
-    (await db.deliverable.findFirst({ where: { engagementId: run.engagementId, type: 'website' }, select: { id: true, type: true } }))
+    (await db.deliverable.findFirst({ where: { engagementId, type: 'website' }, select: { id: true, type: true } }))
 
   if (website && body.branch) await mergeEvidence(website.id, { previewBranch: body.branch })
 
@@ -151,7 +154,7 @@ export async function applyCallback(raw: string): Promise<CallbackOutcome> {
   const verify = output.verifyPassed === null ? '' : output.verifyPassed ? ', gate passed' : `, gate FAILED (${output.failingChecks.join(', ') || 'see report'})`
   await db.opsActivity.create({
     data: {
-      engagementId: run.engagementId,
+      engagementId,
       kind: 'system',
       body: `Agent ${body.kind} ${status}${verify}. ${output.prUrl ? `PR ${output.prUrl}` : 'No PR opened.'}${stepSet ? ' Website step → review.' : ''}`,
     },

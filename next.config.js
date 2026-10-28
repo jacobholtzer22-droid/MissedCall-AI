@@ -28,6 +28,10 @@ const nextConfig = {
     serverActions: {
       bodySizeLimit: '2mb',
     },
+    // The HQ chief reads ads specs at runtime (read_spec); ship them with the route.
+    outputFileTracingIncludes: {
+      '/api/admin/ops/hq/message': ['./docs/ads-specs/**/*.md'],
+    },
   },
   // Allow images from external sources if needed
   images: {

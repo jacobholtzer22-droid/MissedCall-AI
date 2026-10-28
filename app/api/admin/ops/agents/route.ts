@@ -17,6 +17,8 @@ export async function GET() {
   if (denied) return denied
   try {
     const runs = await db.agentRun.findMany({
+      // Client runs only: an Ops HQ chief run has no engagement.
+      where: { engagementId: { not: null } },
       orderBy: { createdAt: 'desc' },
       take: 200,
       include: {
@@ -26,7 +28,8 @@ export async function GET() {
       },
     })
     return NextResponse.json({
-      runs: runs.map((r) => {
+      runs: runs.flatMap((r) => {
+        if (!r.engagement) return []
         const ev = asObject(r.engagement.deliverables[0]?.evidence)
         return {
           id: r.id,

@@ -1235,8 +1235,9 @@ model OpsActivity {
 
 model AgentRun {
   id            String       @id @default(cuid())
-  engagementId  String
-  engagement    Engagement   @relation(fields: [engagementId], references: [id], onDelete: Cascade)
+  // Null only for an Ops HQ chief run, which spans the whole board.
+  engagementId  String?
+  engagement    Engagement?  @relation(fields: [engagementId], references: [id], onDelete: Cascade)
   deliverableId String?
   deliverable   Deliverable? @relation(fields: [deliverableId], references: [id], onDelete: SetNull)
 
@@ -1255,6 +1256,103 @@ model AgentRun {
   finishedAt DateTime?
   createdAt  DateTime  @default(now())
 
+  // Ops HQ (all nullable; rows from before HQ have none of these).
+  jobId String?
+  job   OpsJob? @relation(fields: [jobId], references: [id], onDelete: SetNull)
+  // chief | ads | web (null = web, the pre-HQ dispatches)
+  agent String?
+  // work | apply
+  mode  String?
+
+  events    AgentEvent[]
+  approvals OpsApproval[]
+
   @@index([engagementId, createdAt])
   @@index([status])
+  @@index([jobId])
+}
+
+// ── Ops HQ ──────────────────────────────────────────────────────────────────
+// Jacob talks to a chief agent; the chief hands work to specialists (ads, web).
+// Each job ends with a report and approvals Jacob pushes or rejects.
+
+model OpsJob {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  prompt String @db.Text // Jacob's message that started it
+
+  // planning | running | awaiting_approval | done | failed | cancelled
+  status String @default("planning")
+
+  summary       String?  @db.Text // the chief's final report
+  engagementIds String[] @default([])
+
+  messages  OpsMessage[]
+  runs      AgentRun[]
+  approvals OpsApproval[]
+
+  @@index([status])
+  @@index([createdAt])
+}
+
+model OpsMessage {
+  id    String  @id @default(cuid())
+  jobId String?
+  job   OpsJob? @relation(fields: [jobId], references: [id], onDelete: SetNull)
+
+  // jacob | chief
+  role String
+  body String @db.Text
+
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([jobId])
+}
+
+model AgentEvent {
+  id    String   @id @default(cuid())
+  runId String
+  run   AgentRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  // status | thinking | tool_call | tool_result | text | error
+  kind   String
+  label  String // one line for the feed, ~140 chars
+  detail Json? // full payload, never secrets
+
+  @@index([runId, createdAt])
+  @@index([createdAt])
+}
+
+model OpsApproval {
+  id    String   @id @default(cuid())
+  jobId String
+  job   OpsJob   @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  runId String
+  run   AgentRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+
+  // ads | web
+  agent String
+  // ads_change | web_push
+  kind  String
+
+  title    String
+  detail   Json // the exact action list, or PR info
+  expected String? @db.Text
+
+  // pending | approved | rejected | applied | failed
+  status String @default("pending")
+
+  decidedAt DateTime?
+  appliedAt DateTime?
+  error     String?   @db.Text
+
+  createdAt DateTime @default(now())
+
+  @@index([status, createdAt])
+  @@index([jobId])
 }

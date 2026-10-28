@@ -19,11 +19,13 @@ import { TodayTab } from './TodayTab'
 import { ClientsTab } from './ClientsTab'
 import { MoneyTab } from './MoneyTab'
 import { AgentsTab } from './AgentsTab'
+import { HqTab } from './HqTab'
 import { EngagementPanel } from './EngagementPanel'
 import { button, type OpsActions } from './opsUi'
 
-export type OpsTab = 'today' | 'clients' | 'money' | 'agents'
+export type OpsTab = 'hq' | 'today' | 'clients' | 'money' | 'agents'
 export const OPS_TABS: { key: OpsTab; label: string }[] = [
+  { key: 'hq', label: 'HQ' },
   { key: 'today', label: 'Today' },
   { key: 'clients', label: 'Clients' },
   { key: 'money', label: 'Money' },
@@ -280,6 +282,7 @@ export function OpsClient({ initialBoard, initialTab }: { initialBoard: OpsBoard
       </header>
 
       <main className="max-w-screen-2xl mx-auto px-3 sm:px-6 py-4 sm:py-6">
+        {tab === 'hq' && <HqTab actions={actions} />}
         {tab === 'today' && <TodayTab board={board} actions={actions} />}
         {tab === 'clients' && (
           <ClientsTab
