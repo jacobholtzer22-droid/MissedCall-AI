@@ -1,7 +1,8 @@
 'use client'
 
 // HQ (?tab=hq): chat with the chief on the left; the office and Waiting for
-// you on the right (mobile: office, then Waiting for you, then chat).
+// you on the right (mobile: office, then Waiting for you, then chat); History
+// below, full width.
 //
 // One poll keeps it live: GET /api/admin/ops/hq/feed?since=<cursor>, every 2s
 // while the tab is visible and every 15s while hidden, and at once after
@@ -11,6 +12,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Approvals } from './HqApprovals'
 import { Chat } from './HqChat'
+import { History } from './HqHistory'
 import { Office, RunDrawer, desks } from './HqOffice'
 import { HQ_CSS, isActive, type Feed, type FeedEvent, type FeedMessage } from './hqShared'
 import type { OpsActions } from './opsUi'
@@ -132,6 +134,12 @@ export function HqTab({ actions }: { actions: OpsActions }) {
   const deskList = feed ? desks(feed.runs, feed.lastRuns, feed.approvals) : []
   const approvals = [...(feed?.approvals ?? [])].sort((a, b) => b.createdAt.localeCompare(a.createdAt))
   const chiefThinking = runs.some((r) => r.agent === 'chief' && isActive(r))
+  // History reloads its first page when a job or a recent approval moves.
+  const historyKey = [
+    ...(feed?.jobs ?? []).map((j) => `${j.id}:${j.status}:${j.updatedAt}`),
+    ...(feed?.approvals ?? []).map((a) => `${a.id}:${a.status}`),
+    ...runs.map((r) => `${r.id}:${r.status}`),
+  ].join('|')
 
   return (
     <div className="space-y-3">
@@ -150,6 +158,7 @@ export function HqTab({ actions }: { actions: OpsActions }) {
           <Approvals approvals={approvals} onDecide={decide} />
         </div>
       </div>
+      <History refreshKey={historyKey} onOpenRun={setOpenRun} />
       {openRun && <RunDrawer runId={openRun} liveEvents={events} runs={runs} onClose={() => setOpenRun(null)} onStop={stop} />}
     </div>
   )

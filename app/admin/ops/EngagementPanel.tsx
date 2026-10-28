@@ -2,7 +2,7 @@
 
 // Right-side detail panel for one engagement, same shell as
 // app/admin/ClientDetailPanel. Top to bottom: header fields, Stripe, alerts,
-// deliverables, notes, activity, links. Every field saves on its own
+// deliverables, HQ jobs, notes, activity, links. Every field saves on its own
 // (change for selects and checkboxes, blur for text) through OpsActions,
 // which updates the board optimistically and reverts on failure.
 
@@ -17,6 +17,7 @@ import { STEP_CATALOG, defaultWaitingOn, effectiveStatusOf, stepFor } from '@/li
 import { RUN_KINDS, defaultRepoName, type RunKind } from '@/lib/ops/agents/names'
 import { formatPhoneNumber } from '@/lib/utils'
 import { Age, HealthDot } from '../ui'
+import { History } from './HqHistory'
 import { StripeCustomerPicker } from './Pickers'
 import {
   ALERT_TONE,
@@ -56,7 +57,8 @@ export function EngagementPanel({ engagement: e, focus, actions, unmatched, unma
 
   useEffect(() => {
     function onKey(ev: KeyboardEvent) {
-      if (ev.key === 'Escape') onClose()
+      // A run feed opened from Jobs closes first on its own Escape.
+      if (ev.key === 'Escape' && !document.querySelector('[aria-label="Run feed"]')) onClose()
     }
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
@@ -198,6 +200,9 @@ export function EngagementPanel({ engagement: e, focus, actions, unmatched, unma
               </div>
             )}
           </section>
+
+          {/* Ops HQ jobs that touched this client (read only) */}
+          <History engagementId={e.id} title="Jobs" />
 
           {/* Notes */}
           <section>

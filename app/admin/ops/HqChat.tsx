@@ -131,13 +131,18 @@ export function Chat({
 
 const asList = (v: unknown): string[] => (Array.isArray(v) ? v.map(String).filter(Boolean) : typeof v === 'string' && v.trim() ? [v] : [])
 
-function ReportCard({ job }: { job: FeedJob }) {
+/**
+ * The job report: per agent Did, Expect, Waiting for Push and links. Also used
+ * by History, as a snapshot: the pending count is left out there and the list
+ * reads "Queued for Push", since the approval rows show what happened after.
+ */
+export function ReportCard({ job, className = 'ml-9', snapshot = false }: { job: Pick<FeedJob, 'report'>; className?: string; snapshot?: boolean }) {
   const report = job.report!
   return (
-    <div className="ml-9 rounded-lg border border-gray-800 bg-gray-950">
+    <div className={`${className} rounded-lg border border-gray-800 bg-gray-950`}>
       <div className="px-3 py-2 border-b border-gray-800 flex items-center justify-between gap-2">
         <span className="text-xs font-semibold text-gray-200">Job report</span>
-        {report.pendingApprovals > 0 && (
+        {!snapshot && report.pendingApprovals > 0 && (
           <span className="text-xs text-amber-300 tabular-nums">{report.pendingApprovals} waiting for Push</span>
         )}
       </div>
@@ -172,8 +177,8 @@ function ReportCard({ job }: { job: FeedJob }) {
               )}
               {waiting.length > 0 && (
                 <div>
-                  <div className="text-xs text-gray-500">Waiting for Push</div>
-                  <ul className="list-disc pl-5 text-amber-200 space-y-0.5">
+                  <div className="text-xs text-gray-500">{snapshot ? 'Queued for Push' : 'Waiting for Push'}</div>
+                  <ul className={`list-disc pl-5 space-y-0.5 ${snapshot ? 'text-gray-300' : 'text-amber-200'}`}>
                     {waiting.map((w, i) => (
                       <li key={i}>{w}</li>
                     ))}
