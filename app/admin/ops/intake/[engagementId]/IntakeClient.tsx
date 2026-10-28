@@ -101,6 +101,12 @@ export function IntakeClient({
                 ['yearsInBusiness', 'Years in business'],
                 ['licenses', 'Licenses and insurance'],
                 ['languages', 'Languages'],
+                ['customerType', 'Residential, commercial or both'],
+                ['address', 'Home base address (not public)'],
+                ['priorityArea', 'Where they want the most jobs'],
+                ['maxDistance', 'Farthest they will drive'],
+                ['whoAnswers', 'Who answers the phone'],
+                ['emergency', 'Emergency or after-hours work'],
               ] as [keyof NonNullable<Intake['business']>, string, string | null | undefined][]
             ).map(([k, l, hint]) => (
               <Field key={k} label={l} value={(b[k] as string | undefined) ?? ''} placeholder={hint ?? ''} onSave={(v) => save({ business: { [k]: v } })} />
@@ -121,6 +127,43 @@ export function IntakeClient({
         <Section title="About">
           <Text label="The owner's story, in the client's words" value={intake.about ?? ''} rows={5} onSave={(v) => save({ about: v })} />
           <Lines label="What makes them different, one per line" value={intake.differentiators ?? []} onSave={(v) => save({ differentiators: v })} />
+        </Section>
+
+        <Section title="Google Ads">
+          <Lines label="Calls they do NOT want (become negatives), one per line" value={intake.ads?.exclusions ?? []} onSave={(v) => save({ ads: { exclusions: v } })} />
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <Field label="Gmail for the Ads account" value={intake.ads?.accountEmail ?? ''} onSave={(v) => save({ ads: { accountEmail: v } })} />
+            <Field
+              label="Monthly ad budget ($, to Google)"
+              value={intake.ads?.budgetMonthly != null ? String(intake.ads.budgetMonthly) : ''}
+              onSave={(v) => {
+                const n = Number(v.replace(/[$,\s]/g, ''))
+                save({ ads: { budgetMonthly: v && Number.isFinite(n) ? n : undefined } })
+              }}
+            />
+            <Field label="Main goal: calls, quote requests or both" value={intake.ads?.goal ?? ''} onSave={(v) => save({ ads: { goal: v } })} />
+            <Field label="Busy and slow seasons" value={intake.ads?.seasons ?? ''} onSave={(v) => save({ ads: { seasons: v } })} />
+            <Field label="Offer they would run" value={intake.offer ?? ''} onSave={(v) => save({ offer: v })} />
+          </div>
+          <Lines label="Competitors to go after, one per line" value={intake.ads?.competitors ?? []} onSave={(v) => save({ ads: { competitors: v } })} />
+        </Section>
+
+        <Section title="Google Business Profile">
+          <div className="flex flex-wrap gap-x-6">
+            {(
+              [
+                ['exists', 'Has a profile'],
+                ['verified', 'Verified'],
+                ['managerAccess', 'Jacob is a manager'],
+              ] as const
+            ).map(([k, l]) => (
+              <label key={k} className="flex items-center gap-3 min-h-[44px] text-sm text-gray-200">
+                <input type="checkbox" checked={Boolean(intake.gbp?.[k])} onChange={(e) => save({ gbp: { [k]: e.target.checked } })} className="h-4 w-4 accent-blue-500" />
+                {l}
+              </label>
+            ))}
+          </div>
+          <Field label="Reviews: how many and where" value={intake.gbp?.reviewCount ?? ''} onSave={(v) => save({ gbp: { reviewCount: v } })} />
         </Section>
 
         <Section title="Reviews">
@@ -263,7 +306,7 @@ function Lines({ label: l, value, placeholder, onSave }: { label: string; value:
 function Services({ value, onSave }: { value: NonNullable<Intake['services']>; onSave: (v: NonNullable<Intake['services']>) => void }) {
   const [rows, setRows] = useState(value.length ? value : [{ name: '' }])
   const commit = (next = rows) => onSave(next.filter((r) => r.name.trim()).map((r) => ({ ...r, name: r.name.trim() })))
-  const set = (i: number, k: 'name' | 'description' | 'priceNote', v: string) => setRows((p) => p.map((r, n) => (n === i ? { ...r, [k]: v } : r)))
+  const set = (i: number, k: 'name' | 'description' | 'priceNote' | 'avgJobValue', v: string) => setRows((p) => p.map((r, n) => (n === i ? { ...r, [k]: v } : r)))
   return (
     <div className="space-y-3">
       {rows.map((r, i) => (
@@ -284,7 +327,23 @@ function Services({ value, onSave }: { value: NonNullable<Intake['services']>; o
             </button>
           </div>
           <textarea aria-label={`Service ${i + 1} description`} placeholder="What it includes" rows={2} value={r.description ?? ''} onChange={(e) => set(i, 'description', e.target.value)} onBlur={() => commit()} className={area} />
-          <input aria-label={`Service ${i + 1} price note`} placeholder="Price note (optional)" value={r.priceNote ?? ''} onChange={(e) => set(i, 'priceNote', e.target.value)} onBlur={() => commit()} className={control} />
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            <input aria-label={`Service ${i + 1} price note`} placeholder="Price note (optional)" value={r.priceNote ?? ''} onChange={(e) => set(i, 'priceNote', e.target.value)} onBlur={() => commit()} className={control} />
+            <input aria-label={`Service ${i + 1} average job value`} placeholder="Average job value" value={r.avgJobValue ?? ''} onChange={(e) => set(i, 'avgJobValue', e.target.value)} onBlur={() => commit()} className={control} />
+          </div>
+          <label className="flex items-center gap-3 min-h-[44px] text-sm text-gray-200">
+            <input
+              type="checkbox"
+              checked={Boolean(r.moneyMaker)}
+              onChange={(e) => {
+                const next = rows.map((x, n) => (n === i ? { ...x, moneyMaker: e.target.checked || undefined } : x))
+                setRows(next)
+                commit(next)
+              }}
+              className="h-4 w-4 accent-blue-500"
+            />
+            Money maker (they want more of these)
+          </label>
         </div>
       ))}
       <button type="button" onClick={() => setRows((p) => [...p, { name: '' }])} className={smallBtn}>

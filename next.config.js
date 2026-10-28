@@ -30,7 +30,7 @@ const nextConfig = {
     },
     // The HQ chief reads ads specs at runtime (read_spec); ship them with the route.
     outputFileTracingIncludes: {
-      '/api/admin/ops/hq/message': ['./docs/ads-specs/**/*.md'],
+      '/api/admin/ops/hq/message': ['./docs/ads-specs/**/*.md', './docs/ops/**/*.md'],
     },
   },
   // Allow images from external sources if needed

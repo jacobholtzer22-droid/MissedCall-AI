@@ -55,6 +55,7 @@ What you do:
 - "What should I do" is answered from get_needs_you: the Today clients in their order, then Get done, never from memory. Count clients, not items. "What did I approve", "what happened with X" is answered from get_timeline; it says who pushed each approval and when it applied.
 - New clients: when Jacob names one ("New client: ..."), create it with create_client (createBusiness when the client gets a website, ads or missed-call texting), then say in one line what was created. Platform account changes go through update_business; routing fields wait for Push.
 - Website clients: the site builds from a brief, and the brief is written from the client's intake (get_client's intake: answers, files, old site, and summary.missing). Photos, the logo and the old site are added on the intake page (/admin/ops/intake/<id>); point Jacob there for files. When a website client has no brief: read the intake, then ask Jacob in ONE grouped message only for what is still empty of what get_brief_template needs. Save his answers with save_intake. Then write the whole brief in the template's shape (unknowns under UNKNOWN, never invented, businessSlug from the platform account; set_brief adds the Assets and Old site sections) and show it back in one message; store it with set_brief only after he says it looks good or gives edits.
+- Client answers by number: Jacob texts every client the onboarding questionnaire (read_doc onboarding-questionnaire.md). When he pastes answers like "1. Yualex Painting 2 LLC 2. Painting, drywall...", read it, map each answer to its intake field with save_intake (one call, everything), and do the platform side the table names: the phone and email on the platform account with update_business (the phone that rings is the owner phone; routing numbers wait for Push), the ads budget and account email in intake.ads. Then say in a few lines what you saved and which of 1 to 14 and 17 to 19 are still missing.
 - A build needs real photos: with none on file and no old site set to verbatim, site_build is refused. Tell Jacob to add photos at the intake page, or build with stock only if he says so (withStock).
 - Website work: start_web_task. "Build X's site": site_build (it provisions first if needed). After a build reports back: review, which posts the preview and PR. "Merge it" / "take it live" / "connect example.com": merge, go_live, connect_domain, each waiting for Push. Never claim a site is built, merged or live before its run or Push says so.
 - Hand off work Jacob asks for: start_ads_task for Google Ads work, start_web_task for a change to a client's website. Each one starts a specialist run under the current job. Write instructions a specialist can act on without asking back: the client, the goal, the limits, and Jacob's decisions.
@@ -236,23 +237,30 @@ function approvalView(a: { title: string; status: string; error: string | null; 
 const SPEC_DIR = path.join(process.cwd(), 'docs', 'ads-specs')
 
 /** A .md file under docs/ads-specs/, nothing else (no other folder, no link out of it). */
-async function readSpec(input: string): Promise<{ rel: string; text: string }> {
+const DOCS_DIR = path.join(process.cwd(), 'docs', 'ops')
+
+/** A .md file under one folder and nothing else (no other folder, no link out of it). */
+async function readMarkdownIn(dir: string, label: string, input: string): Promise<{ rel: string; text: string }> {
   const cleaned = input.replace(/^\.?\//, '')
   if (!cleaned) throw new Error('path is empty')
-  const full = path.resolve(cleaned.includes('/') ? process.cwd() : SPEC_DIR, cleaned)
-  const inside = (p: string, dir: string) => p.startsWith(dir + path.sep)
-  if (!inside(full, SPEC_DIR) || !full.endsWith('.md')) throw new Error('read_spec reads only .md files under docs/ads-specs/')
+  const full = path.resolve(cleaned.includes('/') ? process.cwd() : dir, cleaned)
+  const inside = (p: string, d: string) => p.startsWith(d + path.sep)
+  const refuse = `reads only .md files under ${label}`
+  if (!inside(full, dir) || !full.endsWith('.md')) throw new Error(refuse)
   let real: string
   try {
     real = await realpath(full)
   } catch {
-    throw new Error(`no spec at docs/ads-specs/${path.basename(full)}`)
+    throw new Error(`no file at ${label}${path.basename(full)}`)
   }
-  if (!inside(real, await realpath(SPEC_DIR))) throw new Error('read_spec reads only .md files under docs/ads-specs/')
+  if (!inside(real, await realpath(dir))) throw new Error(refuse)
   const text = await readFile(real, 'utf8')
-  if (text.length > 100_000) throw new Error('that spec is over 100,000 characters')
+  if (text.length > 100_000) throw new Error('that file is over 100,000 characters')
   return { rel: path.relative(process.cwd(), full), text }
 }
+
+const readSpec = (input: string) => readMarkdownIn(SPEC_DIR, 'docs/ads-specs/', input)
+const readDoc = (input: string) => readMarkdownIn(DOCS_DIR, 'docs/ops/', input)
 
 // ── Tools ───────────────────────────────────────────────────────────────────
 
@@ -612,6 +620,16 @@ function chiefTools(ctx: ChiefContext): ClientTool[] {
         if (!decision) throw new Error('decision is empty')
         await db.opsActivity.create({ data: { engagementId, kind: 'system', body: `${DECISION_PREFIX} ${decision}` } })
         return { result: { ok: true, client: name }, label: `Decision for ${name}: ${decision}` }
+      },
+    },
+    {
+      name: 'read_doc',
+      description:
+        'Read one of the ops reference docs in docs/ops/. onboarding-questionnaire.md is the numbered text Jacob sends every client after payment (questions 1 to 28) with the table of which intake field each answer goes to: read it whenever Jacob pastes a client\'s numbered answers.',
+      input_schema: { type: 'object', properties: { path: { type: 'string', description: 'e.g. "onboarding-questionnaire.md"' } }, required: ['path'] },
+      run: async (input) => {
+        const { rel, text } = await readDoc(str(input.path))
+        return { result: { path: rel, text }, label: `Read ${rel}` }
       },
     },
     {

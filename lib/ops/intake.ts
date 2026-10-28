@@ -6,7 +6,9 @@
 // files (Vercel Blob URLs). The intake page edits it, the chief reads and
 // fills it, the brief is written from it, and the build gets its assets.
 //
-// Every key is optional and additive: mergeIntake merges the top-level keys
+// The fields follow the onboarding questionnaire Jacob texts every client
+// (docs/ops/onboarding-questionnaire.md, numbered 1 to 28); its table says
+// which question lands where. Every key is optional and additive: mergeIntake merges the top-level keys
 // (one level deep for objects; arrays are replaced whole) and never drops a
 // key it was not given. Assets are only ever read from the engagement's own
 // intake, never from a free-text URL list.
@@ -38,10 +40,29 @@ export type Intake = {
     yearsInBusiness?: string
     licenses?: string
     languages?: string
+    /** Q5: residential, commercial or both. */
+    customerType?: string
+    /** Q9: home base, for the Google listing; not shown publicly unless the client says so. */
+    address?: string
+    /** Q10: where they want the most jobs. */
+    priorityArea?: string
+    /** Q10: the farthest they will drive. */
+    maxDistance?: string
+    /** Q12: who picks up the phone. */
+    whoAnswers?: string
+    /** Q13: emergency or after-hours work, in their words. */
+    emergency?: string
   }
-  services?: { name: string; description?: string; priceNote?: string }[]
+  /** Q2 and Q4: moneyMaker marks the 2 or 3 they want more of. */
+  services?: { name: string; description?: string; priceNote?: string; moneyMaker?: boolean; avgJobValue?: string }[]
   about?: string
   differentiators?: string[]
+  /** Q8: a promo they would run. */
+  offer?: string
+  /** Q3, Q17 to Q19, Q21: what the ads are built from. */
+  ads?: { exclusions?: string[]; accountEmail?: string; budgetMonthly?: number; goal?: string; seasons?: string; competitors?: string[] }
+  /** Q15 and Q16: the Google Business Profile and where the reviews are. */
+  gbp?: { exists?: boolean; verified?: boolean; managerAccess?: boolean; reviewCount?: string; notes?: string }
   reviews?: { gbpUrl?: string; quotes?: { text: string; author: string }[] }
   oldSite?: { url?: string; use?: OldSiteUse; notes?: string }
   socials?: { facebook?: string; instagram?: string; yelp?: string; nextdoor?: string }
@@ -52,7 +73,7 @@ export type Intake = {
   updatedAt?: string
 }
 
-export const INTAKE_KEYS = ['business', 'services', 'about', 'differentiators', 'reviews', 'oldSite', 'socials', 'style', 'domain', 'assets', 'rawNotes'] as const
+export const INTAKE_KEYS = ['business', 'services', 'about', 'differentiators', 'offer', 'ads', 'gbp', 'reviews', 'oldSite', 'socials', 'style', 'domain', 'assets', 'rawNotes'] as const
 
 const isObj = (v: unknown): v is Record<string, unknown> => Boolean(v) && typeof v === 'object' && !Array.isArray(v)
 
