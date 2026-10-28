@@ -16,6 +16,11 @@ import { DELIVERABLE_TYPES } from '@/lib/ops/types'
 import { rankNeedsYou } from '@/lib/ops/needs-you'
 import { TIMELINE_KINDS, getTimeline, type TimelineKind } from '@/lib/ops/timeline'
 import { nullableNumber } from '@/lib/ops/validate'
+import { parseLocalDateTime } from '@/lib/ops/dates'
+
+/** "Tue Nov 3, 9:00 AM" in Detroit, for feed lines and results. */
+const detroitWhen = (d: Date) =>
+  d.toLocaleString('en-US', { timeZone: OPS_TIMEZONE, weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
 import { waitUntil } from '@vercel/functions'
 import { AdsOffline, adsClients, runAdsTask, startAdsRun } from './ads'
 import { type ApiMessage, CHIEF_MODEL_DEFAULT } from './anthropic'
@@ -369,7 +374,7 @@ function chiefTools(ctx: ChiefContext): ClientTool[] {
           engagementId: { type: 'string' },
           body: { type: 'string', description: 'What happened, short and plain.' },
           step: { type: 'object', description: '{ deliverableType, step } to move a deliverable.' },
-          nextFollowUpAt: { type: 'string', description: 'ISO date or date-time for the next follow-up.' },
+          nextFollowUpAt: { type: 'string', description: 'Next follow-up in Detroit time: YYYY-MM-DD (means 9:00 am) or YYYY-MM-DDTHH:mm. No Z, no offset.' },
           statusLine: {
             type: 'string',
             description: "The client's current status in one sentence, as it stands after this update (e.g. \"Ads running at $16/day; waiting on the Google tag\"). Shown on the client's card. Pass it whenever the update changes where the client stands.",
@@ -400,8 +405,9 @@ function chiefTools(ctx: ChiefContext): ClientTool[] {
         const statusLine = input.statusLine ? noEmDash(str(input.statusLine)).slice(0, 300) : null
         let followUp: Date | null = null
         if (input.nextFollowUpAt) {
-          followUp = new Date(str(input.nextFollowUpAt))
-          if (Number.isNaN(followUp.getTime())) throw new Error('nextFollowUpAt is not a date')
+          // Detroit time; a date alone is 9:00 that morning (lib/ops/dates.ts).
+          followUp = parseLocalDateTime(str(input.nextFollowUpAt), OPS_TIMEZONE)
+          if (!followUp) throw new Error('nextFollowUpAt must be YYYY-MM-DD or YYYY-MM-DDTHH:mm (Detroit time)')
         }
 
         await db.$transaction(async (tx) => {
@@ -417,10 +423,10 @@ function chiefTools(ctx: ChiefContext): ClientTool[] {
         })
         const parts = [`Logged on ${name}`]
         if (stepChange) parts.push(`${stepChange.type} step to ${stepChange.key}`)
-        if (followUp) parts.push(`follow-up ${followUp.toISOString().slice(0, 10)}`)
+        if (followUp) parts.push(`follow-up ${detroitWhen(followUp)}`)
         if (statusLine) parts.push(`status: ${statusLine}`)
         return {
-          result: { ok: true, client: name, step: stepChange && `${stepChange.type}: ${stepChange.key}`, followUp: followUp?.toISOString() ?? null, statusLine },
+          result: { ok: true, client: name, step: stepChange && `${stepChange.type}: ${stepChange.key}`, followUp: followUp ? `${detroitWhen(followUp)} Detroit` : null, statusLine },
           label: parts.join(', '),
         }
       },
