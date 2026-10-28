@@ -41,9 +41,10 @@ function openSteps(e: Client): Deliverable[] {
 export function derivedStatusLine(e: Client): string {
   const open = openSteps(e)[0]
   if (open) return `${DELIVERABLE_NAMES[open.type] ?? open.type}: ${open.stepLabel ?? open.step}`
-  if (e.deliverables.length > 0 && e.deliverables.every((d) => d.stepTerminal)) return 'Everything is live'
+  const done = e.deliverables.filter((d) => d.stepTerminal)
+  if (done.length > 0) return `${done.map((d) => `${DELIVERABLE_NAMES[d.type] ?? d.type}: ${d.stepLabel ?? d.step}`).join('; ')}; nothing open`
   if (e.stage === 'prospect') return 'Prospect, nothing bought yet'
-  return 'No open steps tracked'
+  return 'No steps set yet'
 }
 
 /**

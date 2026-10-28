@@ -13,6 +13,7 @@ import type { BoardActivity, BoardDeliverable, BoardEngagement } from '@/lib/ops
 import type { UnmatchedPayingCustomer } from '@/lib/ops/sync'
 import { DELIVERABLE_STATUSES, ENGAGEMENT_STAGES, OPS_ACTIVITY_KINDS, SERVICE_KEYS, type DeliverableType } from '@/lib/ops/types'
 import { EVIDENCE_FIELDS_FOR_TYPE, SYNC_EVIDENCE_FOR_TYPE } from '@/lib/ops/evidence'
+import { derivedStatusLine } from '@/lib/ops/client-status'
 import { STEP_CATALOG, defaultWaitingOn, effectiveStatusOf, stepFor } from '@/lib/ops/steps'
 import { RUN_KINDS, defaultRepoName, type RunKind } from '@/lib/ops/agents/names'
 import { formatPhoneNumber } from '@/lib/utils'
@@ -21,6 +22,7 @@ import { History } from './HqHistory'
 import { StripeCustomerPicker } from './Pickers'
 import {
   ALERT_TONE,
+  AmountInput,
   DELIVERABLE_STATUS_LABELS,
   DeliverableChip,
   OWNER_LABELS,
@@ -36,7 +38,8 @@ import {
 } from './opsUi'
 
 /** Kinds offered in the Log contact form; status_change and system are written by the API. */
-const LOG_KINDS = OPS_ACTIVITY_KINDS.filter((k) => k !== 'status_change' && k !== 'system')
+/** status has its own input at the top of the panel. */
+const LOG_KINDS = OPS_ACTIVITY_KINDS.filter((k) => k !== 'status_change' && k !== 'system' && k !== 'status')
 
 const label = 'block text-xs font-medium text-gray-500 mb-1'
 
@@ -98,6 +101,8 @@ export function EngagementPanel({ engagement: e, focus, actions, unmatched, unma
         </div>
 
         <div className="flex-1 overflow-y-auto px-4 sm:px-6 py-4 space-y-6">
+          <StatusLineField e={e} onSave={(body) => actions.logActivity(e.id, { kind: 'status', body })} />
+
           {/* Profile */}
           <section className="space-y-3">
             <div className="grid grid-cols-2 gap-3">
@@ -262,6 +267,48 @@ export function EngagementPanel({ engagement: e, focus, actions, unmatched, unma
   )
 }
 
+// ── Status line ─────────────────────────────────────────────────────────────
+
+/**
+ * The client's one-sentence current status (the card's status line). Saving
+ * logs a 'status' activity; the newest one wins. Empty shows the derived line
+ * from the oldest open step as a placeholder.
+ */
+function StatusLineField({ e, onSave }: { e: BoardEngagement; onSave: (body: string) => Promise<boolean> }) {
+  const [draft, setDraft] = useState(e.statusLine ?? '')
+  const [prev, setPrev] = useState(e.statusLine)
+  if (prev !== e.statusLine) {
+    setPrev(e.statusLine)
+    setDraft(e.statusLine ?? '')
+  }
+  const commit = async () => {
+    const v = draft.trim()
+    if (!v || v === (e.statusLine ?? '')) return
+    await onSave(v)
+  }
+  return (
+    <section>
+      <label htmlFor="ops-status-line" className="text-sm font-semibold text-gray-100 mb-2 block">
+        Status
+      </label>
+      <input
+        id="ops-status-line"
+        value={draft}
+        maxLength={300}
+        placeholder={derivedStatusLine(e)}
+        onChange={(ev) => setDraft(ev.target.value)}
+        onBlur={commit}
+        onKeyDown={(ev) => ev.key === 'Enter' && (ev.currentTarget as HTMLInputElement).blur()}
+        className={`${smallControl} min-h-[44px] placeholder:text-gray-600`}
+      />
+      <p className="mt-1 text-xs text-gray-600">
+        {e.statusAt ? <>Set <Age iso={e.statusAt} />. </> : 'Not set; the card shows the line above in grey. '}
+        Saves when you press Enter or click away.
+      </p>
+    </section>
+  )
+}
+
 // ── Fields ──────────────────────────────────────────────────────────────────
 
 function EditableName({ value, onSave }: { value: string; onSave: (v: string) => void }) {
@@ -408,12 +455,20 @@ function StripeSection({
         <dd>{e.stripeSubscriptionStatus ? <StripeStatusPill status={e.stripeSubscriptionStatus} /> : <span className="text-gray-500">—</span>}</dd>
         <dt className="text-gray-500">Monthly</dt>
         <dd className="tabular-nums text-gray-200">
-          {money(e.monthlyAmount)}
+          <AmountInput
+            value={e.monthlyAmount}
+            label={`Monthly amount for ${e.displayName}`}
+            onSave={(v) => actions.patchEngagement(e.id, { monthlyAmount: v }, { monthlyAmount: v })}
+          />
           {e.monthlyStartedAt && <span className="ml-2 text-xs text-gray-500">since {detroitDate(e.monthlyStartedAt)}</span>}
         </dd>
         <dt className="text-gray-500">Upfront</dt>
         <dd className="tabular-nums text-gray-200">
-          {money(e.upfrontAmount)}
+          <AmountInput
+            value={e.upfrontAmount}
+            label={`Upfront amount for ${e.displayName}`}
+            onSave={(v) => actions.patchEngagement(e.id, { upfrontAmount: v }, { upfrontAmount: v })}
+          />
           {e.upfrontPaidAt && <span className="ml-2 text-xs text-gray-500">paid {detroitDate(e.upfrontPaidAt)}</span>}
         </dd>
         <dt className="text-gray-500">Customer</dt>

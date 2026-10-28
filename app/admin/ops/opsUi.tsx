@@ -3,6 +3,7 @@
 // /admin/ops presentational pieces. Same tokens as app/admin/ui.tsx: surfaces
 // bg-gray-900 + border-gray-800, text gray-100/400/500, accent blue-500.
 
+import { useState } from 'react'
 import type { BoardDeliverable, BoardEngagement } from '@/lib/ops/board'
 import type { DeliverableStatus, DeliverableType } from '@/lib/ops/types'
 
@@ -263,3 +264,53 @@ export const ALERT_TONE = {
   red: 'border-red-500/40 bg-red-500/10 text-red-300',
   yellow: 'border-amber-500/30 bg-amber-500/10 text-amber-200',
 } as const
+
+// ── Amount input ─────────────────────────────────────────────────────────────
+
+/**
+ * Dollar amount edited in place, saved on blur or Enter through the engagement
+ * PATCH (monthlyAmount / upfrontAmount). Empty saves null. The Stripe sync
+ * never clears a value Stripe cannot see, so a hand-set amount stays.
+ */
+export function AmountInput({
+  value,
+  label,
+  onSave,
+}: {
+  value: number | null
+  /** Accessible name, e.g. "Monthly amount for Prestige Blinds". */
+  label: string
+  onSave: (v: number | null) => void
+}) {
+  const [draft, setDraft] = useState(value == null ? '' : String(value))
+  const [prev, setPrev] = useState(value)
+  if (prev !== value) {
+    setPrev(value)
+    setDraft(value == null ? '' : String(value))
+  }
+  const commit = () => {
+    const t = draft.replace(/[$,\s]/g, '')
+    const v = t === '' ? null : Number(t)
+    if (v !== null && (!Number.isFinite(v) || v < 0)) {
+      setDraft(value == null ? '' : String(value))
+      return
+    }
+    if (v !== value) onSave(v)
+  }
+  return (
+    <span className="inline-flex items-center rounded-md border border-gray-800 bg-gray-950 focus-within:ring-2 focus-within:ring-blue-500">
+      <span aria-hidden className="pl-2 text-sm text-gray-500">
+        $
+      </span>
+      <input
+        inputMode="decimal"
+        aria-label={label}
+        value={draft}
+        onChange={(ev) => setDraft(ev.target.value)}
+        onBlur={commit}
+        onKeyDown={(ev) => ev.key === 'Enter' && (ev.currentTarget as HTMLInputElement).blur()}
+        className="w-24 bg-transparent px-1.5 min-h-[44px] sm:min-h-[36px] text-sm text-gray-100 tabular-nums text-right focus:outline-none"
+      />
+    </span>
+  )
+}

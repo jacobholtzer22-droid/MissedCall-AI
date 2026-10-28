@@ -105,6 +105,8 @@ export const OPS_ACTIVITY_KINDS = [
   'meeting',
   'status_change',
   'system',
+  // The client's one-sentence current status; the newest is the card's status line.
+  'status',
 ] as const
 export type OpsActivityKind = (typeof OPS_ACTIVITY_KINDS)[number]
 

@@ -16,7 +16,7 @@ import type { BoardDeliverable, BoardEngagement, OpsBoard } from '@/lib/ops/boar
 import type { UnmatchedPayingCustomer } from '@/lib/ops/sync'
 import { rankNeedsYou } from '@/lib/ops/needs-you'
 import { Age } from '../ui'
-import { HomeTab } from './HomeTab'
+import { HomeTab, workingByClient } from './HomeTab'
 import { ClientsTab } from './ClientsTab'
 import { MoneyTab } from './MoneyTab'
 import { AgentsTab } from './AgentsTab'
@@ -176,6 +176,7 @@ export function OpsClient({
               ...e.activities,
             ].slice(0, 5),
             lastActivityAt: now,
+            ...(input.kind === 'status' ? { statusLine: input.body, statusAt: now } : {}),
             ...(input.followUpAt ? { nextFollowUpAt: input.followUpAt } : {}),
           })),
         () => send(`/api/admin/ops/engagements/${id}/activities`, 'POST', input),
@@ -325,6 +326,9 @@ export function OpsClient({
             unmatched={unmatched}
             unmatchedLoading={unmatchedLoading}
             onLoadUnmatched={loadUnmatched}
+            showRevenue={showRevenue}
+            onShowRevenue={toggleRevenue}
+            working={workingByClient(hq)}
           />
         )}
         {tab === 'money' && <MoneyTab board={board} actions={actions} />}

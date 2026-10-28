@@ -1,16 +1,22 @@
 'use client'
 
-// Clients: the unmatched-Stripe strip, then one row per engagement with
-// filters and sort. A table from 768px up, cards below it.
+// Clients: the roster. Counts by stage (each one filters), the two MRR
+// numbers (Verified and Projected, from headlineMrr so they match the Money
+// tab), the pending clients itemised with their amounts editable in place,
+// the unmatched-Stripe strip, then every client as a card with search,
+// filters and sort. Cards carry the deliverable chips and Stripe status the
+// old table had.
 
 import { useMemo, useState } from 'react'
-import { ChevronDown, RefreshCw } from 'lucide-react'
+import { ChevronDown, Eye, RefreshCw } from 'lucide-react'
 import type { BoardEngagement, OpsBoard } from '@/lib/ops/board'
+import { headlineMrr, mrrBucketOf } from '@/lib/ops/money'
 import type { UnmatchedPayingCustomer } from '@/lib/ops/sync'
 import { DELIVERABLE_TYPES, DELIVERABLE_TYPES_FOR_SERVICE, SERVICE_KEYS, STAGE_ORDER, type DeliverableType, type ServiceKey } from '@/lib/ops/types'
-import { Age, HealthDot } from '../ui'
+import { ClientCard } from './ClientCard'
 import { EngagementPicker } from './Pickers'
 import {
+  AmountInput,
   DeliverableChip,
   STAGE_LABELS,
   StagePill,
@@ -31,11 +37,12 @@ const SORTS: { key: SortKey; label: string }[] = [
 ]
 const HEALTH_ORDER: Record<string, number> = { red: 0, yellow: 1, green: 2, gray: 3 }
 
+/** Always shown in the count row; other stages appear only when they have clients. */
+const MAIN_STAGES = ['prospect', 'paid_upfront', 'onboarding', 'active', 'churned']
+
 /** Which of the six deliverable columns this client actually bought. */
 function boughtTypes(e: BoardEngagement): Set<DeliverableType> {
-  return new Set(
-    e.services.flatMap((s) => DELIVERABLE_TYPES_FOR_SERVICE[s as ServiceKey] ?? [])
-  )
+  return new Set(e.services.flatMap((s) => DELIVERABLE_TYPES_FOR_SERVICE[s as ServiceKey] ?? []))
 }
 
 function Chips({ e }: { e: BoardEngagement }) {
@@ -44,16 +51,7 @@ function Chips({ e }: { e: BoardEngagement }) {
     <span className="inline-flex flex-wrap gap-1">
       {DELIVERABLE_TYPES.map((t) => {
         const d = e.deliverables.find((x) => x.type === t)
-        return (
-          <DeliverableChip
-            key={t}
-            type={t}
-            status={d?.effectiveStatus ?? null}
-            dim={!bought.has(t) && !d}
-            manual={Boolean(d?.manualStatus)}
-            view={d}
-          />
-        )
+        return <DeliverableChip key={t} type={t} status={d?.effectiveStatus ?? null} dim={!bought.has(t) && !d} manual={Boolean(d?.manualStatus)} view={d} />
       })}
     </span>
   )
@@ -65,12 +63,19 @@ export function ClientsTab({
   unmatched,
   unmatchedLoading,
   onLoadUnmatched,
+  showRevenue,
+  onShowRevenue,
+  working,
 }: {
   board: OpsBoard
   actions: OpsActions
   unmatched: UnmatchedPayingCustomer[] | null
   unmatchedLoading: boolean
   onLoadUnmatched: (refresh?: boolean) => void
+  showRevenue: boolean
+  onShowRevenue: () => void
+  /** engagementId → the HQ agent running for it now. */
+  working: Map<string, string>
 }) {
   const [stage, setStage] = useState('all')
   const [service, setService] = useState('all')
@@ -79,10 +84,16 @@ export function ClientsTab({
   const [sort, setSort] = useState<SortKey>('health')
   const [showIgnored, setShowIgnored] = useState(false)
 
+  const counts = board.money.countsByStage
+  const stageButtons = [
+    ...MAIN_STAGES,
+    ...STAGE_ORDER.filter((s) => !MAIN_STAGES.includes(s) && s !== 'ignored' && (counts[s] ?? 0) > 0),
+  ]
+
   const rows = useMemo(() => {
     const needle = q.trim().toLowerCase()
     const digits = needle.replace(/\D/g, '')
-    const list = [...board.engagements, ...(showIgnored ? board.ignored : [])]
+    const list = [...board.engagements, ...(showIgnored || stage === 'ignored' ? board.ignored : [])]
       .filter((e) => stage === 'all' || e.stage === stage)
       .filter((e) => service === 'all' || e.services.includes(service))
       .filter((e) => health === 'all' || e.health === health)
@@ -107,24 +118,38 @@ export function ClientsTab({
           if (!b.nextFollowUpAt) return -1
           return a.nextFollowUpAt.localeCompare(b.nextFollowUpAt)
         default:
-          return (
-            (HEALTH_ORDER[a.health] ?? 9) - (HEALTH_ORDER[b.health] ?? 9) ||
-            b.alerts.length - a.alerts.length ||
-            byName(a, b)
-          )
+          return (HEALTH_ORDER[a.health] ?? 9) - (HEALTH_ORDER[b.health] ?? 9) || b.alerts.length - a.alerts.length || byName(a, b)
       }
     })
   }, [board.engagements, board.ignored, stage, service, health, q, sort, showIgnored])
 
   return (
     <div className="space-y-4">
-      <UnmatchedStrip
-        board={board}
-        actions={actions}
-        customers={unmatched}
-        loading={unmatchedLoading}
-        onLoad={onLoadUnmatched}
-      />
+      {/* Counts by stage; each filters the grid below */}
+      <div className="flex flex-wrap gap-2" role="group" aria-label="Clients by stage">
+        {[...stageButtons, 'ignored'].map((s) => {
+          const n = s === 'ignored' ? board.ignored.length : counts[s] ?? 0
+          const on = stage === s
+          return (
+            <button
+              key={s}
+              type="button"
+              aria-pressed={on}
+              onClick={() => setStage(on ? 'all' : s)}
+              className={`inline-flex items-baseline gap-2 px-3 min-h-[44px] rounded-lg border text-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
+                on ? 'border-blue-500 bg-blue-500/10 text-blue-200' : 'border-gray-800 bg-gray-900 text-gray-400 hover:text-gray-200'
+              } ${s === 'ignored' ? 'sm:ml-auto' : ''}`}
+            >
+              <span className="text-lg font-semibold tabular-nums text-gray-100">{n}</span>
+              {STAGE_LABELS[s]}
+            </button>
+          )
+        })}
+      </div>
+
+      <MrrPanel board={board} actions={actions} showRevenue={showRevenue} onShowRevenue={onShowRevenue} />
+
+      <UnmatchedStrip board={board} actions={actions} customers={unmatched} loading={unmatchedLoading} onLoad={onLoadUnmatched} />
 
       {/* Filters */}
       <div className="flex flex-wrap items-center gap-2">
@@ -138,7 +163,7 @@ export function ClientsTab({
         />
         <select aria-label="Stage" value={stage} onChange={(e) => setStage(e.target.value)} className={control}>
           <option value="all">All stages</option>
-          {STAGE_ORDER.filter((s) => s !== 'ignored' || showIgnored).map((s) => (
+          {STAGE_ORDER.map((s) => (
             <option key={s} value={s}>
               {STAGE_LABELS[s]}
             </option>
@@ -178,109 +203,138 @@ export function ClientsTab({
           />
           Show ignored ({board.ignored.length})
         </label>
-        <span className="text-xs text-gray-500">
+        <span className="text-xs text-gray-500 tabular-nums">
           {rows.length} of {board.engagements.length + (showIgnored ? board.ignored.length : 0)}
         </span>
       </div>
 
-      {rows.length === 0 && <p className="text-sm text-gray-500 px-1">No clients match these filters.</p>}
-
-      {/* Table, 768px and up */}
-      {rows.length > 0 && (
-        <div className="hidden md:block bg-gray-900 border border-gray-800 rounded-lg overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="text-left text-xs text-gray-500 border-b border-gray-800">
-                <th className="px-3 py-2 font-medium">Client</th>
-                <th className="px-3 py-2 font-medium">Stage</th>
-                <th className="px-3 py-2 font-medium">Deliverables</th>
-                <th className="px-3 py-2 font-medium text-right">Monthly</th>
-                <th className="px-3 py-2 font-medium">Stripe</th>
-                <th className="px-3 py-2 font-medium">Follow-up</th>
-                <th className="px-3 py-2 font-medium">Activity</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-800">
-              {rows.map((e) => (
-                <tr
-                  key={e.id}
-                  tabIndex={0}
-                  onClick={() => actions.openEngagement(e.id)}
-                  onKeyDown={(ev) => ev.key === 'Enter' && actions.openEngagement(e.id)}
-                  className={`cursor-pointer hover:bg-gray-800/50 focus:outline-none focus-visible:bg-gray-800 ${e.stage === 'ignored' ? 'opacity-60' : ''}`}
-                >
-                  <td className="px-3 py-2.5">
-                    <span className="flex items-center gap-2">
-                      <HealthDot health={e.health} />
-                      <span className="min-w-0">
-                        <span className="block font-medium text-gray-100 truncate max-w-[16rem]">{e.displayName}</span>
-                        <span className="block text-xs text-gray-500">{e.services.join(', ') || 'no services set'}</span>
-                      </span>
-                    </span>
-                  </td>
-                  <td className="px-3 py-2.5">
-                    <StagePill stage={e.stage} />
-                  </td>
-                  <td className="px-3 py-2.5">
+      {rows.length === 0 ? (
+        <p className="text-sm text-gray-500 px-1">No clients match these filters.</p>
+      ) : (
+        <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
+          {rows.map((e) => (
+            <li key={e.id}>
+              <ClientCard
+                e={e}
+                working={working.get(e.id) ?? null}
+                showRevenue={showRevenue}
+                onOpen={actions.openEngagement}
+                extra={
+                  <span className="flex flex-wrap items-center gap-2 pt-1">
                     <Chips e={e} />
-                  </td>
-                  <td className="px-3 py-2.5 text-right tabular-nums text-gray-200">{money(e.monthlyAmount)}</td>
-                  <td className="px-3 py-2.5">
                     {e.stripeSubscriptionStatus ? (
                       <StripeStatusPill status={e.stripeSubscriptionStatus} />
                     ) : (
-                      <span className="text-xs text-gray-600">{e.stripeCustomerId ? 'not synced' : 'unlinked'}</span>
+                      <span className="text-xs text-gray-600">{e.stripeCustomerId ? 'Stripe not synced' : 'Stripe unlinked'}</span>
                     )}
-                  </td>
-                  <td className="px-3 py-2.5 text-gray-400">
-                    {e.nextFollowUpAt ? (
-                      <span className={new Date(e.nextFollowUpAt) <= new Date() ? 'text-amber-300' : ''}>
-                        {detroitDate(e.nextFollowUpAt)}
-                      </span>
-                    ) : (
-                      '—'
-                    )}
-                  </td>
-                  <td className="px-3 py-2.5 text-gray-400">
-                    <Age iso={e.lastActivityAt} />
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+                  </span>
+                }
+              />
+            </li>
+          ))}
+        </ul>
       )}
-
-      {/* Cards, under 768px */}
-      <ul className="md:hidden space-y-2">
-        {rows.map((e) => (
-          <li key={e.id}>
-            <button
-              type="button"
-              onClick={() => actions.openEngagement(e.id)}
-              className={`w-full text-left bg-gray-900 border border-gray-800 rounded-lg p-3 space-y-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
-                e.stage === 'ignored' ? 'opacity-60' : ''
-              }`}
-            >
-              <span className="flex items-center gap-2">
-                <HealthDot health={e.health} />
-                <span className="flex-1 min-w-0 truncate font-medium text-gray-100">{e.displayName}</span>
-                <StagePill stage={e.stage} />
-              </span>
-              <Chips e={e} />
-              <span className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-400">
-                <span className="tabular-nums text-gray-200">{money(e.monthlyAmount)}/mo</span>
-                {e.stripeSubscriptionStatus ? <StripeStatusPill status={e.stripeSubscriptionStatus} /> : <span>Stripe unlinked</span>}
-                <span>follow-up {e.nextFollowUpAt ? detroitDate(e.nextFollowUpAt) : '—'}</span>
-                <span>
-                  activity <Age iso={e.lastActivityAt} />
-                </span>
-              </span>
-            </button>
-          </li>
-        ))}
-      </ul>
     </div>
+  )
+}
+
+/**
+ * Verified and Projected MRR, large, then the pending clients (paid upfront,
+ * onboarding, or a scheduled subscription) with monthly and upfront amounts
+ * editable in place. Hidden behind the revenue toggle like the rest of /admin.
+ */
+function MrrPanel({
+  board,
+  actions,
+  showRevenue,
+  onShowRevenue,
+}: {
+  board: OpsBoard
+  actions: OpsActions
+  showRevenue: boolean
+  onShowRevenue: () => void
+}) {
+  const mrr = headlineMrr(board.money)
+  const pending = board.engagements
+    .filter((e) => mrrBucketOf(e) === 'pending')
+    .sort((a, b) => (b.monthlyAmount ?? 0) - (a.monthlyAmount ?? 0) || a.displayName.localeCompare(b.displayName))
+  const pendingTotal = board.money.mrrPending.verified.total + board.money.mrrPending.projected.total
+
+  if (!showRevenue) {
+    return (
+      <section className="bg-gray-900 border border-gray-800 rounded-lg px-4 py-3 flex items-center justify-between gap-3">
+        <p className="text-sm text-gray-500">MRR is hidden.</p>
+        <button type="button" onClick={onShowRevenue} className={`${smallButton} min-h-[44px]`}>
+          <Eye className="h-3.5 w-3.5" /> Show revenue
+        </button>
+      </section>
+    )
+  }
+
+  return (
+    <section aria-label="MRR" className="bg-gray-900 border border-gray-800 rounded-lg">
+      <div className="grid grid-cols-1 sm:grid-cols-2 divide-y sm:divide-y-0 sm:divide-x divide-gray-800">
+        <div className="p-4">
+          <p className="text-xs text-gray-500">Verified MRR</p>
+          <p className="mt-1 text-3xl font-semibold tabular-nums text-gray-100">{money(mrr.verified, '$0')}</p>
+          <p className="mt-1 text-xs text-gray-500">Stripe subscriptions that are active or past due</p>
+        </div>
+        <div className="p-4">
+          <p className="text-xs text-gray-500">Projected MRR</p>
+          <p className="mt-1 text-3xl font-semibold tabular-nums text-gray-100">{money(mrr.projected, '$0')}</p>
+          <p className="mt-1 text-xs text-gray-500">Once everyone who paid upfront is on a subscription</p>
+        </div>
+      </div>
+      <details className="border-t border-gray-800 group" open={pending.length > 0 && pending.length <= 8}>
+        <summary className="cursor-pointer list-none px-4 min-h-[48px] flex items-center justify-between gap-2 text-sm text-gray-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500">
+          <span>
+            Pending
+            <span className="ml-2 text-gray-500 tabular-nums">{pending.length}</span>
+            <span className="ml-3 text-gray-300 tabular-nums">{money(pendingTotal, '$0')}/mo</span>
+          </span>
+          <ChevronDown className="h-4 w-4 text-gray-500 group-open:rotate-180" />
+        </summary>
+        {pending.length === 0 ? (
+          <p className="px-4 pb-4 text-sm text-gray-500">Nobody is waiting to go on a subscription.</p>
+        ) : (
+          <ul className="divide-y divide-gray-800 border-t border-gray-800">
+            {pending.map((e) => (
+              <li key={e.id} className="px-4 py-2.5 flex flex-wrap items-center gap-x-4 gap-y-2">
+                <button
+                  type="button"
+                  onClick={() => actions.openEngagement(e.id)}
+                  className="flex-1 min-w-[10rem] text-left min-h-[44px] text-sm text-gray-100 hover:text-blue-300 truncate focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 rounded"
+                >
+                  {e.displayName}
+                </button>
+                <StagePill stage={e.stage} />
+                {e.stripeSubscriptionStatus ? (
+                  <StripeStatusPill status={e.stripeSubscriptionStatus} />
+                ) : (
+                  <span className="text-xs text-gray-600">{e.stripeCustomerId ? 'not synced' : 'Stripe unlinked'}</span>
+                )}
+                <label className="flex items-center gap-1.5 text-xs text-gray-500">
+                  Monthly
+                  <AmountInput
+                    value={e.monthlyAmount}
+                    label={`Monthly amount for ${e.displayName}`}
+                    onSave={(v) => actions.patchEngagement(e.id, { monthlyAmount: v }, { monthlyAmount: v })}
+                  />
+                </label>
+                <label className="flex items-center gap-1.5 text-xs text-gray-500">
+                  Upfront
+                  <AmountInput
+                    value={e.upfrontAmount}
+                    label={`Upfront amount for ${e.displayName}`}
+                    onSave={(v) => actions.patchEngagement(e.id, { upfrontAmount: v }, { upfrontAmount: v })}
+                  />
+                </label>
+              </li>
+            ))}
+          </ul>
+        )}
+      </details>
+    </section>
   )
 }
 

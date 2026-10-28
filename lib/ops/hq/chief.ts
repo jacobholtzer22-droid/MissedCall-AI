@@ -32,7 +32,7 @@ How you talk: short and plain. No preamble, no filler, no em dashes. Name client
 
 What you do:
 - Look before you answer. Read the board with get_board, or one client in full with get_client. Never answer about a client from memory.
-- Record what Jacob tells you ("Cole approved the site", "Ronny's budget is $500") with log_update, in his words. When the update moves a deliverable, pass the step, using a step key from that client's step list in get_client.
+- Record what Jacob tells you ("Cole approved the site", "Ronny's budget is $500") with log_update, in his words. When the update moves a deliverable, pass the step, using a step key from that client's step list in get_client. When it changes where the client stands, pass statusLine: one sentence, the client's status now.
 - Record standing decisions ("keep X off", "don't raise Y") with record_decision. Specialists read them and must follow them.
 - Hand off work Jacob asks for: start_ads_task for Google Ads work, start_web_task for a change to a client's website. Each one starts a specialist run under the current job. Write instructions a specialist can act on without asking back: the client, the goal, the limits, and Jacob's decisions.
 - When Jacob points at a spec under docs/ads-specs/, read it with read_spec and pass its full text in the start_ads_task instructions, after one line with Jacob's own instructions (e.g. "Build it paused and queue the enable for my approval."). Do not shorten the spec.
@@ -77,6 +77,7 @@ async function compactBoard() {
       name: e.displayName,
       stage: e.stage,
       services: e.services,
+      statusLine: e.statusLine,
       adsCustomerId: adsCustomerId(e),
       repoUrl: repoUrl(e),
       nextFollowUpAt: e.nextFollowUpAt,
@@ -120,6 +121,8 @@ async function clientDetail(engagementId: string) {
     location: e.location,
     stage: e.stage,
     services: e.services,
+    statusLine: e.statusLine,
+    statusAt: e.statusAt,
     notes: e.notes,
     monthlyAmount: e.monthlyAmount,
     upfrontAmount: e.upfrontAmount,
@@ -226,7 +229,7 @@ function chiefTools(ctx: ChiefContext): ClientTool[] {
     {
       name: 'log_update',
       description:
-        "Record an update Jacob gave about a client, in his words, as an activity. Optionally move one deliverable to a new step (a key from that deliverable's steps in get_client) and set the next follow-up date.",
+        "Record an update Jacob gave about a client, in his words, as an activity. Optionally move one deliverable to a new step (a key from that deliverable's steps in get_client), set the next follow-up date, and replace the client's status line.",
       input_schema: {
         type: 'object',
         properties: {
@@ -234,6 +237,10 @@ function chiefTools(ctx: ChiefContext): ClientTool[] {
           body: { type: 'string', description: 'What happened, short and plain.' },
           step: { type: 'object', description: '{ deliverableType, step } to move a deliverable.' },
           nextFollowUpAt: { type: 'string', description: 'ISO date or date-time for the next follow-up.' },
+          statusLine: {
+            type: 'string',
+            description: "The client's current status in one sentence, as it stands after this update (e.g. \"Ads running at $16/day; waiting on the Google tag\"). Shown on the client's card. Pass it whenever the update changes where the client stands.",
+          },
         },
         required: ['engagementId', 'body'],
       },
@@ -257,6 +264,7 @@ function chiefTools(ctx: ChiefContext): ClientTool[] {
           if (!d) throw new Error(`${name} has no ${type} deliverable`)
           stepChange = { deliverableId: d.id, type, key }
         }
+        const statusLine = input.statusLine ? noEmDash(str(input.statusLine)).slice(0, 300) : null
         let followUp: Date | null = null
         if (input.nextFollowUpAt) {
           followUp = new Date(str(input.nextFollowUpAt))
@@ -265,6 +273,7 @@ function chiefTools(ctx: ChiefContext): ClientTool[] {
 
         await db.$transaction(async (tx) => {
           await tx.opsActivity.create({ data: { engagementId, kind: 'note', body, followUpAt: followUp } })
+          if (statusLine) await tx.opsActivity.create({ data: { engagementId, kind: 'status', body: statusLine } })
           if (followUp) await tx.engagement.update({ where: { id: engagementId }, data: { nextFollowUpAt: followUp } })
           if (stepChange) {
             await tx.deliverable.update({
@@ -276,7 +285,11 @@ function chiefTools(ctx: ChiefContext): ClientTool[] {
         const parts = [`Logged on ${name}`]
         if (stepChange) parts.push(`${stepChange.type} step to ${stepChange.key}`)
         if (followUp) parts.push(`follow-up ${followUp.toISOString().slice(0, 10)}`)
-        return { result: { ok: true, client: name, step: stepChange && `${stepChange.type}: ${stepChange.key}`, followUp: followUp?.toISOString() ?? null }, label: parts.join(', ') }
+        if (statusLine) parts.push(`status: ${statusLine}`)
+        return {
+          result: { ok: true, client: name, step: stepChange && `${stepChange.type}: ${stepChange.key}`, followUp: followUp?.toISOString() ?? null, statusLine },
+          label: parts.join(', '),
+        }
       },
     },
     {

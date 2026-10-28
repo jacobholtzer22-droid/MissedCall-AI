@@ -4,8 +4,11 @@
 // status, what is waiting and on whom, the ads state, last contact, next
 // follow-up and the monthly amount (only with revenue shown). While an HQ
 // agent runs for this client the card carries the desks' green pulse and
-// "Ads is working". The whole card is one button that opens the panel.
+// "Ads is working". The whole card is one button that opens the panel. The
+// status line is the newest 'status' activity, else derived from the oldest
+// open step (shown dimmer).
 
+import type { ReactNode } from 'react'
 import type { BoardEngagement } from '@/lib/ops/board'
 import { adsState, derivedStatusLine, waitingLine } from '@/lib/ops/client-status'
 import { Age, HealthDot } from '../ui'
@@ -16,12 +19,15 @@ export function ClientCard({
   working,
   showRevenue,
   onOpen,
+  extra,
 }: {
   e: BoardEngagement
   /** Name of the agent running for this client now, or null. */
   working: string | null
   showRevenue: boolean
   onOpen: (id: string) => void
+  /** Extra rows at the bottom (the Clients roster adds deliverable chips and Stripe status). */
+  extra?: ReactNode
 }) {
   const status = e.statusLine ?? derivedStatusLine(e)
   const waiting = waitingLine(e)
@@ -48,7 +54,8 @@ export function ClientCard({
         </span>
       )}
 
-      <span className="block text-sm text-gray-300 break-words">{status}</span>
+      {/* A status someone set reads brighter than the one derived from the steps. */}
+      <span className={`block text-sm break-words ${e.statusLine ? 'text-gray-100' : 'text-gray-400'}`}>{status}</span>
       {waiting && <span className="block text-xs text-gray-400 break-words">{waiting}</span>}
 
       <span className="flex flex-wrap items-center gap-1">
@@ -75,6 +82,7 @@ export function ClientCard({
         {e.nextFollowUpAt && <span className={due ? 'text-amber-300' : ''}>follow-up {detroitDate(e.nextFollowUpAt)}</span>}
         {showRevenue && e.monthlyAmount != null && <span className="text-gray-300">{money(e.monthlyAmount)}/mo</span>}
       </span>
+      {extra}
     </button>
   )
 }
