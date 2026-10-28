@@ -2,7 +2,7 @@
 // /admin/ops agents — provision a client site
 // ===========================================
 // One private repo from AA-Template, its Actions secrets (the two required
-// ones, plus PEXELS_API_KEY when the platform has it), a Vercel project
+// ones, plus PEXELS_API_KEY and PIXABAY_API_KEY when the platform has them), a Vercel project
 // linked to it (static export: npm run build → out), the website evidence,
 // step build, and an activity. Steps run in that order and stop at the first
 // failure, reporting what was done so far. A repo that already exists under

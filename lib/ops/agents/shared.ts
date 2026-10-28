@@ -26,11 +26,15 @@ export const REPO_SECRETS = [
 ] as const
 
 /**
- * Secrets set on a client repo only when the platform has them. PEXELS_API_KEY
- * lets a "with stock" build fetch trade-matched stock photos; without it the
- * build runs without images, so its absence never blocks provisioning.
+ * Secrets set on a client repo only when the platform has them: the stock
+ * photo keys a "with stock" build uses (Pexels first, Pixabay when Pexels is
+ * absent; AA-Template's stock step picks). Whichever exist are copied; with
+ * neither the build runs without images, so their absence never blocks.
  */
-export const OPTIONAL_REPO_SECRETS = [{ name: 'PEXELS_API_KEY', env: 'PEXELS_API_KEY' }] as const
+export const OPTIONAL_REPO_SECRETS = [
+  { name: 'PEXELS_API_KEY', env: 'PEXELS_API_KEY' },
+  { name: 'PIXABAY_API_KEY', env: 'PIXABAY_API_KEY' },
+] as const
 
 /** The required secrets plus every optional one whose env var is set. */
 export function repoSecretsToSet(): { name: string; env: string }[] {
