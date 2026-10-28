@@ -56,6 +56,7 @@ What you do:
 - New clients: when Jacob names one ("New client: ..."), create it with create_client (createBusiness when the client gets a website, ads or missed-call texting), then say in one line what was created. Platform account changes go through update_business; routing fields wait for Push.
 - Website clients: the site builds from a brief, and the brief is written from the client's intake (get_client's intake: answers, files, old site, and summary.missing). Photos, the logo and the old site are added on the intake page (/admin/ops/intake/<id>); point Jacob there for files. When a website client has no brief: read the intake, then ask Jacob in ONE grouped message only for what is still empty of what get_brief_template needs. Save his answers with save_intake. Then write the whole brief in the template's shape (unknowns under UNKNOWN, never invented, businessSlug from the platform account; set_brief adds the Assets and Old site sections) and show it back in one message; store it with set_brief only after he says it looks good or gives edits.
 - Client answers by number: Jacob texts every client the onboarding questionnaire (read_doc onboarding-questionnaire.md). When he pastes answers like "1. Yualex Painting 2 LLC 2. Painting, drywall...", read it, map each answer to its intake field with save_intake (one call, everything), and do the platform side the table names: the phone and email on the platform account with update_business (the phone that rings is the owner phone; routing numbers wait for Push), the ads budget and account email in intake.ads. Then say in a few lines what you saved and which of 1 to 14 and 17 to 19 are still missing.
+- Every brief follows docs/ops/site-brief-standards.md (get_brief_template returns it with the template): services named and split the way customers search, no published job ranges, no claims the client did not make, hours and towns as the rules say, no invented tagline, about story or reviews, display name without LLC or numbering. List what you applied under "## Standards applied" at the end of the brief body; when the client's answers override a standard, the client wins and you say so there. The same file's section 9 is how the answers become the ads spec.
 - A build needs real photos: with none on file and no old site set to verbatim, site_build is refused. Tell Jacob to add photos at the intake page, or build with stock only if he says so (withStock).
 - Website work: start_web_task. "Build X's site": site_build (it provisions first if needed). After a build reports back: review, which posts the preview and PR. "Merge it" / "take it live" / "connect example.com": merge, go_live, connect_domain, each waiting for Push. Never claim a site is built, merged or live before its run or Push says so.
 - Hand off work Jacob asks for: start_ads_task for Google Ads work, start_web_task for a change to a client's website. Each one starts a specialist run under the current job. Write instructions a specialist can act on without asking back: the client, the goal, the limits, and Jacob's decisions.
@@ -682,9 +683,13 @@ function chiefTools(ctx: ChiefContext): ClientTool[] {
     },
     {
       name: 'get_brief_template',
-      description: "AA-Template's BRIEF.template.md, the shape every site brief must take. Read it before asking Jacob for a brief or writing one.",
+      description:
+        "Everything a site brief is written from, in one read: AA-Template's BRIEF.template.md (the shape) and docs/ops/site-brief-standards.md (Jacob's standing rules for services, prices, claims, hours, service area, copy, photos and platform). Read it before asking Jacob for a brief or writing one; apply every standard unless the client's answers say otherwise.",
       input_schema: { type: 'object', properties: {} },
-      run: async () => ({ result: { template: await briefTemplate() }, label: 'Read the brief template' }),
+      run: async () => {
+        const [template, standards] = await Promise.all([briefTemplate(), readDoc('site-brief-standards.md')])
+        return { result: { template, standards: standards.text }, label: 'Read the brief template and the site brief standards' }
+      },
     },
     {
       name: 'save_intake',
@@ -717,7 +722,7 @@ function chiefTools(ctx: ChiefContext): ClientTool[] {
     {
       name: 'set_brief',
       description:
-        "Store a client's site brief: the full BRIEF.template.md filled from what Jacob or the client actually said (businessSlug from get_client's platformAccount.slug; unknowns listed under UNKNOWN, never invented; launch.indexable stays false). Only after Jacob has seen it and said it looks good. Answers Jacob gave in chat go in intake as well. The brief's Assets and Old site sections are written for you from the intake. Moves the website step from brief (or none) to build.",
+        "Store a client's site brief: the full BRIEF.template.md filled from what Jacob or the client actually said, with the site brief standards applied (businessSlug from get_client's platformAccount.slug; unknowns listed under UNKNOWN, never invented; launch.indexable stays false), ending with a '## Standards applied' section of three to eight lines. Only after Jacob has seen it and said it looks good. Answers Jacob gave in chat go in intake as well. The brief's Assets and Old site sections are written for you from the intake. Moves the website step from brief (or none) to build.",
       input_schema: {
         type: 'object',
         properties: {
@@ -731,6 +736,10 @@ function chiefTools(ctx: ChiefContext): ClientTool[] {
         const engagementId = str(input.engagementId)
         const brief = noEmDash(str(input.brief))
         if (brief.length < 200) throw new Error('the brief is too short to build from; fill the template')
+        // Site brief standards, rule 10: what came from the standards, not the client, is listed for Jacob.
+        if (!/^#{1,3}\s*Standards applied\s*$/im.test(brief)) {
+          throw new Error('the brief needs a "## Standards applied" section (docs/ops/site-brief-standards.md, rule 10): three to eight lines naming each standard you applied and any place the client\'s answers overrode one')
+        }
         if (/indexable[^\n]*\btrue\b/i.test(brief)) throw new Error('launch.indexable must stay false in a brief; go_live flips it later')
         const e = await db.engagement.findUnique({
           where: { id: engagementId },

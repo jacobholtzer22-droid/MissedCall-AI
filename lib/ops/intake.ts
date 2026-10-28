@@ -146,10 +146,17 @@ export function payloadOldSite(i: Intake) {
 
 /**
  * The brief's last two sections, written from the intake so the asset list in
- * the brief is always the engagement's own. Replaces any earlier copy of them.
+ * the brief is always the engagement's own. Replaces any earlier copy of them
+ * and leaves every other section where it was.
  */
 export function withAssetSections(brief: string, i: Intake): string {
-  const body = brief.replace(/\n## Assets\n[\s\S]*$/m, '').replace(/\n## Old site\n[\s\S]*$/m, '').trimEnd()
+  // Drop any earlier Assets or Old site section, and only those: every other
+  // section (Standards applied among them) keeps its place.
+  const body = brief
+    .split(/(?=^## )/m)
+    .filter((part) => !/^## (Assets|Old site)\s*$/m.test(part.split('\n')[0]))
+    .join('')
+    .trimEnd()
   const rows = (i.assets ?? []).map(
     (a) => `- ${a.kind} | ${a.url} | ${a.caption?.trim() || a.filename} | ${a.heroCandidate ? 'hero candidate' : '-'} | ${a.service || '-'} | ${a.beforeAfter || '-'}`
   )
