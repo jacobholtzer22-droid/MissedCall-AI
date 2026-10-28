@@ -12,12 +12,19 @@
 //
 // Idempotent per run_id: once a run has finished, a repeat callback changes
 // nothing and answers 200 { duplicate: true }.
+//
+// Also: the Vercel preview of the branch (output.previewUrl, website evidence),
+// a feed event on the run, and for a successful go_live the PR is squash-merged
+// and its branch deleted (Jacob already pushed the go-live). The outcome
+// carries the run's jobId so the route can let the job report.
 
 import { createHmac, timingSafeEqual } from 'node:crypto'
 import type { Prisma } from '@prisma/client'
 import { db } from '@/lib/db'
 import { defaultWaitingOn } from '@/lib/ops/steps'
-import { getRepo, openPullRequest } from '@/lib/ops/github'
+import { deleteBranch, getRepo, mergePullRequest, openPullRequest } from '@/lib/ops/github'
+import { listDeploymentsForBranch } from '@/lib/ops/vercel'
+import { emit } from '@/lib/ops/hq/events'
 import { mergeEvidence } from './shared'
 
 /**
@@ -71,7 +78,7 @@ export type CallbackBody = {
 }
 
 export type CallbackOutcome =
-  | { status: 200; body: { ok: true; runId: string; runStatus: string; duplicate?: boolean; stepSet?: string | null } }
+  | { status: 200; body: { ok: true; runId: string; runStatus: string; duplicate?: boolean; stepSet?: string | null }; jobId?: string | null }
   | { status: 400 | 404; body: { error: string } }
 
 const SUCCESS = new Set(['success', 'succeeded'])
@@ -142,6 +149,40 @@ export async function applyCallback(raw: string): Promise<CallbackOutcome> {
     output.prUrl = pr.url
   }
 
+  // The branch's Vercel preview, if the project has deployed it yet.
+  let previewUrl: string | null = null
+  if (website && body.branch) {
+    const ev = await db.deliverable.findUnique({ where: { id: website.id }, select: { evidence: true } })
+    const projectId = (ev?.evidence as Record<string, unknown> | null)?.vercelProjectId
+    if (typeof projectId === 'string' && projectId) {
+      previewUrl = await listDeploymentsForBranch(projectId, body.branch)
+        .then((d) => d[0]?.url ?? null)
+        .catch(() => null)
+    }
+    if (previewUrl) await mergeEvidence(website.id, { previewUrl })
+  }
+
+  // go_live: Jacob pushed it before it was dispatched, so its PR merges now.
+  let merged: string | null = null
+  let mergeError: string | null = null
+  const prNumber = output.prUrl ? Number(/\/pull\/(\d+)/.exec(output.prUrl)?.[1]) : NaN
+  if (succeeded && body.kind === 'go_live' && Number.isFinite(prNumber) && typeof input.repo === 'string') {
+    try {
+      const m = await mergePullRequest(input.repo, prNumber, `go_live: make the site indexable (#${prNumber})`)
+      if (body.branch) await deleteBranch(input.repo, body.branch).catch(() => false)
+      merged = m.sha
+    } catch (err) {
+      mergeError = err instanceof Error ? err.message : String(err)
+    }
+  }
+  if (previewUrl || merged || mergeError) {
+    const now = await db.agentRun.findUniqueOrThrow({ where: { id: run.id }, select: { output: true } })
+    await db.agentRun.update({
+      where: { id: run.id },
+      data: { output: { ...((now.output ?? {}) as Record<string, unknown>), previewUrl, mergedSha: merged, mergeError } as Prisma.InputJsonObject },
+    })
+  }
+
   let stepSet: string | null = null
   if (succeeded && website && (body.kind === 'site_build' || body.kind === 'site_update')) {
     await db.deliverable.update({
@@ -152,13 +193,10 @@ export async function applyCallback(raw: string): Promise<CallbackOutcome> {
   }
 
   const verify = output.verifyPassed === null ? '' : output.verifyPassed ? ', gate passed' : `, gate FAILED (${output.failingChecks.join(', ') || 'see report'})`
-  await db.opsActivity.create({
-    data: {
-      engagementId,
-      kind: 'system',
-      body: `Agent ${body.kind} ${status}${verify}. ${output.prUrl ? `PR ${output.prUrl}` : 'No PR opened.'}${stepSet ? ' Website step → review.' : ''}`,
-    },
-  })
+  const mergeLine = merged ? ' PR merged; the site goes indexable on the next production deploy.' : mergeError ? ` PR not merged: ${mergeError}.` : ''
+  const line = `Agent ${body.kind} ${status}${verify}. ${output.prUrl ? `PR ${output.prUrl}` : 'No PR opened.'}${previewUrl ? ` Preview ${previewUrl}.` : ''}${mergeLine}${stepSet ? ' Website step → review.' : ''}`
+  await db.opsActivity.create({ data: { engagementId, kind: 'system', body: line } })
+  await emit(run.id, succeeded && !mergeError ? 'status' : 'error', line, { ...output, previewUrl, mergedSha: merged, mergeError })
 
-  return { status: 200, body: { ok: true, runId: run.id, runStatus: status, stepSet } }
+  return { status: 200, body: { ok: true, runId: run.id, runStatus: status, stepSet }, jobId: run.jobId }
 }

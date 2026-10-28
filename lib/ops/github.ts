@@ -162,6 +162,26 @@ export async function getPullRequest(repo: string, number: number) {
   return body
 }
 
+/** Squash-merge an open PR. Throws GithubError (405 not mergeable, 409 head moved). */
+export async function mergePullRequest(repo: string, number: number, title: string): Promise<{ sha: string; merged: boolean }> {
+  const { data } = await write<{ sha: string; merged: boolean }>('PUT', `/repos/${repoFullName(repo)}/pulls/${number}/merge`, `merge PR ${number}`, {
+    merge_method: 'squash',
+    commit_title: title,
+  })
+  return { sha: data?.sha ?? '', merged: Boolean(data?.merged) }
+}
+
+/** Delete a branch after its PR merged. A branch already gone (422/404) is fine. */
+export async function deleteBranch(repo: string, branch: string): Promise<boolean> {
+  try {
+    await write('DELETE', `/repos/${repoFullName(repo)}/git/refs/heads/${branch.split('/').map(encodeURIComponent).join('/')}`, `delete branch ${branch}`)
+    return true
+  } catch (err) {
+    if (err instanceof GithubError && (err.status === 404 || err.status === 422)) return false
+    throw err
+  }
+}
+
 // ── Secrets ─────────────────────────────────────────────────────────────────
 
 /** Set an Actions secret, sealed to the repo's public key (libsodium sealed box). */

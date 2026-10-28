@@ -88,6 +88,8 @@ export type BoardEngagement = {
   lastContactedAt: string | null
   nextFollowUpAt: string | null
   notes: string | null
+  /** The site brief (markdown, AA-Template's BRIEF shape); null until written. */
+  brief: string | null
   createdAt: string
   updatedAt: string
   deliverables: BoardDeliverable[]
@@ -307,6 +309,7 @@ export async function getOpsBoard(): Promise<OpsBoard> {
       lastContactedAt: iso(e.lastContactedAt),
       nextFollowUpAt: iso(e.nextFollowUpAt),
       notes: e.notes,
+      brief: e.brief,
       createdAt: e.createdAt.toISOString(),
       updatedAt: e.updatedAt.toISOString(),
       deliverables,

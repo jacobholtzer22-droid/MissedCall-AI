@@ -98,3 +98,57 @@ export async function listDeploymentsForBranch(projectId: string, branch: string
     }))
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
 }
+
+// ── Domains ─────────────────────────────────────────────────────────────────
+
+export type DnsRecord = { type: 'A' | 'CNAME' | 'TXT'; name: string; value: string; why: string }
+
+/**
+ * Add a domain to a project. With redirectTo, requests to it redirect there
+ * (www to the apex). A domain the project already has is not an error.
+ * Returns Vercel's ownership checks when it needs a TXT record first.
+ */
+export async function addProjectDomain(projectId: string, name: string, redirectTo?: string): Promise<{ name: string; verified: boolean; verification: DnsRecord[]; alreadyAdded: boolean }> {
+  try {
+    const data = await write<{ name: string; verified: boolean; verification?: { type: string; domain: string; value: string; reason: string }[] }>(
+      'POST',
+      `/v10/projects/${projectId}/domains`,
+      `add domain ${name}`,
+      { name, ...(redirectTo ? { redirect: redirectTo, redirectStatusCode: 308 } : {}) }
+    )
+    return {
+      name: data.name,
+      verified: data.verified,
+      verification: (data.verification ?? []).map((v) => ({ type: 'TXT' as const, name: v.domain, value: v.value, why: `Vercel ownership check (${v.reason})` })),
+      alreadyAdded: false,
+    }
+  } catch (err) {
+    if (err instanceof VercelError && err.status === 409) return { name, verified: true, verification: [], alreadyAdded: true }
+    throw err
+  }
+}
+
+/**
+ * The DNS records a domain needs to point at Vercel. Asks Vercel's domain
+ * config; falls back to Vercel's documented defaults (apex A 76.76.21.21,
+ * www CNAME cname.vercel-dns.com) when it gives no recommendation.
+ */
+export async function domainRecords(apex: string): Promise<{ records: DnsRecord[]; misconfigured: boolean | null }> {
+  const { token, team } = creds()
+  const errors: string[] = []
+  const { body } = await api<{ misconfigured?: boolean; recommendedIPv4?: { rank: number; value: string[] }[]; recommendedCNAME?: { rank: number; value: string }[] }>(
+    `${VERCEL}/v6/domains/${encodeURIComponent(apex)}/config?teamId=${encodeURIComponent(team)}`,
+    token,
+    `domain config ${apex}`,
+    errors
+  )
+  const ip = body?.recommendedIPv4?.sort((a, b) => a.rank - b.rank)[0]?.value?.[0] ?? '76.76.21.21'
+  const cname = body?.recommendedCNAME?.sort((a, b) => a.rank - b.rank)[0]?.value ?? 'cname.vercel-dns.com'
+  return {
+    records: [
+      { type: 'A', name: '@', value: ip, why: `${apex} to Vercel` },
+      { type: 'CNAME', name: 'www', value: cname.replace(/\.$/, ''), why: `www.${apex} to Vercel (redirects to ${apex})` },
+    ],
+    misconfigured: errors.length ? null : body?.misconfigured ?? null,
+  }
+}

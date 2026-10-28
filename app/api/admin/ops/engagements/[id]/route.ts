@@ -40,6 +40,7 @@ const ALLOWED = [
   'services',
   'stage',
   'notes',
+  'brief',
   'nextFollowUpAt',
   'lastContactedAt',
   'monthlyAmount',
@@ -69,6 +70,7 @@ export async function PATCH(request: Request, context: { params: { id: string } 
       if (key in body) data[key] = nullableString(body[key], key, 200)
     }
     if ('notes' in body) data.notes = nullableString(body.notes, 'notes', 20000)
+    if ('brief' in body) data.brief = nullableString(body.brief, 'brief', 60000)
     if ('services' in body) data.services = listOf(body.services, SERVICE_KEYS, 'services')
     if ('stage' in body) data.stage = oneOf(body.stage, ENGAGEMENT_STAGES, 'stage')
     if ('nextFollowUpAt' in body) data.nextFollowUpAt = nullableDate(body.nextFollowUpAt, 'nextFollowUpAt')

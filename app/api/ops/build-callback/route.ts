@@ -7,9 +7,13 @@
 // See lib/ops/agents/callback.ts for what a valid body does.
 
 import { NextResponse } from 'next/server'
+import { waitUntil } from '@vercel/functions'
 import { applyCallback, verifySignature } from '@/lib/ops/agents/callback'
+import { onSpecialistRunEnded } from '@/lib/ops/hq/jobs'
 
 export const dynamic = 'force-dynamic'
+// A web run that was the last in its job wakes the chief to write the report.
+export const maxDuration = 800
 
 export async function POST(request: Request) {
   const secret = process.env.OPS_CALLBACK_SECRET?.trim()
@@ -23,6 +27,10 @@ export async function POST(request: Request) {
   }
   try {
     const outcome = await applyCallback(raw)
+    if (outcome.status === 200 && outcome.jobId && !outcome.body.duplicate) {
+      const jobId = outcome.jobId
+      waitUntil(onSpecialistRunEnded(jobId).catch((err) => console.error('[ops/build-callback] job report failed:', err instanceof Error ? err.message : err)))
+    }
     return NextResponse.json(outcome.body, { status: outcome.status })
   } catch (err) {
     console.error('[ops/build-callback] failed:', err instanceof Error ? err.message : err)

@@ -7,6 +7,7 @@
 //
 // Model: OPS_CHIEF_MODEL (default claude-opus-5-5), key ANTHROPIC_API_KEY_BUILDS.
 
+import type { Prisma } from '@prisma/client'
 import { readFile, realpath } from 'node:fs/promises'
 import path from 'node:path'
 import { db } from '@/lib/db'
@@ -17,10 +18,11 @@ import { rankNeedsYou } from '@/lib/ops/needs-you'
 import { TIMELINE_KINDS, getTimeline, type TimelineKind } from '@/lib/ops/timeline'
 import { nullableNumber } from '@/lib/ops/validate'
 import { parseLocalDateTime } from '@/lib/ops/dates'
-import { Conflict, NEW_CLIENT_FIELDS, createClient, parseNewClient } from '@/lib/ops/clients'
+import { CLIENT_UPDATE_FIELDS, Conflict, NEW_CLIENT_FIELDS, addPlatformAccount, createClient, parseNewClient, updateClient } from '@/lib/ops/clients'
 import { BUSINESS_PATCH_FIELDS } from '@/lib/admin-business-patch'
 import { BadRequest } from '@/lib/ops/validate'
 import { ROUTING_FIELDS, updateBusiness } from './admin-change'
+import { WEB_TASK_KINDS, briefTemplate, startWebTask, type WebTaskKind } from './web'
 
 /** "Tue Nov 3, 9:00 AM" in Detroit, for feed lines and results. */
 const detroitWhen = (d: Date) =>
@@ -50,6 +52,8 @@ What you do:
 - Jacob reports what he did in plain language ("talked to Cole, he wants Friday", "Josue is on $350 from December"). Your job is to record it: log_update (with the step and statusLine when they change), record_decision for standing rules, set_client_amounts for money. Then reflect it back in one line: what you recorded, on whom.
 - "What should I do" is answered from get_needs_you, in its rank order, never from memory. "What did I approve", "what happened with X" is answered from get_timeline; it says who pushed each approval and when it applied.
 - New clients: when Jacob names one ("New client: ..."), create it with create_client (createBusiness when the client gets a website, ads or missed-call texting), then say in one line what was created. Platform account changes go through update_business; routing fields wait for Push.
+- Website clients: the site builds from a brief. When a client has the website service and no brief (get_client shows brief: null), ask Jacob for everything get_brief_template needs in ONE message, grouped: business name and display name, trade, service area (main city and other towns), phone, email for the site, services (and what each includes), hours, what makes them different, reviews (with links), photos and logo (yes or no, where), pages wanted, a reference site they like, colours. He answers in prose or pastes the client's intake. Then write the whole brief in the template's shape (unknowns under UNKNOWN, never invented, businessSlug from the platform account) and show it back in one message; store it with set_brief only after he says it looks good or gives edits.
+- Website work: start_web_task. "Build X's site": site_build (it provisions first if needed). After a build reports back: review, which posts the preview and PR. "Merge it" / "take it live" / "connect example.com": merge, go_live, connect_domain, each waiting for Push. Never claim a site is built, merged or live before its run or Push says so.
 - Hand off work Jacob asks for: start_ads_task for Google Ads work, start_web_task for a change to a client's website. Each one starts a specialist run under the current job. Write instructions a specialist can act on without asking back: the client, the goal, the limits, and Jacob's decisions.
 - When Jacob points at a spec under docs/ads-specs/, read it with read_spec and pass its full text in the start_ads_task instructions, after one line with Jacob's own instructions (e.g. "Build it paused and queue the enable for my approval."). Do not shorten the spec.
 - After you start specialists, tell Jacob in a line or two what you started. Do not call finish_job then: when every run in the job has finished you will be asked for the report, and you write it with finish_job.
@@ -153,6 +157,7 @@ async function clientDetail(engagementId: string) {
     stripeSubscriptionStatus: e.stripeSubscriptionStatus,
     lastContactedAt: e.lastContactedAt,
     nextFollowUpAt: e.nextFollowUpAt,
+    brief: e.brief,
     platformAccount: e.business
       ? {
           businessId: e.business.id,
@@ -314,6 +319,45 @@ function chiefTools(ctx: ChiefContext): ClientTool[] {
             result: created,
             label: `Created ${created.displayName}${created.business ? ` with platform account ${created.business.slug}` : ''}, ${created.deliverables.length} deliverable${created.deliverables.length === 1 ? '' : 's'}`,
           }
+        } catch (err) {
+          if (err instanceof BadRequest || err instanceof Conflict) throw new Error(err.message)
+          throw err
+        }
+      },
+    },
+    {
+      name: 'update_client',
+      description:
+        "Change a client's own fields when Jacob says so: displayName, contactName, email, phone, trade, location, services (website, ads, missedcall, gbp; adding one creates its deliverables, removing one deletes nothing), stage. Logged on the client with Jacob's words. Money goes through set_client_amounts, the platform account through update_business.",
+      input_schema: {
+        type: 'object',
+        properties: {
+          engagementId: { type: 'string' },
+          fields: { type: 'object', description: `Any of ${CLIENT_UPDATE_FIELDS.join(', ')}. services is the whole new list.` },
+          words: { type: 'string', description: "Jacob's words for the change." },
+        },
+        required: ['engagementId', 'fields', 'words'],
+      },
+      run: async (input) => {
+        const fields = input.fields && typeof input.fields === 'object' && !Array.isArray(input.fields) ? (input.fields as Record<string, unknown>) : {}
+        try {
+          const r = await updateClient(str(input.engagementId), fields, noEmDash(str(input.words)))
+          return { result: r, label: `Updated ${r.client}: ${r.changed.join(', ')}${r.deliverablesCreated.length ? `; new deliverables ${r.deliverablesCreated.join(', ')}` : ''}` }
+        } catch (err) {
+          if (err instanceof BadRequest || err instanceof Conflict) throw new Error(err.message)
+          throw err
+        }
+      },
+    },
+    {
+      name: 'add_platform_account',
+      description:
+        'Create the platform account (Business) for a client on the board that has none, and link it. Needed before a site build, missed-call texting or an ads id. Missed-call texting stays off unless the client has the missedcall service. The owner claims it by signing up with the client email.',
+      input_schema: { type: 'object', properties: { engagementId: { type: 'string' } }, required: ['engagementId'] },
+      run: async (input) => {
+        try {
+          const b = await addPlatformAccount(str(input.engagementId))
+          return { result: { ok: true, business: b }, label: `Platform account ${b.slug} created and linked` }
         } catch (err) {
           if (err instanceof BadRequest || err instanceof Conflict) throw new Error(err.message)
           throw err
@@ -600,20 +644,84 @@ function chiefTools(ctx: ChiefContext): ClientTool[] {
       },
     },
     {
-      name: 'start_web_task',
+      name: 'get_brief_template',
+      description: "AA-Template's BRIEF.template.md, the shape every site brief must take. Read it before asking Jacob for a brief or writing one.",
+      input_schema: { type: 'object', properties: {} },
+      run: async () => ({ result: { template: await briefTemplate() }, label: 'Read the brief template' }),
+    },
+    {
+      name: 'set_brief',
       description:
-        "Start the web specialist on a client's website repo: site_update (a scoped change, opens a PR with a preview) or go_live (make the site indexable). The change reaches production only when Jacob pushes it.",
+        "Store a client's site brief: the full BRIEF.template.md filled from what Jacob or the client actually said (businessSlug from get_client's platformAccount.slug; unknowns listed under UNKNOWN, never invented; launch.indexable stays false). Only after Jacob has seen it and said it looks good. Optionally the structured answers as intake. Moves the website step from brief (or none) to build.",
       input_schema: {
         type: 'object',
         properties: {
           engagementId: { type: 'string' },
-          kind: { type: 'string', enum: ['site_update', 'go_live'] },
-          instructions: { type: 'string', description: 'The exact change, written for the site agent.' },
+          brief: { type: 'string', description: 'The whole brief, markdown, in the template shape.' },
+          intake: { type: 'object', description: 'The answers behind it, as key to value.' },
         },
-        required: ['engagementId', 'kind', 'instructions'],
+        required: ['engagementId', 'brief'],
       },
-      run: async () => {
-        throw new Error('The web specialist is not connected to HQ yet. Tell Jacob he can still dispatch from the client panel.')
+      run: async (input) => {
+        const engagementId = str(input.engagementId)
+        const brief = noEmDash(str(input.brief))
+        if (brief.length < 200) throw new Error('the brief is too short to build from; fill the template')
+        if (/indexable[^\n]*\btrue\b/i.test(brief)) throw new Error('launch.indexable must stay false in a brief; go_live flips it later')
+        const e = await db.engagement.findUnique({
+          where: { id: engagementId },
+          select: { displayName: true, business: { select: { slug: true } }, deliverables: { where: { type: 'website' }, select: { id: true, step: true } } },
+        })
+        if (!e) throw new Error(`no client with id ${engagementId}`)
+        if (e.business?.slug && !brief.includes(e.business.slug)) throw new Error(`the brief must carry businessSlug ${e.business.slug} exactly`)
+        const intake = input.intake && typeof input.intake === 'object' && !Array.isArray(input.intake) ? (input.intake as Prisma.InputJsonObject) : undefined
+        const site = e.deliverables[0]
+        await db.$transaction(async (tx) => {
+          await tx.engagement.update({ where: { id: engagementId }, data: { brief, ...(intake ? { intake } : {}) } })
+          await tx.opsActivity.create({ data: { engagementId, kind: 'note', body: `Site brief saved (${brief.length} characters). Ready to build.` } })
+          if (site && (!site.step || site.step === 'brief')) {
+            await tx.deliverable.update({ where: { id: site.id }, data: { step: 'build', stepUpdatedAt: new Date(), waitingOn: defaultWaitingOn('website', 'build'), waitingNote: 'Brief saved; ready to build' } })
+          }
+        })
+        await ensureJob(ctx, [engagementId])
+        return { result: { ok: true, client: e.displayName.trim(), chars: brief.length }, label: `Saved the brief for ${e.displayName.trim()}` }
+      },
+    },
+    {
+      name: 'start_web_task',
+      description: [
+        "The web specialist on a client's site (repo from AA-Template, built by the aa-build workflow). kind:",
+        'provision: repo, secrets and Vercel project (needs a platform account).',
+        'site_build: build the site from the stored brief (provisions first when there is no repo yet).',
+        'site_update: a scoped change from instructions.',
+        'review: after a build calls back, post the preview and PR and set the website step to send_preview.',
+        'merge: queue the PR merge for Push.',
+        'go_live: queue making the site indexable for Push.',
+        'connect_domain: queue adding the domain to Vercel for Push (domain; dnsHeldBy client or jacob).',
+        'provision, site_build and site_update start at once; merge, go_live and connect_domain wait for Jacob\'s Push. A build reports back in a few minutes; do not say it is done before the report.',
+      ].join(' '),
+      input_schema: {
+        type: 'object',
+        properties: {
+          engagementId: { type: 'string' },
+          kind: { type: 'string', enum: [...WEB_TASK_KINDS] },
+          instructions: { type: 'string', description: 'site_update: the exact change, written for the site agent.' },
+          domain: { type: 'string', description: 'connect_domain: e.g. example.com' },
+          dnsHeldBy: { type: 'string', enum: ['client', 'jacob'], description: 'connect_domain: who adds the DNS records. Default client.' },
+        },
+        required: ['engagementId', 'kind'],
+      },
+      run: async (input) => {
+        const engagementId = str(input.engagementId)
+        const r = await startWebTask({
+          engagementId,
+          kind: str(input.kind) as WebTaskKind,
+          instructions: input.instructions ? noEmDash(str(input.instructions)) : undefined,
+          domain: input.domain ? str(input.domain) : undefined,
+          dnsHeldBy: input.dnsHeldBy === 'jacob' ? 'jacob' : 'client',
+          runId: ctx.runId,
+          jobId: () => ensureJob(ctx, [engagementId]),
+        })
+        return { result: r, label: `Web ${str(input.kind)} for ${await engagementName(engagementId)}: ${r.done}` }
       },
     },
     {
@@ -707,7 +815,7 @@ async function jobRuns(jobId: string) {
     db.agentRun.findMany({
       where: { jobId, agent: { in: ['ads', 'web'] } },
       orderBy: { createdAt: 'asc' },
-      select: { id: true, agent: true, mode: true, status: true, error: true, input: true, output: true, engagement: { select: { displayName: true } } },
+      select: { id: true, agent: true, kind: true, mode: true, status: true, error: true, input: true, output: true, engagement: { select: { displayName: true } } },
     }),
     db.opsApproval.findMany({ where: { jobId }, orderBy: { createdAt: 'asc' }, select: { runId: true, title: true, status: true, detail: true } }),
   ])
@@ -715,14 +823,41 @@ async function jobRuns(jobId: string) {
     const out = (r.output ?? {}) as Record<string, unknown>
     const input = (r.input ?? {}) as Record<string, unknown>
     const customerId = typeof input.customerId === 'string' && input.customerId ? input.customerId : null
+    const url = (v: unknown) => (typeof v === 'string' && /^https?:\/\//.test(v) ? v : null)
+    // A web run's result: the workflow's callback (or the provision steps).
+    const web =
+      r.agent === 'web'
+        ? {
+            kind: r.kind,
+            prUrl: url(out.prUrl),
+            previewUrl: url(out.previewUrl),
+            verifyPassed: out.verifyPassed ?? null,
+            failingChecks: Array.isArray(out.failingChecks) ? out.failingChecks : [],
+            reportExcerpt: typeof out.reportExcerpt === 'string' ? out.reportExcerpt.slice(0, 1500) : null,
+            mergeError: out.mergeError ?? null,
+            nextStep:
+              r.kind === 'provision'
+                ? 'site_build once the brief is stored'
+                : r.kind === 'go_live'
+                  ? 'the web checks mark the site live once production is indexable'
+                  : 'review the preview, send it to the client, then merge (Push)',
+          }
+        : null
     return {
       agent: r.agent,
       client: r.engagement?.displayName.trim() ?? null,
       mode: r.mode,
+      kind: r.kind,
       status: r.status,
       error: r.error,
       report: out.report ?? null,
-      links: customerId ? [{ label: 'Google Ads account', url: adsAccountUrl(customerId) }] : [],
+      web,
+      links: [
+        ...(customerId ? [{ label: 'Google Ads account', url: adsAccountUrl(customerId) }] : []),
+        ...(web?.prUrl ? [{ label: 'Pull request', url: web.prUrl }] : []),
+        ...(web?.previewUrl ? [{ label: 'Preview', url: web.previewUrl }] : []),
+        ...(url(out.repoUrl) ? [{ label: 'Repo', url: url(out.repoUrl)! }] : []),
+      ],
       approvals: approvals
         .filter((a) => a.runId === r.id)
         .map((a) => ({ title: a.title, status: a.status, monthlyCostChange: (a.detail as Record<string, unknown>)?.monthlyCostChange ?? null })),
@@ -736,11 +871,19 @@ type ReportSection = { agent: string; client: string | null; did: string[]; expe
 function fallbackSections(runs: Awaited<ReturnType<typeof jobRuns>>): ReportSection[] {
   return runs.map((r) => {
     const rep = (r.report ?? {}) as { done?: { change?: string }[]; expected?: string }
+    const w = r.web
+    const webDid = w
+      ? [
+          `${w.kind} ${r.status}`,
+          ...(w.verifyPassed === null ? [] : [w.verifyPassed ? 'Build gate passed' : `Build gate failed: ${(w.failingChecks as string[]).join(', ') || 'see the PR'}`]),
+          ...(w.mergeError ? [`PR not merged: ${String(w.mergeError)}`] : []),
+        ]
+      : null
     return {
       agent: r.agent ?? 'ads',
       client: r.client,
-      did: r.status === 'succeeded' ? (rep.done ?? []).map((d) => String(d.change ?? '')).filter(Boolean) : [`Run ${r.status}${r.error ? `: ${r.error}` : ''}`],
-      expect: String(rep.expected ?? ''),
+      did: r.status !== 'succeeded' ? [`Run ${r.status}${r.error ? `: ${r.error}` : ''}`] : webDid ?? (rep.done ?? []).map((d) => String(d.change ?? '')).filter(Boolean),
+      expect: w ? `Next: ${w.nextStep}.` : String(rep.expected ?? ''),
       links: r.links,
       waitingForPush: r.approvals.filter((a) => a.status === 'pending').map((a) => a.title),
     }

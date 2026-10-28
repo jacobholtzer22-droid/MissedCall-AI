@@ -10,12 +10,17 @@
 // business_slug is required by the workflow (it fails without one), so a run
 // needs a linked Business.
 //
+// Every run is an Ops HQ web run (agent 'web', mode work), under jobId when the
+// chief started it, with feed events, so the Web desk shows it working and the
+// job report waits for its callback.
+//
 // dry returns the payload it would send, with brief/instructions shown as
 // byte counts, and writes nothing.
 
 import type { Prisma } from '@prisma/client'
 import { db } from '@/lib/db'
 import { repoFullName, repositoryDispatch } from '@/lib/ops/github'
+import { emit } from '@/lib/ops/hq/events'
 import { CALLBACK_URL, DISPATCH_EVENT, RUN_KINDS, loadWebsiteEngagement, type RunKind } from './shared'
 
 export type DispatchResult = {
@@ -33,7 +38,7 @@ const b64 = (s: string) => Buffer.from(s, 'utf8').toString('base64')
 
 export async function dispatchRun(
   engagementId: string,
-  input: { kind: RunKind; brief?: string; instructions?: string; dry: boolean }
+  input: { kind: RunKind; brief?: string; instructions?: string; dry: boolean; jobId?: string | null }
 ): Promise<DispatchResult> {
   const out: DispatchResult = { ok: false, dry: input.dry, blocked: [], repo: null, runId: null, status: null, payload: null }
   const eng = await loadWebsiteEngagement(engagementId)
@@ -73,6 +78,9 @@ export async function dispatchRun(
 
   const run = await db.agentRun.create({
     data: {
+      agent: 'web',
+      mode: 'work',
+      jobId: input.jobId ?? null,
       engagementId: eng.id,
       deliverableId: eng.website!.id,
       kind: input.kind,
@@ -92,6 +100,7 @@ export async function dispatchRun(
         data: { engagementId: eng.id, kind: 'system', body: `Agent ${input.kind} dispatched to ${out.repo} (run ${run.id})` },
       }),
     ])
+    await emit(run.id, 'status', `Dispatched ${input.kind} to ${out.repo}. The workflow builds, opens a PR and reports back; this takes a few minutes.`)
     out.status = 'dispatched'
     out.ok = true
   } catch (err) {
@@ -102,6 +111,7 @@ export async function dispatchRun(
         data: { engagementId: eng.id, kind: 'system', body: `Agent ${input.kind} dispatch to ${out.repo} failed: ${out.error}` },
       }),
     ])
+    await emit(run.id, 'error', `Dispatch failed: ${out.error}`)
     out.status = 'failed'
   }
   return out

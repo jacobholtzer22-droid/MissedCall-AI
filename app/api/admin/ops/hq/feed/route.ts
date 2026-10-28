@@ -14,8 +14,28 @@ import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { requireAdmin } from '@/lib/pipeline-server'
 import { HQ_AGENTS } from '@/lib/ops/types'
+import { waitUntil } from '@vercel/functions'
+import { onSpecialistRunEnded } from '@/lib/ops/hq/jobs'
 
 export const dynamic = 'force-dynamic'
+// The reconcile below may wake the chief for a report.
+export const maxDuration = 300
+
+/**
+ * A web run finishes on the workflow's callback. If that callback was handled
+ * somewhere that did not wake the job (an older deploy, a timeout), the job
+ * stays open: any job still running whose web runs all finished in the last 6
+ * hours is handed to onSpecialistRunEnded, which claims it once.
+ */
+async function reconcileWebJobs() {
+  const finished = await db.agentRun.findMany({
+    where: { agent: 'web', jobId: { not: null }, finishedAt: { gt: new Date(Date.now() - 6 * 3600_000) }, job: { status: { in: ['planning', 'running'] } } },
+    select: { jobId: true },
+    distinct: ['jobId'],
+    take: 5,
+  })
+  for (const r of finished) if (r.jobId) waitUntil(onSpecialistRunEnded(r.jobId).catch(() => undefined))
+}
 
 const ACTIVE = ['queued', 'running', 'dispatched']
 const RECENT_MS = 30 * 60 * 1000
@@ -42,6 +62,7 @@ export async function GET(request: Request) {
     const since = raw ? new Date(raw) : null
     if (since && Number.isNaN(since.getTime())) return NextResponse.json({ error: 'since is not a date' }, { status: 400 })
 
+    await reconcileWebJobs().catch(() => undefined)
     const recent = new Date(Date.now() - RECENT_MS)
     const runInclude = {
       engagement: { select: { displayName: true } },

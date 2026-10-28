@@ -14,7 +14,8 @@
 //            admin_change: the chief's change to a platform account routing
 //            field (lib/ops/hq/admin-change.ts), written at once through the
 //            same rules as the admin Business PATCH; applied or failed.
-//            web_push: wired at checkpoint 5.
+//            web_push: merge, go_live or connect_domain for a client site
+//            (lib/ops/hq/web.ts applyWebPush); applied or failed.
 // Either way the approval's detail records who decided and through what
 // ({ decidedBy: 'jacob', decidedVia: 'hq' }), so the timeline and the chief
 // can say who pushed it.
@@ -23,6 +24,7 @@ import type { Prisma } from '@prisma/client'
 import { db } from '@/lib/db'
 import { AdsOffline, startAdsRun } from './ads'
 import { applyAdminChange } from './admin-change'
+import { applyWebPush } from './web'
 import { closeJobIfSettled } from './jobs'
 
 export type DecideResult =
@@ -44,8 +46,8 @@ export async function decideApproval(
   })
   if (!approval) return { ok: false, httpStatus: 404, error: 'Approval not found' }
   if (approval.status !== 'pending') return { ok: false, httpStatus: 409, error: `Approval is already ${approval.status}` }
-  if (decision === 'approve' && approval.kind !== 'ads_change' && approval.kind !== 'admin_change') {
-    return { ok: false, httpStatus: 400, error: 'Pushing a web change is not wired yet' }
+  if (decision === 'approve' && !['ads_change', 'admin_change', 'web_push'].includes(approval.kind)) {
+    return { ok: false, httpStatus: 400, error: `Pushing a ${approval.kind} is not wired` }
   }
 
   const flipped = await db.opsApproval.updateMany({
@@ -59,6 +61,20 @@ export async function decideApproval(
   if (decision === 'reject') {
     await closeJobIfSettled(approval.jobId)
     return { ok: true, status: 'rejected' }
+  }
+
+  if (approval.kind === 'web_push') {
+    try {
+      await applyWebPush({ id, jobId: approval.jobId, detail })
+      await db.opsApproval.update({ where: { id }, data: { status: 'applied', appliedAt: new Date() } })
+      await closeJobIfSettled(approval.jobId)
+      return { ok: true, status: 'applied' }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      await db.opsApproval.update({ where: { id }, data: { status: 'failed', error: message } })
+      await closeJobIfSettled(approval.jobId)
+      return { ok: false, httpStatus: 422, error: message }
+    }
   }
 
   if (approval.kind === 'admin_change') {

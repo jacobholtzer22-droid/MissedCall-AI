@@ -171,6 +171,8 @@ export function EngagementPanel({ engagement: e, focus, actions, unmatched, unma
 
           {e.business && <PlatformAccountSection e={e} actions={actions} onRefresh={onRefresh} />}
 
+          {e.services.includes('website') && <BriefField value={e.brief} onSave={(v) => patch({ brief: v })} />}
+
           {/* Alerts */}
           <section>
             <h3 className="text-sm font-semibold text-gray-100 mb-2">Alerts</h3>
@@ -266,6 +268,50 @@ export function EngagementPanel({ engagement: e, focus, actions, unmatched, unma
         </div>
       </div>
     </>
+  )
+}
+
+// ── Site brief ──────────────────────────────────────────────────────────────
+
+/**
+ * The site brief the build sends to the workflow (AA-Template's BRIEF shape).
+ * The chief writes it from Jacob's answers; this edits it by hand. Saves on
+ * blur through the engagement PATCH.
+ */
+function BriefField({ value, onSave }: { value: string | null; onSave: (v: string | null) => void }) {
+  const [draft, setDraft] = useState(value ?? '')
+  const [prev, setPrev] = useState(value)
+  const [open, setOpen] = useState(false)
+  if (prev !== value) {
+    setPrev(value)
+    setDraft(value ?? '')
+  }
+  return (
+    <section>
+      <div className="flex items-center justify-between gap-2 mb-2">
+        <label htmlFor="ops-brief" className="text-sm font-semibold text-gray-100">
+          Site brief <span className="font-normal text-gray-500 tabular-nums">{value ? `${value.length.toLocaleString()} characters` : 'not written yet'}</span>
+        </label>
+        <button type="button" onClick={() => setOpen((o) => !o)} aria-expanded={open} className={`${smallButton} min-h-[44px] sm:min-h-[36px]`}>
+          {open ? 'Hide' : value ? 'Show' : 'Write'}
+        </button>
+      </div>
+      {!value && !open && <p className="text-xs text-gray-500">Ask the chief: it asks for what the brief needs in one message and writes it. A build needs it.</p>}
+      {open && (
+        <textarea
+          id="ops-brief"
+          rows={18}
+          value={draft}
+          onChange={(ev) => setDraft(ev.target.value)}
+          onBlur={() => {
+            const v = draft.trim() || null
+            if (v !== (value ?? null)) onSave(v)
+          }}
+          placeholder="Markdown in the shape of AA-Template's BRIEF.template.md. Saves when you click away."
+          className={`${smallControl} resize-y font-mono text-xs leading-relaxed`}
+        />
+      )}
+    </section>
   )
 }
 

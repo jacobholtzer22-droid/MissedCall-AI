@@ -186,3 +186,60 @@ export async function createClient(input: NewClient, via: string): Promise<Creat
   const stripe = input.stripeCustomerId ? await syncStripeForEngagement(engagement.id) : null
   return { engagementId: engagement.id, displayName: engagement.displayName, business, deliverables, stripe }
 }
+
+export const CLIENT_UPDATE_FIELDS = ['displayName', 'contactName', 'email', 'phone', 'trade', 'location', 'services', 'stage'] as const
+
+/**
+ * Change a client's own fields (the chief's update_client), with the same
+ * rules as the engagements PATCH: services create their deliverables (never
+ * delete), a stage change logs a status_change, everything else a note with
+ * Jacob's words.
+ */
+export async function updateClient(engagementId: string, body: Record<string, unknown>, words: string) {
+  rejectUnknownKeys(body, CLIENT_UPDATE_FIELDS)
+  const current = await db.engagement.findUnique({ where: { id: engagementId } })
+  if (!current) throw new BadRequest(`no client with id ${engagementId}`)
+  const data: Prisma.EngagementUncheckedUpdateInput = {}
+  if ('displayName' in body) {
+    const name = nullableString(body.displayName, 'displayName', 200)
+    if (!name) throw new BadRequest('displayName cannot be empty')
+    data.displayName = name
+  }
+  for (const key of ['contactName', 'trade', 'location'] as const) if (key in body) data[key] = nullableString(body[key], key, 200)
+  if ('email' in body) data.email = nullableString(body.email, 'email', 200)?.toLowerCase() ?? null
+  if ('phone' in body) {
+    const raw = nullableString(body.phone, 'phone', 40)
+    data.phone = raw ? normalizeToE164(raw) || null : null
+    if (raw && !data.phone) throw new BadRequest('phone is not a US phone number')
+  }
+  if ('services' in body) data.services = listOf(body.services, SERVICE_KEYS, 'services')
+  if ('stage' in body) data.stage = oneOf(body.stage, ENGAGEMENT_STAGES, 'stage')
+  if (!Object.keys(data).length) throw new BadRequest('nothing to change')
+  const stageChanged = typeof data.stage === 'string' && data.stage !== current.stage
+  await db.$transaction(async (tx) => {
+    await tx.engagement.update({ where: { id: engagementId }, data })
+    if (stageChanged) await tx.opsActivity.create({ data: { engagementId, kind: 'status_change', body: `stage: ${current.stage} -> ${data.stage}` } })
+    await tx.opsActivity.create({ data: { engagementId, kind: 'note', body: `Client updated (${Object.keys(data).join(', ')}). Jacob: "${words}"` } })
+  })
+  const created = Array.isArray(data.services) ? await ensureDeliverables(engagementId, data.services as ServiceKey[]) : []
+  return { client: (data.displayName as string | undefined) ?? current.displayName.trim(), changed: Object.keys(data), deliverablesCreated: created }
+}
+
+/** Create the platform Business for a client that has none and link it (same rules as createClient's createBusiness). */
+export async function addPlatformAccount(engagementId: string) {
+  const e = await db.engagement.findUnique({ where: { id: engagementId } })
+  if (!e) throw new BadRequest(`no client with id ${engagementId}`)
+  if (e.businessId) throw new Conflict(`${e.displayName.trim()} already has a platform account`)
+  if (e.email) {
+    const owned = await db.business.findFirst({ where: { ownerEmail: { equals: e.email, mode: 'insensitive' } }, select: { name: true } })
+    if (owned) throw new Conflict(`a platform account already uses ${e.email} (${owned.name}); link it instead`)
+  }
+  const services = Array.isArray(e.services) ? (e.services as string[]) : []
+  return db.$transaction(async (tx) => {
+    const business = await createBusinessRow(tx, { name: e.displayName.trim(), ownerEmail: e.email, ownerPhone: e.phone, businessType: e.trade }, services)
+    const linked = await tx.engagement.updateMany({ where: { id: engagementId, businessId: null }, data: { businessId: business.id } })
+    if (linked.count === 0) throw new Conflict(`${e.displayName.trim()} got a platform account a moment ago`)
+    await tx.opsActivity.create({ data: { engagementId, kind: 'system', body: `Platform account created from HQ: ${business.slug}` } })
+    return business
+  })
+}
