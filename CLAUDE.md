@@ -1874,6 +1874,8 @@ const isPublicApiRoute = createRouteMatcher([
 
 ## 13. Known Gotchas
 
+Never push to main, merge to main, or trigger a production deploy without Jacob saying so in the same conversation. Commit on a branch and report.
+
 ### IVR / Call Control
 
 1. **IVR audio MUST fire inside `call.answered` or after** — You cannot send `gatherUsingSpeak` before `call.answered`. Always: `answer()` first, then `speak()` or `gatherUsingSpeak()`. The webhook flow is sequential: you get `call.initiated`, you call `answer()`, you get `call.answered`, then you can send IVR commands. BUT in the current architecture, we send `gatherUsingSpeak` directly after `answer()` in the `call.initiated` handler (without waiting for `call.answered`). This works because Telnyx queues commands. Do not change this without testing.
