@@ -93,6 +93,9 @@ export type BoardEngagement = {
   deliverables: BoardDeliverable[]
   /** Newest first, at most 5. */
   activities: BoardActivity[]
+  /** The newest OpsActivity with kind 'status' (the chief or Jacob sets it); null when none. */
+  statusLine: string | null
+  statusAt: string | null
   lastActivityAt: string | null
   business: BoardBusiness | null
   pipelinePerson: { status: string; nextFollowUpAt: string | null; lastContactedAt: string | null } | null
@@ -174,7 +177,7 @@ export async function getOpsBoard(): Promise<OpsBoard> {
   const monthStart = startOfMonth(zoned)
   const marketing = await getMarketingBusiness()
 
-  const [rows, prospects, bookings, runs] = await Promise.all([
+  const [rows, prospects, bookings, runs, statuses] = await Promise.all([
     db.engagement.findMany({
       include: {
         deliverables: { include: { checks: true }, orderBy: { type: 'asc' } },
@@ -224,7 +227,15 @@ export async function getOpsBoard(): Promise<OpsBoard> {
       take: 200,
       include: { engagement: { select: { displayName: true } } },
     }),
+    // Each client's newest status line, one query (the 5 activities above may not reach it).
+    db.opsActivity.findMany({
+      where: { kind: 'status' },
+      orderBy: [{ engagementId: 'asc' }, { createdAt: 'desc' }],
+      distinct: ['engagementId'],
+      select: { engagementId: true, body: true, createdAt: true },
+    }),
   ])
+  const statusBy = new Map(statuses.map((s) => [s.engagementId, s]))
 
   // Prospect names: the latest lead or booking per person, two queries total.
   const phoneKeys = prospects.map((p) => p.personKey).filter((k) => !k.startsWith('lead:'))
@@ -300,6 +311,8 @@ export async function getOpsBoard(): Promise<OpsBoard> {
       updatedAt: e.updatedAt.toISOString(),
       deliverables,
       activities,
+      statusLine: statusBy.get(e.id)?.body ?? null,
+      statusAt: iso(statusBy.get(e.id)?.createdAt),
       lastActivityAt: activities[0]?.createdAt ?? null,
       business: e.business ? { ...e.business, createdAt: e.business.createdAt.toISOString() } : null,
       pipelinePerson: e.pipelinePerson

@@ -1,37 +1,36 @@
 'use client'
 
-// HQ (?tab=hq): chat with the chief on the left; the office and Waiting for
-// you on the right (mobile: office, then Waiting for you, then chat); History
-// below, full width.
-//
-// One poll keeps it live: GET /api/admin/ops/hq/feed?since=<cursor>, every 2s
-// while the tab is visible and every 15s while hidden, and at once after
-// anything Jacob does. Messages and events accumulate by id; runs, approvals,
-// jobs and each agent's last run are replaced on every poll.
+// The HQ feed, held by the Ops shell so every tab sees the same live state
+// (the Home badge counts pending approvals; client cards show which agent is
+// working on them). One poll: GET /api/admin/ops/hq/feed?since=<cursor>,
+// every 2 s while Home is open and visible, every 15 s otherwise, and at once
+// after anything Jacob does. Messages and events accumulate by id; runs,
+// approvals, jobs and each agent's last run are replaced on every poll.
+// When an agent run finishes, onRunSettled fires so the shell can reload the
+// board (steps, status lines and activities may have changed).
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Approvals } from './HqApprovals'
-import { Chat } from './HqChat'
-import { History } from './HqHistory'
-import { Office, RunDrawer, desks } from './HqOffice'
-import { HQ_CSS, isActive, type Feed, type FeedEvent, type FeedMessage } from './hqShared'
-import type { OpsActions } from './opsUi'
+import { isActive, type Feed, type FeedEvent, type FeedMessage } from './hqShared'
 
-const VISIBLE_MS = 2000
-const HIDDEN_MS = 15000
+const FAST_MS = 2000
+const SLOW_MS = 15000
 const KEEP_EVENTS = 800
 
-export function HqTab({ actions }: { actions: OpsActions }) {
+export type HqFeedState = ReturnType<typeof useHqFeed>
+
+export function useHqFeed({ fast, toast, onRunSettled }: { fast: boolean; toast: (m: string, t: 'success' | 'error') => void; onRunSettled: () => void }) {
   const [feed, setFeed] = useState<Omit<Feed, 'messages' | 'events' | 'cursor'> | null>(null)
   const [messages, setMessages] = useState<FeedMessage[]>([])
   const [events, setEvents] = useState<FeedEvent[]>([])
   const [loadError, setLoadError] = useState<string | null>(null)
-  const [openRun, setOpenRun] = useState<string | null>(null)
-  const [now, setNow] = useState(() => Date.now())
   const cursor = useRef<string | null>(null)
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const inFlight = useRef(false)
-  const toast = actions.toast
+  const fastRef = useRef(fast)
+  fastRef.current = fast
+  const settledRef = useRef(onRunSettled)
+  settledRef.current = onRunSettled
+  const activeIds = useRef<Set<string> | null>(null)
 
   const poll = useCallback(async () => {
     if (timer.current) clearTimeout(timer.current)
@@ -47,6 +46,9 @@ export function HqTab({ actions }: { actions: OpsActions }) {
           setLoadError(null)
           cursor.current = data.cursor ?? cursor.current
           setFeed({ runs: data.runs, lastRuns: data.lastRuns, approvals: data.approvals, jobs: data.jobs })
+          const nowActive = new Set(data.runs.filter(isActive).map((r) => r.id))
+          if (activeIds.current && Array.from(activeIds.current).some((id) => !nowActive.has(id))) settledRef.current()
+          activeIds.current = nowActive
           if (data.messages.length) {
             setMessages((prev) => {
               const real = new Set(data.messages.map((m) => m.id))
@@ -67,7 +69,7 @@ export function HqTab({ actions }: { actions: OpsActions }) {
         inFlight.current = false
       }
     }
-    timer.current = setTimeout(() => void poll(), document.hidden ? HIDDEN_MS : VISIBLE_MS)
+    timer.current = setTimeout(() => void poll(), fastRef.current && !document.hidden ? FAST_MS : SLOW_MS)
   }, [])
 
   useEffect(() => {
@@ -80,12 +82,10 @@ export function HqTab({ actions }: { actions: OpsActions }) {
     }
   }, [poll])
 
-  const runs = useMemo(() => feed?.runs ?? [], [feed])
-  const working = runs.some(isActive)
+  // Opening Home polls at once instead of waiting out the slow interval.
   useEffect(() => {
-    const id = setInterval(() => setNow(Date.now()), working ? 1000 : 30000)
-    return () => clearInterval(id)
-  }, [working])
+    if (fast) void poll()
+  }, [fast, poll])
 
   const latestByRun = useMemo(() => {
     const map = new Map<string, string>()
@@ -131,35 +131,5 @@ export function HqTab({ actions }: { actions: OpsActions }) {
     void poll()
   }
 
-  const deskList = feed ? desks(feed.runs, feed.lastRuns, feed.approvals) : []
-  const approvals = [...(feed?.approvals ?? [])].sort((a, b) => b.createdAt.localeCompare(a.createdAt))
-  const chiefThinking = runs.some((r) => r.agent === 'chief' && isActive(r))
-  // History reloads its first page when a job or a recent approval moves.
-  const historyKey = [
-    ...(feed?.jobs ?? []).map((j) => `${j.id}:${j.status}:${j.updatedAt}`),
-    ...(feed?.approvals ?? []).map((a) => `${a.id}:${a.status}`),
-    ...runs.map((r) => `${r.id}:${r.status}`),
-  ].join('|')
-
-  return (
-    <div className="space-y-3">
-      <style>{HQ_CSS}</style>
-      {loadError && <p className="rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-2 text-sm text-red-300">{loadError}</p>}
-      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] xl:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
-        <div className="order-2 lg:order-1 lg:sticky lg:top-4 lg:h-[calc(100vh-150px)] min-w-0">
-          <Chat messages={messages} jobs={feed?.jobs ?? []} thinking={chiefThinking} onSend={send} />
-        </div>
-        <div className="order-1 lg:order-2 space-y-4 min-w-0">
-          {feed ? (
-            <Office desks={deskList} latestByRun={latestByRun} now={now} onOpen={setOpenRun} onStop={stop} />
-          ) : (
-            <p className="rounded-lg border border-gray-800 bg-gray-900 px-4 py-6 text-sm text-gray-500">Loading the office…</p>
-          )}
-          <Approvals approvals={approvals} onDecide={decide} />
-        </div>
-      </div>
-      <History refreshKey={historyKey} onOpenRun={setOpenRun} />
-      {openRun && <RunDrawer runId={openRun} liveEvents={events} runs={runs} onClose={() => setOpenRun(null)} onStop={stop} />}
-    </div>
-  )
+  return { feed, messages, events, loadError, latestByRun, send, decide, stop }
 }

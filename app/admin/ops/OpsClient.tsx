@@ -1,36 +1,41 @@
 'use client'
 
-// /admin/ops shell: header, tabs (?tab=), the board state, every write, the
-// detail panel and toasts.
+// /admin/ops shell: header, tabs (?tab=), the board state, the HQ feed (one
+// poll for every tab, see useHqFeed), every write, the detail panel and toasts.
 //
 // Writes are optimistic, like /admin/pipeline: the board changes at once, the
 // request goes out, a failure puts the previous board back and toasts. On
 // success the board is refetched quietly so alerts, health and totals come
 // from the server, which is the only place they are computed.
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { Globe, RefreshCw } from 'lucide-react'
+import { Eye, EyeOff, Globe, RefreshCw } from 'lucide-react'
 import type { BoardDeliverable, BoardEngagement, OpsBoard } from '@/lib/ops/board'
 import type { UnmatchedPayingCustomer } from '@/lib/ops/sync'
+import { rankNeedsYou } from '@/lib/ops/needs-you'
 import { Age } from '../ui'
-import { TodayTab } from './TodayTab'
+import { HomeTab } from './HomeTab'
 import { ClientsTab } from './ClientsTab'
 import { MoneyTab } from './MoneyTab'
 import { AgentsTab } from './AgentsTab'
-import { HqTab } from './HqTab'
+import { History } from './HqHistory'
 import { EngagementPanel } from './EngagementPanel'
+import { useHqFeed } from './useHqFeed'
 import { button, type OpsActions } from './opsUi'
 
-export type OpsTab = 'hq' | 'today' | 'clients' | 'money' | 'agents'
+export type OpsTab = 'home' | 'clients' | 'money' | 'timeline' | 'agents'
 export const OPS_TABS: { key: OpsTab; label: string }[] = [
-  { key: 'hq', label: 'HQ' },
-  { key: 'today', label: 'Today' },
+  { key: 'home', label: 'Home' },
   { key: 'clients', label: 'Clients' },
   { key: 'money', label: 'Money' },
+  { key: 'timeline', label: 'Timeline' },
   { key: 'agents', label: 'Agents' },
 ]
+
+/** Same cookie as /admin's revenue toggle, so both pages agree. */
+const REVENUE_COOKIE = 'adminShowRevenue'
 
 type Toast = { id: number; message: string; type: 'success' | 'error' }
 
@@ -54,7 +59,15 @@ function mapEngagement(board: OpsBoard, id: string, fn: (e: BoardEngagement) => 
   return { ...board, engagements: apply(board.engagements), ignored: apply(board.ignored) }
 }
 
-export function OpsClient({ initialBoard, initialTab }: { initialBoard: OpsBoard; initialTab: OpsTab }) {
+export function OpsClient({
+  initialBoard,
+  initialTab,
+  initialShowRevenue = false,
+}: {
+  initialBoard: OpsBoard
+  initialTab: OpsTab
+  initialShowRevenue?: boolean
+}) {
   const router = useRouter()
   const [board, setBoard] = useState(initialBoard)
   const boardRef = useRef(board)
@@ -65,6 +78,14 @@ export function OpsClient({ initialBoard, initialTab }: { initialBoard: OpsBoard
   const [toasts, setToasts] = useState<Toast[]>([])
   const [unmatched, setUnmatched] = useState<UnmatchedPayingCustomer[] | null>(null)
   const [unmatchedLoading, setUnmatchedLoading] = useState(false)
+  const [showRevenue, setShowRevenue] = useState(initialShowRevenue)
+
+  const toggleRevenue = () =>
+    setShowRevenue((prev) => {
+      const next = !prev
+      document.cookie = next ? `${REVENUE_COOKIE}=1; path=/; max-age=31536000; samesite=lax` : `${REVENUE_COOKIE}=; path=/; max-age=0; samesite=lax`
+      return next
+    })
 
   const toast = useCallback((message: string, type: 'success' | 'error') => {
     const id = Date.now() + Math.random()
@@ -77,6 +98,9 @@ export function OpsClient({ initialBoard, initialTab }: { initialBoard: OpsBoard
     if (ok) setBoard(data as unknown as OpsBoard)
     else toast(String(data.error ?? 'Could not reload the board'), 'error')
   }, [toast])
+
+  const hq = useHqFeed({ fast: tab === 'home', toast, onRunSettled: () => void refresh() })
+  const needs = useMemo(() => rankNeedsYou(board, hq.feed?.approvals ?? []), [board, hq.feed])
 
   const loadUnmatched = useCallback(
     async (fresh = false) => {
@@ -250,6 +274,16 @@ export function OpsClient({ initialBoard, initialTab }: { initialBoard: OpsBoard
             <span className="hidden sm:inline text-xs text-gray-500 whitespace-nowrap">
               last sync <Age iso={board.lastSyncAt} />
             </span>
+            <button
+              type="button"
+              onClick={toggleRevenue}
+              aria-pressed={showRevenue}
+              aria-label={showRevenue ? 'Hide revenue' : 'Show revenue'}
+              title={showRevenue ? 'Hide revenue' : 'Show revenue'}
+              className="inline-flex items-center justify-center min-h-[44px] min-w-[44px] rounded-lg text-gray-400 hover:text-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+            >
+              {showRevenue ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+            </button>
             <button type="button" onClick={runSync} disabled={syncing} className={button}>
               <RefreshCw className={`h-3.5 w-3.5 ${syncing ? 'animate-spin' : ''}`} />
               {syncing ? 'Syncing…' : 'Sync'}
@@ -276,14 +310,14 @@ export function OpsClient({ initialBoard, initialTab }: { initialBoard: OpsBoard
               }`}
             >
               {t.label}
+              {t.key === 'home' && needs.count > 0 && <span className="ml-1.5 text-gray-500 font-normal tabular-nums">{needs.count}</span>}
             </button>
           ))}
         </nav>
       </header>
 
       <main className="max-w-screen-2xl mx-auto px-3 sm:px-6 py-4 sm:py-6">
-        {tab === 'hq' && <HqTab actions={actions} />}
-        {tab === 'today' && <TodayTab board={board} actions={actions} />}
+        {tab === 'home' && <HomeTab board={board} actions={actions} hq={hq} needs={needs} showRevenue={showRevenue} />}
         {tab === 'clients' && (
           <ClientsTab
             board={board}
@@ -294,6 +328,7 @@ export function OpsClient({ initialBoard, initialTab }: { initialBoard: OpsBoard
           />
         )}
         {tab === 'money' && <MoneyTab board={board} actions={actions} />}
+        {tab === 'timeline' && <History title="Timeline" />}
         {tab === 'agents' && <AgentsTab board={board} actions={actions} />}
       </main>
 

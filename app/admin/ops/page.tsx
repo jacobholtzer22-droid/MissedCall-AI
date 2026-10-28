@@ -1,4 +1,5 @@
 import { auth } from '@clerk/nextjs/server'
+import { cookies } from 'next/headers'
 import { redirect } from 'next/navigation'
 import { getOpsBoard } from '@/lib/ops/board'
 import { OpsClient, type OpsTab } from './OpsClient'
@@ -10,7 +11,9 @@ export const metadata = {
   robots: { index: false, follow: false },
 }
 
-const TABS: OpsTab[] = ['hq', 'today', 'clients', 'money', 'agents']
+const TABS: OpsTab[] = ['home', 'clients', 'money', 'timeline', 'agents']
+/** Tabs folded into Home; old links land there. */
+const OLD_HOME_TABS = ['hq', 'today']
 
 export default async function OpsPage({ searchParams }: { searchParams: { tab?: string } }) {
   const { userId } = await auth()
@@ -19,8 +22,10 @@ export default async function OpsPage({ searchParams }: { searchParams: { tab?: 
     redirect('/dashboard')
   }
 
-  const tab = TABS.includes(searchParams?.tab as OpsTab) ? (searchParams.tab as OpsTab) : 'today'
-  const board = await getOpsBoard()
+  if (OLD_HOME_TABS.includes(searchParams?.tab ?? '')) redirect('/admin/ops')
+  const tab = TABS.includes(searchParams?.tab as OpsTab) ? (searchParams.tab as OpsTab) : 'home'
+  const [board, cookieStore] = await Promise.all([getOpsBoard(), cookies()])
+  const initialShowRevenue = cookieStore.get('adminShowRevenue')?.value === '1'
 
-  return <OpsClient initialBoard={board} initialTab={tab} />
+  return <OpsClient initialBoard={board} initialTab={tab} initialShowRevenue={initialShowRevenue} />
 }

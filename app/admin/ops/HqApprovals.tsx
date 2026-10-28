@@ -45,7 +45,16 @@ function argLines(args: unknown): [string, string][] {
   return Object.entries(args as Record<string, unknown>).map(([k, v]) => [k, typeof v === 'object' ? JSON.stringify(v) : String(v)])
 }
 
-function ApprovalCard({ approval: a, onDecide }: { approval: FeedApproval; onDecide: (id: string, decision: 'approve' | 'reject') => Promise<string | null> }) {
+/** compact (Home's Needs you): title, cost and the buttons; the exact change sits behind Details. */
+export function ApprovalCard({
+  approval: a,
+  onDecide,
+  compact = false,
+}: {
+  approval: FeedApproval
+  onDecide: (id: string, decision: 'approve' | 'reject') => Promise<string | null>
+  compact?: boolean
+}) {
   const [busy, setBusy] = useState<'approve' | 'reject' | null>(null)
   const [error, setError] = useState<string | null>(null)
   const persona = personaFor(a.agent)
@@ -65,19 +74,8 @@ function ApprovalCard({ approval: a, onDecide }: { approval: FeedApproval; onDec
     if (err) setError(err)
   }
 
-  return (
-    <article className="rounded-lg border border-gray-800 bg-gray-950 p-3 space-y-3 text-sm">
-      <div className="flex items-start gap-3 min-w-0">
-        {persona && <Avatar persona={persona} size={28} />}
-        <div className="min-w-0 flex-1">
-          <div className="text-xs text-gray-500 truncate">
-            {persona?.name ?? a.agent}
-            {a.client ? `, ${a.client}` : ''}
-          </div>
-          <h3 className="font-medium text-gray-100 break-words">{a.title}</h3>
-        </div>
-      </div>
-
+  const details = (
+    <>
       {typeof d.action === 'string' && (
         <div className="rounded-lg border border-gray-800 bg-gray-900 px-3 py-2">
           <div className="font-mono text-[12px] text-gray-200">{d.action}</div>
@@ -101,8 +99,6 @@ function ApprovalCard({ approval: a, onDecide }: { approval: FeedApproval; onDec
         </div>
       )}
 
-      <p className="text-gray-200 tabular-nums">{costLine(d.monthlyCostChange)}</p>
-
       {links.length > 0 && (
         <div className="flex flex-wrap gap-x-4">
           {links.map((l) => (
@@ -111,6 +107,36 @@ function ApprovalCard({ approval: a, onDecide }: { approval: FeedApproval; onDec
             </a>
           ))}
         </div>
+      )}
+    </>
+  )
+
+  return (
+    <article className="rounded-lg border border-gray-800 bg-gray-950 p-3 space-y-3 text-sm">
+      <div className="flex items-start gap-3 min-w-0">
+        {persona && <Avatar persona={persona} size={28} />}
+        <div className="min-w-0 flex-1">
+          <div className="text-xs text-gray-500 truncate">
+            {persona?.name ?? a.agent}
+            {a.client ? `, ${a.client}` : ''}
+          </div>
+          <h3 className="font-medium text-gray-100 break-words">{a.title}</h3>
+        </div>
+      </div>
+
+      {compact ? (
+        <>
+          <p className="text-gray-200 tabular-nums">{costLine(d.monthlyCostChange)}</p>
+          <details className="rounded-lg border border-gray-800">
+            <summary className="cursor-pointer list-none px-3 min-h-[44px] flex items-center text-xs text-gray-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 rounded-lg">Details</summary>
+            <div className="px-3 pb-3 space-y-3">{details}</div>
+          </details>
+        </>
+      ) : (
+        <>
+          {details}
+          <p className="text-gray-200 tabular-nums">{costLine(d.monthlyCostChange)}</p>
+        </>
       )}
 
       {a.status === 'pending' ? (
