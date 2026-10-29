@@ -72,7 +72,20 @@ export async function createProjectLinkedToRepo(
     outputDirectory: settings.outputDirectory,
     gitRepository: { type: 'github', repo: repoFullName(ownerRepo) },
   })
+  await openDeploymentProtection(data.id)
   return { id: data.id, name: data.name, productionUrl: `https://${data.name}.vercel.app` }
+}
+
+/**
+ * Turn Vercel Authentication off on a client site project, for previews and
+ * production (custom domains are never protected by it either way). New
+ * projects get the team default, which blocks every *.vercel.app URL behind a
+ * Vercel login, so a client could not open the preview Jacob sends; the
+ * hand-made projects (ronny-prestige-blinds) have it off. Client sites are
+ * noindex until go-live, so an open preview is not indexed.
+ */
+export async function openDeploymentProtection(projectId: string): Promise<void> {
+  await write('PATCH', `/v9/projects/${projectId}`, `open deployment protection ${projectId}`, { ssoProtection: null })
 }
 
 export async function linkExistingProjectToRepo(projectId: string, ownerRepo: string): Promise<void> {

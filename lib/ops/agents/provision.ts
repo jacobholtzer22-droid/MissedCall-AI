@@ -4,7 +4,8 @@
 // One private repo from AA-Template, its Actions secrets (the two required
 // ones, plus PEXELS_API_KEY and PIXABAY_API_KEY when the platform has them), a Vercel project
 // linked to it (framework nextjs, which serves the static export with clean
-// URLs; build and output left to the framework), the website evidence,
+// URLs; build and output left to the framework; Vercel Authentication off so
+// the client can open the preview), the website evidence,
 // step build, and an activity. Steps run in that order and stop at the first
 // failure, reporting what was done so far. A repo that already exists under
 // the name is never reused: the run stops and says so.
@@ -53,7 +54,7 @@ export async function provisionSite(engagementId: string, opts: { repoName?: str
     ...secrets.map((s) => ({ action: 'set secret', detail: `${s.name} on ${fullName} (value from ${s.env})` })),
     {
       action: 'create Vercel project',
-      detail: `${projectName} linked to ${fullName}; framework ${SITE_PROJECT_SETTINGS.framework}, build and output from the framework`,
+      detail: `${projectName} linked to ${fullName}; framework ${SITE_PROJECT_SETTINGS.framework}, build and output from the framework, Vercel Authentication off so the client can open previews`,
     },
     {
       action: 'write evidence',

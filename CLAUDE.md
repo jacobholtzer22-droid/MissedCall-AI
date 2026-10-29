@@ -3034,7 +3034,10 @@ nothing; the UI always shows the dry result before a confirmed live call.
   secrets (plus `PEXELS_API_KEY` and `PIXABAY_API_KEY` when the platform has them); a Vercel
   project named the lowercased repo name, git-linked, framework `nextjs` with build and
   output left to the framework, like the hand-made projects (with the framework unset,
-  Vercel served the export's raw files: `/contact` 404, `/contact.html` 200); evidence `repoUrl`, `repoDefaultBranch`,
+  Vercel served the export's raw files: `/contact` 404, `/contact.html` 200), and Vercel
+  Authentication turned off for preview and production (`ssoProtection: null`; the team
+  default hid every `*.vercel.app` URL behind a Vercel login, so a client could not open
+  the preview; custom domains are never behind it); evidence `repoUrl`, `repoDefaultBranch`,
   `vercelProjectId`, `vercelProjectName`, `vercelGitLinked: true`, `productionUrl`
   (`https://<project>.vercel.app`); website step `build` (waiting on Jacob); an
   activity. Default repo name: `AA-` + the PascalCased display name
