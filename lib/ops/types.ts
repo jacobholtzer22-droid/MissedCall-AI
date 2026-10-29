@@ -81,6 +81,7 @@ export const OPS_CHECK_KEYS = [
   'repo.has_workflow',
   'http.indexing_matches_step',
   'http.homepage_200',
+  'http.inner_page_200',
   // Web checks: domain
   'dns.apex_points_to_vercel',
   'dns.www_cname',

@@ -43,8 +43,15 @@ async function write<T>(method: string, path: string, label: string, body: unkno
   return data as T
 }
 
-/** Project settings provisioning uses for every new client site (static export). */
-export const SITE_PROJECT_SETTINGS = { framework: null, buildCommand: 'npm run build', outputDirectory: 'out' } as const
+/**
+ * Project settings provisioning uses for every new client site, matching the
+ * hand-made projects (ronny-prestige-blinds): framework nextjs, build command
+ * and output directory left to the framework. With the framework unset, Vercel
+ * served the static export's raw files, so /contact was 404 and only
+ * /contact.html answered; the nextjs preset serves the export with clean URLs.
+ * Node stays on the team default (24.x, the same as the hand-made projects).
+ */
+export const SITE_PROJECT_SETTINGS = { framework: 'nextjs', buildCommand: null, outputDirectory: null } as const
 
 export type CreatedProject = { id: string; name: string; productionUrl: string }
 
@@ -56,7 +63,7 @@ export function vercelProjectName(repoName: string): string {
 export async function createProjectLinkedToRepo(
   name: string,
   ownerRepo: string,
-  settings: { framework: string | null; buildCommand: string; outputDirectory: string } = SITE_PROJECT_SETTINGS
+  settings: { framework: string | null; buildCommand: string | null; outputDirectory: string | null } = SITE_PROJECT_SETTINGS
 ): Promise<CreatedProject> {
   const data = await write<{ id: string; name: string }>('POST', '/v11/projects', `create project ${name}`, {
     name,

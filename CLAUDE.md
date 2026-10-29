@@ -2992,7 +2992,9 @@ forward steps), OpsCheck and OpsActivity.
 - **Check keys**: website `vercel.project_found`, `vercel.git_linked`,
   `vercel.prod_ready` (latest production deployment READY), `slug.matches_db`,
   `repo.has_workflow`, `http.indexing_matches_step` (step `live` ⇒ no noindex in
-  X-Robots-Tag or robots meta; any other step ⇒ noindex), `http.homepage_200`. Domain,
+  X-Robots-Tag or robots meta; any other step ⇒ noindex), `http.homepage_200`,
+  `http.inner_page_200` (`/contact` on the production URL by its clean URL; a project
+  without the nextjs framework preset serves only `/contact.html`). Domain,
   only with a `primaryDomain`: `dns.apex_points_to_vercel` (A 76.76.21.21 or Vercel's
   newer 216.150.1.x / 216.150.16.x / 216.198.79.x ranges, or CNAME `*.vercel-dns*.com`), `dns.www_cname`,
   `vercel.domain_verified`, `dns.mx_present`, `dns.txt_spf` (fail when MX and no
@@ -3029,8 +3031,10 @@ nothing; the UI always shows the dry result before a confirmed live call.
   already taken (an existing repo is **never** reused). Live, in order, stopping at
   the first failure (502 with the steps so far): private repo
   `jacobholtzer22-droid/<repoName>` from AA-Template (default branch only); the two
-  secrets; a Vercel project named the lowercased repo name, git-linked, framework
-  null, `npm run build`, output `out`; evidence `repoUrl`, `repoDefaultBranch`,
+  secrets (plus `PEXELS_API_KEY` and `PIXABAY_API_KEY` when the platform has them); a Vercel
+  project named the lowercased repo name, git-linked, framework `nextjs` with build and
+  output left to the framework, like the hand-made projects (with the framework unset,
+  Vercel served the export's raw files: `/contact` 404, `/contact.html` 200); evidence `repoUrl`, `repoDefaultBranch`,
   `vercelProjectId`, `vercelProjectName`, `vercelGitLinked: true`, `productionUrl`
   (`https://<project>.vercel.app`); website step `build` (waiting on Jacob); an
   activity. Default repo name: `AA-` + the PascalCased display name

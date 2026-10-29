@@ -97,11 +97,13 @@ export async function websiteChecks(w: WebsiteInput): Promise<{ results: CheckRe
   if (!w.productionUrl) {
     out.push(r('http.indexing_matches_step', null, 'no production URL'))
     out.push(r('http.homepage_200', null, 'no production URL'))
+    out.push(r('http.inner_page_200', null, 'no production URL'))
   } else {
     probe = await probePage(w.productionUrl)
     if (probe.error) {
       out.push(r('http.indexing_matches_step', null, `${w.productionUrl}: ${probe.error}`))
       out.push(r('http.homepage_200', null, `${w.productionUrl}: ${probe.error}`))
+      out.push(r('http.inner_page_200', null, `${w.productionUrl}: ${probe.error}`))
     } else {
       const live = w.step === 'live'
       const ok = live ? !probe.noindex : probe.noindex
@@ -114,6 +116,16 @@ export async function websiteChecks(w: WebsiteInput): Promise<{ results: CheckRe
         )
       )
       out.push(r('http.homepage_200', probe.status === 200, `${probe.finalUrl ?? w.productionUrl} → ${probe.status}`))
+      // An inner page by its clean URL. A static export served without the
+      // nextjs framework preset answers / but 404s /contact (only
+      // /contact.html), which the homepage check alone cannot see.
+      const contactUrl = `${w.productionUrl.replace(/\/+$/, '')}/contact`
+      const inner = await probePage(contactUrl)
+      out.push(
+        inner.error
+          ? r('http.inner_page_200', null, `${contactUrl}: ${inner.error}`)
+          : r('http.inner_page_200', inner.status === 200, `${inner.finalUrl ?? contactUrl} → ${inner.status}`)
+      )
     }
   }
   return { results: out, probe }
