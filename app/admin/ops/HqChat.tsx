@@ -151,6 +151,7 @@ export function ReportCard({ job, className = 'ml-9', snapshot = false }: { job:
           const p = personaFor(s.agent)
           const did = asList(s.did)
           const waiting = typeof s.waitingForPush === 'number' ? [] : asList(s.waitingForPush)
+          const questions = asList(s.questions)
           const links = (s.links ?? []).filter((l) => typeof l?.url === 'string' && /^https?:\/\//.test(l.url))
           return (
             <div key={n} className="px-3 py-2.5 space-y-2 text-sm">
@@ -181,6 +182,16 @@ export function ReportCard({ job, className = 'ml-9', snapshot = false }: { job:
                   <ul className={`list-disc pl-5 space-y-0.5 ${snapshot ? 'text-gray-300' : 'text-amber-200'}`}>
                     {waiting.map((w, i) => (
                       <li key={i}>{w}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              {questions.length > 0 && (
+                <div>
+                  <div className="text-xs text-gray-500">Questions for you</div>
+                  <ul className="list-disc pl-5 text-sky-200 space-y-0.5">
+                    {questions.map((q, i) => (
+                      <li key={i}>{q}</li>
                     ))}
                   </ul>
                 </div>

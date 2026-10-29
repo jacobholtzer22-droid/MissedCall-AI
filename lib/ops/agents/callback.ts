@@ -11,6 +11,11 @@
 // status is the GitHub job status: success | failure | cancelled.
 // failure_tail, on a failed run only, is the end of the agent's result text;
 // it is stored as output.failureTail and its last line goes into the error.
+// client_todo (CLIENT-TODO.md's "Questions for Jacob", 4k max) is stored as
+// output.clientTodo and written as an "Open questions from build" note on the
+// client. design_direction (the report's "Design direction" item, 2k max) is
+// parsed into output.style { direction, pairing, headingAccent }, which the
+// next dispatch reads as style history.
 //
 // Idempotent per run_id: once a run has finished, a repeat callback changes
 // nothing and answers 200 { duplicate: true }.
@@ -29,6 +34,7 @@ import { listDeploymentsForBranch } from '@/lib/ops/vercel'
 import { emit } from '@/lib/ops/hq/events'
 import { mergeEvidence } from './shared'
 import { failureReason, readFailureTail } from '@/lib/ops/build-failure'
+import { parseDesignDirection, questionsFrom } from '@/lib/ops/build-style'
 
 /**
  * Open the PR the workflow could not. Repos default to "GitHub Actions may not
@@ -79,6 +85,8 @@ export type CallbackBody = {
   report_excerpt?: string | null
   run_url?: string | null
   failure_tail?: string | null
+  client_todo?: string | null
+  design_direction?: string | null
 }
 
 export type CallbackOutcome =
@@ -118,6 +126,8 @@ export async function applyCallback(raw: string): Promise<CallbackOutcome> {
     reportExcerpt: body.report_excerpt ?? null,
     runUrl: body.run_url ?? null,
     failureTail: succeeded ? null : readFailureTail(body.failure_tail),
+    clientTodo: typeof body.client_todo === 'string' && body.client_todo.trim() ? body.client_todo.trim().slice(0, 4000) : null,
+    style: typeof body.design_direction === 'string' ? parseDesignDirection(body.design_direction.slice(0, 2000)) : null,
   }
   const reason = failureReason(output.failureTail)
 
@@ -147,6 +157,12 @@ export async function applyCallback(raw: string): Promise<CallbackOutcome> {
     (await db.deliverable.findFirst({ where: { engagementId, type: 'website' }, select: { id: true, type: true } }))
 
   if (website && body.branch) await mergeEvidence(website.id, { previewBranch: body.branch })
+
+  // What the build could not find out goes on the client's card as one note.
+  const questions = questionsFrom(output.clientTodo)
+  if (questions.length && run.engagementId) {
+    await db.opsActivity.create({ data: { engagementId: run.engagementId, kind: 'note', body: `Open questions from build:\n${questions.map((q) => `- ${q}`).join('\n')}` } })
+  }
 
   // A tracking install (install_tracking) that came back green: the tag is in the site's PR.
   const runInput = (run.input ?? {}) as { tracking?: unknown }

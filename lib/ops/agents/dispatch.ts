@@ -7,7 +7,12 @@
 //
 // client_payload, exactly what aa-build.yml reads:
 //   { kind, run_id, brief (base64), instructions (base64), business_slug, callback_url,
-//     assets (base64 JSON list), old_site (base64 JSON), with_stock }
+//     assets (base64 JSON list), old_site (base64 JSON), with_stock, extras (base64 JSON) }
+// extras (lib/ops/build-style.ts buildExtras) is { recent_styles, gbp, style }:
+// the last five site builds' direction, pairing and headingAccent (site_build
+// only, so the agent does not repeat them), the intake's GBP lookup (written
+// to GBP.json) and the client's sitesLiked and brandColors. '' when empty.
+// That is GitHub's limit of 10 top-level keys; nothing more fits.
 // assets and old_site come from the client's intake (lib/ops/intake.ts). GitHub
 // caps repository_dispatch (10 top-level keys, about 64 KB): when brief plus
 // assets would not fit, assets is sent empty and the run's input says the list
@@ -27,6 +32,26 @@ import { db } from '@/lib/db'
 import { repoFullName, repositoryDispatch } from '@/lib/ops/github'
 import { emit } from '@/lib/ops/hq/events'
 import { CALLBACK_URL, DISPATCH_EVENT, RUN_KINDS, loadWebsiteEngagement, type RunKind } from './shared'
+import { buildExtras, type BuildStyle, type RecentStyle } from '@/lib/ops/build-style'
+import { readIntake } from '@/lib/ops/intake'
+
+/** The last five finished site builds with a recorded style, across all clients, newest first. */
+export async function recentStyles(): Promise<RecentStyle[]> {
+  const runs = await db.agentRun.findMany({
+    where: { kind: 'site_build', status: 'succeeded' },
+    orderBy: { finishedAt: 'desc' },
+    take: 40,
+    select: { output: true, engagement: { select: { displayName: true } } },
+  })
+  const out: RecentStyle[] = []
+  for (const r of runs) {
+    const style = ((r.output ?? {}) as { style?: BuildStyle | null }).style
+    if (!style || !(style.direction || style.pairing || style.headingAccent)) continue
+    out.push({ client: r.engagement?.displayName.trim() ?? '', direction: style.direction, pairing: style.pairing, headingAccent: style.headingAccent })
+    if (out.length === 5) break
+  }
+  return out
+}
 
 export type DispatchResult = {
   /** The brief plus assets were too large: assets went in the brief only. */
@@ -51,7 +76,7 @@ export async function dispatchRun(
     instructions?: string
     dry: boolean
     jobId?: string | null
-    assets?: { url: string; kind: string; filename: string; caption: string | null; heroCandidate: boolean; service: string | null; beforeAfter: string | null }[]
+    assets?: { url: string; kind: string; filename: string; caption: string | null; heroCandidate: boolean; service: string | null; beforeAfter: string | null; attribution?: string | null }[]
     oldSite?: { url: string; use: string; notes: string | null } | null
     withStock?: boolean
     /** A tracking install (site_update): the block it writes, kept on the run so the callback can set trackingInstalled. */
@@ -77,6 +102,16 @@ export async function dispatchRun(
   const withFiles = input.kind === 'site_build' || input.kind === 'site_update'
   const assets = withFiles ? input.assets ?? [] : []
   const oldSite = withFiles ? input.oldSite ?? null : null
+  let extras: ReturnType<typeof buildExtras> = null
+  if (withFiles) {
+    const row = await db.engagement.findUnique({ where: { id: eng.id }, select: { intake: true } })
+    const intake = readIntake(row?.intake)
+    extras = buildExtras({
+      recentStyles: input.kind === 'site_build' ? await recentStyles() : [],
+      gbp: intake.gbp?.placeId ? (intake.gbp as Record<string, unknown>) : null,
+      style: intake.style ?? null,
+    })
+  }
   const payloadFor = (runId: string, includeAssets = true) => ({
     kind: input.kind,
     run_id: runId,
@@ -87,6 +122,7 @@ export async function dispatchRun(
     assets: includeAssets && assets.length ? b64(JSON.stringify(assets)) : '',
     old_site: oldSite ? b64(JSON.stringify(oldSite)) : '',
     with_stock: input.withStock ? 'true' : '',
+    extras: extras ? b64(JSON.stringify(extras)) : '',
   })
   const PAYLOAD_LIMIT = 60_000
   const fits = JSON.stringify(payloadFor('x'.repeat(25))).length <= PAYLOAD_LIMIT
@@ -102,6 +138,7 @@ export async function dispatchRun(
       instructions: p.instructions ? `(base64, ${instructions.length} chars of instructions)` : '',
       assets: p.assets ? `(base64 JSON, ${assets.length} files)` : '',
       old_site: p.old_site ? `(base64 JSON: ${oldSite?.url} ${oldSite?.use})` : '',
+      extras: extras ?? '',
     }
     out.ok = true
     return out
@@ -124,6 +161,7 @@ export async function dispatchRun(
         ...(withFiles ? { assetCount: assets.length, photoCount: assets.filter((a) => a.kind === 'photo').length, assets, oldSite, withStock: Boolean(input.withStock) } : {}),
         ...(out.assetsInBriefOnly ? { assetsInBriefOnly: true } : {}),
         ...(input.tracking ? { tracking: input.tracking } : {}),
+        ...(extras ? { extras } : {}),
       } as Prisma.InputJsonObject,
     },
   })
@@ -134,6 +172,7 @@ export async function dispatchRun(
     instructions: input.kind === 'site_update' ? '(base64 instructions)' : '',
     assets: fits && assets.length ? `(base64 JSON, ${assets.length} files)` : '',
     old_site: oldSite ? '(base64 JSON)' : '',
+    extras: extras ? '(base64 JSON)' : '',
   }
 
   try {

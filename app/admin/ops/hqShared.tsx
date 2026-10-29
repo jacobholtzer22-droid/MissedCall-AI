@@ -50,6 +50,8 @@ export type ReportSection = {
   expect?: string
   links?: { label?: string; url?: string }[]
   waitingForPush?: string[] | number
+  /** The build's open questions for Jacob to ask the client. */
+  questions?: string[]
 }
 
 export type FeedJob = {

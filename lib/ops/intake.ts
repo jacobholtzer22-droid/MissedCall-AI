@@ -13,7 +13,8 @@
 // key it was not given. Assets are only ever read from the engagement's own
 // intake, never from a free-text URL list.
 
-export type IntakeAssetKind = 'logo' | 'photo' | 'document'
+/** gbp: an owner-posted photo from the Google Business Profile (lookup_gbp), with its attribution. */
+export type IntakeAssetKind = 'logo' | 'photo' | 'document' | 'gbp'
 export type IntakeAsset = {
   id: string
   url: string
@@ -23,6 +24,8 @@ export type IntakeAsset = {
   heroCandidate?: boolean
   service?: string
   beforeAfter?: 'before' | 'after'
+  /** gbp photos: who posted it on the profile (the business itself). */
+  attribution?: string
   uploadedAt: string
 }
 
@@ -61,12 +64,36 @@ export type Intake = {
   offer?: string
   /** Q3, Q17 to Q19, Q21: what the ads are built from. */
   ads?: { exclusions?: string[]; accountEmail?: string; budgetMonthly?: number; goal?: string; seasons?: string; competitors?: string[] }
-  /** Q15 and Q16: the Google Business Profile and where the reviews are. */
-  gbp?: { exists?: boolean; verified?: boolean; managerAccess?: boolean; reviewCount?: string; notes?: string }
+  /**
+   * Q15 and Q16: the Google Business Profile and where the reviews are, plus
+   * what lookup_gbp read from the profile (lib/ops/gbp.ts IntakeGbp). The
+   * build receives it as GBP.json.
+   */
+  gbp?: {
+    exists?: boolean
+    verified?: boolean
+    managerAccess?: boolean
+    reviewCount?: string
+    notes?: string
+    placeId?: string
+    name?: string
+    address?: string | null
+    phone?: string | null
+    website?: string | null
+    mapsUri?: string | null
+    rating?: number | null
+    userRatingCount?: number | null
+    hours?: string[] | null
+    primaryType?: string | null
+    businessStatus?: string | null
+    reviews?: { author: string; rating: number | null; text: string; publishTime: string | null; uri: string | null }[]
+    lookedUpAt?: string
+  }
   reviews?: { gbpUrl?: string; quotes?: { text: string; author: string }[] }
   oldSite?: { url?: string; use?: OldSiteUse; notes?: string }
   socials?: { facebook?: string; instagram?: string; yelp?: string; nextdoor?: string }
-  style?: { referenceSites?: string[]; colors?: string[]; avoid?: string }
+  /** Q23 and Q25. sitesLiked and brandColors are the build's names for referenceSites and colors; either is read. */
+  style?: { referenceSites?: string[]; colors?: string[]; sitesLiked?: string[]; brandColors?: string[]; avoid?: string }
   domain?: { current?: string; wanted?: string; registrar?: string; ownerHasAccess?: boolean }
   assets?: IntakeAsset[]
   rawNotes?: string
@@ -121,6 +148,7 @@ export function intakeSummary(i: Intake) {
     photos: photos.length,
     heroCandidates: photos.filter((p) => p.heroCandidate).length,
     logo: (i.assets ?? []).some((a) => a.kind === 'logo'),
+    gbpPhotos: (i.assets ?? []).filter((a) => a.kind === 'gbp').length,
     documents: (i.assets ?? []).filter((a) => a.kind === 'document').length,
     oldSite: i.oldSite?.url ? { url: i.oldSite.url, use: i.oldSite.use ?? 'facts_only' } : null,
     updatedAt: i.updatedAt ?? null,
@@ -137,6 +165,7 @@ export function payloadAssets(i: Intake) {
     heroCandidate: Boolean(a.heroCandidate),
     service: a.service ?? null,
     beforeAfter: a.beforeAfter ?? null,
+    attribution: a.attribution ?? null,
   }))
 }
 

@@ -39,6 +39,8 @@ import { adsAccountUrl } from './links'
 import { createRun, failRun, finishRun } from './runs'
 import { onSpecialistRunEnded } from './jobs'
 import { loadGateClients } from '@/lib/ops/gate-data'
+import { lookupGbp } from '@/lib/ops/gbp-server'
+import { questionsFrom } from '@/lib/ops/build-style'
 import { reportGaps, type GateClient } from '@/lib/ops/launch-gate'
 
 const HISTORY_MESSAGES = 40
@@ -58,6 +60,7 @@ What you do:
 - New clients: when Jacob names one ("New client: ..."), create it with create_client (createBusiness when the client gets a website, ads or missed-call texting), then say in one line what was created. Platform account changes go through update_business; routing fields wait for Push.
 - Website clients: the site builds from a brief, and the brief is written from the client's intake (get_client's intake: answers, files, old site, and summary.missing). Photos, the logo and the old site are added on the intake page (/admin/ops/intake/<id>); point Jacob there for files. When a website client has no brief: read the intake, then ask Jacob in ONE grouped message only for what is still empty of what get_brief_template needs. Save his answers with save_intake. Then write the whole brief in the template's shape (unknowns under UNKNOWN, never invented, businessSlug from the platform account; set_brief adds the Assets and Old site sections) and show it back in one message; store it with set_brief only after he says it looks good or gives edits.
 - Client answers by number: Jacob texts every client the onboarding questionnaire (read_doc onboarding-questionnaire.md). When he pastes answers like "1. Yualex Painting 2 LLC 2. Painting, drywall...", read it, map each answer to its intake field with save_intake (one call, everything), and do the platform side the table names: the phone and email on the platform account with update_business (the phone that rings is the owner phone; routing numbers wait for Push), the ads budget and account email in intake.ads. Then say in a few lines what you saved and which of 1 to 14 and 17 to 19 are still missing.
+- Google profile: after save_intake (or when you read a website client's intake) and hours, address, reviews or photos are still empty, run lookup_gbp on your own and tell Jacob in one line what it found. When it returns candidates instead of a match, ask Jacob which one is the client; never pick one yourself. If it says the lookup is offline, say so once.
 - Every brief follows docs/ops/site-brief-standards.md (get_brief_template returns it with the template): services named and split the way customers search, no published job ranges, no claims the client did not make, hours and towns as the rules say, no invented tagline, about story or reviews, display name without LLC or numbering. List what you applied under "## Standards applied" at the end of the brief body; when the client's answers override a standard, the client wins and you say so there. The same file's section 9 is how the answers become the ads spec.
 - A build needs real photos: with none on file and no old site set to verbatim, site_build is refused. Tell Jacob to add photos at the intake page, or build with stock only if he says so (withStock).
 - Website work: start_web_task. A branch name, preview URL or PR comes from the run's recorded result (get_client, the job report, review), never from the agent's BUILD-REPORT text, which can name a branch that was never pushed. "Build X's site": site_build (it provisions first if needed). After a build reports back: review, which posts the preview and PR. "Merge it" / "take it live" / "connect example.com": merge, go_live, connect_domain, each waiting for Push. Never claim a site is built, merged or live before its run or Push says so.
@@ -823,6 +826,32 @@ function chiefTools(ctx: ChiefContext): ClientTool[] {
       },
     },
     {
+      name: 'lookup_gbp',
+      description:
+        "Read the client's Google Business Profile (Places API) by business name and city: address, phone, website, hours, rating and review count, reviews with text, and up to 12 photos the business posted itself. On a name match it saves them into the intake (intake.gbp, photos as kind gbp) so the build gets them as GBP.json. When no result matches by name it returns the candidates and saves nothing. name, city and state override what the intake has.",
+      input_schema: {
+        type: 'object',
+        properties: {
+          engagementId: { type: 'string' },
+          name: { type: 'string', description: 'Optional: the business name as customers see it.' },
+          city: { type: 'string', description: 'Optional: the city, e.g. Ogden.' },
+          state: { type: 'string', description: 'Optional: two-letter state, e.g. UT.' },
+        },
+        required: ['engagementId'],
+      },
+      run: async (input) => {
+        const engagementId = str(input.engagementId)
+        const r = await lookupGbp(engagementId, {
+          dry: false,
+          name: input.name ? str(input.name) : undefined,
+          city: input.city ? str(input.city) : undefined,
+          state: input.state ? str(input.state) : undefined,
+        })
+        await ensureJob(ctx, [engagementId])
+        return { result: r, label: noEmDash(r.line) }
+      },
+    },
+    {
       name: 'install_tracking',
       description:
         "Install the Google tag on a client's site: the ads account's AW- id plus the form and click-to-call conversion labels (from the ads deliverable) go into site.config.ts by a site_update that changes nothing else. Waits for Jacob's Push. Fails with what is missing when the labels have not been read yet.",
@@ -842,7 +871,7 @@ function chiefTools(ctx: ChiefContext): ClientTool[] {
           summary: { type: 'string', description: 'Two or three plain sentences for the chat.' },
           sections: {
             type: 'array',
-            description: 'One per specialist run: { agent, client, did, expect, links: [{ label, url }], waitingForPush }',
+            description: 'One per specialist run: { agent, client, did, expect, links: [{ label, url }], waitingForPush, questions }. questions: the build\'s open questions for Jacob to ask the client, word for word.',
           },
         },
         required: ['summary', 'sections'],
@@ -949,6 +978,9 @@ async function jobRuns(jobId: string) {
             reportExcerpt: typeof out.reportExcerpt === 'string' ? out.reportExcerpt.slice(0, 1500) : null,
             // A failed run: the end of the agent's own result text, which says why.
             failureTail: typeof out.failureTail === 'string' ? out.failureTail : null,
+            // What the build could not find out, for "Questions for you".
+            clientTodo: typeof out.clientTodo === 'string' ? out.clientTodo : null,
+            questions: questionsFrom(typeof out.clientTodo === 'string' ? out.clientTodo : null),
             mergeError: out.mergeError ?? null,
             nextStep:
               r.kind === 'provision'
@@ -981,7 +1013,7 @@ async function jobRuns(jobId: string) {
   })
 }
 
-type ReportSection = { agent: string; client: string | null; did: string[]; expect: string; links: { label: string; url: string }[]; waitingForPush: string[] }
+type ReportSection = { agent: string; client: string | null; did: string[]; expect: string; links: { label: string; url: string }[]; waitingForPush: string[]; questions: string[] }
 
 /** The report the chief failed to write, built from the runs themselves. */
 function fallbackSections(runs: Awaited<ReturnType<typeof jobRuns>>): ReportSection[] {
@@ -1006,6 +1038,7 @@ function fallbackSections(runs: Awaited<ReturnType<typeof jobRuns>>): ReportSect
       expect: w ? `Next: ${w.nextStep}.` : String(rep.expected ?? ''),
       links: r.links,
       waitingForPush: r.approvals.filter((a) => a.status === 'pending').map((a) => a.title),
+      questions: w ? (w.questions as string[]) : [],
     }
   })
 }
@@ -1019,7 +1052,7 @@ export async function runChiefReport(jobId: string) {
   const prompt = [
     `Every specialist run in this job has finished. Jacob asked: "${job.prompt}"`,
     `The runs, with each one's parsed report, links and approvals:\n${JSON.stringify(runs, null, 1)}`,
-    'Call finish_job once. sections: one per run, { agent, client, did: [what was done, one line each], expect: what to expect and when, links: [{ label, url }] (use the links given), waitingForPush: [titles of pending approvals] }. When a run\'s notDone is not empty, the last line of its did is "Not done: " followed by those items, word for word, even if nobody asked. Then reply to Jacob in two or three plain sentences: what is done and what waits for his Push, ending with the Not done items if there are any. No em dashes.',
+    'Call finish_job once. sections: one per run, { agent, client, did: [what was done, one line each], expect: what to expect and when, links: [{ label, url }] (use the links given), waitingForPush: [titles of pending approvals], questions: [the web run\'s questions, one per item, word for word; [] when it has none] }. When a run\'s notDone is not empty, the last line of its did is "Not done: " followed by those items, word for word, even if nobody asked. Then reply to Jacob in two or three plain sentences: what is done and what waits for his Push, ending with the Not done items if there are any. No em dashes.',
   ].join('\n\n')
   try {
     const result = await runAgentLoop({

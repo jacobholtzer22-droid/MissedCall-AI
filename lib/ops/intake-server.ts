@@ -10,8 +10,11 @@ import { mergeIntake, readIntake, type Intake, type IntakeAsset } from './intake
 
 export const MAX_ASSET_BYTES = 15 * 1024 * 1024
 
-/** Content types per kind. HEIC is not here: this sharp build cannot decode it. */
-export const ASSET_TYPES: Record<IntakeAsset['kind'], string[]> = {
+/**
+ * Content types per uploadable kind. HEIC is not here: this sharp build cannot
+ * decode it. gbp photos are never uploaded by hand: lookup_gbp stores them.
+ */
+export const ASSET_TYPES: Record<Exclude<IntakeAsset['kind'], 'gbp'>, string[]> = {
   photo: ['image/jpeg', 'image/png', 'image/webp'],
   logo: ['image/jpeg', 'image/png', 'image/webp', 'image/svg+xml'],
   document: ['application/pdf', 'image/jpeg', 'image/png', 'image/webp', 'image/svg+xml'],
