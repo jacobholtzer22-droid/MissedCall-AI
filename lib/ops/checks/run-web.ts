@@ -107,7 +107,7 @@ export async function runWebChecks({ dryRun }: { dryRun: boolean }): Promise<Web
       services: true,
       business: { select: { slug: true } },
       deliverables: {
-        where: { type: { in: ['website', 'domain'] } },
+        where: { type: { in: ['website', 'domain', 'ads'] } },
         select: { id: true, type: true, step: true, manualStatus: true, computedStatus: true, evidence: true },
       },
     },
@@ -121,6 +121,7 @@ export async function runWebChecks({ dryRun }: { dryRun: boolean }): Promise<Web
       slug: e.business?.slug ?? null,
       website: dels.find((d) => d.type === 'website') ?? null,
       domain: dels.find((d) => d.type === 'domain') ?? null,
+      googleAdsId: ((v) => (typeof v === 'string' && v ? v : null))(dels.find((d) => d.type === 'ads')?.evidence.googleAdsId),
     }
   })
 
@@ -175,7 +176,7 @@ export async function runWebChecks({ dryRun }: { dryRun: boolean }): Promise<Web
     const project = m.projectFor.get(eng.id)?.project ?? null
     const primary = primaryDomainOf(project)
     const websiteResults = eng.website
-      ? (await websiteChecks({ step: eng.website.step, businessSlug: eng.slug, repo, project, productionUrl: productionUrlOf(project, primary) })).results
+      ? (await websiteChecks({ step: eng.website.step, businessSlug: eng.slug, repo, project, productionUrl: productionUrlOf(project, primary), googleAdsId: eng.googleAdsId })).results
       : []
     const domainResults = eng.domain && primary ? await domainChecks(primary, project) : []
     const previewBranch = typeof eng.website?.evidence.previewBranch === 'string' ? eng.website.evidence.previewBranch : null
@@ -212,6 +213,8 @@ export async function runWebChecks({ dryRun }: { dryRun: boolean }): Promise<Web
         // owned by the callback, never written here), else the latest preview.
         previewUrl: p.branchPreview?.url ?? (typeof eng.website.evidence.previewBranch === 'string' ? null : project?.preview?.url ?? null),
         previewState: p.branchPreview?.state ?? (typeof eng.website.evidence.previewBranch === 'string' ? null : project?.preview?.state ?? null),
+        // The launch gates count a tag seen on production as installed.
+        googleTagLive: p.websiteResults.find((x) => x.key === 'http.google_tag')?.passed ?? null,
       }
       queueEvidence(eng.website, ev)
       touched.set(eng.website.id, { del: eng.website, client: eng.name, results: p.websiteResults })

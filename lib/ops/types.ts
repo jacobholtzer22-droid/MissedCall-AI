@@ -82,6 +82,7 @@ export const OPS_CHECK_KEYS = [
   'http.indexing_matches_step',
   'http.homepage_200',
   'http.inner_page_200',
+  'http.google_tag',
   // Web checks: domain
   'dns.apex_points_to_vercel',
   'dns.www_cname',

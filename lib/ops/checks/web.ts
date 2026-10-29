@@ -10,6 +10,7 @@
 
 import { promises as dnsPromises } from 'node:dns'
 import { INFORMATIONAL_CHECK_KEYS, type OpsCheckKey } from '@/lib/ops/types'
+import { gtagIdsIn } from '@/lib/ops/tracking'
 import type { GithubRepo, VercelProject } from './discover'
 import { errMessage, fetchWithTimeout } from './limit'
 
@@ -29,7 +30,7 @@ const r = (key: OpsCheckKey, passed: boolean | null, detail: string | null = nul
 
 // ── HTTP ────────────────────────────────────────────────────────────────────
 
-export type PageProbe = { status: number | null; finalUrl: string | null; noindex: boolean; noindexWhere: string | null; error: string | null }
+export type PageProbe = { status: number | null; finalUrl: string | null; noindex: boolean; noindexWhere: string | null; gtagIds: string[]; error: string | null }
 
 /** GET the page (redirects followed) and look for noindex in X-Robots-Tag or a robots meta tag. */
 export async function probePage(url: string): Promise<PageProbe> {
@@ -41,9 +42,9 @@ export async function probePage(url: string): Promise<PageProbe> {
       .map((m) => m[0])
       .find((tag) => /name\s*=\s*["']?(robots|googlebot)["']?/i.test(tag) && /noindex/i.test(tag))
     const where = /noindex/i.test(header) ? `x-robots-tag: ${header}` : meta ? 'robots meta tag' : null
-    return { status: res.status, finalUrl: res.url, noindex: where !== null, noindexWhere: where, error: null }
+    return { status: res.status, finalUrl: res.url, noindex: where !== null, noindexWhere: where, gtagIds: gtagIdsIn(html), error: null }
   } catch (err) {
-    return { status: null, finalUrl: null, noindex: false, noindexWhere: null, error: errMessage(err) }
+    return { status: null, finalUrl: null, noindex: false, noindexWhere: null, gtagIds: [], error: errMessage(err) }
   }
 }
 
@@ -74,6 +75,8 @@ export type WebsiteInput = {
   project: VercelProject | null
   /** The URL the live checks fetch: primary custom domain, else the project's vercel.app domain. */
   productionUrl: string | null
+  /** The ads deliverable's AW- id; http.google_tag looks for it and is informational (null) until there is one. */
+  googleAdsId?: string | null
 }
 
 export async function websiteChecks(w: WebsiteInput): Promise<{ results: CheckResult[]; probe: PageProbe | null }> {
@@ -98,12 +101,14 @@ export async function websiteChecks(w: WebsiteInput): Promise<{ results: CheckRe
     out.push(r('http.indexing_matches_step', null, 'no production URL'))
     out.push(r('http.homepage_200', null, 'no production URL'))
     out.push(r('http.inner_page_200', null, 'no production URL'))
+    out.push(r('http.google_tag', null, 'no production URL'))
   } else {
     probe = await probePage(w.productionUrl)
     if (probe.error) {
       out.push(r('http.indexing_matches_step', null, `${w.productionUrl}: ${probe.error}`))
       out.push(r('http.homepage_200', null, `${w.productionUrl}: ${probe.error}`))
       out.push(r('http.inner_page_200', null, `${w.productionUrl}: ${probe.error}`))
+      out.push(r('http.google_tag', null, `${w.productionUrl}: ${probe.error}`))
     } else {
       const live = w.step === 'live'
       const ok = live ? !probe.noindex : probe.noindex
@@ -125,6 +130,13 @@ export async function websiteChecks(w: WebsiteInput): Promise<{ results: CheckRe
         inner.error
           ? r('http.inner_page_200', null, `${contactUrl}: ${inner.error}`)
           : r('http.inner_page_200', inner.status === 200, `${inner.finalUrl ?? contactUrl} → ${inner.status}`)
+      )
+      // The Google tag with the ads account's id. Not counted until the client has one.
+      const tags = probe.gtagIds.length ? probe.gtagIds.join(', ') : 'no Google tag'
+      out.push(
+        w.googleAdsId
+          ? r('http.google_tag', probe.gtagIds.includes(w.googleAdsId), `expects ${w.googleAdsId}; ${w.productionUrl} has ${tags}`)
+          : r('http.google_tag', null, `no Google Ads id on the ads deliverable yet; ${w.productionUrl} has ${tags}`)
       )
     }
   }

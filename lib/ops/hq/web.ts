@@ -17,26 +17,46 @@
 //                   step → send_preview.
 //   merge           web_push approval; Push squash-merges the PR, deletes the
 //                   branch, website step → approved.
-//   go_live         web_push approval; Push dispatches go_live, whose callback
-//                   merges its PR. The step goes live when the web checks see
-//                   the site indexable.
-//   connect_domain  web_push approval; Push adds the domain (and www,
-//                   redirecting to it) to the Vercel project and writes the DNS
-//                   records into the domain deliverable's waiting note, step
+//   go_live         refused with the go-live gate's unmet list (lib/ops/
+//                   launch-gate.ts) unless Jacob's own message says "skip
+//                   <item>"; then a web_push approval; Push dispatches go_live,
+//                   whose callback merges its PR. The step goes live when the
+//                   web checks see the site indexable.
+//   connect_domain  a domain the client owns. The registrar is read from RDAP
+//                   and the card carries ONE instruction ("At Namecheap, set
+//                   the nameservers to ns1/ns2.vercel-dns.com"), records as the
+//                   alternative. Push adds the domain (and www, redirecting to
+//                   it) to the Vercel project and records dnsRequired,
+//                   nameservers and registrar on the domain deliverable, step
 //                   dns_by_client (or dns_records when Jacob holds the DNS).
+//   buy_domain      web_push approval with Vercel's price; Push buys it on the
+//                   Vercel registrar (registrant from OPS_DOMAIN_CONTACT), adds
+//                   it and www to the project, domain step propagating.
+//   set_email_records  web_push approval; Push writes Google Workspace MX, SPF
+//                   and DMARC through Vercel DNS (the domain must be on it).
+//   install_tracking   web_push approval; Push dispatches a site_update that
+//                   writes the tracking block (from the ads deliverable's
+//                   googleAdsId and conversion labels) into site.config.ts and
+//                   nothing else. Its callback sets trackingInstalled.
 
 import type { Prisma } from '@prisma/client'
 import { db } from '@/lib/db'
 import { dispatchRun } from '@/lib/ops/agents/dispatch'
 import { provisionSite } from '@/lib/ops/agents/provision'
+import { mergeEvidence } from '@/lib/ops/agents/shared'
 import { GITHUB_OWNER, TEMPLATE_REPO, deleteBranch, getFileContent, getPullRequest, mergePullRequest, repoFullName, vercelBotNote } from '@/lib/ops/github'
 import { defaultWaitingOn } from '@/lib/ops/steps'
-import { addProjectDomain, domainRecords, listDeploymentsForBranch } from '@/lib/ops/vercel'
+import { addDnsRecord, addProjectDomain, buyDomain, domainOrder, domainQuote, domainRecords, listDeploymentsForBranch, registrantContact } from '@/lib/ops/vercel'
+import { GOOGLE_WORKSPACE_RECORDS, VERCEL_NAMESERVERS, dnsInstruction, normalizeDomain, onVercelDns, readRdap } from '@/lib/ops/domains'
+import { loadGateClient } from '@/lib/ops/gate-data'
+import { goLiveGate, skipsIn } from '@/lib/ops/launch-gate'
+import { trackingBlockFrom, trackingInstructions, type TrackingBlock } from '@/lib/ops/tracking'
+import { errMessage, fetchWithTimeout } from '@/lib/ops/checks/limit'
 import { emit } from './events'
 import { payloadAssets, payloadOldSite, readIntake } from '@/lib/ops/intake'
 import { createRun, failRun, finishRun } from './runs'
 
-export const WEB_TASK_KINDS = ['provision', 'site_build', 'site_update', 'review', 'merge', 'go_live', 'connect_domain'] as const
+export const WEB_TASK_KINDS = ['provision', 'site_build', 'site_update', 'review', 'merge', 'go_live', 'connect_domain', 'buy_domain', 'set_email_records', 'install_tracking'] as const
 export type WebTaskKind = (typeof WEB_TASK_KINDS)[number]
 
 // ── The brief template ──────────────────────────────────────────────────────
@@ -113,6 +133,17 @@ async function latestPr(engagementId: string, kinds: string[] = ['site_build', '
   return null
 }
 
+/** The registrar and nameservers RDAP reports, or nulls when the lookup fails (it never blocks a task). */
+async function rdapLookup(domain: string): Promise<{ registrar: string | null; registrarRaw: string | null; nameservers: string[]; error: string | null }> {
+  try {
+    const res = await fetchWithTimeout(`https://rdap.org/domain/${encodeURIComponent(domain)}`, { headers: { Accept: 'application/rdap+json, application/json', 'User-Agent': 'aa-ops-web-checks' }, redirect: 'follow' }, 10_000)
+    if (!res.ok) return { registrar: null, registrarRaw: null, nameservers: [], error: `RDAP HTTP ${res.status}` }
+    return { ...readRdap(await res.json()), error: null }
+  } catch (err) {
+    return { registrar: null, registrarRaw: null, nameservers: [], error: errMessage(err) }
+  }
+}
+
 async function setStep(deliverableId: string, type: string, step: string, note: string | null) {
   await db.deliverable.update({
     where: { id: deliverableId },
@@ -149,6 +180,8 @@ export async function startWebTask(opts: {
   dnsHeldBy?: 'client' | 'jacob'
   /** site_build: Jacob said to build with stock photos. */
   withStock?: boolean
+  /** Jacob's own message: go_live reads "skip <item>" and "on vercel.app" from it, never from the chief's text. */
+  said?: string
   /** The chief run and its job, which own approvals and runs. */
   runId: string
   jobId: () => Promise<string>
@@ -248,7 +281,13 @@ export async function startWebTask(opts: {
         title = `Merge ${w.name}'s site PR #${pr.prNumber}`
         expected = `Squash-merges PR #${pr.prNumber} and deletes its branch; Vercel deploys it to production (still noindex until go-live). Website step → approved.`
       } else {
-        detail = { action: 'go_live', repo, productionUrl: w.productionUrl }
+        // The givens first: a site does not go live with the tag, the domain or lead alerts undone.
+        const said = opts.said ?? ''
+        const unmet = goLiveGate(await loadGateClient(w.id), said)
+        if (unmet.length) {
+          throw new Error(`Not taking ${w.name} live: ${unmet.map((i) => i.text).join('; ')}. Jacob can say "skip <item>" (for example "go live, skip tag") to go anyway.`)
+        }
+        detail = { action: 'go_live', repo, productionUrl: w.productionUrl, skipped: Array.from(skipsIn(said)) }
         title = `Take ${w.name}'s site live (indexable)`
         expected = 'Dispatches go_live, which flips the site to indexable; its PR merges on the callback and production redeploys. The website step goes live when the web checks see it indexable.'
       }
@@ -256,17 +295,80 @@ export async function startWebTask(opts: {
     }
 
     case 'connect_domain': {
-      const domain = (opts.domain ?? '').trim().toLowerCase().replace(/^https?:\/\//, '').replace(/^www\./, '').replace(/\/.*$/, '')
-      if (!/^[a-z0-9-]+(\.[a-z0-9-]+)+$/.test(domain)) throw new Error('domain must look like example.com')
+      const domain = normalizeDomain(opts.domain ?? '')
       if (!w.projectId) throw new Error(`${w.name} has no Vercel project`)
       if (!w.domain) throw new Error(`${w.name} has no domain deliverable`)
       const dnsHeldBy = opts.dnsHeldBy === 'jacob' ? 'jacob' : 'client'
-      return createWebApproval(
+      const [who, recs] = await Promise.all([rdapLookup(domain), domainRecords(domain).catch(() => null)])
+      const records = (recs?.records ?? [
+        { type: 'A' as const, name: '@', value: '76.76.21.21', why: '' },
+        { type: 'CNAME' as const, name: 'www', value: 'cname.vercel-dns.com', why: '' },
+      ]).map((r) => ({ type: r.type, name: r.name, value: r.value }))
+      const instruction = dnsInstruction({ domain, registrar: who.registrar, records, nameservers: who.nameservers })
+      const r = await createWebApproval(
         opts,
         w,
         `Connect ${domain} to ${w.name}'s site`,
-        { action: 'connect_domain', domain, projectId: w.projectId, domainDeliverableId: w.domain.id, dnsHeldBy },
-        `Adds ${domain} and www.${domain} (redirecting to ${domain}) to the Vercel project. The site answers on the domain once DNS points at Vercel; the records go into the domain step (${dnsHeldBy === 'jacob' ? 'you add them' : 'the client adds them'}).`
+        { action: 'connect_domain', domain, projectId: w.projectId, domainDeliverableId: w.domain.id, dnsHeldBy, registrar: who.registrar ?? who.registrarRaw, records, instruction },
+        `Adds ${domain} and www.${domain} (redirecting to ${domain}) to the Vercel project. Then ${dnsHeldBy === 'jacob' ? 'you' : 'the client'}: ${instruction}`
+      )
+      return { ...r, done: `${r.done} ${instruction}` }
+    }
+
+    case 'buy_domain': {
+      const domain = normalizeDomain(opts.domain ?? '')
+      if (!w.projectId) throw new Error(`${w.name} has no Vercel project`)
+      if (!w.domain) throw new Error(`${w.name} has no domain deliverable`)
+      if (!registrantContact()) throw new Error('OPS_DOMAIN_CONTACT is not set (the registrant name, email, phone and address, as JSON); a domain cannot be bought without it')
+      const q = await domainQuote(domain)
+      if (!q.available) throw new Error(`${domain} is not available to buy`)
+      if (q.price === null) throw new Error(`Vercel gave no price for ${domain}`)
+      const renews = q.renewal !== null ? `, renews at $${q.renewal}/year` : ''
+      const r = await createWebApproval(
+        opts,
+        w,
+        `Buy ${domain} for ${w.name}`,
+        { action: 'buy_domain', domain, price: q.price, renewal: q.renewal, projectId: w.projectId, domainDeliverableId: w.domain.id },
+        `Buys ${domain} on Vercel for $${q.price} (1 year, auto-renew${renews}) on the team's payment method, adds it and www to ${w.name}'s project, and sets the domain step to propagating.`
+      )
+      return { ...r, done: `${r.done} ${domain} is available at $${q.price} for the first year${renews}.` }
+    }
+
+    case 'set_email_records': {
+      if (!w.domain) throw new Error(`${w.name} has no domain deliverable`)
+      const ev = (w.domain.evidence ?? {}) as Record<string, unknown>
+      const fromEv = typeof ev.domain === 'string' ? ev.domain : typeof ev.primaryDomain === 'string' ? ev.primaryDomain : ''
+      const domain = normalizeDomain(opts.domain || fromEv)
+      const who = await rdapLookup(domain)
+      if (!onVercelDns(who.nameservers) && ev.registrar !== 'Vercel') {
+        throw new Error(
+          `${domain} is not on Vercel DNS (nameservers ${who.nameservers.join(', ') || 'unknown'}), so the records go in at ${who.registrar ?? 'the registrar'}: ${GOOGLE_WORKSPACE_RECORDS.map((x) => `${x.type} ${x.name || '@'} ${x.value}`).join('; ')}`
+        )
+      }
+      return createWebApproval(
+        opts,
+        w,
+        `Set Google Workspace email records on ${domain}`,
+        { action: 'set_email_records', domain },
+        `Writes through Vercel DNS: ${GOOGLE_WORKSPACE_RECORDS.map((x) => `${x.type} ${x.name || '@'} ${x.value}`).join('; ')}. The web checks then read MX, SPF and DMARC.`
+      )
+    }
+
+    case 'install_tracking': {
+      if (!w.repoUrl) throw new Error(`${w.name} has no repo`)
+      const ads = await db.deliverable.findUnique({ where: { engagementId_type: { engagementId: w.id, type: 'ads' } }, select: { evidence: true } })
+      if (!ads) throw new Error(`${w.name} has no ads deliverable, so there is no Google tag to install`)
+      const { block, missing } = trackingBlockFrom(ads.evidence as Record<string, unknown>)
+      if (!block) {
+        throw new Error(`No tag to install for ${w.name}: missing ${missing.join(', ')}. Have the ads specialist read the conversion labels first (start_ads_task: "read the conversion labels").`)
+      }
+      const parts = [block.googleAdsId, block.conversions.form ? `form ${block.conversions.form}` : null, block.conversions.call ? `call ${block.conversions.call}` : null].filter(Boolean)
+      return createWebApproval(
+        opts,
+        w,
+        `Install Google tag on ${w.name}`,
+        { action: 'install_tracking', tracking: block, missing },
+        `Dispatches a site_update that writes the tracking block (${parts.join(', ')}) into site.config.ts and nothing else. The PR then needs a merge; the web checks confirm the tag on production.${missing.length ? ` Not included: ${missing.join(', ')}.` : ''}`
       )
     }
   }
@@ -337,19 +439,91 @@ export async function applyWebPush(approval: { id: string; jobId: string; detail
   if (action === 'connect_domain') {
     const domain = String(d.domain)
     const projectId = String(d.projectId)
+    const domainId = String(d.domainDeliverableId)
     const apex = await addProjectDomain(projectId, domain)
     await addProjectDomain(projectId, `www.${domain}`, domain)
     const { records } = await domainRecords(domain)
-    const all = [...apex.verification, ...records]
-    const note = `Point DNS at Vercel: ${all.map((r) => `${r.type} ${r.name} ${r.value}`).join('; ')}`
+    const dnsRequired = [...apex.verification, ...records].map((r) => ({ type: r.type, name: r.name, value: r.value }))
+    const registrar = typeof d.registrar === 'string' ? d.registrar : null
+    const instruction = dnsInstruction({ domain, registrar, records: dnsRequired })
     const held = d.dnsHeldBy === 'jacob' ? 'dns_records' : 'dns_by_client'
-    await setStep(String(d.domainDeliverableId), 'domain', held, note)
-    const ev = await db.deliverable.findUniqueOrThrow({ where: { id: String(d.domainDeliverableId) }, select: { evidence: true } })
-    await db.deliverable.update({
-      where: { id: String(d.domainDeliverableId) },
-      data: { evidence: { ...((ev.evidence ?? {}) as Record<string, unknown>), domain, dnsRecords: all } as Prisma.InputJsonObject },
+    await setStep(domainId, 'domain', held, instruction)
+    await mergeEvidence(domainId, { domain, dnsRecords: dnsRequired, dnsRequired, nameservers: [...VERCEL_NAMESERVERS], ...(registrar ? { registrar } : {}) })
+    const line = `Added ${domain} and www.${domain} to ${client}'s Vercel project. ${instruction}`
+    await db.opsActivity.create({ data: { engagementId, kind: 'system', body: line } })
+    return { line, applied: true }
+  }
+
+  if (action === 'buy_domain') {
+    const domain = String(d.domain)
+    const projectId = String(d.projectId)
+    const domainId = String(d.domainDeliverableId)
+    const contact = registrantContact()
+    if (!contact) throw new Error('OPS_DOMAIN_CONTACT is not set; nothing was bought')
+    const { orderId } = await buyDomain(domain, Number(d.price), contact)
+    // Orders complete asynchronously; give it a few seconds before adding the domain.
+    let status = 'purchasing'
+    for (let i = 0; i < 6 && status !== 'completed' && status !== 'failed'; i++) {
+      await new Promise((r) => setTimeout(r, 3000))
+      status = await domainOrder(orderId).then((o) => o.status).catch(() => status)
+    }
+    if (status === 'failed') throw new Error(`Vercel's order ${orderId} for ${domain} failed`)
+    const ev = await db.deliverable.findUniqueOrThrow({ where: { id: domainId }, select: { evidence: true } })
+    const wantWww = String(((ev.evidence ?? {}) as Record<string, unknown>).primaryDomain ?? '').startsWith('www.')
+    const primary = wantWww ? `www.${domain}` : domain
+    const other = wantWww ? domain : `www.${domain}`
+    const added: string[] = []
+    try {
+      await addProjectDomain(projectId, primary)
+      await addProjectDomain(projectId, other, primary)
+      added.push(primary, other)
+    } catch (err) {
+      await db.opsActivity.create({ data: { engagementId, kind: 'system', body: `Bought ${domain} (order ${orderId}) but could not add it to the project yet: ${errMessage(err)}. connect_domain adds it.` } })
+    }
+    await mergeEvidence(domainId, {
+      domain,
+      domains: [primary, other],
+      primaryDomain: primary,
+      registrar: 'Vercel',
+      purchasedAt: new Date().toISOString(),
+      orderId,
+      price: Number(d.price),
+      nameservers: [...VERCEL_NAMESERVERS],
     })
-    const line = `Added ${domain} and www.${domain} to ${client}'s Vercel project. ${note}.`
+    await setStep(domainId, 'domain', 'propagating', `Bought on Vercel (order ${orderId}, ${status}); ${added.length ? `${primary} on the project, ${other} redirects to it` : 'not on the project yet'}`)
+    const line = `Bought ${domain} for ${client} on Vercel ($${d.price}, order ${orderId}, ${status}). ${added.length ? `${primary} is on the project and ${other} redirects to it; ` : ''}domain step propagating.`
+    await db.opsActivity.create({ data: { engagementId, kind: 'system', body: line } })
+    return { line, applied: true }
+  }
+
+  if (action === 'set_email_records') {
+    const domain = String(d.domain)
+    const done: string[] = []
+    const failed: string[] = []
+    for (const rec of GOOGLE_WORKSPACE_RECORDS) {
+      const label = `${rec.type} ${rec.name || '@'} ${rec.value}`
+      try {
+        await addDnsRecord(domain, rec)
+        done.push(label)
+      } catch (err) {
+        failed.push(`${label}: ${errMessage(err)}`)
+      }
+    }
+    if (!done.length) throw new Error(`No email record was written on ${domain}: ${failed.join('; ')}`)
+    const email = await db.deliverable.findUnique({ where: { engagementId_type: { engagementId, type: 'email' } }, select: { id: true, step: true } })
+    if (email && (email.step === 'dns_records' || email.step === 'workspace')) await setStep(email.id, 'email', 'user_added', `MX, SPF and DMARC set on ${domain} through Vercel DNS`)
+    const line = `Email records on ${domain} for ${client}: ${done.join('; ')}${failed.length ? `. Not written: ${failed.join('; ')}` : ''}.`
+    await db.opsActivity.create({ data: { engagementId, kind: 'system', body: line } })
+    return { line, applied: true }
+  }
+
+  if (action === 'install_tracking') {
+    const tracking = d.tracking as TrackingBlock
+    const r = await dispatchRun(engagementId, { kind: 'site_update', instructions: trackingInstructions(tracking), dry: false, jobId: approval.jobId, tracking })
+    if (r.blocked.length) throw new Error(`blocked: ${r.blocked.join('; ')}`)
+    if (!r.ok) throw new Error(r.error ?? 'install_tracking dispatch failed')
+    await db.opsJob.updateMany({ where: { id: approval.jobId }, data: { status: 'running' } })
+    const line = `Google tag install dispatched for ${client} (${tracking.googleAdsId}); trackingInstalled is set when the run calls back.`
     await db.opsActivity.create({ data: { engagementId, kind: 'system', body: line } })
     return { line, applied: true }
   }

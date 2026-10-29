@@ -54,6 +54,8 @@ export async function dispatchRun(
     assets?: { url: string; kind: string; filename: string; caption: string | null; heroCandidate: boolean; service: string | null; beforeAfter: string | null }[]
     oldSite?: { url: string; use: string; notes: string | null } | null
     withStock?: boolean
+    /** A tracking install (site_update): the block it writes, kept on the run so the callback can set trackingInstalled. */
+    tracking?: Record<string, unknown>
   }
 ): Promise<DispatchResult> {
   const out: DispatchResult = { ok: false, dry: input.dry, blocked: [], repo: null, runId: null, status: null, payload: null }
@@ -121,6 +123,7 @@ export async function dispatchRun(
         ...(instructions && input.kind === 'site_update' ? { instructions } : {}),
         ...(withFiles ? { assetCount: assets.length, photoCount: assets.filter((a) => a.kind === 'photo').length, assets, oldSite, withStock: Boolean(input.withStock) } : {}),
         ...(out.assetsInBriefOnly ? { assetsInBriefOnly: true } : {}),
+        ...(input.tracking ? { tracking: input.tracking } : {}),
       } as Prisma.InputJsonObject,
     },
   })

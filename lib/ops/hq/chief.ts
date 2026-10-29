@@ -38,6 +38,8 @@ import { type ClientTool, runAgentLoop } from './loop'
 import { adsAccountUrl } from './links'
 import { createRun, failRun, finishRun } from './runs'
 import { onSpecialistRunEnded } from './jobs'
+import { loadGateClients } from '@/lib/ops/gate-data'
+import { reportGaps, type GateClient } from '@/lib/ops/launch-gate'
 
 const HISTORY_MESSAGES = 40
 
@@ -59,6 +61,9 @@ What you do:
 - Every brief follows docs/ops/site-brief-standards.md (get_brief_template returns it with the template): services named and split the way customers search, no published job ranges, no claims the client did not make, hours and towns as the rules say, no invented tagline, about story or reviews, display name without LLC or numbering. List what you applied under "## Standards applied" at the end of the brief body; when the client's answers override a standard, the client wins and you say so there. The same file's section 9 is how the answers become the ads spec.
 - A build needs real photos: with none on file and no old site set to verbatim, site_build is refused. Tell Jacob to add photos at the intake page, or build with stock only if he says so (withStock).
 - Website work: start_web_task. A branch name, preview URL or PR comes from the run's recorded result (get_client, the job report, review), never from the agent's BUILD-REPORT text, which can name a branch that was never pushed. "Build X's site": site_build (it provisions first if needed). After a build reports back: review, which posts the preview and PR. "Merge it" / "take it live" / "connect example.com": merge, go_live, connect_domain, each waiting for Push. Never claim a site is built, merged or live before its run or Push says so.
+- Domains: a client with no domain (intake domain.current empty, domain.wanted set) or "buy example.com for X": offer buy_domain, which checks availability and price and waits for Push. A domain the client owns: connect_domain, then give Jacob the one registrar instruction it returns, word for word. Google Workspace mail on a domain on Vercel DNS: set_email_records.
+- Tracking: "install tracking on X": install_tracking. It needs the ads account's AW- id and conversion labels on the ads deliverable; if they are missing, start the ads specialist with "read the conversion labels" first.
+- Go-live and enable gates: go_live is refused while the Google tag, the domain, the approval or the owner's email and phone for lead alerts are undone, and the refusal names each one; repeat it to Jacob as given. Only Jacob's own words "skip <item>" (or "go live on vercel.app") waive one; never add them yourself. Enable proposals carry their unmet list on the card.
 - Hand off work Jacob asks for: start_ads_task for Google Ads work, start_web_task for a change to a client's website. Each one starts a specialist run under the current job. Write instructions a specialist can act on without asking back: the client, the goal, the limits, and Jacob's decisions.
 - When Jacob points at a spec under docs/ads-specs/, read it with read_spec and pass its full text in the start_ads_task instructions, after one line with Jacob's own instructions (e.g. "Build it paused and queue the enable for my approval."). Do not shorten the spec.
 - After you start specialists, tell Jacob in a line or two what you started. Do not call finish_job then: when every run in the job has finished you will be asked for the report, and you write it with finish_job.
@@ -782,8 +787,12 @@ function chiefTools(ctx: ChiefContext): ClientTool[] {
         'review: after a build calls back, post the preview and PR and set the website step to send_preview.',
         'merge: queue the PR merge for Push.',
         'go_live: queue making the site indexable for Push.',
-        'connect_domain: queue adding the domain to Vercel for Push (domain; dnsHeldBy client or jacob).',
-        'provision, site_build and site_update start at once; merge, go_live and connect_domain wait for Jacob\'s Push. A build reports back in a few minutes; do not say it is done before the report.',
+        'connect_domain: queue adding a domain the client owns to Vercel for Push (domain; dnsHeldBy client or jacob); returns the one instruction for the registrar.',
+        'buy_domain: queue buying the domain on Vercel for Push (domain); returns the price.',
+        'set_email_records: queue Google Workspace MX, SPF and DMARC on a domain on Vercel DNS for Push.',
+        'install_tracking: queue installing the Google tag (from the ads account\'s labels) for Push.',
+        'go_live is refused with the list of givens still undone unless Jacob\'s message skips them.',
+        'provision, site_build and site_update start at once; the rest wait for Jacob\'s Push. A build reports back in a few minutes; do not say it is done before the report.',
       ].join(' '),
       input_schema: {
         type: 'object',
@@ -791,7 +800,7 @@ function chiefTools(ctx: ChiefContext): ClientTool[] {
           engagementId: { type: 'string' },
           kind: { type: 'string', enum: [...WEB_TASK_KINDS] },
           instructions: { type: 'string', description: 'site_update: the exact change, written for the site agent.' },
-          domain: { type: 'string', description: 'connect_domain: e.g. example.com' },
+          domain: { type: 'string', description: 'connect_domain, buy_domain, set_email_records: e.g. example.com' },
           dnsHeldBy: { type: 'string', enum: ['client', 'jacob'], description: 'connect_domain: who adds the DNS records. Default client.' },
           withStock: { type: 'boolean', description: 'site_build only: true only when Jacob said to build with stock photos. Without photos on file (and no old site to copy) the build is refused otherwise.' },
         },
@@ -806,10 +815,22 @@ function chiefTools(ctx: ChiefContext): ClientTool[] {
           domain: input.domain ? str(input.domain) : undefined,
           dnsHeldBy: input.dnsHeldBy === 'jacob' ? 'jacob' : 'client',
           withStock: input.withStock === true,
+          said: ctx.prompt,
           runId: ctx.runId,
           jobId: () => ensureJob(ctx, [engagementId]),
         })
         return { result: r, label: `Web ${str(input.kind)} for ${await engagementName(engagementId)}: ${r.done}` }
+      },
+    },
+    {
+      name: 'install_tracking',
+      description:
+        "Install the Google tag on a client's site: the ads account's AW- id plus the form and click-to-call conversion labels (from the ads deliverable) go into site.config.ts by a site_update that changes nothing else. Waits for Jacob's Push. Fails with what is missing when the labels have not been read yet.",
+      input_schema: { type: 'object', properties: { engagementId: { type: 'string' } }, required: ['engagementId'] },
+      run: async (input) => {
+        const engagementId = str(input.engagementId)
+        const r = await startWebTask({ engagementId, kind: 'install_tracking', said: ctx.prompt, runId: ctx.runId, jobId: () => ensureJob(ctx, [engagementId]) })
+        return { result: r, label: `Google tag for ${await engagementName(engagementId)}: ${r.done}` }
       },
     },
     {
@@ -903,10 +924,12 @@ async function jobRuns(jobId: string) {
     db.agentRun.findMany({
       where: { jobId, agent: { in: ['ads', 'web'] } },
       orderBy: { createdAt: 'asc' },
-      select: { id: true, agent: true, kind: true, mode: true, status: true, error: true, input: true, output: true, engagement: { select: { displayName: true } } },
+      select: { id: true, agent: true, kind: true, mode: true, status: true, error: true, input: true, output: true, engagementId: true, engagement: { select: { displayName: true } } },
     }),
     db.opsApproval.findMany({ where: { jobId }, orderBy: { createdAt: 'asc' }, select: { runId: true, title: true, status: true, detail: true } }),
   ])
+  // The givens still undone per client: every report names them, asked or not.
+  const gates = await loadGateClients(runs.map((r) => r.engagementId ?? '')).catch(() => new Map<string, GateClient>())
   return runs.map((r) => {
     const out = (r.output ?? {}) as Record<string, unknown>
     const input = (r.input ?? {}) as Record<string, unknown>
@@ -944,6 +967,7 @@ async function jobRuns(jobId: string) {
       error: r.error,
       report: out.report ?? null,
       web,
+      notDone: r.engagementId && gates.has(r.engagementId) ? reportGaps(gates.get(r.engagementId)!) : [],
       links: [
         ...(customerId ? [{ label: 'Google Ads account', url: adsAccountUrl(customerId) }] : []),
         ...(web?.prUrl ? [{ label: 'Pull request', url: web.prUrl }] : []),
@@ -971,13 +995,14 @@ function fallbackSections(runs: Awaited<ReturnType<typeof jobRuns>>): ReportSect
           ...(w.mergeError ? [`PR not merged: ${String(w.mergeError)}`] : []),
         ]
       : null
+    const did =
+      r.status !== 'succeeded'
+        ? [`Run ${r.status}${r.error ? `: ${r.error}` : ''}`, ...(w?.failureTail ? [`Agent's last words:\n${w.failureTail}`] : [])]
+        : webDid ?? (rep.done ?? []).map((d) => String(d.change ?? '')).filter(Boolean)
     return {
       agent: r.agent ?? 'ads',
       client: r.client,
-      did:
-        r.status !== 'succeeded'
-          ? [`Run ${r.status}${r.error ? `: ${r.error}` : ''}`, ...(w?.failureTail ? [`Agent's last words:\n${w.failureTail}`] : [])]
-          : webDid ?? (rep.done ?? []).map((d) => String(d.change ?? '')).filter(Boolean),
+      did: r.notDone.length ? [...did, `Not done: ${r.notDone.join('; ')}`] : did,
       expect: w ? `Next: ${w.nextStep}.` : String(rep.expected ?? ''),
       links: r.links,
       waitingForPush: r.approvals.filter((a) => a.status === 'pending').map((a) => a.title),
@@ -994,7 +1019,7 @@ export async function runChiefReport(jobId: string) {
   const prompt = [
     `Every specialist run in this job has finished. Jacob asked: "${job.prompt}"`,
     `The runs, with each one's parsed report, links and approvals:\n${JSON.stringify(runs, null, 1)}`,
-    'Call finish_job once. sections: one per run, { agent, client, did: [what was done, one line each], expect: what to expect and when, links: [{ label, url }] (use the links given), waitingForPush: [titles of pending approvals] }. Then reply to Jacob in two or three plain sentences: what is done and what waits for his Push. No em dashes.',
+    'Call finish_job once. sections: one per run, { agent, client, did: [what was done, one line each], expect: what to expect and when, links: [{ label, url }] (use the links given), waitingForPush: [titles of pending approvals] }. When a run\'s notDone is not empty, the last line of its did is "Not done: " followed by those items, word for word, even if nobody asked. Then reply to Jacob in two or three plain sentences: what is done and what waits for his Push, ending with the Not done items if there are any. No em dashes.',
   ].join('\n\n')
   try {
     const result = await runAgentLoop({

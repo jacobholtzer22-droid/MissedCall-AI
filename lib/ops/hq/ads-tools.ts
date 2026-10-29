@@ -24,6 +24,7 @@ import { enums, type MutateOperation } from 'google-ads-api'
 import { db } from '@/lib/db'
 import { getGoogleAdsClient } from '@/lib/google-ads'
 import { STEP_CATALOG, defaultWaitingOn, stepFor } from '@/lib/ops/steps'
+import { classifyConversionActions, parseSendTo, type ConversionRow } from '@/lib/ops/tracking'
 import { emit, noEmDash, oneLine } from './events'
 import { validate, type ClientTool } from './loop'
 
@@ -350,6 +351,31 @@ const READS: Def[] = [
     },
   },
   {
+    name: 'read_conversion_labels',
+    description:
+      "Read only on Google: the account's AW- id and the tag labels of its enabled conversion actions, picking the website lead form, the click-to-call on the site and calls from ads, and save them on the client's ads deliverable (googleAdsId, conversionActions) so install_tracking can put the Google tag on the site. Pass formId or callId to pin an action when the names are ambiguous.",
+    input_schema: {
+      type: 'object',
+      properties: {
+        customerId: customerIdProp,
+        formId: { type: 'string', description: 'Optional: the conversion action id that is the website lead form.' },
+        callId: { type: 'string', description: 'Optional: the conversion action id that is the click-to-call on the site.' },
+      },
+      required: ['customerId'],
+    },
+    run: async (ctx, i) => {
+      const { rows, trackingId } = await readConversionRows(ctx)
+      const pinned = { formId: i.formId ? digits(i.formId, 'formId') : null, callId: i.callId ? digits(i.callId, 'callId') : null }
+      const found = classifyConversionActions(rows, pinned, trackingId)
+      const saved = ctx.engagementId && !ctx.dry ? await mergeAdsEvidence(ctx.engagementId, { googleAdsId: found.googleAdsId, conversionActions: found.conversionActions, labelsReadAt: new Date().toISOString() }) : false
+      const ca = found.conversionActions
+      return {
+        result: { ...found, saved, actions: rows.map((r) => ({ id: r.id, name: r.name, type: r.type, category: r.category, sendTo: r.snippets.map(parseSendTo).find(Boolean) ?? null })) },
+        label: `${found.googleAdsId ?? 'no AW- id'}; form ${ca.formLabel ? 'labelled' : 'missing'}, call ${ca.callLabel ? 'labelled' : 'missing'} on ${ctx.client}${saved ? ' (saved)' : ''}`,
+      }
+    },
+  },
+  {
     name: 'campaign_settings',
     description:
       'Settings for one campaign or all: budget (and whether shared), bidding strategy and its limits, location option (Presence or Presence-or-interest), networks, start and end, targeted and excluded locations, ad groups with bids, and the campaign’s negative keywords.',
@@ -673,6 +699,61 @@ export async function setAdsStep(engagementId: string, client: string, key: stri
   ])
 }
 
+/** Merge keys into the client's ads deliverable evidence (Ops tables only). */
+export async function mergeAdsEvidence(engagementId: string, patch: Record<string, unknown>) {
+  const d = await db.deliverable.findUnique({ where: { engagementId_type: { engagementId, type: 'ads' } }, select: { id: true, evidence: true } })
+  if (!d) return false
+  await db.deliverable.update({ where: { id: d.id }, data: { evidence: { ...((d.evidence ?? {}) as Record<string, unknown>), ...patch } as Prisma.InputJsonObject } })
+  return true
+}
+
+/** A context for reads outside a run (scripts): no feed, every write refused by dry. */
+export function readOnlyAdsContext(customerId: string, client: string): AdsToolContext {
+  return { runId: '', customerId: customerId.replace(/-/g, ''), client, engagementId: null, mode: 'work', dry: true, calls: 0, writes: [] }
+}
+
+/** Enabled conversion actions with their tag snippets, and the account's conversion tracking id. */
+export async function readConversionRows(ctx: AdsToolContext): Promise<{ rows: ConversionRow[]; trackingId: string | null }> {
+  const [actions, cust] = await Promise.all([
+    query(
+      ctx,
+      `SELECT conversion_action.id, conversion_action.name, conversion_action.type, conversion_action.category, conversion_action.status, conversion_action.tag_snippets
+       FROM conversion_action WHERE conversion_action.status = 'ENABLED'`
+    ),
+    query(ctx, `SELECT customer.conversion_tracking_setting.conversion_tracking_id FROM customer LIMIT 1`).catch(() => []),
+  ])
+  const rows: ConversionRow[] = actions.map((x) => ({
+    id: String(x.conversion_action.id),
+    name: String(x.conversion_action.name ?? ''),
+    type: en(enums.ConversionActionType, x.conversion_action.type) ?? '',
+    category: en(enums.ConversionActionCategory, x.conversion_action.category) ?? '',
+    status: en(enums.ConversionActionStatus, x.conversion_action.status) ?? '',
+    snippets: ((x.conversion_action.tag_snippets ?? []) as { event_snippet?: string }[]).map((t) => t.event_snippet ?? '').filter(Boolean),
+  }))
+  const tid = cust[0]?.customer?.conversion_tracking_setting?.conversion_tracking_id
+  return { rows, trackingId: tid ? String(tid) : null }
+}
+
+/**
+ * What the enable gate reads live for one campaign: an enabled call asset (on
+ * the campaign or the account), the ads' final URLs, and how many conversion
+ * actions are enabled. Each is null when Google could not be read.
+ */
+export async function enableFacts(ctx: AdsToolContext, campaignId: string): Promise<{ callAsset: boolean | null; finalUrls: string[] | null; conversionActions: number | null }> {
+  const id = digits(campaignId, 'campaignId')
+  const [campaignCall, accountCall, ads, actions] = await Promise.all([
+    query(ctx, `SELECT campaign_asset.asset FROM campaign_asset WHERE campaign.id = ${id} AND campaign_asset.field_type = 'CALL' AND campaign_asset.status = 'ENABLED'`).catch(() => null),
+    query(ctx, `SELECT customer_asset.asset FROM customer_asset WHERE customer_asset.field_type = 'CALL' AND customer_asset.status = 'ENABLED'`).catch(() => null),
+    query(ctx, `SELECT ad_group_ad.ad.final_urls FROM ad_group_ad WHERE campaign.id = ${id} AND ad_group_ad.status != 'REMOVED'`).catch(() => null),
+    query(ctx, `SELECT conversion_action.id FROM conversion_action WHERE conversion_action.status = 'ENABLED'`).catch(() => null),
+  ])
+  return {
+    callAsset: campaignCall === null && accountCall === null ? null : (campaignCall?.length ?? 0) + (accountCall?.length ?? 0) > 0,
+    finalUrls: ads === null ? null : Array.from(new Set(ads.flatMap((a) => (a.ad_group_ad?.ad?.final_urls ?? []) as string[]))),
+    conversionActions: actions === null ? null : actions.length,
+  }
+}
+
 /** Campaigns in the run's account that are not removed: id, status name, daily budget in dollars. */
 export async function campaignStates(ctx: AdsToolContext): Promise<{ id: string; status: string | null; dailyBudget: number | null }[]> {
   const rows = await query(ctx, `SELECT campaign.id, campaign.status, campaign_budget.amount_micros FROM campaign WHERE campaign.status != 'REMOVED'`)
@@ -821,7 +902,21 @@ const WORK_WRITES: Def[] = [
       if (callType && i.callDurationSeconds !== undefined) resource.phone_call_duration_seconds = Math.round(Number(i.callDurationSeconds))
       const what = `conversion action "${name}" (${type} / ${category}${primary ? ', primary' : ', secondary'})`
       const r = await mutate(ctx, what, [{ entity: 'conversion_action', operation: 'create', resource }], i.validateOnly)
-      return { result: { ...r, name, type, category, primary }, label: null }
+      // The tag label exists once the action does: read it and keep it on the ads deliverable for install_tracking.
+      let sendTo: { awId: string; label: string } | null = null
+      const newId = r.changed ? /conversionActions\/(\d+)/.exec(String(r.results[0] ?? ''))?.[1] : undefined
+      if (newId) {
+        const snip = await query(ctx, `SELECT conversion_action.tag_snippets FROM conversion_action WHERE conversion_action.id = ${newId}`).catch(() => [])
+        sendTo = ((snip[0]?.conversion_action?.tag_snippets ?? []) as { event_snippet?: string }[]).map((t) => parseSendTo(t.event_snippet)).find(Boolean) ?? null
+        const role = type === 'AD_CALL' ? 'adCall' : category === 'SUBMIT_LEAD_FORM' ? 'form' : category === 'PHONE_CALL_LEAD' ? 'call' : null
+        if (role && ctx.engagementId) {
+          const d = await db.deliverable.findUnique({ where: { engagementId_type: { engagementId: ctx.engagementId, type: 'ads' } }, select: { evidence: true } })
+          const ev = (d?.evidence ?? {}) as Record<string, unknown>
+          const ca = { ...((ev.conversionActions ?? {}) as Record<string, unknown>), [`${role}Id`]: newId, ...(role !== 'adCall' && sendTo ? { [`${role}Label`]: sendTo.label } : {}) }
+          await mergeAdsEvidence(ctx.engagementId, { conversionActions: ca, ...(sendTo ? { googleAdsId: sendTo.awId } : {}) })
+        }
+      }
+      return { result: { ...r, name, type, category, primary, id: newId ?? null, sendTo }, label: null }
     },
   },
   {
@@ -860,6 +955,9 @@ const WORK_WRITES: Def[] = [
       ]
       const what = `call asset ${phone} on campaign ${campaignId}${i.conversionActionId ? ` reporting to conversion action ${i.conversionActionId}` : ''}`
       const r = await mutate(ctx, what, ops, i.validateOnly)
+      // The enable gate reads callAssetId from the ads deliverable.
+      const assetName = r.results.find((x) => /\/assets\//.test(String(x)))
+      if (r.changed && assetName && ctx.engagementId) await mergeAdsEvidence(ctx.engagementId, { callAssetId: String(assetName), callAssetCampaignId: campaignId })
       return { result: { ...r, phone, campaignId }, label: null }
     },
   },

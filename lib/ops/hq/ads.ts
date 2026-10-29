@@ -29,7 +29,9 @@ import path from 'node:path'
 import type { Prisma } from '@prisma/client'
 import { db } from '@/lib/db'
 import { AGENT_MODEL_DEFAULT, type ApiMessage } from './anthropic'
-import { ADS_APPLY_TOOLS, adsTools, campaignStates, checkProposal, isNeverTouch, missingAdsEnv, setAdsStep, type AdsToolContext } from './ads-tools'
+import { ADS_APPLY_TOOLS, adsTools, campaignStates, checkProposal, enableFacts, isNeverTouch, missingAdsEnv, setAdsStep, type AdsToolContext } from './ads-tools'
+import { loadGateClient } from '@/lib/ops/gate-data'
+import { enableGate, enableHold, trackingOk, type GateClient } from '@/lib/ops/launch-gate'
 import { DECISION_PREFIX } from './decisions'
 import { emit, noEmDash, oneLine } from './events'
 import { runAgentLoop } from './loop'
@@ -204,7 +206,7 @@ export async function startAdsRun(opts: {
   })
 }
 
-function taskMessage(input: AdsInput, mode: 'work' | 'apply', decisions: string[]): string {
+function taskMessage(input: AdsInput, mode: 'work' | 'apply', decisions: string[], gate: GateClient | null): string {
   const modeLine =
     mode === 'work'
       ? [
@@ -219,6 +221,9 @@ function taskMessage(input: AdsInput, mode: 'work' | 'apply', decisions: string[
   return [
     accountLine,
     `Standing decisions for this client:\n${decisions.length ? decisions.map((d) => `- ${DECISION_PREFIX} ${d}`).join('\n') : '- none'}`,
+    gate
+      ? `Site status: tracking ${trackingOk(gate) ? 'installed' : 'not installed'} (the Google tag on the client's site, which form and click-to-call conversions need).`
+      : '',
     `Task from Jacob's chief:\n${input.instructions}`,
     modeLine,
     input.dry
@@ -293,7 +298,8 @@ export async function runAdsTask(runId: string) {
         describeCall: (name) => `Calling ${name} on ${input.client}`,
       })
 
-    let result = await loop([{ role: 'user', content: taskMessage(input, mode, decisions) }])
+    const gate = run.engagementId ? await loadGateClient(run.engagementId).catch(() => null) : null
+    let result = await loop([{ role: 'user', content: taskMessage(input, mode, decisions, gate) }])
     let turns = result.turns
     let { report, error } = parseAdsReport(result.finalText)
 
@@ -317,8 +323,21 @@ export async function runAdsTask(runId: string) {
 
     let approvals = 0
     if (report && run.jobId && mode === 'work') {
+      const said = (await db.opsJob.findUnique({ where: { id: run.jobId }, select: { prompt: true } }))?.prompt ?? ''
       for (const p of report.proposals) {
         if (checkProposal(p.action, p.args)) continue
+        // An enable is never blocked, but every given still undone goes on the card in amber and Push becomes Push anyway.
+        if (p.action === 'enable_campaign' && gate) {
+          const campaignId = String(p.args.campaignId ?? p.campaignId ?? '')
+          const facts = campaignId ? await enableFacts(ctx, campaignId).catch(() => ({})) : {}
+          const unmet = enableGate(gate, facts, said)
+          const hold = enableHold(unmet)
+          if (hold) {
+            p.hold = p.hold ? `${p.hold}. ${hold}` : hold
+            ;(p as AdsProposal & { unmet?: string[] }).unmet = unmet.map((u) => u.text)
+          }
+          await emit(runId, 'status', hold ? `Enable gate for campaign ${campaignId}: ${hold}` : `Enable gate for campaign ${campaignId}: nothing unmet`)
+        }
         await db.opsApproval.create({
           data: {
             jobId: run.jobId,

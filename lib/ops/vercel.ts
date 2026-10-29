@@ -172,3 +172,88 @@ export async function domainRecords(apex: string): Promise<{ records: DnsRecord[
     misconfigured: errors.length ? null : body?.misconfigured ?? null,
   }
 }
+
+// ── Registrar (buying) and DNS records ──────────────────────────────────────
+// Vercel's Domains Registrar API (/v1/registrar). The /v4/domains price,
+// status and buy endpoints were sunset on November 9, 2025.
+
+async function read<T>(path: string, label: string): Promise<T> {
+  const { token, team } = creds()
+  const sep = path.includes('?') ? '&' : '?'
+  let res: Response
+  try {
+    res = await fetchWithTimeout(`${VERCEL}${path}${sep}teamId=${encodeURIComponent(team)}`, { headers: { Authorization: `Bearer ${token}` } }, 20_000)
+  } catch (err) {
+    throw new VercelError(label, 0, errMessage(err))
+  }
+  const text = await res.text()
+  const data = text ? JSON.parse(text) : null
+  if (!res.ok) throw new VercelError(label, res.status, data?.error?.message ?? data?.message ?? '')
+  return data as T
+}
+
+/** Whether the domain can be bought, and its first-year and renewal price in USD. */
+export async function domainQuote(domain: string): Promise<{ available: boolean; price: number | null; renewal: number | null }> {
+  const [a, p] = await Promise.all([
+    read<{ available: boolean }>(`/v1/registrar/domains/${encodeURIComponent(domain)}/availability`, `availability ${domain}`),
+    read<{ purchasePrice: number | null; renewalPrice: number | null }>(`/v1/registrar/domains/${encodeURIComponent(domain)}/price`, `price ${domain}`),
+  ])
+  return { available: Boolean(a.available), price: p.purchasePrice ?? null, renewal: p.renewalPrice ?? null }
+}
+
+export type RegistrantContact = {
+  firstName: string
+  lastName: string
+  email: string
+  phone: string
+  address1: string
+  city: string
+  state: string
+  zip: string
+  country: string
+  companyName?: string
+}
+
+/**
+ * The registrant on every domain the platform buys, from OPS_DOMAIN_CONTACT
+ * (JSON, read by name only). null when it is unset or incomplete.
+ */
+export function registrantContact(): RegistrantContact | null {
+  const raw = process.env.OPS_DOMAIN_CONTACT?.trim()
+  if (!raw) return null
+  try {
+    const c = JSON.parse(raw) as Record<string, unknown>
+    const need = ['firstName', 'lastName', 'email', 'phone', 'address1', 'city', 'state', 'zip', 'country']
+    return need.every((k) => typeof c[k] === 'string' && (c[k] as string).trim()) ? (c as unknown as RegistrantContact) : null
+  } catch {
+    return null
+  }
+}
+
+/** Buy a domain for a year at exactly the quoted price (Vercel refuses a mismatch), auto-renewing. Real money. */
+export async function buyDomain(domain: string, expectedPrice: number, contact: RegistrantContact): Promise<{ orderId: string }> {
+  return write<{ orderId: string }>('POST', `/v1/registrar/domains/${encodeURIComponent(domain)}/buy`, `buy ${domain}`, {
+    autoRenew: true,
+    years: 1,
+    expectedPrice,
+    contactInformation: contact,
+  })
+}
+
+/** A registrar order's status (purchases complete asynchronously). */
+export async function domainOrder(orderId: string): Promise<{ status: string }> {
+  const o = await read<{ status?: string; domains?: { status?: string }[] }>(`/v1/registrar/orders/${encodeURIComponent(orderId)}`, `order ${orderId}`)
+  return { status: o.status ?? o.domains?.[0]?.status ?? 'unknown' }
+}
+
+/** Add one DNS record to a domain on Vercel DNS. */
+export async function addDnsRecord(domain: string, rec: { name: string; type: string; value: string; mxPriority?: number }): Promise<{ uid: string | null }> {
+  const data = await write<{ uid?: string }>('POST', `/v2/domains/${encodeURIComponent(domain)}/records`, `dns ${rec.type} ${rec.name || '@'} ${domain}`, {
+    name: rec.name,
+    type: rec.type,
+    value: rec.value,
+    ttl: 3600,
+    ...(rec.mxPriority !== undefined ? { mxPriority: rec.mxPriority } : {}),
+  })
+  return { uid: data?.uid ?? null }
+}

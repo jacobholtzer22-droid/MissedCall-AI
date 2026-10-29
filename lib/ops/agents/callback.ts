@@ -148,6 +148,12 @@ export async function applyCallback(raw: string): Promise<CallbackOutcome> {
 
   if (website && body.branch) await mergeEvidence(website.id, { previewBranch: body.branch })
 
+  // A tracking install (install_tracking) that came back green: the tag is in the site's PR.
+  const runInput = (run.input ?? {}) as { tracking?: unknown }
+  if (succeeded && website && runInput.tracking && typeof runInput.tracking === 'object') {
+    await mergeEvidence(website.id, { trackingInstalled: true, trackingInstalledAt: new Date().toISOString(), tracking: runInput.tracking, trackingPrUrl: output.prUrl })
+  }
+
   // The workflow could not open the PR (see openPrForRun): open it here.
   const input = (run.input ?? {}) as { repo?: unknown }
   if (succeeded && !output.prUrl && body.branch && typeof input.repo === 'string' && input.repo) {
