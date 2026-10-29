@@ -924,6 +924,8 @@ async function jobRuns(jobId: string) {
             verifyPassed: out.verifyPassed ?? null,
             failingChecks: Array.isArray(out.failingChecks) ? out.failingChecks : [],
             reportExcerpt: typeof out.reportExcerpt === 'string' ? out.reportExcerpt.slice(0, 1500) : null,
+            // A failed run: the end of the agent's own result text, which says why.
+            failureTail: typeof out.failureTail === 'string' ? out.failureTail : null,
             mergeError: out.mergeError ?? null,
             nextStep:
               r.kind === 'provision'
@@ -972,7 +974,10 @@ function fallbackSections(runs: Awaited<ReturnType<typeof jobRuns>>): ReportSect
     return {
       agent: r.agent ?? 'ads',
       client: r.client,
-      did: r.status !== 'succeeded' ? [`Run ${r.status}${r.error ? `: ${r.error}` : ''}`] : webDid ?? (rep.done ?? []).map((d) => String(d.change ?? '')).filter(Boolean),
+      did:
+        r.status !== 'succeeded'
+          ? [`Run ${r.status}${r.error ? `: ${r.error}` : ''}`, ...(w?.failureTail ? [`Agent's last words:\n${w.failureTail}`] : [])]
+          : webDid ?? (rep.done ?? []).map((d) => String(d.change ?? '')).filter(Boolean),
       expect: w ? `Next: ${w.nextStep}.` : String(rep.expected ?? ''),
       links: r.links,
       waitingForPush: r.approvals.filter((a) => a.status === 'pending').map((a) => a.title),

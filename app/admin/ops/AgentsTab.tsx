@@ -143,6 +143,9 @@ export function AgentsTab({ board, actions }: { board: OpsBoard; actions: OpsAct
                           <td />
                           <td colSpan={6} className="px-3 pb-3 space-y-2 text-xs">
                             {r.error && <p className="text-red-300">Error: {r.error}</p>}
+                            {typeof r.output.failureTail === 'string' && r.output.failureTail && (
+                              <RunDetail title="Why it failed (end of the agent's result)" text={r.output.failureTail} />
+                            )}
                             <RunDetail title="Input" text={describeInput(r.input)} />
                             <RunDetail
                               title={`Report${r.output.verifyPassed === false ? ' (gate failed)' : r.output.verifyPassed === true ? ' (gate passed)' : ''}`}

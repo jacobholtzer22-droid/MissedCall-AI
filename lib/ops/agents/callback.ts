@@ -7,8 +7,10 @@
 // compare.
 //
 // Body (what the workflow sends): { run_id, kind, status, branch, pr_url,
-// verify_passed, failing_checks, report_excerpt, run_url? }. status is the
-// GitHub job status: success | failure | cancelled.
+// verify_passed, failing_checks, report_excerpt, run_url?, failure_tail? }.
+// status is the GitHub job status: success | failure | cancelled.
+// failure_tail, on a failed run only, is the end of the agent's result text;
+// it is stored as output.failureTail and its last line goes into the error.
 //
 // Idempotent per run_id: once a run has finished, a repeat callback changes
 // nothing and answers 200 { duplicate: true }.
@@ -26,6 +28,7 @@ import { deleteBranch, getRepo, mergePullRequest, openPullRequest } from '@/lib/
 import { listDeploymentsForBranch } from '@/lib/ops/vercel'
 import { emit } from '@/lib/ops/hq/events'
 import { mergeEvidence } from './shared'
+import { failureReason, readFailureTail } from '@/lib/ops/build-failure'
 
 /**
  * Open the PR the workflow could not. Repos default to "GitHub Actions may not
@@ -75,6 +78,7 @@ export type CallbackBody = {
   failing_checks?: string[]
   report_excerpt?: string | null
   run_url?: string | null
+  failure_tail?: string | null
 }
 
 export type CallbackOutcome =
@@ -113,7 +117,9 @@ export async function applyCallback(raw: string): Promise<CallbackOutcome> {
     failingChecks: Array.isArray(body.failing_checks) ? body.failing_checks : [],
     reportExcerpt: body.report_excerpt ?? null,
     runUrl: body.run_url ?? null,
+    failureTail: succeeded ? null : readFailureTail(body.failure_tail),
   }
+  const reason = failureReason(output.failureTail)
 
   // Claim the run: only one callback may finish it.
   const claimed = await db.agentRun.updateMany({
@@ -123,7 +129,9 @@ export async function applyCallback(raw: string): Promise<CallbackOutcome> {
       finishedAt: new Date(),
       output: output as Prisma.InputJsonObject,
       ...(body.run_url ? { externalId: body.run_url } : {}),
-      error: succeeded ? null : `workflow ${body.status}${output.failingChecks.length ? `; failing: ${output.failingChecks.join(', ')}` : ''}`,
+      error: succeeded
+        ? null
+        : `workflow ${body.status}${output.failingChecks.length ? `; failing: ${output.failingChecks.join(', ')}` : ''}${reason ? `; agent: ${reason}` : ''}`,
     },
   })
   if (claimed.count === 0) {
