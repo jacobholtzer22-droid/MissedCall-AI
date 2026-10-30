@@ -2,7 +2,7 @@
 
 // Chat with the chief: Jacob on the right, the chief on the left (markdown),
 // the job report as a card under the job's last chief message, "Chief is
-// thinking" while a chief run is open, and the composer pinned at the bottom
+// thinking" while a chief run is open, and the composer pinned to the bottom of the panel (the message list scrolls, the panel never grows past 60vh when stacked)
 // (Enter sends, Shift+Enter is a new line).
 
 import { useEffect, useRef, useState } from 'react'
@@ -52,7 +52,7 @@ export function Chat({
   }
 
   return (
-    <section aria-label="Chat with the chief" className="bg-gray-900 border border-gray-800 rounded-lg flex flex-col min-h-[60vh] lg:min-h-0 lg:h-full">
+    <section aria-label="Chat with the chief" className="bg-gray-900 border border-gray-800 rounded-lg flex flex-col h-[60vh] min-h-[320px] xl:min-h-0 xl:h-full">
       <div className="px-4 py-3 border-b border-gray-800 flex items-center gap-2">
         <Avatar persona={chief} size={24} />
         <h2 className="text-sm font-semibold text-gray-100">{chief.name}</h2>
@@ -63,7 +63,7 @@ export function Chat({
           const el = e.currentTarget
           pinned.current = el.scrollHeight - el.scrollTop - el.clientHeight < 60
         }}
-        className="flex-1 overflow-y-auto px-3 sm:px-4 py-4 space-y-3 text-sm"
+        className="flex-1 min-h-0 overflow-y-auto px-3 sm:px-4 py-4 space-y-3 text-sm"
       >
         {messages.length === 0 && !thinking && <p className="text-gray-500 py-8 text-center">Tell the chief what happened or what you need.</p>}
         {messages.map((m) => (
@@ -97,7 +97,7 @@ export function Chat({
           e.preventDefault()
           void send()
         }}
-        className="sticky bottom-0 border-t border-gray-800 bg-gray-900 p-3 flex items-end gap-2 rounded-b-lg"
+        className="shrink-0 border-t border-gray-800 bg-gray-900 p-3 flex items-end gap-2 rounded-b-lg"
       >
         <label htmlFor="hq-composer" className="sr-only">
           Message the chief
