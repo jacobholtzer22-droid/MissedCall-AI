@@ -3070,9 +3070,16 @@ nothing; the UI always shows the dry result before a confirmed live call.
   (`sync-workflow.ts`, maxDuration 120). For website deliverables with `repoUrl` and
   `repoHasWorkflow === false` (unrecorded ⇒ skipped: run web checks first): adds
   `.github/workflows/aa-build.yml` and AGENT.md's "Non-interactive (CI) mode" section,
-  both copied from AA-Template at `TEMPLATE_REF` (`main`), on branch `ci/aa-build` + a
+  both copied from AA-Template at `TEMPLATE_REF` (pinned, see below), on branch `ci/aa-build` + a
   PR, or straight to the default branch (then `repoHasWorkflow: true`); sets the two
   secrets either way. Blocked when the template ref lacks either file. 3 repos at a time.
+- **`TEMPLATE_REF` is pinned to AA-Template 961cd0f** (`lib/ops/agents/shared.ts`), for both
+  sync-workflow and the template-owned file sync (`chore/template-sync` PRs). 6b2c39e (diverse
+  sites) does not build on an unmigrated client repo: its `config-schema.ts` makes `tagline`
+  nullable, which old pages do not type-check against, and its `verify.ts` imports
+  `optionalRoutes` from a `lib/routes.ts` that old repos lack. Move the pin only after a template
+  commit is shown to build and verify on an unmigrated repo. New repos are generated from
+  AA-Template's default branch and never read this ref.
 - **UI**: the website deliverable card shows Provision site (no `repoUrl`), Run agent
   (kind, brief or instructions, dry preview, Dispatch) and Sync workflow (PR mode, when
   `repoHasWorkflow === false`). The Agents tab reads `GET /api/admin/ops/agents`:

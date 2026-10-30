@@ -14,8 +14,17 @@ export const CALLBACK_URL = 'https://www.alignandacquire.com/api/ops/build-callb
 export const DISPATCH_EVENT = 'aa-build'
 export const WORKFLOW_PATH = '.github/workflows/aa-build.yml'
 export const CI_SECTION_HEADING = 'Non-interactive (CI) mode'
-/** The ref the workflow and the AGENT.md CI section are copied from. */
-export const TEMPLATE_REF = 'main'
+/**
+ * The AA-Template ref that EXISTING client repos are synced from (the workflow,
+ * the AGENT.md CI section, and every template-owned file). Pinned to 961cd0f,
+ * the commit before the diverse-sites rework (6b2c39e): that rework's
+ * verify.ts and config-schema.ts do not build on a repo without the new
+ * lib/routes.ts, components/ServiceLink.tsx and nullable-tagline pages. Move
+ * it forward only once a template commit is confirmed to build and verify on
+ * an unmigrated client repo. New repos are created from AA-Template's default
+ * branch and are unaffected.
+ */
+export const TEMPLATE_REF = '961cd0f8244b0a2562b55a20b0b8d69f2015019d'
 
 export { RUN_KINDS, defaultRepoName, type RunKind } from './names'
 
