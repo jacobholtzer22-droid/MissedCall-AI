@@ -4,8 +4,10 @@
 // approvals waiting for Push, the Sales strip (prospects and demo calls, not
 // clients), then on lg two columns: ONE client list in four buckets (Today,
 // Get done, Waiting on client, All set and live; lib/ops/triage.ts) on the
-// left, the office and the chat on the right. Mobile: approvals, sales,
-// office, chat, clients.
+// left, the office and the chat on the right, from xl only. Below xl it is one
+// column in normal flow: fleet line, approvals and sales, office, chat (its own
+// scroll, 60vh), clients. Each top-level block carries data-ops-panel so the
+// split-screen check can assert none of them overlap.
 
 import { useEffect, useMemo, useState } from 'react'
 import type { BoardEngagement, OpsBoard } from '@/lib/ops/board'
@@ -84,7 +86,7 @@ export function HomeTab({
   return (
     <div className="space-y-4">
       <style>{HQ_CSS}</style>
-      <dl className="flex flex-wrap gap-x-6 gap-y-2 text-sm">
+      <dl data-ops-panel="fleet" className="flex flex-wrap gap-x-6 gap-y-2 text-sm">
         {fleet.map((f) => (
           <div key={f.label} className="flex items-baseline gap-1.5">
             <dt className="sr-only">{f.label}</dt>
@@ -97,19 +99,21 @@ export function HomeTab({
       </dl>
       {hq.loadError && <p className="rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-2 text-sm text-red-300">{hq.loadError}</p>}
 
-      <div className="grid gap-4 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)] items-start">
-        <div className="min-w-0 space-y-4 lg:col-start-1 lg:row-start-1">
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)] items-start">
+        <div data-ops-panel="needs" className="min-w-0 space-y-4 xl:col-start-1 xl:row-start-1">
           <ApprovalsStrip approvals={approvals} onDecide={hq.decide} />
           <SalesStrip sales={triage.sales} board={board} actions={actions} />
         </div>
 
-        <div className="min-w-0 space-y-4 lg:col-start-2 lg:row-start-1 lg:row-span-2 lg:sticky lg:top-4">
-          {hq.feed ? (
-            <Office desks={desks(runs, hq.feed.lastRuns, approvals)} latestByRun={hq.latestByRun} now={now} onOpen={setOpenRun} onStop={hq.stop} />
-          ) : (
-            <p className="rounded-lg border border-gray-800 bg-gray-900 px-4 py-6 text-sm text-gray-500">Loading the office…</p>
-          )}
-          <div className="h-[70vh] min-h-[420px] lg:h-[calc(100vh-330px)]">
+        <div className="min-w-0 space-y-4 bg-gray-950 xl:col-start-2 xl:row-start-1 xl:row-span-2 xl:sticky xl:top-4">
+          <div data-ops-panel="office">
+            {hq.feed ? (
+              <Office desks={desks(runs, hq.feed.lastRuns, approvals)} latestByRun={hq.latestByRun} now={now} onOpen={setOpenRun} onStop={hq.stop} />
+            ) : (
+              <p className="rounded-lg border border-gray-800 bg-gray-900 px-4 py-6 text-sm text-gray-500">Loading the office…</p>
+            )}
+          </div>
+          <div data-ops-panel="chat" className="xl:h-[calc(100vh-330px)]">
             <Chat
               messages={hq.messages}
               jobs={hq.feed?.jobs ?? []}
@@ -119,7 +123,7 @@ export function HomeTab({
           </div>
         </div>
 
-        <div className="min-w-0 lg:col-start-1 lg:row-start-2">
+        <div data-ops-panel="clients" className="min-w-0 xl:col-start-1 xl:row-start-2">
           <ClientBuckets triage={triage} board={board} actions={actions} working={workingMap} showRevenue={showRevenue} />
         </div>
       </div>
