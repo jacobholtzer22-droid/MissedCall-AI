@@ -15,6 +15,9 @@
 // Only repos built from AA-Template are synced (they carry site.config.ts and
 // lib/config-schema.ts); a hand-built site is reported and left alone, since
 // the template's next.config.mjs or schema would break a different codebase.
+// A deliverable with evidence.handBuilt === true is skipped outright: its repo
+// started from the template but its template-owned files were extended by hand
+// (Titan's schema and hero scrim), so template changes are ported in by hand.
 // A client file without the section markers is reported and left alone.
 // components/ContactForm.tsx and its checksum are never synced. Three repos
 // at a time.
@@ -78,6 +81,10 @@ export async function syncTemplateFiles(opts: { only?: string[]; dry: boolean })
     const ev = asObject(d.evidence)
     const name = d.engagement.displayName.trim()
     if (d.engagement.stage === 'ignored') return false
+    if (ev.handBuilt === true) {
+      out.skipped.push({ engagement: name, reason: 'hand-built (evidence.handBuilt)' })
+      return false
+    }
     if (typeof ev.repoUrl !== 'string' || !ev.repoUrl) {
       out.skipped.push({ engagement: name, reason: 'no evidence.repoUrl' })
       return false

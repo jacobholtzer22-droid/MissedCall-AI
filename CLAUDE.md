@@ -3080,6 +3080,11 @@ nothing; the UI always shows the dry result before a confirmed live call.
   `optionalRoutes` from a `lib/routes.ts` that old repos lack. Move the pin only after a template
   commit is shown to build and verify on an unmigrated repo. New repos are generated from
   AA-Template's default branch and never read this ref.
+- **`evidence.handBuilt: true`** on a website deliverable makes the template-owned file sync
+  skip it (reason "hand-built"), before any repo read. For repos whose template-owned files
+  were extended by hand, where a wholesale copy breaks the build: template changes are ported
+  in by hand instead. Set directly in the DB (not in `EVIDENCE_KEYS`). Titan Home Exteriors
+  (Oct 30 2026: its schema has `coverage`, its `lib/hero-scrim.ts` exports `pageHeroScrimCss`).
 - **UI**: the website deliverable card shows Provision site (no `repoUrl`), Run agent
   (kind, brief or instructions, dry preview, Dispatch) and Sync workflow (PR mode, when
   `repoHasWorkflow === false`). The Agents tab reads `GET /api/admin/ops/agents`:
