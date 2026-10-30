@@ -163,7 +163,7 @@ export async function GET(request: Request) {
       db.websiteLead.count({
         where: {
           businessId,
-          status: { not: 'spam' },
+          status: { notIn: ['spam', 'deleted'] },
           ...(currentDateFilter ? { createdAt: currentDateFilter } : {}),
         },
       }),

@@ -24,6 +24,7 @@ import {
   followUpDue,
   isInFollowUpWindow,
 } from '@/lib/lead-follow-up-window'
+import { FOLLOW_UP_EXCLUDED_STATUSES } from './statuses'
 
 export const dynamic = 'force-dynamic'
 
@@ -69,7 +70,7 @@ export async function GET(request: NextRequest) {
       demoSmsSentAt: { not: null },
       followUpSentAt: null,
       phone: { not: null },
-      status: { not: 'spam' },
+      status: { notIn: FOLLOW_UP_EXCLUDED_STATUSES },
       // Marked by hand in /admin as not a contractor. No automated text goes to
       // a lead Jacob has already decided is junk.
       junk: false,
