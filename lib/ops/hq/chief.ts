@@ -25,13 +25,15 @@ import { ROUTING_FIELDS, updateBusiness } from './admin-change'
 import { WEB_TASK_KINDS, briefTemplate, startWebTask, type WebTaskKind } from './web'
 import { INTAKE_KEYS, intakeSummary, readIntake, withAssetSections } from '@/lib/ops/intake'
 import { loadIntake, patchIntake } from '@/lib/ops/intake-server'
+import { FILE_PHOTOS_TOOL, INBOX_MAX_AGE_DAYS, InvalidAttachments, readAttachments } from '@/lib/ops/photo-filing'
+import { filePhotos } from '@/lib/ops/photo-filing-server'
 
 /** "Tue Nov 3, 9:00 AM" in Detroit, for feed lines and results. */
 const detroitWhen = (d: Date) =>
   d.toLocaleString('en-US', { timeZone: OPS_TIMEZONE, weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
 import { waitUntil } from '@vercel/functions'
 import { AdsOffline, adsClients, runAdsTask, startAdsRun } from './ads'
-import { type ApiMessage, CHIEF_MODEL_DEFAULT } from './anthropic'
+import { type ApiMessage, type Block, CHIEF_MODEL_DEFAULT } from './anthropic'
 import { DECISION_PREFIX, decisionsByEngagement } from './decisions'
 import { noEmDash, oneLine } from './events'
 import { type ClientTool, runAgentLoop } from './loop'
@@ -58,7 +60,7 @@ What you do:
 - Jacob reports what he did in plain language ("talked to Cole, he wants Friday", "Josue is on $350 from December"). Your job is to record it: log_update (with the step and statusLine when they change), record_decision for standing rules, set_client_amounts for money. Then reflect it back in one line: what you recorded, on whom.
 - "What should I do" is answered from get_needs_you: the Today clients in their order, then Get done, never from memory. Count clients, not items. "What did I approve", "what happened with X" is answered from get_timeline; it says who pushed each approval and when it applied.
 - New clients: when Jacob names one ("New client: ..."), create it with create_client (createBusiness when the client gets a website, ads or missed-call texting), then say in one line what was created. Platform account changes go through update_business; routing fields wait for Push.
-- Website clients: the site builds from a brief, and the brief is written from the client's intake (get_client's intake: answers, files, old site, and summary.missing). Photos, the logo and the old site are added on the intake page (/admin/ops/intake/<id>); point Jacob there for files. When a website client has no brief: read the intake, then ask Jacob in ONE grouped message only for what is still empty of what get_brief_template needs. Save his answers with save_intake. Then write the whole brief in the template's shape (unknowns under UNKNOWN, never invented, businessSlug from the platform account; set_brief adds the Assets and Old site sections) and show it back in one message; store it with set_brief only after he says it looks good or gives edits.
+- Website clients: the site builds from a brief, and the brief is written from the client's intake (get_client's intake: answers, files, old site, and summary.missing). Photos and the logo are added on the intake page (/admin/ops/intake/<id>) or dropped in this chat (see Photos in chat); the old site is set on the intake page. When a website client has no brief: read the intake, then ask Jacob in ONE grouped message only for what is still empty of what get_brief_template needs. Save his answers with save_intake. Then write the whole brief in the template's shape (unknowns under UNKNOWN, never invented, businessSlug from the platform account; set_brief adds the Assets and Old site sections) and show it back in one message; store it with set_brief only after he says it looks good or gives edits.
 - Client answers by number: Jacob texts every client the onboarding questionnaire (read_doc onboarding-questionnaire.md). When he pastes answers like "1. Yualex Painting 2 LLC 2. Painting, drywall...", read it, map each answer to its intake field with save_intake (one call, everything), and do the platform side the table names: the phone and email on the platform account with update_business (the phone that rings is the owner phone; routing numbers wait for Push), the ads budget and account email in intake.ads. Then say in a few lines what you saved and which of 1 to 14 and 17 to 19 are still missing.
 - Google profile: after save_intake (or when you read a website client's intake) and hours, address, reviews or photos are still empty, run lookup_gbp on your own and tell Jacob in one line what it found. When it returns candidates instead of a match, ask Jacob which one is the client; never pick one yourself. If it says the lookup is offline, say so once.
 - Every brief follows docs/ops/site-brief-standards.md (get_brief_template returns it with the template): services named and split the way customers search, no published job ranges, no claims the client did not make, hours and towns as the rules say, no invented tagline, about story or reviews, display name without LLC or numbering. List what you applied under "## Standards applied" at the end of the brief body; when the client's answers override a standard, the client wins and you say so there. The same file's section 9 is how the answers become the ads spec.
@@ -69,6 +71,7 @@ What you do:
 - Go-live and enable gates: go_live is refused while the Google tag, the domain, the approval or the owner's email and phone for lead alerts are undone, and the refusal names each one; repeat it to Jacob as given. Only Jacob's own words "skip <item>" (or "go live on vercel.app") waive one; never add them yourself. Enable proposals carry their unmet list on the card.
 - Hand off work Jacob asks for: start_ads_task for Google Ads work, start_web_task for a change to a client's website. Each one starts a specialist run under the current job. Write instructions a specialist can act on without asking back: the client, the goal, the limits, and Jacob's decisions.
 - When Jacob points at a spec under docs/ads-specs/, read it with read_spec and pass its full text in the start_ads_task instructions, after one line with Jacob's own instructions (e.g. "Build it paused and queue the enable for my approval."). Do not shorten the spec.
+- Photos in chat: when Jacob drops photos in this chat you see them, listed with their url and filename. File them with file_photos, and only that way. First know whose they are: from his message, or from what he says next about the same photos. If he did not say, ask "Who are these for?" and wait. Never guess, and never choose between two clients that could fit: ask. If he names a client you cannot find on the board, say so and ask. Read get_client first for the client's services. Caption each one from what you see: what is in the frame and which service it shows; never a town, street, customer or job you were not told. Set service only when it plainly matches one of the client's services, otherwise leave it out. At most one heroCandidate per call, the strongest wide shot. beforeAfter only for an obvious pair. kind logo only for the business logo. Filing photos is the whole job: never write, change or offer a brief because of them. Then say in one line what you filed on whom and what you are unsure about ("the two kitchen shots could be either service, I left service blank").
 - After you start specialists, tell Jacob in a line or two what you started. Do not call finish_job then: when every run in the job has finished you will be asked for the report, and you write it with finish_job.
 
 Rules:
@@ -700,6 +703,23 @@ function chiefTools(ctx: ChiefContext): ClientTool[] {
       },
     },
     {
+      ...FILE_PHOTOS_TOOL,
+      input_schema: FILE_PHOTOS_TOOL.input_schema as unknown as ClientTool['input_schema'],
+      run: async (input) => {
+        const engagementId = str(input.engagementId)
+        const name = await engagementName(engagementId)
+        const photos = JSON.parse(noEmDash(JSON.stringify(input.photos ?? null)))
+        try {
+          const res = await filePhotos(engagementId, photos)
+          await ensureJob(ctx, [engagementId])
+          return { result: { ok: true, client: res.client, filed: res.filed }, label: `Filed ${res.filed.length} photo${res.filed.length === 1 ? '' : 's'} on ${name}` }
+        } catch (err) {
+          if (err instanceof InvalidAttachments) throw new Error(err.message)
+          throw err
+        }
+      },
+    },
+    {
       name: 'save_intake',
       description: `Save what Jacob tells you about a client's site into the client's intake (the same record the intake page edits), so it lives in one place. Keys: ${INTAKE_KEYS.filter((k) => k !== 'assets').join(', ')}. Objects merge one level deep (business, reviews, oldSite, socials, style, domain); lists replace whole (services, differentiators, serviceArea). Files are added only on the intake page, never here.`,
       input_schema: {
@@ -901,11 +921,43 @@ async function chatHistory(uptoMessageId: string | null): Promise<ApiMessage[]> 
     where: upto ? { createdAt: { lte: upto.createdAt } } : {},
     orderBy: { createdAt: 'desc' },
     take: HISTORY_MESSAGES,
-    select: { role: true, body: true },
+    select: { role: true, body: true, attachments: true, createdAt: true },
   })
   const ordered = rows.reverse()
   while (ordered.length && ordered[0].role !== 'jacob') ordered.shift()
-  return ordered.map((m) => ({ role: m.role === 'jacob' ? ('user' as const) : ('assistant' as const), content: m.body }))
+  // Photos are shown newest first, up to MAX_HISTORY_IMAGES across the history.
+  let images = 0
+  const content = ordered
+    .slice()
+    .reverse()
+    .map((m) => (m.role === 'jacob' && m.attachments ? withPhotos(m.body, readAttachments(m.attachments), m.createdAt, () => images++ < MAX_HISTORY_IMAGES) : m.body))
+    .reverse()
+  return ordered.map((m, n) => ({ role: m.role === 'jacob' ? ('user' as const) : ('assistant' as const), content: content[n] }))
+}
+
+const MAX_HISTORY_IMAGES = 30
+
+/**
+ * A message with photos: the text, a list the chief can cite in file_photos,
+ * and each unfiled photo as an image block (source url: the public Blob URL).
+ * Filed ones are named, not shown; past INBOX_MAX_AGE_DAYS the blobs are gone.
+ */
+function withPhotos(body: string, list: ReturnType<typeof readAttachments>, sentAt: Date, allow: () => boolean): string | Block[] {
+  if (!list.length) return body
+  const fresh = Date.now() - sentAt.getTime() < INBOX_MAX_AGE_DAYS * 86_400_000
+  const lines: string[] = []
+  const blocks: Block[] = []
+  list.forEach((a, n) => {
+    const size = a.width && a.height ? `, ${a.width}x${a.height}` : ''
+    if (a.filedTo) lines.push(`${n + 1}. ${a.filename}: already filed (client ${a.filedTo})`)
+    else if (!fresh) lines.push(`${n + 1}. ${a.filename}: older than ${INBOX_MAX_AGE_DAYS} days, removed unfiled`)
+    else {
+      const shown = !/\.svg$/i.test(a.filename) && allow()
+      lines.push(`${n + 1}. url=${a.url} filename=${a.filename}${size}${shown ? '' : ' (not shown)'}`)
+      if (shown) blocks.push({ type: 'text', text: `Photo ${n + 1}: ${a.filename}` }, { type: 'image', source: { type: 'url', url: a.url } })
+    }
+  })
+  return [{ type: 'text', text: `${body || '(no text)'}\n\n[Photos attached to this message]\n${lines.join('\n')}` }, ...blocks]
 }
 
 function today(): string {

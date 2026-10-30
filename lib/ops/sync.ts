@@ -29,6 +29,7 @@ import { db } from '@/lib/db'
 import { getMarketingBusiness } from '@/lib/marketing-funnel'
 import { normalizeToE164 } from '@/lib/phone-utils'
 import { getStripe } from '@/lib/ops/stripe'
+import { cleanInbox } from '@/lib/ops/photo-filing-server'
 import {
   DELIVERABLE_TYPES_FOR_SERVICE,
   SERVICE_KEYS,
@@ -824,6 +825,16 @@ export async function runOpsSync({ dryRun }: { dryRun: boolean }): Promise<OpsSy
   await eachLimited(writes, DB_CONCURRENCY, async (write) => {
     await write()
   })
+
+  // Photos dropped in the HQ chat and never filed: gone after INBOX_MAX_AGE_DAYS.
+  if (process.env.BLOB_READ_WRITE_TOKEN) {
+    try {
+      const inbox = await cleanInbox({ dryRun, now })
+      if (inbox.found) summary.notes.push(`HQ inbox: ${dryRun ? 'would delete' : 'deleted'} ${inbox.found} unfiled chat photo${inbox.found === 1 ? '' : 's'} older than 7 days.`)
+    } catch (err) {
+      summary.notes.push(`HQ inbox cleanup failed: ${err instanceof Error ? err.message : String(err)}`)
+    }
+  }
 
   summary.durationMs = Date.now() - started
   return summary

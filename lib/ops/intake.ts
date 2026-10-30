@@ -296,8 +296,10 @@ export function uniqueFilename(name: string, taken: Iterable<string>): string {
   }
 }
 
+/** A filename as it goes into a Blob path: lower case, letters, digits, dot, dash and underscore. */
+export const safeBlobName = (filename: string) => filename.toLowerCase().replace(/[^a-z0-9._-]+/g, '-').replace(/^-+|-+$/g, '') || 'file'
+
 /** The Blob path for one upload. The uuid keeps every path unique, so nothing is ever overwritten. */
 export function uploadPath(engagementId: string, uuid: string, filename: string): string {
-  const safe = filename.toLowerCase().replace(/[^a-z0-9._-]+/g, '-').replace(/^-+|-+$/g, '') || 'file'
-  return `ops-intake/${engagementId}/${uuid}-${safe}`
+  return `ops-intake/${engagementId}/${uuid}-${safeBlobName(filename)}`
 }

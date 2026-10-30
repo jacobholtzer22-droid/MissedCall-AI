@@ -1316,6 +1316,11 @@ model OpsMessage {
   role String
   body String @db.Text
 
+  // Photos Jacob dropped on the composer: [{ url, filename, width, height,
+  // bytes, filedTo? }], uploaded browser-direct to Blob under ops-inbox/.
+  // file_photos sets filedTo (the engagement id) once it has filed one.
+  attachments Json?
+
   createdAt DateTime @default(now())
 
   @@index([createdAt])

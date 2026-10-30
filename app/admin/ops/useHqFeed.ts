@@ -10,6 +10,7 @@
 // board (steps, status lines and activities may have changed).
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import type { ChatAttachment } from '@/lib/ops/photo-filing'
 import { isActive, type Feed, type FeedEvent, type FeedMessage } from './hqShared'
 
 const FAST_MS = 2000
@@ -52,7 +53,11 @@ export function useHqFeed({ fast, toast, onRunSettled }: { fast: boolean; toast:
           if (data.messages.length) {
             setMessages((prev) => {
               const real = new Set(data.messages.map((m) => m.id))
-              const kept = prev.filter((m) => !real.has(m.id) && !(m.pending && data.messages.some((x) => x.role === 'jacob' && x.body === m.body)))
+              const kept = prev.filter(
+                (m) =>
+                  !real.has(m.id) &&
+                  !(m.pending && data.messages.some((x) => x.role === 'jacob' && x.body === m.body && (x.attachments?.length ?? 0) === (m.attachments?.length ?? 0)))
+              )
               return [...kept, ...data.messages].sort((a, b) => a.createdAt.localeCompare(b.createdAt))
             })
           }
@@ -93,11 +98,23 @@ export function useHqFeed({ fast, toast, onRunSettled }: { fast: boolean; toast:
     return map
   }, [events])
 
-  const send = async (body: string) => {
-    const temp: FeedMessage = { id: `pending:${Date.now()}`, jobId: null, role: 'jacob', body, createdAt: new Date().toISOString(), pending: true }
+  const send = async (body: string, attachments: ChatAttachment[] = []) => {
+    const temp: FeedMessage = {
+      id: `pending:${Date.now()}`,
+      jobId: null,
+      role: 'jacob',
+      body,
+      createdAt: new Date().toISOString(),
+      pending: true,
+      ...(attachments.length ? { attachments } : {}),
+    }
     setMessages((m) => [...m, temp])
     try {
-      const res = await fetch('/api/admin/ops/hq/message', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ body }) })
+      const res = await fetch('/api/admin/ops/hq/message', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(attachments.length ? { body, attachments } : { body }),
+      })
       const data = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(String(data.error ?? 'Could not send'))
       void poll()

@@ -15,6 +15,7 @@ import { db } from '@/lib/db'
 import { requireAdmin } from '@/lib/pipeline-server'
 import { HQ_AGENTS } from '@/lib/ops/types'
 import { waitUntil } from '@vercel/functions'
+import { readAttachments } from '@/lib/ops/photo-filing'
 import { onSpecialistRunEnded } from '@/lib/ops/hq/jobs'
 
 export const dynamic = 'force-dynamic'
@@ -113,7 +114,7 @@ export async function GET(request: Request) {
 
     return NextResponse.json({
       cursor,
-      messages: messages.map((m) => ({ id: m.id, jobId: m.jobId, role: m.role, body: m.body, createdAt: m.createdAt.toISOString() })),
+      messages: messages.map((m) => ({ id: m.id, jobId: m.jobId, role: m.role, body: m.body, createdAt: m.createdAt.toISOString(), ...(m.attachments ? { attachments: readAttachments(m.attachments) } : {}) })),
       events: events.map((e) => ({ id: e.id, runId: e.runId, kind: e.kind, label: e.label, detail: e.detail, createdAt: e.createdAt.toISOString() })),
       runs: runs.map(runView),
       lastRuns: Object.fromEntries(HQ_AGENTS.map((agent, n) => [agent, lastRuns[n] ? runView(lastRuns[n]!) : null])),

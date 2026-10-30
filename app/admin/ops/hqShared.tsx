@@ -5,6 +5,7 @@
 // italics, inline code, links, lists, headings; React nodes only, no HTML).
 
 import { Fragment, type ReactNode } from 'react'
+import type { ChatAttachment } from '@/lib/ops/photo-filing'
 import type { Persona } from '@/lib/ops/hq/personas'
 
 export type FeedRun = {
@@ -23,7 +24,7 @@ export type FeedRun = {
 }
 
 export type FeedEvent = { id: string; runId: string; kind: string; label: string; detail: unknown; createdAt: string }
-export type FeedMessage = { id: string; jobId: string | null; role: string; body: string; createdAt: string; pending?: boolean }
+export type FeedMessage = { id: string; jobId: string | null; role: string; body: string; createdAt: string; pending?: boolean; attachments?: ChatAttachment[] }
 
 export type FeedApproval = {
   id: string

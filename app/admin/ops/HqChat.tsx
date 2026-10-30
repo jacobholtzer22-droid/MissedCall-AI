@@ -3,10 +3,17 @@
 // Chat with the chief: Jacob on the right, the chief on the left (markdown),
 // the job report as a card under the job's last chief message, "Chief is
 // thinking" while a chief run is open, and the composer pinned to the bottom of the panel (the message list scrolls, the panel never grows past 60vh when stacked)
-// (Enter sends, Shift+Enter is a new line).
+// (Enter sends, Shift+Enter is a new line). Photos: drop them on the panel,
+// paste them, or the paperclip (the camera roll on a phone). They go through
+// the same upload queue as the intake page, straight to Blob under ops-inbox/,
+// and ride on the message as attachments; the chief files them on a client.
 
-import { useEffect, useRef, useState } from 'react'
-import { ExternalLink, Send } from 'lucide-react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { Check, ExternalLink, Paperclip, Send } from 'lucide-react'
+import { UPLOAD_CONCURRENCY } from '@/lib/ops/intake'
+import { filesFromDrop } from '@/lib/ops/intake-upload'
+import { inboxPath, type ChatAttachment } from '@/lib/ops/photo-filing'
+import { QueueList, QueueSummary, queueBtn, uploadToBlob, useUploadQueue, type Send as QueueSend } from './UploadQueue'
 import { personaFor, PERSONAS } from '@/lib/ops/hq/personas'
 import { Avatar, Markdown, type FeedJob, type FeedMessage, type ReportSection } from './hqShared'
 
@@ -21,10 +28,20 @@ export function Chat({
   messages: FeedMessage[]
   jobs: FeedJob[]
   thinking: boolean
-  onSend: (body: string) => Promise<boolean>
+  onSend: (body: string, attachments: ChatAttachment[]) => Promise<boolean>
 }) {
   const [draft, setDraft] = useState('')
   const [sending, setSending] = useState(false)
+  const [over, setOver] = useState(false)
+  const picker = useRef<HTMLInputElement>(null)
+  const uploadOne: QueueSend<ChatAttachment> = useCallback(async (prepared, { progress }) => {
+    const blob = await uploadToBlob(inboxPath(crypto.randomUUID(), prepared.filename), prepared, { handleUploadUrl: '/api/admin/ops/hq/attachments/token' }, progress)
+    return { result: { url: blob.url, filename: prepared.filename, width: prepared.width, height: prepared.height, bytes: prepared.file.size } }
+  }, [])
+  // kind logo: photos plus SVG, so a logo file can come along too.
+  const q = useUploadQueue({ kind: 'logo', limit: UPLOAD_CONCURRENCY, send: uploadOne })
+  const attachments = q.rows.flatMap((r) => (r.status === 'saved' && r.result ? [r.result] : []))
+  const canSend = !sending && !q.busy && (Boolean(draft.trim()) || attachments.length > 0)
   const listRef = useRef<HTMLDivElement>(null)
   const pinned = useRef(true)
 
@@ -42,17 +59,37 @@ export function Chat({
   }, [messages.length, thinking, jobs])
 
   const send = async () => {
-    const body = draft.trim()
-    if (!body || sending) return
+    if (!canSend) return
     setSending(true)
     pinned.current = true
-    const ok = await onSend(body)
+    const ok = await onSend(draft.trim(), attachments)
     setSending(false)
-    if (ok) setDraft('')
+    if (ok) {
+      setDraft('')
+      q.clear()
+    }
   }
 
   return (
-    <section aria-label="Chat with the chief" className="bg-gray-900 border border-gray-800 rounded-lg flex flex-col h-[60vh] min-h-[320px] xl:min-h-0 xl:h-full">
+    <section
+      aria-label="Chat with the chief"
+      data-hq-chat
+      onDragOver={(e) => {
+        if (!Array.from(e.dataTransfer.types).includes('Files')) return
+        e.preventDefault()
+        setOver(true)
+      }}
+      onDragLeave={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setOver(false)
+      }}
+      onDrop={(e) => {
+        if (!e.dataTransfer.files.length && !e.dataTransfer.items.length) return
+        e.preventDefault()
+        setOver(false)
+        void filesFromDrop(e.dataTransfer).then((files) => files.length && q.add(files))
+      }}
+      className={`bg-gray-900 border rounded-lg flex flex-col h-[60vh] min-h-[320px] xl:min-h-0 xl:h-full ${over ? 'border-blue-500 ring-2 ring-blue-500/40' : 'border-gray-800'}`}
+    >
       <div className="px-4 py-3 border-b border-gray-800 flex items-center gap-2">
         <Avatar persona={chief} size={24} />
         <h2 className="text-sm font-semibold text-gray-100">{chief.name}</h2>
@@ -70,8 +107,9 @@ export function Chat({
           <div key={m.id} className="space-y-2">
             {m.role === 'jacob' ? (
               <div className="flex justify-end">
-                <div className={`max-w-[85%] rounded-lg bg-blue-600/20 border border-blue-500/30 px-3 py-2 text-gray-100 whitespace-pre-wrap break-words ${m.pending ? 'opacity-60' : ''}`}>
-                  {m.body}
+                <div className={`max-w-[85%] rounded-lg bg-blue-600/20 border border-blue-500/30 px-3 py-2 text-gray-100 whitespace-pre-wrap break-words space-y-2 ${m.pending ? 'opacity-60' : ''}`}>
+                  {m.attachments && m.attachments.length > 0 && <Thumbs list={m.attachments} />}
+                  {m.body && <div>{m.body}</div>}
                 </div>
               </div>
             ) : (
@@ -92,6 +130,21 @@ export function Chat({
           </div>
         )}
       </div>
+      {q.rows.length > 0 && (
+        <div data-hq-queue className="shrink-0 border-t border-gray-800 px-3 pt-2 space-y-2">
+          <div className="flex items-center justify-between gap-3">
+            <QueueSummary total={q.rows.length} saved={q.saved} failed={q.failed} busy={q.busy} />
+            {!q.busy && (
+              <button type="button" onClick={q.clear} className={queueBtn}>
+                Clear
+              </button>
+            )}
+          </div>
+          <div className="max-h-40 overflow-y-auto">
+            <QueueList rows={q.rows} onRetry={q.retry} />
+          </div>
+        </div>
+      )}
       <form
         onSubmit={(e) => {
           e.preventDefault()
@@ -99,6 +152,27 @@ export function Chat({
         }}
         className="shrink-0 border-t border-gray-800 bg-gray-900 p-3 flex items-end gap-2 rounded-b-lg"
       >
+        <input
+          ref={picker}
+          type="file"
+          multiple
+          accept="image/*,.heic,.heif,.svg"
+          className="sr-only"
+          tabIndex={-1}
+          aria-hidden
+          onChange={(e) => {
+            if (e.target.files) q.add(Array.from(e.target.files))
+            e.target.value = ''
+          }}
+        />
+        <button
+          type="button"
+          onClick={() => picker.current?.click()}
+          aria-label="Attach photos"
+          className="inline-flex flex-none items-center justify-center w-11 h-11 rounded-lg border border-gray-700 bg-gray-800 hover:bg-gray-700 text-gray-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+        >
+          <Paperclip className="h-4 w-4" />
+        </button>
         <label htmlFor="hq-composer" className="sr-only">
           Message the chief
         </label>
@@ -106,6 +180,12 @@ export function Chat({
           id="hq-composer"
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
+          onPaste={(e) => {
+            const files = Array.from(e.clipboardData.files)
+            if (!files.length) return
+            e.preventDefault()
+            q.add(files)
+          }}
           onKeyDown={(e) => {
             if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
               e.preventDefault()
@@ -113,19 +193,48 @@ export function Chat({
             }
           }}
           rows={Math.min(6, Math.max(1, draft.split('\n').length))}
-          placeholder="Message the chief"
+          placeholder={attachments.length ? 'Whose are these? (optional)' : 'Message the chief'}
           className="flex-1 resize-none bg-gray-950 border border-gray-800 rounded-lg px-3 py-2.5 text-sm text-gray-100 placeholder:text-gray-600 min-h-[44px] focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
         />
         <button
           type="submit"
-          disabled={sending || !draft.trim()}
-          aria-label="Send"
+          disabled={!canSend}
+          aria-label={q.busy ? 'Send (waiting for uploads)' : 'Send'}
           className="inline-flex items-center justify-center w-11 h-11 rounded-lg bg-blue-600 hover:bg-blue-500 text-white disabled:opacity-40 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
         >
           <Send className="h-4 w-4" />
         </button>
       </form>
     </section>
+  )
+}
+
+/** A message's photos: thumbnails that open the full image; a check once the chief filed one. */
+function Thumbs({ list }: { list: ChatAttachment[] }) {
+  return (
+    <div className="flex flex-wrap gap-1.5" data-hq-thumbs>
+      {list.map((a) => (
+        <a key={a.url} href={a.url} target="_blank" rel="noreferrer" title={a.filedTo ? `${a.filename} (filed)` : a.filename} className="relative isolate block h-20 w-20 overflow-hidden rounded-md bg-gray-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={a.url}
+            alt={a.filename}
+            loading="lazy"
+            className="h-full w-full object-cover"
+            onError={(e) => {
+              // Unfiled inbox photos are removed after 7 days.
+              e.currentTarget.style.display = 'none'
+            }}
+          />
+          <span className="absolute inset-0 -z-10 flex items-center justify-center p-1 text-center text-[10px] leading-tight text-gray-400 break-all">{a.filename}</span>
+          {a.filedTo && (
+            <span className="absolute bottom-1 right-1 inline-flex h-4 w-4 items-center justify-center rounded-full bg-emerald-500 text-gray-950">
+              <Check className="h-3 w-3" />
+            </span>
+          )}
+        </a>
+      ))}
+    </div>
   )
 }
 
