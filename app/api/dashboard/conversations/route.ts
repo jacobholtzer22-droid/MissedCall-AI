@@ -3,7 +3,7 @@ import { db } from '@/lib/db'
 import { requireDashboardBusiness } from '@/lib/dashboard-auth'
 import { isHiddenByDelete } from '../lead-delete'
 
-export async function GET() {
+export async function GET(request: Request) {
   const authResult = await requireDashboardBusiness()
   if (authResult instanceof NextResponse) return authResult
   const { business } = authResult
@@ -43,9 +43,14 @@ export async function GET() {
     },
   })
 
-  // Deleted from the Leads page (DELETE /api/dashboard/conversations/[id]),
-  // unless the thread has moved since. deletedAt is not part of the response.
-  const visible = conversations.filter((c) => !isHiddenByDelete(c)).map(({ deletedAt: _deletedAt, ...c }) => c)
+  // ?view=leads is the Leads page: it drops conversations deleted there
+  // (DELETE /api/dashboard/conversations/[id]) unless the caller has texted in
+  // since. Every other caller, the Conversations tab included, gets every
+  // conversation as before. deletedAt is never part of the response.
+  const leadsView = new URL(request.url).searchParams.get('view') === 'leads'
+  const visible = conversations
+    .filter((c) => !leadsView || !isHiddenByDelete(c))
+    .map(({ deletedAt: _deletedAt, ...c }) => c)
 
   return NextResponse.json({ conversations: visible })
 }

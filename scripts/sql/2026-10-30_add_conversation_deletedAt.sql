@@ -1,7 +1,8 @@
 -- Client Leads page (Oct 2026): soft delete for missed-call leads. Adds one
 -- nullable column to Conversation: deletedAt, set by
--- DELETE /api/dashboard/conversations/[id]. Only GET /api/dashboard/conversations
--- filters on it; /admin and the SMS webhook still read the row unchanged.
+-- DELETE /api/dashboard/conversations/[id]. Only the Leads page
+-- (GET /api/dashboard/conversations?view=leads) filters on it; the Conversations
+-- tab, /admin and the SMS webhook still read the row unchanged.
 -- Website leads need no column: they use WebsiteLead.status = 'deleted'.
 --
 -- Generated with `prisma migrate diff` (main's schema.prisma -> this branch's),

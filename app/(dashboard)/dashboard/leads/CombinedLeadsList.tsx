@@ -118,7 +118,7 @@ export function CombinedLeadsList({
       setError(null)
       try {
         const [cRes, wRes] = await Promise.all([
-          fetch('/api/dashboard/conversations'),
+          fetch('/api/dashboard/conversations?view=leads'),
           fetch('/api/dashboard/website-leads'),
         ])
         // Website leads are required. Conversations are optional: a 403 means
@@ -453,7 +453,7 @@ export function CombinedLeadsList({
             </h2>
             <p className="text-sm text-gray-600 mt-1">
               {confirmDelete.kind === 'missed_call'
-                ? 'This missed-call lead leaves your Leads page. If they text again, the conversation keeps working as usual.'
+                ? 'This lead leaves your Leads page. The conversation stays in Conversations, and the lead comes back here if they text you again.'
                 : 'This website lead leaves your Leads page.'}
             </p>
             {deleteError && (

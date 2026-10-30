@@ -2,9 +2,10 @@
 // Soft delete for the client Leads page, shared by
 // DELETE /api/dashboard/website-leads/[id] and DELETE /api/dashboard/conversations/[id].
 // ===========================================
-// Never a hard delete. A website lead gets status 'deleted' (filtered like
-// 'spam' from client-facing reads); a conversation gets deletedAt (filtered
-// from /api/dashboard/conversations). Both rows stay visible in /admin.
+// Never a hard delete, and only the Leads page changes. A website lead gets
+// status 'deleted' (filtered like 'spam' from client-facing reads). A
+// conversation gets deletedAt, which only /api/dashboard/conversations?view=leads
+// reads; the Conversations tab, /admin and the SMS system ignore it.
 //
 // The store is passed in so the rules are testable without a database.
 
@@ -31,11 +32,13 @@ export async function softDelete(store: SoftDeleteStore, id: string, allowedBusi
 }
 
 /**
- * Read side of the missed-call soft delete. A deleted conversation stays hidden
- * until something newer lands on the thread (lastMessageAt later than
- * deletedAt), e.g. the caller texts again. The webhook never clears deletedAt;
- * the thread simply counts as live again from that point.
+ * Leads page only. A conversation deleted from the Leads page stays off it
+ * until the caller texts in again: an inbound message newer than deletedAt.
+ * Outbound sends (manual replies, campaigns, the AI) never bring it back.
+ * The Conversations tab ignores deletedAt entirely.
  */
-export function isHiddenByDelete(c: { deletedAt: Date | null; lastMessageAt: Date }): boolean {
-  return c.deletedAt !== null && c.lastMessageAt.getTime() <= c.deletedAt.getTime()
+export function isHiddenByDelete(c: { deletedAt: Date | null; messages: { direction: string; createdAt: Date }[] }): boolean {
+  if (c.deletedAt === null) return false
+  const deletedAt = c.deletedAt.getTime()
+  return !c.messages.some((m) => m.direction === 'inbound' && m.createdAt.getTime() > deletedAt)
 }

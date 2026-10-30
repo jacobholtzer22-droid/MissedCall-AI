@@ -52,11 +52,14 @@ test('owner group: a sibling business row in the group can be deleted', async ()
   assert.equal((await softDelete(store, 'a', ['biz1', 'sibling'])).status, 200)
 })
 
-test('deleted conversation stays hidden until a newer message lands', () => {
+test('leads page: a deleted conversation comes back only on a new inbound text', () => {
   const deletedAt = new Date('2026-10-30T12:00:00Z')
-  assert.equal(isHiddenByDelete({ deletedAt: null, lastMessageAt: new Date('2026-10-01T00:00:00Z') }), false)
-  assert.equal(isHiddenByDelete({ deletedAt, lastMessageAt: new Date('2026-10-30T11:00:00Z') }), true)
-  assert.equal(isHiddenByDelete({ deletedAt, lastMessageAt: deletedAt }), true)
-  // The caller texts again: the webhook bumps lastMessageAt past deletedAt.
-  assert.equal(isHiddenByDelete({ deletedAt, lastMessageAt: new Date('2026-10-31T09:00:00Z') }), false)
+  const msg = (direction: string, iso: string) => ({ direction, createdAt: new Date(iso) })
+  const before = [msg('inbound', '2026-10-29T10:00:00Z'), msg('outbound', '2026-10-29T10:01:00Z')]
+  assert.equal(isHiddenByDelete({ deletedAt: null, messages: before }), false)
+  assert.equal(isHiddenByDelete({ deletedAt, messages: before }), true)
+  // Our own sends after the delete (manual reply, campaign, AI) do not bring it back.
+  assert.equal(isHiddenByDelete({ deletedAt, messages: [...before, msg('outbound', '2026-10-31T09:00:00Z')] }), true)
+  // The caller texts in again.
+  assert.equal(isHiddenByDelete({ deletedAt, messages: [...before, msg('inbound', '2026-10-31T09:00:00Z')] }), false)
 })

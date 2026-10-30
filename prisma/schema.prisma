@@ -268,8 +268,9 @@ model Conversation {
   callSid           String? @unique // Call control ID (parent voice call)
   aLegCallControlId String? // A-leg call_control_id stored when forwarding
   callConnected     Boolean @default(false) // True when B-leg (owner) answered — prevents missed-call SMS
-  // Soft delete from the client Leads page. Hides the thread from
-  // /api/dashboard/conversations only; /admin and the SMS webhook still see it.
+  // Soft delete from the client Leads page. Read only by
+  // /api/dashboard/conversations?view=leads; the Conversations tab, /admin and
+  // the SMS system ignore it.
   deletedAt         DateTime?
 
   // Dial outcome (from voice-dial-status callback)

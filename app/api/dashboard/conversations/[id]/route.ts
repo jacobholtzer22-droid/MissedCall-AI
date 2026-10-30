@@ -1,10 +1,10 @@
 // ===========================================
 // DELETE /api/dashboard/conversations/[id]: client soft delete of a missed-call lead
 // ===========================================
-// Stamps deletedAt so the thread leaves GET /api/dashboard/conversations and the
-// Leads page. Never a hard delete and no status change: /admin still shows it,
-// and if the caller texts again the SMS webhook handles the thread exactly as
-// before (it does not read deletedAt). Scoped to the caller's own business,
+// Stamps deletedAt so the lead leaves the Leads page
+// (GET /api/dashboard/conversations?view=leads) until the caller texts in again.
+// Never a hard delete and no status change: the Conversations tab and /admin
+// still show the thread, and the SMS system does not read deletedAt. Scoped to the caller's own business,
 // like the GET. 403 for another business's thread, 404 for an unknown id, 200
 // again on a repeat delete.
 
