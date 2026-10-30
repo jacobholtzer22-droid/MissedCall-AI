@@ -3,7 +3,7 @@
 
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { softDelete, type SoftDeleteStore } from './lead-delete'
+import { isHiddenByDelete, softDelete, type SoftDeleteStore } from './lead-delete'
 
 function memoryStore(rows: Record<string, { businessId: string; deleted: boolean }>) {
   const writes: string[] = []
@@ -50,4 +50,13 @@ for (const surface of ['website lead', 'missed-call conversation']) {
 test('owner group: a sibling business row in the group can be deleted', async () => {
   const { store } = memoryStore({ a: { businessId: 'sibling', deleted: false } })
   assert.equal((await softDelete(store, 'a', ['biz1', 'sibling'])).status, 200)
+})
+
+test('deleted conversation stays hidden until a newer message lands', () => {
+  const deletedAt = new Date('2026-10-30T12:00:00Z')
+  assert.equal(isHiddenByDelete({ deletedAt: null, lastMessageAt: new Date('2026-10-01T00:00:00Z') }), false)
+  assert.equal(isHiddenByDelete({ deletedAt, lastMessageAt: new Date('2026-10-30T11:00:00Z') }), true)
+  assert.equal(isHiddenByDelete({ deletedAt, lastMessageAt: deletedAt }), true)
+  // The caller texts again: the webhook bumps lastMessageAt past deletedAt.
+  assert.equal(isHiddenByDelete({ deletedAt, lastMessageAt: new Date('2026-10-31T09:00:00Z') }), false)
 })

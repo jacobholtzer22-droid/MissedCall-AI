@@ -29,3 +29,13 @@ export async function softDelete(store: SoftDeleteStore, id: string, allowedBusi
   await store.markDeleted(id)
   return { status: 200, alreadyDeleted: false }
 }
+
+/**
+ * Read side of the missed-call soft delete. A deleted conversation stays hidden
+ * until something newer lands on the thread (lastMessageAt later than
+ * deletedAt), e.g. the caller texts again. The webhook never clears deletedAt;
+ * the thread simply counts as live again from that point.
+ */
+export function isHiddenByDelete(c: { deletedAt: Date | null; lastMessageAt: Date }): boolean {
+  return c.deletedAt !== null && c.lastMessageAt.getTime() <= c.deletedAt.getTime()
+}

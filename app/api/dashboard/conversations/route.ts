@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { requireDashboardBusiness } from '@/lib/dashboard-auth'
+import { isHiddenByDelete } from '../lead-delete'
 
 export async function GET() {
   const authResult = await requireDashboardBusiness()
@@ -15,8 +16,6 @@ export async function GET() {
     where: {
       businessId: business.id,
       messages: { some: {} },
-      // Deleted from the Leads page (DELETE /api/dashboard/conversations/[id]).
-      deletedAt: null,
       NOT: {
         status: { in: ['screening', 'screening_blocked', 'forwarding'] },
       },
@@ -32,6 +31,7 @@ export async function GET() {
       serviceRequested: true,
       createdAt: true,
       lastMessageAt: true,
+      deletedAt: true,
       customerEmail: true,
       customerAddress: true,
       customerTimeframe: true,
@@ -43,5 +43,9 @@ export async function GET() {
     },
   })
 
-  return NextResponse.json({ conversations })
+  // Deleted from the Leads page (DELETE /api/dashboard/conversations/[id]),
+  // unless the thread has moved since. deletedAt is not part of the response.
+  const visible = conversations.filter((c) => !isHiddenByDelete(c)).map(({ deletedAt: _deletedAt, ...c }) => c)
+
+  return NextResponse.json({ conversations: visible })
 }
