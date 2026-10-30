@@ -2,6 +2,8 @@
 
 This document is the single source of truth for understanding, debugging, and modifying this codebase. Read before touching anything.
 
+**"Run the protected-path check"** means `scripts/protected-path-check.sh <branch>`: it diffs the branch against origin/main over the lead, booking and notification paths (webhooks, contact, bookings, their libraries, middleware, next.config, prisma) and exits non-zero on any hit. Run it before merging anything to main.
+
 ---
 
 ## Table of Contents
