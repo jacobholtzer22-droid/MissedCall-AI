@@ -1,11 +1,15 @@
 // ===========================================
-// CLIENT DASHBOARD: WEBSITE LEADS — list & update lead status
+// CLIENT DASHBOARD: WEBSITE LEADS: list & update lead status
 // ===========================================
 
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { requireDashboardBusiness } from '@/lib/dashboard-auth'
 import { getOwnerGroupBusinesses } from '@/lib/owner-group'
+
+// Never shown to the client: condemned spam, and leads the client deleted
+// (DELETE /api/dashboard/website-leads/[id]). Both rows stay in the table.
+const HIDDEN_STATUSES = ['spam', 'deleted']
 
 export async function GET() {
   const authResult = await requireDashboardBusiness()
@@ -17,7 +21,7 @@ export async function GET() {
   const group = await getOwnerGroupBusinesses(business)
 
   const leads = await db.websiteLead.findMany({
-    where: { businessId: { in: group.map((b) => b.id) }, status: { not: 'spam' } },
+    where: { businessId: { in: group.map((b) => b.id) }, status: { notIn: HIDDEN_STATUSES } },
     orderBy: { createdAt: 'desc' },
   })
 
@@ -60,7 +64,7 @@ export async function PATCH(req: NextRequest) {
   // leads shown by GET. Ungrouped: group = [business], identical to before.
   const group = await getOwnerGroupBusinesses(business)
   const lead = await db.websiteLead.findFirst({
-    where: { id: leadId, businessId: { in: group.map((b) => b.id) } },
+    where: { id: leadId, businessId: { in: group.map((b) => b.id) }, status: { not: 'deleted' } },
   })
 
   if (!lead) {
@@ -74,3 +78,4 @@ export async function PATCH(req: NextRequest) {
 
   return NextResponse.json({ lead: updated })
 }
+

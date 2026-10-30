@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
-import { MessageSquare, Globe, X, Mail, MapPin, Phone, ChevronRight } from 'lucide-react'
+import { MessageSquare, Globe, X, Mail, MapPin, Phone, ChevronRight, Trash2 } from 'lucide-react'
 import { formatPhoneNumber, formatRelativeTime, cn } from '@/lib/utils'
 import { getConversationBucket, BUCKET_LABELS, type ConversationBucket } from '@/lib/conversation-buckets'
 
@@ -39,6 +39,7 @@ type UnifiedLead = {
   kind: 'missed_call' | 'website'
   key: string
   conversationId?: string
+  websiteLeadId?: string
   name: string
   summary: string | null
   statusLabel: string
@@ -99,6 +100,16 @@ export function CombinedLeadsList({
   const [error, setError] = useState<string | null>(null)
   const [filter, setFilter] = useState<SourceFilter>('all')
   const [detail, setDetail] = useState<UnifiedLead | null>(null)
+  const [confirmDelete, setConfirmDelete] = useState<UnifiedLead | null>(null)
+  const [deleteError, setDeleteError] = useState<string | null>(null)
+  const [deleting, setDeleting] = useState(false)
+  const [toast, setToast] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!toast) return
+    const t = setTimeout(() => setToast(null), 3000)
+    return () => clearTimeout(t)
+  }, [toast])
 
   useEffect(() => {
     let cancelled = false
@@ -160,6 +171,7 @@ export function CombinedLeadsList({
       return {
         kind: 'website',
         key: `w-${w.id}`,
+        websiteLeadId: w.id,
         name: nameOrPhone(w.name, w.phone),
         summary: w.message || null,
         statusLabel: status.label,
@@ -199,6 +211,40 @@ export function CombinedLeadsList({
     } else {
       setDetail(lead)
     }
+  }
+
+  // Soft delete, both sources. The row leaves the list only once the server
+  // says so (no refetch); a failure keeps it and shows the error in the dialog.
+  async function handleConfirmDelete() {
+    const lead = confirmDelete
+    if (!lead || deleting) return
+    const url =
+      lead.kind === 'website' && lead.websiteLeadId
+        ? `/api/dashboard/website-leads/${lead.websiteLeadId}`
+        : lead.conversationId
+          ? `/api/dashboard/conversations/${lead.conversationId}`
+          : null
+    if (!url) return
+    setDeleting(true)
+    setDeleteError(null)
+    try {
+      const res = await fetch(url, { method: 'DELETE' })
+      if (!res.ok) throw new Error('Delete failed')
+      if (lead.kind === 'website') setWebsiteLeads(prev => prev.filter(w => w.id !== lead.websiteLeadId))
+      else setConversations(prev => prev.filter(c => c.id !== lead.conversationId))
+      if (detail?.key === lead.key) setDetail(null)
+      setConfirmDelete(null)
+      setToast(`Deleted ${lead.name}`)
+    } catch {
+      setDeleteError('Could not delete that lead. Please try again.')
+    } finally {
+      setDeleting(false)
+    }
+  }
+
+  function openDelete(lead: UnifiedLead) {
+    setDeleteError(null)
+    setConfirmDelete(lead)
   }
 
   const FILTERS: { value: SourceFilter; label: string }[] = [
@@ -259,13 +305,14 @@ export function CombinedLeadsList({
           <ul className="divide-y divide-gray-100">
             {visible.map(lead => {
               const source = SOURCE_BADGE[lead.kind]
+              const canDelete = Boolean(lead.websiteLeadId || lead.conversationId)
               return (
-                <li key={lead.key}>
+                <li key={lead.key} className="flex items-stretch">
                   <button
                     type="button"
                     onClick={() => handleRowClick(lead)}
                     className={cn(
-                      'w-full text-left p-4 transition flex items-start gap-3',
+                      'flex-1 min-w-0 text-left p-4 transition flex items-start gap-3',
                       lead.isPartial
                         ? 'border-l-4 border-l-red-500 bg-red-50/60 hover:bg-red-50'
                         : 'hover:bg-gray-50'
@@ -307,6 +354,20 @@ export function CombinedLeadsList({
                       <ChevronRight className="h-4 w-4 text-gray-300" />
                     </div>
                   </button>
+                  {canDelete && (
+                    <button
+                      type="button"
+                      onClick={() => openDelete(lead)}
+                      className={cn(
+                        'shrink-0 w-11 min-h-[44px] flex items-center justify-center text-gray-400 hover:text-red-600 hover:bg-red-50 transition',
+                        lead.isPartial && 'bg-red-50/60'
+                      )}
+                      aria-label={`Delete lead ${lead.name}`}
+                      title="Delete lead"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  )}
                 </li>
               )
             })}
@@ -371,6 +432,60 @@ export function CombinedLeadsList({
               </div>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Delete confirm (both sources) */}
+      {confirmDelete && (
+        <div
+          className="fixed inset-0 z-50 flex items-end md:items-center justify-center bg-black/40 p-0 md:p-4"
+          onClick={() => !deleting && setConfirmDelete(null)}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="delete-lead-title"
+            className="bg-white rounded-t-2xl md:rounded-xl shadow-xl max-w-sm w-full p-5"
+            onClick={e => e.stopPropagation()}
+          >
+            <h2 id="delete-lead-title" className="text-lg font-bold text-gray-900 break-words">
+              Delete {confirmDelete.name}?
+            </h2>
+            <p className="text-sm text-gray-600 mt-1">
+              {confirmDelete.kind === 'missed_call'
+                ? 'This missed-call lead leaves your Leads page. If they text again, the conversation keeps working as usual.'
+                : 'This website lead leaves your Leads page.'}
+            </p>
+            {deleteError && (
+              <p role="alert" className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                {deleteError}
+              </p>
+            )}
+            <div className="flex justify-end gap-2 mt-5">
+              <button
+                type="button"
+                autoFocus
+                disabled={deleting}
+                onClick={() => setConfirmDelete(null)}
+                className="px-4 py-2.5 min-h-[44px] rounded-lg text-sm font-medium bg-gray-100 text-gray-700 hover:bg-gray-200"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmDelete}
+                disabled={deleting}
+                className="px-4 py-2.5 min-h-[44px] rounded-lg text-sm font-medium bg-red-600 text-white hover:bg-red-700 disabled:opacity-60"
+              >
+                {deleting ? 'Deleting...' : 'Delete'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {toast && (
+        <div role="status" className="fixed bottom-4 left-1/2 -translate-x-1/2 z-[60] rounded-lg bg-gray-900 px-4 py-2.5 text-sm font-medium text-white shadow-lg">
+          {toast}
         </div>
       )}
     </div>

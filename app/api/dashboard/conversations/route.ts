@@ -15,6 +15,8 @@ export async function GET() {
     where: {
       businessId: business.id,
       messages: { some: {} },
+      // Deleted from the Leads page (DELETE /api/dashboard/conversations/[id]).
+      deletedAt: null,
       NOT: {
         status: { in: ['screening', 'screening_blocked', 'forwarding'] },
       },
