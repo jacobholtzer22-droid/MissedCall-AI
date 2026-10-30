@@ -6,21 +6,13 @@
 
 import type { Prisma } from '@prisma/client'
 import { db } from '@/lib/db'
-import { mergeIntake, readIntake, type Intake, type IntakeAsset } from './intake'
-
-export const MAX_ASSET_BYTES = 15 * 1024 * 1024
+import { mergeIntake, readIntake, type Intake } from './intake'
 
 /**
- * Content types per uploadable kind. HEIC is not here: this sharp build cannot
- * decode it. gbp photos are never uploaded by hand: lookup_gbp stores them.
+ * HEIC is never stored: the intake page converts it to JPEG in the browser
+ * (this sharp build cannot decode it, so neither could the build).
  */
-export const ASSET_TYPES: Record<Exclude<IntakeAsset['kind'], 'gbp'>, string[]> = {
-  photo: ['image/jpeg', 'image/png', 'image/webp'],
-  logo: ['image/jpeg', 'image/png', 'image/webp', 'image/svg+xml'],
-  document: ['application/pdf', 'image/jpeg', 'image/png', 'image/webp', 'image/svg+xml'],
-}
-
-export const HEIC_MESSAGE = 'HEIC photos cannot be converted here. Export them as JPG (on iPhone: Settings > Camera > Formats > Most Compatible, or share the photo as JPG) and upload again.'
+export const HEIC_MESSAGE = 'HEIC must be converted to JPG before it is saved. Upload it again from the intake page, which converts it.'
 
 /** The blob path every upload for this client must use. */
 export const assetPrefix = (engagementId: string) => `ops-intake/${engagementId}/`

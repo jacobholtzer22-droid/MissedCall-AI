@@ -26,6 +26,9 @@ export type IntakeAsset = {
   beforeAfter?: 'before' | 'after'
   /** gbp photos: who posted it on the profile (the business itself). */
   attribution?: string
+  /** Pixel size, recorded by the browser upload (absent on older entries and gbp photos). */
+  width?: number
+  height?: number
   uploadedAt: string
 }
 
@@ -204,4 +207,97 @@ export function withAssetSections(brief: string, i: Intake): string {
     old ? `- ${old.url} | use: ${old.use}${old.notes ? ` | ${old.notes}` : ''}` : '- none',
     '',
   ].join('\n')
+}
+
+// ── Uploads (shared by the intake page and the asset routes) ────────────────
+// The browser converts HEIC to JPEG and shrinks anything over UPLOAD_LONG_EDGE
+// before the file goes straight to Vercel Blob; no file passes through a
+// function body. These are the rules both sides agree on.
+
+export type UploadKind = 'photo' | 'logo' | 'document'
+
+/** Biggest file the page will even try (before conversion). */
+export const MAX_SOURCE_BYTES = 40 * 1024 * 1024
+export const UPLOAD_LONG_EDGE = 2400
+export const UPLOAD_JPEG_QUALITY = 0.85
+export const UPLOAD_CONCURRENCY = 3
+
+const RASTER = ['image/jpeg', 'image/png', 'image/webp']
+const HEIC = ['image/heic', 'image/heif']
+
+/** Content types the token allows per kind (what lands in Blob after conversion, plus HEIC). */
+export const UPLOAD_TYPES: Record<UploadKind, string[]> = {
+  photo: [...RASTER, ...HEIC],
+  logo: [...RASTER, ...HEIC, 'image/svg+xml'],
+  document: ['application/pdf', ...RASTER, ...HEIC, 'image/svg+xml'],
+}
+
+const EXT_TYPE: Record<string, string> = {
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  png: 'image/png',
+  webp: 'image/webp',
+  heic: 'image/heic',
+  heif: 'image/heif',
+  svg: 'image/svg+xml',
+  pdf: 'application/pdf',
+}
+
+/** The file's type, from the browser or (when the browser leaves it blank, as it often does for HEIC) the extension. */
+export function fileType(name: string, type: string): string {
+  const t = type.toLowerCase()
+  if (t && t !== 'application/octet-stream') return t === 'image/jpg' ? 'image/jpeg' : t
+  return EXT_TYPE[name.split('.').pop()?.toLowerCase() ?? ''] ?? ''
+}
+
+export const isHeic = (type: string) => HEIC.includes(type)
+
+/** Why a file cannot be uploaded as this kind, or null when it can. */
+export function rejectReason(f: { name: string; type: string; size: number }, kind: UploadKind): string | null {
+  const t = fileType(f.name, f.type)
+  if (f.size === 0) return 'Empty file (or a folder this browser cannot open)'
+  if (!UPLOAD_TYPES[kind].includes(t)) {
+    const allowed = kind === 'photo' ? 'JPG, PNG, WebP or HEIC' : kind === 'logo' ? 'JPG, PNG, WebP, HEIC or SVG' : 'PDF or an image'
+    return `Bad type (${t || 'unknown'}): ${allowed} only`
+  }
+  if (f.size > MAX_SOURCE_BYTES) return `Too large: ${formatBytes(f.size)}, the limit is ${formatBytes(MAX_SOURCE_BYTES)}`
+  return null
+}
+
+export function formatBytes(n: number): string {
+  if (n < 1024 * 1024) return `${Math.max(1, Math.round(n / 1024))} KB`
+  return `${(n / (1024 * 1024)).toFixed(1)} MB`
+}
+
+/** The same name with the extension changed (IMG_1.HEIC -> IMG_1.jpg). */
+export function withExtension(name: string, ext: string): string {
+  const dot = name.lastIndexOf('.')
+  return `${dot > 0 ? name.slice(0, dot) : name}.${ext}`
+}
+
+/** Scale (w, h) down so the long side is at most max; never up. */
+export function fitWithin(w: number, h: number, max = UPLOAD_LONG_EDGE): { width: number; height: number } {
+  const long = Math.max(w, h)
+  if (long <= max) return { width: w, height: h }
+  const s = max / long
+  return { width: Math.max(1, Math.round(w * s)), height: Math.max(1, Math.round(h * s)) }
+}
+
+/** A filename not already used: IMG_1.jpg, then IMG_1 (2).jpg, IMG_1 (3).jpg. Case-insensitive. */
+export function uniqueFilename(name: string, taken: Iterable<string>): string {
+  const used = new Set(Array.from(taken, (t) => t.toLowerCase()))
+  if (!used.has(name.toLowerCase())) return name
+  const dot = name.lastIndexOf('.')
+  const stem = dot > 0 ? name.slice(0, dot) : name
+  const ext = dot > 0 ? name.slice(dot) : ''
+  for (let n = 2; ; n++) {
+    const next = `${stem} (${n})${ext}`
+    if (!used.has(next.toLowerCase())) return next
+  }
+}
+
+/** The Blob path for one upload. The uuid keeps every path unique, so nothing is ever overwritten. */
+export function uploadPath(engagementId: string, uuid: string, filename: string): string {
+  const safe = filename.toLowerCase().replace(/[^a-z0-9._-]+/g, '-').replace(/^-+|-+$/g, '') || 'file'
+  return `ops-intake/${engagementId}/${uuid}-${safe}`
 }

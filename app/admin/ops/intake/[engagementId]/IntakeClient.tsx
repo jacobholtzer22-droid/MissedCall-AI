@@ -3,16 +3,16 @@
 // /admin/ops/intake/[engagementId]: everything Jacob has for a client's site,
 // in one place. Sections follow Engagement.intake (lib/ops/intake.ts). Each
 // section saves on blur (PATCH .../intake with that key) and shows Saved.
-// Photos and the logo upload straight from the browser to Vercel Blob (a
-// token from .../assets/token), then register with POST .../assets; one file
-// at a time so a batch never races. Per photo: caption, hero candidate,
-// service, before or after.
+// Photos and the logo go through the upload queue in ./Uploader (straight
+// from the browser to Vercel Blob, HEIC converted, big photos shrunk, three
+// at a time, a row per file). Per photo: caption, hero candidate, service,
+// before or after.
 
-import { useRef, useState } from 'react'
+import { useState } from 'react'
 import Link from 'next/link'
-import { upload } from '@vercel/blob/client'
-import { ArrowLeft, ImagePlus, Plus, Star, Trash2, X } from 'lucide-react'
+import { ArrowLeft, Plus, Star, Trash2, X } from 'lucide-react'
 import { intakeMissing, type Intake, type IntakeAsset } from '@/lib/ops/intake'
+import { Uploader } from './Uploader'
 
 const control =
   'w-full bg-gray-950 border border-gray-800 rounded-md px-3 min-h-[44px] text-sm text-gray-100 placeholder:text-gray-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500'
@@ -384,7 +384,7 @@ function Quotes({ value, onSave }: { value: { text: string; author: string }[]; 
   )
 }
 
-/** Drop or pick files; upload one at a time; edit and delete each. */
+/** The upload queue, then each saved file to edit or delete. */
 function Assets({
   engagementId,
   kind,
@@ -400,47 +400,7 @@ function Assets({
   onChange: (i: Intake) => void
   onError: (m: string | null) => void
 }) {
-  const [busy, setBusy] = useState<string | null>(null)
-  const [over, setOver] = useState(false)
-  const input = useRef<HTMLInputElement>(null)
   const base = `/api/admin/ops/engagements/${engagementId}`
-
-  const add = async (files: FileList | File[]) => {
-    onError(null)
-    const list = Array.from(files).slice(0, kind === 'logo' ? 1 : 40)
-    for (let n = 0; n < list.length; n++) {
-      const f = list[n]
-      if (/\.(heic|heif)$/i.test(f.name) || /heic|heif/i.test(f.type)) {
-        onError(`${f.name}: HEIC photos cannot be converted here. Export them as JPG and upload again.`)
-        continue
-      }
-      if (f.size > 15 * 1024 * 1024) {
-        onError(`${f.name} is over 15 MB.`)
-        continue
-      }
-      setBusy(`Uploading ${n + 1} of ${list.length}: ${f.name}`)
-      try {
-        const safe = f.name.toLowerCase().replace(/[^a-z0-9._-]+/g, '-').replace(/^-+|-+$/g, '') || 'file'
-        const blob = await upload(`ops-intake/${engagementId}/${crypto.randomUUID()}-${safe}`, f, {
-          access: 'public',
-          handleUploadUrl: `${base}/assets/token`,
-          clientPayload: JSON.stringify({ kind }),
-          contentType: f.type || undefined,
-        })
-        const res = await fetch(`${base}/assets`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ url: blob.url, filename: f.name, kind }),
-        })
-        const data = await res.json().catch(() => ({}))
-        if (!res.ok) throw new Error(String(data.error ?? 'Could not save the file'))
-        onChange(data.intake)
-      } catch (err) {
-        onError(`${f.name}: ${err instanceof Error ? err.message : 'upload failed'}`)
-      }
-    }
-    setBusy(null)
-  }
 
   const patch = async (id: string, body: Record<string, unknown>) => {
     const res = await fetch(`${base}/assets/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
@@ -457,34 +417,7 @@ function Assets({
 
   return (
     <div className="space-y-3">
-      <div
-        onDragOver={(e) => {
-          e.preventDefault()
-          setOver(true)
-        }}
-        onDragLeave={() => setOver(false)}
-        onDrop={(e) => {
-          e.preventDefault()
-          setOver(false)
-          void add(e.dataTransfer.files)
-        }}
-        className={`rounded-lg border-2 border-dashed p-5 text-center text-sm ${over ? 'border-blue-500 bg-blue-500/10' : 'border-gray-700'}`}
-      >
-        <input
-          ref={input}
-          type="file"
-          multiple={kind === 'photo'}
-          accept={kind === 'logo' ? 'image/png,image/jpeg,image/webp,image/svg+xml' : 'image/png,image/jpeg,image/webp'}
-          className="sr-only"
-          onChange={(e) => e.target.files && void add(e.target.files)}
-        />
-        <button type="button" disabled={Boolean(busy)} onClick={() => input.current?.click()} className={smallBtn}>
-          <ImagePlus className="h-4 w-4" /> {kind === 'logo' ? (assets.length ? 'Replace the logo' : 'Add the logo') : 'Add photos'}
-        </button>
-        <p className="mt-2 text-xs text-gray-500">
-          {busy ?? `or drop ${kind === 'logo' ? 'it' : 'them'} here. JPG, PNG or WebP${kind === 'logo' ? ' or SVG' : ''}, up to 15 MB each. HEIC: export as JPG first.`}
-        </p>
-      </div>
+      <Uploader engagementId={engagementId} kind={kind} hasLogo={assets.length > 0} onSaved={onChange} />
 
       {assets.length > 0 && (
         <ul className={`grid gap-3 ${kind === 'photo' ? 'grid-cols-1 sm:grid-cols-2' : 'grid-cols-1'}`}>
@@ -495,6 +428,7 @@ function Assets({
               <div className="p-3 space-y-2">
                 <p className="text-xs text-gray-500 truncate" title={a.filename}>
                   {a.filename}
+                  {a.width && a.height ? `, ${a.width} × ${a.height}` : ''}
                 </p>
                 {kind === 'photo' && (
                   <>
