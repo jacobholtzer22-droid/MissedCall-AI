@@ -1,21 +1,17 @@
 'use client'
 
-// Home (default tab): what to do right now. Top to bottom: the fleet line,
-// approvals waiting for Push, the Sales strip (prospects and demo calls, not
-// clients), then on lg two columns: ONE client list in four buckets (Today,
-// Get done, Waiting on client, All set and live; lib/ops/triage.ts) on the
-// left, the office and the chat on the right, from xl only. Below xl it is one
-// column in normal flow: fleet line, approvals and sales, office, chat (its own
-// scroll, 60vh), clients. Each top-level block carries data-ops-panel so the
-// split-screen check can assert none of them overlap.
+// Home: clients and what to do. Top to bottom: one line linking to HQ when
+// approvals wait for Push, the fleet line, Needs you (approvals waiting for
+// Push and the Sales strip: prospects and demo calls, not clients), then ONE
+// client list in four buckets (Today, Get done, Waiting on client, All set and
+// live; lib/ops/triage.ts). The office and the chief chat live on HQ
+// (HqTab.tsx). Each top-level block carries data-ops-panel so the split-screen
+// check can assert none of them overlap.
 
-import { useEffect, useMemo, useState } from 'react'
 import type { BoardEngagement, OpsBoard } from '@/lib/ops/board'
 import { headlineMrr } from '@/lib/ops/money'
 import type { Triage } from '@/lib/ops/triage'
 import { personaFor } from '@/lib/ops/hq/personas'
-import { Chat } from './HqChat'
-import { Office, RunDrawer, desks } from './HqOffice'
 import { ApprovalsStrip, ClientBuckets, SalesStrip } from './HomeTriage'
 import { HQ_CSS, isActive } from './hqShared'
 import { money, type OpsActions } from './opsUi'
@@ -47,22 +43,16 @@ export function HomeTab({
   hq,
   triage,
   showRevenue,
+  onOpenHq,
 }: {
   board: OpsBoard
   actions: OpsActions
   hq: HqFeedState
   triage: Triage
   showRevenue: boolean
+  onOpenHq: () => void
 }) {
-  const [openRun, setOpenRun] = useState<string | null>(null)
-  const [now, setNow] = useState(() => Date.now())
-  const runs = useMemo(() => hq.feed?.runs ?? [], [hq.feed])
-  const working = runs.filter(isActive)
-
-  useEffect(() => {
-    const id = setInterval(() => setNow(Date.now()), working.length ? 1000 : 30000)
-    return () => clearInterval(id)
-  }, [working.length])
+  const working = (hq.feed?.runs ?? []).filter(isActive)
 
   const approvals = hq.feed?.approvals ?? []
   const workingMap = workingByClient(hq)
@@ -86,6 +76,19 @@ export function HomeTab({
   return (
     <div className="space-y-4">
       <style>{HQ_CSS}</style>
+      {pending > 0 && (
+        <a
+          href="/admin/ops?tab=hq"
+          onClick={(e) => {
+            e.preventDefault()
+            onOpenHq()
+          }}
+          data-ops-panel="hq-link"
+          className="flex items-center min-h-[44px] text-sm font-medium text-amber-300 hover:text-amber-200 rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+        >
+          {pending} waiting for Push →
+        </a>
+      )}
       <dl data-ops-panel="fleet" className="flex flex-wrap gap-x-6 gap-y-2 text-sm">
         {fleet.map((f) => (
           <div key={f.label} className="flex items-baseline gap-1.5">
@@ -99,36 +102,14 @@ export function HomeTab({
       </dl>
       {hq.loadError && <p className="rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-2 text-sm text-red-300">{hq.loadError}</p>}
 
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)] items-start">
-        <div data-ops-panel="needs" className="min-w-0 space-y-4 xl:col-start-1 xl:row-start-1">
-          <ApprovalsStrip approvals={approvals} onDecide={hq.decide} />
-          <SalesStrip sales={triage.sales} board={board} actions={actions} />
-        </div>
-
-        <div className="min-w-0 space-y-4 bg-gray-950 xl:col-start-2 xl:row-start-1 xl:row-span-2 xl:sticky xl:top-4">
-          <div data-ops-panel="office">
-            {hq.feed ? (
-              <Office desks={desks(runs, hq.feed.lastRuns, approvals)} latestByRun={hq.latestByRun} now={now} onOpen={setOpenRun} onStop={hq.stop} />
-            ) : (
-              <p className="rounded-lg border border-gray-800 bg-gray-900 px-4 py-6 text-sm text-gray-500">Loading the office…</p>
-            )}
-          </div>
-          <div data-ops-panel="chat" className="xl:h-[calc(100vh-330px)]">
-            <Chat
-              messages={hq.messages}
-              jobs={hq.feed?.jobs ?? []}
-              thinking={runs.some((r) => r.agent === 'chief' && isActive(r))}
-              onSend={hq.send}
-            />
-          </div>
-        </div>
-
-        <div data-ops-panel="clients" className="min-w-0 xl:col-start-1 xl:row-start-2">
-          <ClientBuckets triage={triage} board={board} actions={actions} working={workingMap} showRevenue={showRevenue} />
-        </div>
+      <div data-ops-panel="needs" className="min-w-0 space-y-4">
+        <ApprovalsStrip approvals={approvals} onDecide={hq.decide} />
+        <SalesStrip sales={triage.sales} board={board} actions={actions} />
       </div>
 
-      {openRun && <RunDrawer runId={openRun} liveEvents={hq.events} runs={runs} onClose={() => setOpenRun(null)} onStop={hq.stop} />}
+      <div data-ops-panel="clients" className="min-w-0">
+        <ClientBuckets triage={triage} board={board} actions={actions} working={workingMap} showRevenue={showRevenue} />
+      </div>
     </div>
   )
 }

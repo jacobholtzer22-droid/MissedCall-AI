@@ -11,9 +11,9 @@ export const metadata = {
   robots: { index: false, follow: false },
 }
 
-const TABS: OpsTab[] = ['home', 'clients', 'money', 'timeline', 'agents']
-/** Tabs folded into Home; old links land there. */
-const OLD_HOME_TABS = ['hq', 'today']
+const TABS: OpsTab[] = ['hq', 'home', 'clients', 'money', 'timeline', 'agents']
+/** Today was folded into Home; old links land there. */
+const OLD_HOME_TABS = ['today']
 
 export default async function OpsPage({ searchParams }: { searchParams: { tab?: string } }) {
   const { userId } = await auth()
@@ -22,8 +22,8 @@ export default async function OpsPage({ searchParams }: { searchParams: { tab?: 
     redirect('/dashboard')
   }
 
-  if (OLD_HOME_TABS.includes(searchParams?.tab ?? '')) redirect('/admin/ops')
-  const tab = TABS.includes(searchParams?.tab as OpsTab) ? (searchParams.tab as OpsTab) : 'home'
+  if (OLD_HOME_TABS.includes(searchParams?.tab ?? '')) redirect('/admin/ops?tab=home')
+  const tab = TABS.includes(searchParams?.tab as OpsTab) ? (searchParams.tab as OpsTab) : 'hq'
   const [board, cookieStore] = await Promise.all([getOpsBoard(), cookies()])
   const initialShowRevenue = cookieStore.get('adminShowRevenue')?.value === '1'
 

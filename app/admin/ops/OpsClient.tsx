@@ -2,6 +2,8 @@
 
 // /admin/ops shell: header, tabs (?tab=), the board state, the HQ feed (one
 // poll for every tab, see useHqFeed), every write, the detail panel and toasts.
+// HQ fills the viewport (the page itself never scrolls there); every other tab
+// is a normal scrolling page.
 //
 // Writes are optimistic, like /admin/pipeline: the board changes at once, the
 // request goes out, a failure puts the previous board back and toasts. On
@@ -17,6 +19,7 @@ import type { UnmatchedPayingCustomer } from '@/lib/ops/sync'
 import { bucketClients } from '@/lib/ops/triage'
 import { Age } from '../ui'
 import { HomeTab, workingByClient } from './HomeTab'
+import { HqTab } from './HqTab'
 import { ClientsTab } from './ClientsTab'
 import { MoneyTab } from './MoneyTab'
 import { AgentsTab } from './AgentsTab'
@@ -26,8 +29,9 @@ import { NewClientDialog } from './NewClientDialog'
 import { useHqFeed } from './useHqFeed'
 import { button, type OpsActions } from './opsUi'
 
-export type OpsTab = 'home' | 'clients' | 'money' | 'timeline' | 'agents'
+export type OpsTab = 'hq' | 'home' | 'clients' | 'money' | 'timeline' | 'agents'
 export const OPS_TABS: { key: OpsTab; label: string }[] = [
+  { key: 'hq', label: 'HQ' },
   { key: 'home', label: 'Home' },
   { key: 'clients', label: 'Clients' },
   { key: 'money', label: 'Money' },
@@ -101,8 +105,9 @@ export function OpsClient({
     else toast(String(data.error ?? 'Could not reload the board'), 'error')
   }, [toast])
 
-  const hq = useHqFeed({ fast: tab === 'home', toast, onRunSettled: () => void refresh() })
-  // Home's one client list; the badge counts the clients in Today.
+  const hq = useHqFeed({ fast: tab === 'hq', toast, onRunSettled: () => void refresh() })
+  const pendingApprovals = (hq.feed?.approvals ?? []).filter((a) => a.status === 'pending').length
+  // Home's one client list; the Home badge counts the clients in Today, the HQ badge pending approvals.
   const triage = useMemo(() => bucketClients(board, hq.feed?.approvals ?? [], new Date()), [board, hq.feed])
   // The timeline reloads its first page when a job, run or approval moves.
   const timelineKey = [
@@ -269,8 +274,8 @@ export function OpsClient({
     : null
 
   return (
-    <div className="min-h-screen bg-gray-950 text-gray-100">
-      <header className="border-b border-gray-800 px-3 sm:px-6">
+    <div className={`bg-gray-950 text-gray-100 ${tab === 'hq' ? 'h-[100dvh] flex flex-col overflow-hidden' : 'min-h-screen'}`}>
+      <header className="shrink-0 border-b border-gray-800 px-3 sm:px-6">
         <div className="max-w-screen-2xl mx-auto flex items-center justify-between gap-3 min-h-[56px]">
           <div className="flex items-center gap-3 min-w-0">
             <Link
@@ -322,13 +327,17 @@ export function OpsClient({
             >
               {t.label}
               {t.key === 'home' && triage.today.length > 0 && <span className="ml-1.5 text-gray-500 font-normal tabular-nums">{triage.today.length}</span>}
+              {t.key === 'hq' && pendingApprovals > 0 && <span className="ml-1.5 text-amber-300 font-normal tabular-nums">{pendingApprovals}</span>}
             </button>
           ))}
         </nav>
       </header>
 
-      <main className="max-w-screen-2xl mx-auto px-3 sm:px-6 py-4 sm:py-6">
-        {tab === 'home' && <HomeTab board={board} actions={actions} hq={hq} triage={triage} showRevenue={showRevenue} />}
+      <main
+        className={`max-w-screen-2xl mx-auto px-3 sm:px-6 ${tab === 'hq' ? 'w-full flex-1 min-h-0 py-3 sm:py-4' : 'py-4 sm:py-6'}`}
+      >
+        {tab === 'hq' && <HqTab hq={hq} />}
+        {tab === 'home' && <HomeTab board={board} actions={actions} hq={hq} triage={triage} showRevenue={showRevenue} onOpenHq={() => switchTab('hq')} />}
         {tab === 'clients' && (
           <ClientsTab
             board={board}

@@ -19,7 +19,7 @@ import { ApprovalCard } from './HqApprovals'
 import type { FeedApproval } from './hqShared'
 import { detroitTime, overdueLabel, smallButton, type OpsActions } from './opsUi'
 
-const OUTCOME: Record<string, { label: string; tone: string }> = {
+export const OUTCOME: Record<string, { label: string; tone: string }> = {
   approved: { label: 'Applying', tone: 'text-emerald-300' },
   applied: { label: 'Applied', tone: 'text-emerald-400' },
   rejected: { label: 'Rejected', tone: 'text-gray-500' },

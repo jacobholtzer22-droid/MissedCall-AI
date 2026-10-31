@@ -1,9 +1,9 @@
 'use client'
 
 // The HQ feed, held by the Ops shell so every tab sees the same live state
-// (the Home badge counts pending approvals; client cards show which agent is
+// (the HQ badge counts pending approvals; client cards show which agent is
 // working on them). One poll: GET /api/admin/ops/hq/feed?since=<cursor>,
-// every 2 s while Home is open and visible, every 15 s otherwise, and at once
+// every 2 s while HQ is open and visible, every 15 s otherwise, and at once
 // after anything Jacob does. Messages and events accumulate by id; runs,
 // approvals, jobs and each agent's last run are replaced on every poll.
 // When an agent run finishes, onRunSettled fires so the shell can reload the
@@ -87,7 +87,7 @@ export function useHqFeed({ fast, toast, onRunSettled }: { fast: boolean; toast:
     }
   }, [poll])
 
-  // Opening Home polls at once instead of waiting out the slow interval.
+  // Opening HQ polls at once instead of waiting out the slow interval.
   useEffect(() => {
     if (fast) void poll()
   }, [fast, poll])

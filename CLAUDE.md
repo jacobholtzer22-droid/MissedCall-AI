@@ -3263,9 +3263,9 @@ builds update masks from the resource's fields, so an empty sub-object (e.g.
 `manual_cpc: {}`) would mask nothing, which is why bidding sets a field inside it;
 `change_event` refuses a start more than 30 days back.
 
-**The HQ pieces** (Oct 27 2026; since Oct 28 they live on Home, see "Ops command
-center" below). One poll, `GET /hq/feed?since=` (`app/admin/ops/useHqFeed.ts`, held by
-the Ops shell), every 2 s while Home is open and visible, 15 s otherwise, and at once
+**The HQ pieces** (Oct 27 2026; since Oct 31 they live on the HQ tab, see "HQ tab"
+below). One poll, `GET /hq/feed?since=` (`app/admin/ops/useHqFeed.ts`, held by
+the Ops shell), every 2 s while HQ is open and visible, 15 s otherwise, and at once
 after a send, Push, Reject or Stop.
 
 | File | What it is |
@@ -3290,14 +3290,27 @@ after a send, Push, Reject or Stop.
 
 ### Ops command center (branch `ops-command-center`, Oct 28 2026)
 
-One dashboard for agents, clients, what to do and what happened. Tabs: **Home**
-(default), **Clients**, **Money**, **Timeline**, **Agents**. `?tab=hq` and `?tab=today`
-redirect to Home; nothing those tabs did was dropped. No schema change.
+One dashboard for agents, clients, what to do and what happened. Tabs: **HQ**
+(default, see "HQ tab" below), **Home**, **Clients**, **Money**, **Timeline**, **Agents**.
+`?tab=today` redirects to `?tab=home`. No schema change.
 
-**Home** (`HomeTab.tsx`). A fleet line (active clients, Verified and Projected MRR
-behind the `adminShowRevenue` cookie, agents working, waiting for Push, clients with
-red alerts), then three columns on xl (lg: two, clients below; mobile: Needs you,
-office, chat, clients):
+**HQ tab** (`HqTab.tsx`, `?tab=hq`, Oct 31 2026). The agents only: no clients, no
+fleet line, no Needs you. It fills the viewport under the tab bar and the page never
+scrolls (the shell root is `h-[100dvh]` on this tab only); each column scrolls inside
+itself. lg and up: a 380px left column with the office desks stacked (`Office stacked`)
+and under them the approvals (pending first, oldest first, with Push and Reject as
+compact `ApprovalCard`s, then one line each for those decided in the last 30 min); the
+chief chat (`Chat fill`) takes the rest of the height, composer pinned at its bottom.
+Below lg: the chat first at full height; the desks and approvals open above it behind
+the Agents toggle (max 45% of the height, own scroll), so the composer stays in view.
+The chat brings the latest message into view on load and whenever a new one arrives,
+and stays pinned while photos load. The HQ tab badge is pending approvals; the Home
+badge stays the Today count. The desk drawer (`RunDrawer`) opens from here.
+
+**Home** (`HomeTab.tsx`). A one-line "N waiting for Push" link to HQ (only when N > 0),
+a fleet line (active clients, Verified and Projected MRR behind the `adminShowRevenue`
+cookie, agents working, waiting for Push, clients with red alerts), then Needs you and
+the client list in one column. The office and the chat moved to HQ (Oct 31 2026):
 - **Needs you** (`NeedsYou.tsx`): `rankNeedsYou(board, approvals)` in `lib/ops/needs-you.ts`,
   pure, also the chief's `get_needs_you`. Rank: 1 pending approvals (compact cards,
   oldest first), 2 red alerts (one row per client), 3 steps with `waitingOn = jacob`
@@ -3307,7 +3320,6 @@ office, chat, clients):
   Approvals decided in the last 30 min sit on top as one line each, uncounted. Steps
   waiting on clients and vendors are a collapsed list at the bottom. The count is on
   the Home tab label.
-- The office and the chat (unchanged components), the job report in the chat.
 - Clients as cards (`ClientCard.tsx`), health then latest activity, 12 then Show all.
 
 **Client card.** Health dot, name, stage, the status line, what waits on whom

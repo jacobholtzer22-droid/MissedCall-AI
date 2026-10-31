@@ -2,8 +2,12 @@
 
 // Chat with the chief: Jacob on the right, the chief on the left (markdown),
 // the job report as a card under the job's last chief message, "Chief is
-// thinking" while a chief run is open, and the composer pinned to the bottom of the panel (the message list scrolls, the panel never grows past 60vh when stacked)
-// (Enter sends, Shift+Enter is a new line). Photos: drop them on the panel,
+// thinking" while a chief run is open, and the composer pinned to the bottom of
+// the panel: the message list scrolls, the panel never grows (60vh, or the whole
+// height it is given with fill, as on HQ). Enter sends, Shift+Enter is a new
+// line. The latest message is in view on load and whenever a new one arrives;
+// while pinned to the bottom, late growth (photos loading, the panel resizing)
+// keeps it there. Photos: drop them on the panel,
 // paste them, or the paperclip (the camera roll on a phone). They go through
 // the same upload queue as the intake page, straight to Blob under ops-inbox/,
 // and ride on the message as attachments; the chief files them on a client.
@@ -27,11 +31,14 @@ export function Chat({
   jobs,
   thinking,
   onSend,
+  fill = false,
 }: {
   messages: FeedMessage[]
   jobs: FeedJob[]
   thinking: boolean
   onSend: (body: string, attachments: ChatAttachment[]) => Promise<boolean>
+  /** Take the parent's full height (HQ) instead of 60vh. */
+  fill?: boolean
 }) {
   const [draft, setDraft] = useState('')
   const [sending, setSending] = useState(false)
@@ -59,7 +66,9 @@ export function Chat({
     q.add(files)
   }
   const listRef = useRef<HTMLDivElement>(null)
+  const contentRef = useRef<HTMLDivElement>(null)
   const pinned = useRef(true)
+  const seen = useRef(0)
 
   // The report card goes under the last chief message of its job.
   const reportAfter = new Map<string, FeedJob>()
@@ -69,10 +78,26 @@ export function Chat({
     if (last) reportAfter.set(last.id, job)
   }
 
+  // A new message always brings the list to the bottom; other changes only when pinned.
   useEffect(() => {
     const el = listRef.current
-    if (el && pinned.current) el.scrollTop = el.scrollHeight
+    if (!el) return
+    if (messages.length > seen.current) pinned.current = true
+    seen.current = messages.length
+    if (pinned.current) el.scrollTop = el.scrollHeight
   }, [messages.length, thinking, jobs])
+
+  useEffect(() => {
+    const el = listRef.current
+    const content = contentRef.current
+    if (!el || !content || typeof ResizeObserver === 'undefined') return
+    const ro = new ResizeObserver(() => {
+      if (pinned.current) el.scrollTop = el.scrollHeight
+    })
+    ro.observe(el)
+    ro.observe(content)
+    return () => ro.disconnect()
+  }, [])
 
   const send = async () => {
     if (!canSend) return
@@ -116,9 +141,9 @@ export function Chat({
         setOver(false)
         void filesFromDrop(e.dataTransfer).then(add)
       }}
-      className={`bg-gray-900 border rounded-lg flex flex-col h-[60vh] min-h-[320px] xl:min-h-0 xl:h-full ${over ? 'border-blue-500 ring-2 ring-blue-500/40' : 'border-gray-800'}`}
+      className={`bg-gray-900 border rounded-lg flex flex-col ${fill ? 'h-full min-h-0' : 'h-[60vh] min-h-[320px] xl:min-h-0 xl:h-full'} ${over ? 'border-blue-500 ring-2 ring-blue-500/40' : 'border-gray-800'}`}
     >
-      <div className="px-4 py-3 border-b border-gray-800 flex items-center gap-2">
+      <div className="shrink-0 px-4 py-3 border-b border-gray-800 flex items-center gap-2">
         <Avatar persona={chief} size={24} />
         <h2 className="text-sm font-semibold text-gray-100">{chief.name}</h2>
       </div>
@@ -128,35 +153,37 @@ export function Chat({
           const el = e.currentTarget
           pinned.current = el.scrollHeight - el.scrollTop - el.clientHeight < 60
         }}
-        className="flex-1 min-h-0 overflow-y-auto px-3 sm:px-4 py-4 space-y-3 text-sm"
+        className="flex-1 min-h-0 overflow-y-auto px-3 sm:px-4 py-4 text-sm"
       >
-        {messages.length === 0 && !thinking && <p className="text-gray-500 py-8 text-center">Tell the chief what happened or what you need.</p>}
-        {messages.map((m) => (
-          <div key={m.id} className="space-y-2">
-            {m.role === 'jacob' ? (
-              <div className="flex justify-end">
-                <div className={`max-w-[85%] rounded-lg bg-blue-600/20 border border-blue-500/30 px-3 py-2 text-gray-100 whitespace-pre-wrap break-words space-y-2 ${m.pending ? 'opacity-60' : ''}`}>
-                  {m.attachments && m.attachments.length > 0 && <Thumbs list={m.attachments} />}
-                  {m.body && <div>{m.body}</div>}
+        <div ref={contentRef} className="space-y-3">
+          {messages.length === 0 && !thinking && <p className="text-gray-500 py-8 text-center">Tell the chief what happened or what you need.</p>}
+          {messages.map((m) => (
+            <div key={m.id} className="space-y-2">
+              {m.role === 'jacob' ? (
+                <div className="flex justify-end">
+                  <div className={`max-w-[85%] rounded-lg bg-blue-600/20 border border-blue-500/30 px-3 py-2 text-gray-100 whitespace-pre-wrap break-words space-y-2 ${m.pending ? 'opacity-60' : ''}`}>
+                    {m.attachments && m.attachments.length > 0 && <Thumbs list={m.attachments} />}
+                    {m.body && <div>{m.body}</div>}
+                  </div>
                 </div>
-              </div>
-            ) : (
-              <div className="flex gap-2 items-start">
-                <Avatar persona={chief} size={28} />
-                <div className="max-w-[85%] rounded-lg bg-gray-950 border border-gray-800 px-3 py-2 text-gray-300">
-                  <Markdown text={m.body} />
+              ) : (
+                <div className="flex gap-2 items-start">
+                  <Avatar persona={chief} size={28} />
+                  <div className="max-w-[85%] rounded-lg bg-gray-950 border border-gray-800 px-3 py-2 text-gray-300">
+                    <Markdown text={m.body} />
+                  </div>
                 </div>
-              </div>
-            )}
-            {reportAfter.has(m.id) && <ReportCard job={reportAfter.get(m.id)!} />}
-          </div>
-        ))}
-        {thinking && (
-          <div className="flex items-center gap-2 text-xs text-gray-500 pl-1" aria-live="polite">
-            <span className="hq-pulse h-1.5 w-1.5 rounded-full bg-blue-400" />
-            {chief.name} is thinking
-          </div>
-        )}
+              )}
+              {reportAfter.has(m.id) && <ReportCard job={reportAfter.get(m.id)!} />}
+            </div>
+          ))}
+          {thinking && (
+            <div className="flex items-center gap-2 text-xs text-gray-500 pl-1" aria-live="polite">
+              <span className="hq-pulse h-1.5 w-1.5 rounded-full bg-blue-400" />
+              {chief.name} is thinking
+            </div>
+          )}
+        </div>
       </div>
       {notice && (
         <div role="alert" className="shrink-0 border-t border-gray-800 px-3 py-2 flex items-start justify-between gap-3 text-sm text-red-300">

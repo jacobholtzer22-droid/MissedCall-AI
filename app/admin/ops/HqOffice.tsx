@@ -38,19 +38,22 @@ export function Office({
   now,
   onOpen,
   onStop,
+  stacked = false,
 }: {
   desks: Desk[]
   latestByRun: Map<string, string>
   now: number
   onOpen: (runId: string) => void
   onStop: (runId: string) => Promise<void>
+  /** One desk per row at every width (HQ's narrow left column). */
+  stacked?: boolean
 }) {
   return (
     <section aria-label="The office" className="bg-gray-900 border border-gray-800 rounded-lg">
       <div className="px-4 py-3 border-b border-gray-800">
         <h2 className="text-sm font-semibold text-gray-100">The office</h2>
       </div>
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2 gap-3 p-3">
+      <div className={`grid grid-cols-1 gap-3 p-3 ${stacked ? '' : 'sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2'}`}>
         {list.map((d) => (
           <DeskCard key={d.persona.key} desk={d} latest={d.run ? latestByRun.get(d.run.id) ?? d.run.latest?.label ?? null : null} now={now} onOpen={onOpen} onStop={onStop} />
         ))}
