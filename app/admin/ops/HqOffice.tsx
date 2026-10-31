@@ -50,7 +50,7 @@ export function Office({
       <div className="px-4 py-3 border-b border-gray-800">
         <h2 className="text-sm font-semibold text-gray-100">The office</h2>
       </div>
-      <div className="grid grid-cols-1 sm:grid-cols-3 lg:grid-cols-1 xl:grid-cols-3 gap-3 p-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2 gap-3 p-3">
         {list.map((d) => (
           <DeskCard key={d.persona.key} desk={d} latest={d.run ? latestByRun.get(d.run.id) ?? d.run.latest?.label ?? null : null} now={now} onOpen={onOpen} onStop={onStop} />
         ))}

@@ -3385,3 +3385,52 @@ function body.
   the inbox blobs, writes one OpsActivity note "Filed N photos from chat".
 - Unfiled inbox blobs older than 7 days are deleted by the ops sync.
 
+### Photo batches: the inbox and the Photo desk (Oct 31 2026)
+
+A drop can be up to **200 photos** (`MAX_ATTACHMENTS`, enforced in the composer
+with a reason and again by `parseChatMessage`). Big drops never go into the
+chief's context whole.
+
+- **Composer**: a drop over 200 (counting what is already queued) adds nothing and
+  says why. Send while uploads run queues the send ("Sends when the uploads finish";
+  press again to cancel); the summary reads "32 of 50 saved. Uploading…". Failed rows
+  stay in the list with Retry and go out on the next message. A bubble shows 12
+  thumbnails and "+N more".
+- **Inbox** (`lib/ops/hq/inbox.ts`, rules in `collectInbox`): every unfiled photo
+  across Jacob's messages (newest message wins a url on two), plus **unsent** blobs
+  under `ops-inbox/` that no message mentions (a drop whose send failed). Unsent ones
+  carry no width/height and their filename is the path minus the 36-character uuid.
+  `adoptUnsent` puts them on one jacob message dated at the first upload before they
+  are captioned (captions live on message attachments). Writes to a message's
+  attachments go through `updateAttachments` under a row lock, so captions and
+  `filedTo` never overwrite each other.
+- **The 6-photo threshold** (`BATCH_THRESHOLD`, `isBatch`): 6 or fewer behave as
+  before. More: the message route creates an OpsJob for the message, starts a photo
+  run on its urls, and the chief's run joins that job. The chief sees a count and the
+  first 6 unfiled photos only (`lib/ops/hq/photo-view.ts`).
+- **Photo desk** (`lib/ops/hq/photo.ts`, agent `photo`, kind `photo_caption`,
+  model `OPS_PHOTO_MODEL`, default `claude-sonnet-5-5`): 10 photos per model turn as
+  image blocks, one forced-shape tool `record_captions`. Writes onto each entry:
+  `caption` (10 to 20 words, no town or job), `suggestedService`, `heroScore` 0 to 5,
+  `beforeAfter`, `isLogo`, `hasFaceOrPlate`, `captionedAt`. Each turn is saved
+  before the next (`captionInChunks`), progress goes to the run's `output` and a
+  feed line "Captioning 50 photos, 30 done". One photo run at a time; one still running
+  after 20 minutes is failed so a new one can start and pick up the uncaptioned rest.
+- **Waking the chief**: `onSpecialistRunEnded` counts photo runs with ads and web. When
+  the job's runs are done, `runChiefAfterPhotos` runs the chief once with the chat plus
+  a note (tools: get_board, get_client, list_inbox, file_photos): it files when Jacob
+  has said whose, else asks "Who are these for?". A photo-only job then closes as done;
+  a job with ads or web runs goes on to the usual report.
+- **Chief tools**: `list_inbox(limit)` returns counts and the first N entries as text,
+  never images. `caption_photos(urls?, messageId?)` starts the Photo desk on uncaptioned
+  photos (adopting unsent ones). `file_photos({ engagementId, all: true, messageIds? })`
+  (`fileAllPhotos` + `planAll`): every unfiled **captioned** photo in scope, refused
+  while a photo run is still captioning in scope. `suggestedService` is mapped by
+  `matchService` (exact, else the one service containing it, else the one sharing a
+  word; two candidates stay blank). Hero: the single highest `heroScore` above 0 that
+  has no face or plate, and none when the client already has a hero. The first logo is
+  filed as kind logo, other logos stay in the inbox. Photos with a face or plate never
+  get a service. Order: after photos, then the rest in drop order, then before photos.
+  The explicit `photos[]` form is unchanged (20 per call).
+- Read-only check of what list_inbox would see: `listInbox()` + `inboxText()`.
+

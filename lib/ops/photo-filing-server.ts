@@ -6,48 +6,56 @@
 // assets under the intake row lock (the same lock the intake page's uploads
 // take, so the duplicate-name suffix holds against both), marks the chat
 // attachments filed, deletes the inbox blobs and logs one OpsActivity note.
-// Also the ops sync's cleanup of unfiled inbox blobs.
+// fileAllPhotos is file_photos all:true: the list is built from the photo
+// run's stored captions (planAll). Also the ops sync's cleanup of unfiled
+// inbox blobs.
 
 import { randomUUID } from 'node:crypto'
-import { Prisma } from '@prisma/client'
 import { copy, del, list } from '@vercel/blob'
 import { db } from '@/lib/db'
 import { uniqueFilename, type IntakeAsset } from './intake'
 import { isOwnAssetUrl, loadIntake, updateIntake } from './intake-server'
-import { INBOX_MAX_AGE_DAYS, INBOX_PREFIX, filedNote, planFiling, readAttachments, type ChatAttachment } from './photo-filing'
+import { INBOX_MAX_AGE_DAYS, INBOX_PREFIX, InvalidAttachments, filedNote, planAll, planFiling, type ChatAttachment, type PlannedFile } from './photo-filing'
+import { inboxMessages, listInbox, updateAttachments } from './hq/inbox'
+import { activePhotoRun } from './hq/photo'
 
-/** Chat messages from the last INBOX_MAX_AGE_DAYS with attachments (unfiled ones still exist in Blob). */
-async function recentAttachmentMessages() {
-  const since = new Date(Date.now() - INBOX_MAX_AGE_DAYS * 86_400_000)
-  const rows = await db.opsMessage.findMany({
-    where: { role: 'jacob', createdAt: { gte: since }, attachments: { not: Prisma.DbNull } },
-    orderBy: { createdAt: 'desc' },
-    take: 200,
-    select: { id: true, attachments: true },
-  })
-  return rows.map((r) => ({ id: r.id, attachments: readAttachments(r.attachments) }))
+const COPY_CONCURRENCY = 5
+
+/** Copy every planned blob, COPY_CONCURRENCY at a time; on any failure remove what was copied and throw. */
+async function copyAll(plan: PlannedFile[]): Promise<string[]> {
+  const urls: string[] = new Array(plan.length)
+  let next = 0
+  let failed: unknown = null
+  const worker = async () => {
+    while (!failed && next < plan.length) {
+      const n = next++
+      try {
+        urls[n] = (await copy(plan[n].source.url, plan[n].pathname, { access: 'public', addRandomSuffix: false })).url
+      } catch (err) {
+        failed = err
+      }
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(COPY_CONCURRENCY, plan.length) }, worker))
+  if (failed) {
+    const done = urls.filter(Boolean)
+    if (done.length) await del(done).catch(() => undefined)
+    throw new Error(`could not copy the photos: ${failed instanceof Error ? failed.message : String(failed)}`)
+  }
+  return urls
 }
 
 export type FiledPhoto = { filename: string; kind: IntakeAsset['kind']; caption: string; service: string | null; heroCandidate: boolean; beforeAfter: string | null; url: string }
 
-export async function filePhotos(engagementId: string, photos: unknown): Promise<{ client: string; filed: FiledPhoto[] }> {
+export async function filePhotos(engagementId: string, photos: unknown, opts: { limit?: number } = {}): Promise<{ client: string; filed: FiledPhoto[] }> {
   const loaded = await loadIntake(engagementId)
   if (!loaded) throw new Error(`no client with id ${engagementId}`)
-  const messages = await recentAttachmentMessages()
+  const messages = await inboxMessages()
   const inbox: ChatAttachment[] = messages.flatMap((m) => m.attachments)
-  const plan = planFiling({ engagementId, intake: loaded.intake, photos, inbox, uuid: randomUUID })
+  const plan = planFiling({ engagementId, intake: loaded.intake, photos, inbox, uuid: randomUUID, limit: opts.limit })
 
   // Copy everything first; on any failure, remove what was copied and stop.
-  const copied: string[] = []
-  try {
-    for (const p of plan) {
-      const res = await copy(p.source.url, p.pathname, { access: 'public', addRandomSuffix: false })
-      copied.push(res.url)
-    }
-  } catch (err) {
-    if (copied.length) await del(copied).catch(() => undefined)
-    throw new Error(`could not copy the photos: ${err instanceof Error ? err.message : String(err)}`)
-  }
+  const copied = await copyAll(plan)
 
   const replacingLogo = plan.some((p) => p.asset.kind === 'logo')
   let oldLogos: string[] = []
@@ -71,16 +79,9 @@ export async function filePhotos(engagementId: string, photos: unknown): Promise
   }
 
   const filedUrls = new Set(plan.map((p) => p.source.url))
-  await Promise.all(
-    messages
-      .filter((m) => m.attachments.some((a) => filedUrls.has(a.url)))
-      .map((m) =>
-        db.opsMessage.update({
-          where: { id: m.id },
-          data: { attachments: m.attachments.map((a) => (filedUrls.has(a.url) ? { ...a, filedTo: engagementId } : a)) as unknown as Prisma.InputJsonValue },
-        })
-      )
-  )
+  for (const m of messages.filter((m) => m.attachments.some((a) => filedUrls.has(a.url)))) {
+    await updateAttachments(m.id, (list) => list.map((a) => (filedUrls.has(a.url) ? { ...a, filedTo: engagementId } : a)))
+  }
   await del([...Array.from(filedUrls), ...oldLogos.filter((u) => isOwnAssetUrl(u, engagementId))]).catch((err) =>
     console.error('[hq/file_photos] could not delete inbox blobs:', err instanceof Error ? err.message : err)
   )
@@ -98,6 +99,26 @@ export async function filePhotos(engagementId: string, photos: unknown): Promise
       url: a.url,
     })),
   }
+}
+
+/**
+ * file_photos all:true: every unfiled captioned photo (on messageIds when
+ * given) onto one client, from the stored captions. Refused while a photo run
+ * is still captioning photos in scope: the chief is woken when it ends.
+ */
+export async function fileAllPhotos(engagementId: string, messageIds?: string[]) {
+  const loaded = await loadIntake(engagementId)
+  if (!loaded) throw new Error(`no client with id ${engagementId}`)
+  const scope = messageIds?.length ? new Set(messageIds) : null
+  const entries = (await listInbox()).filter((e) => !scope || (e.messageId && scope.has(e.messageId)))
+  if (!entries.length) throw new InvalidAttachments(scope ? 'no unfiled photos on those messages' : 'the inbox has no unfiled photos')
+  const uncaptioned = entries.filter((e) => !e.caption).length
+  const running = uncaptioned ? await activePhotoRun() : null
+  if (running) throw new InvalidAttachments(`captioning is still running (${running.done} of ${running.total} done); you will be told when it finishes, then file them`)
+  const plan = planAll(entries, loaded.intake)
+  if (!plan.photos.length) throw new InvalidAttachments(`none of the ${entries.length} photos is captioned yet; start caption_photos first`)
+  const res = await filePhotos(engagementId, plan.photos, { limit: plan.photos.length })
+  return { ...res, uncaptioned: plan.uncaptioned, extraLogos: plan.extraLogos, hero: plan.hero, unmatchedServices: plan.unmatched }
 }
 
 /** Delete inbox blobs older than INBOX_MAX_AGE_DAYS (filed ones are already gone). For the ops sync. */

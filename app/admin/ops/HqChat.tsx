@@ -7,12 +7,15 @@
 // paste them, or the paperclip (the camera roll on a phone). They go through
 // the same upload queue as the intake page, straight to Blob under ops-inbox/,
 // and ride on the message as attachments; the chief files them on a client.
+// Up to MAX_ATTACHMENTS (200) per message; a bigger drop is refused with the
+// reason. Send while uploads run queues the send for when they finish; rows
+// that failed stay in the list (Retry) for the next message.
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Check, ExternalLink, Paperclip, Send } from 'lucide-react'
 import { UPLOAD_CONCURRENCY } from '@/lib/ops/intake'
 import { filesFromDrop } from '@/lib/ops/intake-upload'
-import { inboxPath, type ChatAttachment } from '@/lib/ops/photo-filing'
+import { MAX_ATTACHMENTS, inboxPath, type ChatAttachment } from '@/lib/ops/photo-filing'
 import { QueueList, QueueSummary, queueBtn, uploadToBlob, useUploadQueue, type Send as QueueSend } from './UploadQueue'
 import { personaFor, PERSONAS } from '@/lib/ops/hq/personas'
 import { Avatar, Markdown, type FeedJob, type FeedMessage, type ReportSection } from './hqShared'
@@ -33,6 +36,8 @@ export function Chat({
   const [draft, setDraft] = useState('')
   const [sending, setSending] = useState(false)
   const [over, setOver] = useState(false)
+  const [notice, setNotice] = useState<string | null>(null)
+  const [queued, setQueued] = useState(false)
   const picker = useRef<HTMLInputElement>(null)
   const uploadOne: QueueSend<ChatAttachment> = useCallback(async (prepared, { progress }) => {
     const blob = await uploadToBlob(inboxPath(crypto.randomUUID(), prepared.filename), prepared, { handleUploadUrl: '/api/admin/ops/hq/attachments/token' }, progress)
@@ -40,8 +45,19 @@ export function Chat({
   }, [])
   // kind logo: photos plus SVG, so a logo file can come along too.
   const q = useUploadQueue({ kind: 'logo', limit: UPLOAD_CONCURRENCY, send: uploadOne })
-  const attachments = q.rows.flatMap((r) => (r.status === 'saved' && r.result ? [r.result] : []))
-  const canSend = !sending && !q.busy && (Boolean(draft.trim()) || attachments.length > 0)
+  const savedRows = q.rows.filter((r) => r.status === 'saved' && r.result)
+  const attachments = savedRows.map((r) => r.result!)
+  const canSend = !sending && (Boolean(draft.trim()) || attachments.length > 0 || q.busy)
+  const add = (files: File[]) => {
+    if (!files.length) return
+    const waiting = q.rows.filter((r) => r.status !== 'failed').length
+    if (waiting + files.length > MAX_ATTACHMENTS) {
+      setNotice(`${files.length} photos is more than one message takes (${MAX_ATTACHMENTS}${waiting ? `, ${waiting} already in this one` : ''}). Nothing was added: drop them in batches of ${MAX_ATTACHMENTS} or fewer.`)
+      return
+    }
+    setNotice(null)
+    q.add(files)
+  }
   const listRef = useRef<HTMLDivElement>(null)
   const pinned = useRef(true)
 
@@ -60,15 +76,27 @@ export function Chat({
 
   const send = async () => {
     if (!canSend) return
+    // Uploads still running: send once they finish (the composer stays usable meanwhile).
+    if (q.busy) {
+      setQueued((v) => !v)
+      return
+    }
+    setQueued(false)
+    if (!draft.trim() && !attachments.length) return
     setSending(true)
     pinned.current = true
     const ok = await onSend(draft.trim(), attachments)
     setSending(false)
     if (ok) {
       setDraft('')
-      q.clear()
+      q.remove(savedRows.map((r) => r.id))
     }
   }
+  const sendRef = useRef(send)
+  sendRef.current = send
+  useEffect(() => {
+    if (queued && !q.busy) void sendRef.current()
+  }, [queued, q.busy])
 
   return (
     <section
@@ -86,7 +114,7 @@ export function Chat({
         if (!e.dataTransfer.files.length && !e.dataTransfer.items.length) return
         e.preventDefault()
         setOver(false)
-        void filesFromDrop(e.dataTransfer).then((files) => files.length && q.add(files))
+        void filesFromDrop(e.dataTransfer).then(add)
       }}
       className={`bg-gray-900 border rounded-lg flex flex-col h-[60vh] min-h-[320px] xl:min-h-0 xl:h-full ${over ? 'border-blue-500 ring-2 ring-blue-500/40' : 'border-gray-800'}`}
     >
@@ -130,10 +158,21 @@ export function Chat({
           </div>
         )}
       </div>
+      {notice && (
+        <div role="alert" className="shrink-0 border-t border-gray-800 px-3 py-2 flex items-start justify-between gap-3 text-sm text-red-300">
+          <span>{notice}</span>
+          <button type="button" onClick={() => setNotice(null)} className={queueBtn}>
+            OK
+          </button>
+        </div>
+      )}
       {q.rows.length > 0 && (
         <div data-hq-queue className="shrink-0 border-t border-gray-800 px-3 pt-2 space-y-2">
           <div className="flex items-center justify-between gap-3">
-            <QueueSummary total={q.rows.length} saved={q.saved} failed={q.failed} busy={q.busy} />
+            <div>
+              <QueueSummary total={q.rows.length} saved={q.saved} failed={q.failed} busy={q.busy} />
+              {queued && q.busy && <p className="text-xs text-blue-300">Sends when the uploads finish.</p>}
+            </div>
             {!q.busy && (
               <button type="button" onClick={q.clear} className={queueBtn}>
                 Clear
@@ -161,7 +200,7 @@ export function Chat({
           tabIndex={-1}
           aria-hidden
           onChange={(e) => {
-            if (e.target.files) q.add(Array.from(e.target.files))
+            if (e.target.files) add(Array.from(e.target.files))
             e.target.value = ''
           }}
         />
@@ -184,7 +223,7 @@ export function Chat({
             const files = Array.from(e.clipboardData.files)
             if (!files.length) return
             e.preventDefault()
-            q.add(files)
+            add(files)
           }}
           onKeyDown={(e) => {
             if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
@@ -199,8 +238,9 @@ export function Chat({
         <button
           type="submit"
           disabled={!canSend}
-          aria-label={q.busy ? 'Send (waiting for uploads)' : 'Send'}
-          className="inline-flex items-center justify-center w-11 h-11 rounded-lg bg-blue-600 hover:bg-blue-500 text-white disabled:opacity-40 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
+          aria-label={q.busy ? (queued ? 'Cancel sending when the uploads finish' : 'Send when the uploads finish') : 'Send'}
+          aria-pressed={q.busy ? queued : undefined}
+          className={`inline-flex items-center justify-center w-11 h-11 rounded-lg text-white disabled:opacity-40 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 ${queued && q.busy ? 'bg-blue-800 ring-2 ring-blue-400' : 'bg-blue-600 hover:bg-blue-500'}`}
         >
           <Send className="h-4 w-4" />
         </button>
@@ -210,30 +250,47 @@ export function Chat({
 }
 
 /** A message's photos: thumbnails that open the full image; a check once the chief filed one. */
+const THUMBS_SHOWN = 12
+
 function Thumbs({ list }: { list: ChatAttachment[] }) {
+  const [all, setAll] = useState(false)
+  const shown = all ? list : list.slice(0, THUMBS_SHOWN)
+  const filed = list.filter((a) => a.filedTo).length
   return (
-    <div className="flex flex-wrap gap-1.5" data-hq-thumbs>
-      {list.map((a) => (
-        <a key={a.url} href={a.url} target="_blank" rel="noreferrer" title={a.filedTo ? `${a.filename} (filed)` : a.filename} className="relative isolate block h-20 w-20 overflow-hidden rounded-md bg-gray-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src={a.url}
-            alt={a.filename}
-            loading="lazy"
-            className="h-full w-full object-cover"
-            onError={(e) => {
-              // Unfiled inbox photos are removed after 7 days.
-              e.currentTarget.style.display = 'none'
-            }}
-          />
-          <span className="absolute inset-0 -z-10 flex items-center justify-center p-1 text-center text-[10px] leading-tight text-gray-400 break-all">{a.filename}</span>
-          {a.filedTo && (
-            <span className="absolute bottom-1 right-1 inline-flex h-4 w-4 items-center justify-center rounded-full bg-emerald-500 text-gray-950">
-              <Check className="h-3 w-3" />
-            </span>
-          )}
-        </a>
-      ))}
+    <div className="space-y-1.5">
+      {list.length > THUMBS_SHOWN && (
+        <p className="text-xs text-gray-300 tabular-nums">
+          {list.length} photos{filed ? `, ${filed} filed` : ''}
+        </p>
+      )}
+      <div className="flex flex-wrap gap-1.5" data-hq-thumbs>
+        {shown.map((a) => (
+          <a key={a.url} href={a.url} target="_blank" rel="noreferrer" title={a.filedTo ? `${a.filename} (filed)` : a.filename} className="relative isolate block h-20 w-20 overflow-hidden rounded-md bg-gray-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={a.url}
+              alt={a.filename}
+              loading="lazy"
+              className="h-full w-full object-cover"
+              onError={(e) => {
+                // Unfiled inbox photos are removed after 7 days.
+                e.currentTarget.style.display = 'none'
+              }}
+            />
+            <span className="absolute inset-0 -z-10 flex items-center justify-center p-1 text-center text-[10px] leading-tight text-gray-400 break-all">{a.filename}</span>
+            {a.filedTo && (
+              <span className="absolute bottom-1 right-1 inline-flex h-4 w-4 items-center justify-center rounded-full bg-emerald-500 text-gray-950">
+                <Check className="h-3 w-3" />
+              </span>
+            )}
+          </a>
+        ))}
+        {list.length > THUMBS_SHOWN && (
+          <button type="button" onClick={() => setAll((v) => !v)} className="h-20 min-w-[80px] px-2 rounded-md border border-gray-700 bg-gray-800 text-xs text-gray-200 hover:bg-gray-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500">
+            {all ? 'Show fewer' : `+${list.length - THUMBS_SHOWN} more`}
+          </button>
+        )}
+      </div>
     </div>
   )
 }

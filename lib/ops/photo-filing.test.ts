@@ -87,7 +87,9 @@ test('parseChatMessage (the message route body): text, attachments, or both', ()
   assert.throws(() => parseChatMessage({ attachments: [{ url: a.url, filename: 'x.jpg', bytes: 5, caption: 'no' }] }), /unknown fields: caption/)
   assert.throws(() => parseChatMessage({ attachments: [{ url: a.url, filename: 'x.jpg', bytes: 0 }] }), /bytes must be the file size/)
   assert.throws(() => parseChatMessage({ attachments: [{ url: a.url, filename: 'x.jpg', bytes: 5 }, { url: a.url, filename: 'x.jpg', bytes: 5 }] }), /duplicate/)
-  assert.throws(() => parseChatMessage({ attachments: Array.from({ length: 21 }, (_, i) => ({ url: `${HOST}/ops-inbox/${i}.jpg`, filename: 'x.jpg', bytes: 5 })) }), /at most 20/)
+  const many = (n: number) => Array.from({ length: n }, (_, i) => ({ url: `${HOST}/ops-inbox/${i}.jpg`, filename: 'x.jpg', bytes: 5 }))
+  assert.equal(parseChatMessage({ attachments: many(200) }).attachments.length, 200)
+  assert.throws(() => parseChatMessage({ attachments: many(201) }), /at most 200/)
 })
 
 test('inbox paths and URLs', () => {
@@ -102,7 +104,8 @@ test('inbox paths and URLs', () => {
 test('file_photos tool schema: required fields and enums', () => {
   const s = FILE_PHOTOS_TOOL.input_schema
   assert.equal(FILE_PHOTOS_TOOL.name, 'file_photos')
-  assert.deepEqual([...s.required], ['engagementId', 'photos'])
+  assert.deepEqual([...s.required], ['engagementId'])
+  assert.equal(s.properties.all.type, 'boolean')
   const item = s.properties.photos.items
   assert.deepEqual([...item.required], ['url', 'filename', 'caption', 'heroCandidate', 'kind'])
   assert.deepEqual([...item.properties.kind.enum], ['photo', 'logo'])

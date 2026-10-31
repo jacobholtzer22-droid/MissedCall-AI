@@ -25,8 +25,11 @@ import { ROUTING_FIELDS, updateBusiness } from './admin-change'
 import { WEB_TASK_KINDS, briefTemplate, startWebTask, type WebTaskKind } from './web'
 import { INTAKE_KEYS, intakeSummary, readIntake, withAssetSections } from '@/lib/ops/intake'
 import { loadIntake, patchIntake } from '@/lib/ops/intake-server'
-import { FILE_PHOTOS_TOOL, INBOX_MAX_AGE_DAYS, InvalidAttachments, readAttachments } from '@/lib/ops/photo-filing'
-import { filePhotos } from '@/lib/ops/photo-filing-server'
+import { BATCH_THRESHOLD, FILE_PHOTOS_TOOL, InvalidAttachments, inboxText, readAttachments } from '@/lib/ops/photo-filing'
+import { fileAllPhotos, filePhotos } from '@/lib/ops/photo-filing-server'
+import { listInbox } from './inbox'
+import { withPhotos } from './photo-view'
+import { activePhotoRun, runPhotoRun, startPhotoRun } from './photo'
 
 /** "Tue Nov 3, 9:00 AM" in Detroit, for feed lines and results. */
 const detroitWhen = (d: Date) =>
@@ -72,6 +75,7 @@ What you do:
 - Hand off work Jacob asks for: start_ads_task for Google Ads work, start_web_task for a change to a client's website. Each one starts a specialist run under the current job. Write instructions a specialist can act on without asking back: the client, the goal, the limits, and Jacob's decisions.
 - When Jacob points at a spec under docs/ads-specs/, read it with read_spec and pass its full text in the start_ads_task instructions, after one line with Jacob's own instructions (e.g. "Build it paused and queue the enable for my approval."). Do not shorten the spec.
 - Photos in chat: when Jacob drops photos in this chat you see them, listed with their url and filename. File them with file_photos, and only that way. First know whose they are: from his message, or from what he says next about the same photos. If he did not say, ask "Who are these for?" and wait; you may say what the photos show, but do not suggest whose they might be. Never guess, and never choose between two clients that could fit: ask. If he names a client you cannot find on the board, say so and ask. Read get_client first for the client's services. Caption each one from what you see: what is in the frame and which service it shows; never a town, street, customer or job you were not told. Set service only when it plainly matches one of the client's services, otherwise leave it out. At most one heroCandidate per call, the strongest wide shot. beforeAfter only for an obvious pair. kind logo only for the business logo. Filing photos is the whole job: never write, change or offer a brief because of them. Then say in one line what you filed on whom and what you are unsure about ("the two kitchen shots could be either service, I left service blank").
+- Photo batches: a message with more than ${BATCH_THRESHOLD} photos shows you only a count and the first ${BATCH_THRESHOLD}; the Photo desk captions all of them in the background (it starts on its own) and you are told when it finishes. Do not caption a batch yourself and do not file it before then: say in one line that the photos are being captioned, and ask "Who are these for?" if he did not say. Once captions are in, file the batch with file_photos all: true (scope with messageIds when list_inbox shows drops for more than one client). list_inbox shows every unfiled photo with its caption, counts per drop, and photos uploaded but never sent. caption_photos captions any unfiled photos that have no caption yet (for example the unsent ones). After filing a batch, say in one line how many you filed on whom, which one is the hero, and what stayed blank or unfiled.
 - After you start specialists, tell Jacob in a line or two what you started. Do not call finish_job then: when every run in the job has finished you will be asked for the report, and you write it with finish_job.
 
 Rules:
@@ -708,15 +712,61 @@ function chiefTools(ctx: ChiefContext): ClientTool[] {
       run: async (input) => {
         const engagementId = str(input.engagementId)
         const name = await engagementName(engagementId)
-        const photos = JSON.parse(noEmDash(JSON.stringify(input.photos ?? null)))
+        const plural = (n: number) => `${n} photo${n === 1 ? '' : 's'}`
         try {
+          if (input.all === true) {
+            if (input.photos !== undefined && input.photos !== null) throw new Error('pass photos or all: true, not both')
+            const ids = Array.isArray(input.messageIds) ? input.messageIds.map(String) : undefined
+            const res = await fileAllPhotos(engagementId, ids)
+            await ensureJob(ctx, [engagementId])
+            // The full list of 50 is noise for the model: counts plus the first few.
+            return {
+              result: { ok: true, client: res.client, filed: res.filed.length, hero: res.hero, logo: res.filed.find((f) => f.kind === 'logo')?.filename ?? null, withService: res.filed.filter((f) => f.service).length, uncaptionedLeft: res.uncaptioned, extraLogosLeft: res.extraLogos, unmatchedServices: res.unmatchedServices, sample: res.filed.slice(0, 6) },
+              label: `Filed ${plural(res.filed.length)} on ${name}${res.hero ? `, hero ${res.hero}` : ''}`,
+            }
+          }
+          const photos = JSON.parse(noEmDash(JSON.stringify(input.photos ?? null)))
           const res = await filePhotos(engagementId, photos)
           await ensureJob(ctx, [engagementId])
-          return { result: { ok: true, client: res.client, filed: res.filed }, label: `Filed ${res.filed.length} photo${res.filed.length === 1 ? '' : 's'} on ${name}` }
+          return { result: { ok: true, client: res.client, filed: res.filed }, label: `Filed ${plural(res.filed.length)} on ${name}` }
         } catch (err) {
           if (err instanceof InvalidAttachments) throw new Error(err.message)
           throw err
         }
+      },
+    },
+    {
+      name: 'list_inbox',
+      description: 'Every unfiled photo dropped in this chat, as text (never images): counts (captioned, not captioned, unsent), each drop with its messageId, and the first limit photos with the Photo desk\'s caption, suggested service, hero score and flags. Unsent photos were uploaded but the message never went out.',
+      input_schema: { type: 'object', properties: { limit: { type: 'number', description: 'How many photos to list (default 20, at most 200).' } } },
+      run: async (input) => {
+        const limit = Math.min(200, Math.max(0, Math.round(typeof input.limit === 'number' ? input.limit : 20)))
+        const [entries, running] = await Promise.all([listInbox(), activePhotoRun()])
+        const { text, counts } = inboxText(entries, limit, running)
+        return { result: { counts, text }, label: `Inbox: ${counts.unfiled} unfiled, ${counts.captioned} captioned` }
+      },
+    },
+    {
+      name: 'caption_photos',
+      description: 'Start the Photo desk on unfiled photos that have no caption yet: every one, or only urls / the photos on messageId. It views them and stores a caption, suggested service, hero score, before/after, logo and face-or-plate on each; you are told when it finishes, then file with file_photos all: true. Refused while another photo run is captioning.',
+      input_schema: {
+        type: 'object',
+        properties: {
+          urls: { type: 'array', items: { type: 'string' }, description: 'Optional: just these photo urls.' },
+          messageId: { type: 'string', description: 'Optional: just the photos on this message (from list_inbox).' },
+        },
+      },
+      run: async (input) => {
+        let urls = Array.isArray(input.urls) ? input.urls.map(String) : undefined
+        if (input.messageId) {
+          const onMessage = (await listInbox()).filter((e) => e.messageId === str(input.messageId)).map((e) => e.url)
+          if (!onMessage.length) throw new Error('no unfiled photos on that message')
+          urls = urls ? urls.filter((u) => onMessage.includes(u)) : onMessage
+        }
+        const jobId = await ensureJob(ctx, [])
+        const { run, count } = await startPhotoRun({ jobId, urls })
+        waitUntil(runPhotoRun(run.id))
+        return { result: { started: true, photos: count }, label: `Started the Photo desk on ${count} photo${count === 1 ? '' : 's'}` }
       },
     },
     {
@@ -932,41 +982,30 @@ async function chatHistory(uptoMessageId: string | null): Promise<ApiMessage[]> 
     .reverse()
     .map((m) => (m.role === 'jacob' && m.attachments ? withPhotos(m.body, readAttachments(m.attachments), m.createdAt, () => images++ < MAX_HISTORY_IMAGES) : m.body))
     .reverse()
-  return ordered.map((m, n) => ({ role: m.role === 'jacob' ? ('user' as const) : ('assistant' as const), content: content[n] }))
+  return mergeTurns(ordered.map((m, n) => ({ role: m.role === 'jacob' ? ('user' as const) : ('assistant' as const), content: content[n] })))
+}
+
+/** Two messages in a row from one side (photos adopted from an unsent drop, a wake-up note) become one turn. */
+function mergeTurns(list: ApiMessage[]): ApiMessage[] {
+  const blocks = (c: string | Block[]): Block[] => (typeof c === 'string' ? (c ? [{ type: 'text', text: c }] : []) : c)
+  const out: ApiMessage[] = []
+  for (const m of list) {
+    const last = out[out.length - 1]
+    if (last && last.role === m.role) last.content = [...blocks(last.content), ...blocks(m.content)]
+    else out.push({ ...m })
+  }
+  return out
 }
 
 const MAX_HISTORY_IMAGES = 30
-
-/**
- * A message with photos: the text, a list the chief can cite in file_photos,
- * and each unfiled photo as an image block (source url: the public Blob URL).
- * Filed ones are named, not shown; past INBOX_MAX_AGE_DAYS the blobs are gone.
- */
-function withPhotos(body: string, list: ReturnType<typeof readAttachments>, sentAt: Date, allow: () => boolean): string | Block[] {
-  if (!list.length) return body
-  const fresh = Date.now() - sentAt.getTime() < INBOX_MAX_AGE_DAYS * 86_400_000
-  const lines: string[] = []
-  const blocks: Block[] = []
-  list.forEach((a, n) => {
-    const size = a.width && a.height ? `, ${a.width}x${a.height}` : ''
-    if (a.filedTo) lines.push(`${n + 1}. ${a.filename}: already filed (client ${a.filedTo})`)
-    else if (!fresh) lines.push(`${n + 1}. ${a.filename}: older than ${INBOX_MAX_AGE_DAYS} days, removed unfiled`)
-    else {
-      const shown = !/\.svg$/i.test(a.filename) && allow()
-      lines.push(`${n + 1}. url=${a.url} filename=${a.filename}${size}${shown ? '' : ' (not shown)'}`)
-      if (shown) blocks.push({ type: 'text', text: `Photo ${n + 1}: ${a.filename}` }, { type: 'image', source: { type: 'url', url: a.url } })
-    }
-  })
-  return [{ type: 'text', text: `${body || '(no text)'}\n\n[Photos attached to this message]\n${lines.join('\n')}` }, ...blocks]
-}
 
 function today(): string {
   return new Intl.DateTimeFormat('en-US', { timeZone: OPS_TIMEZONE, weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }).format(new Date())
 }
 
 /** Create the chief's run for one of Jacob's messages. The route then runs it with waitUntil. */
-export async function startChiefRun(messageId: string, prompt: string) {
-  return createRun({ agent: 'chief', kind: 'chief', mode: 'work', engagementId: null, input: { messageId, prompt } })
+export async function startChiefRun(messageId: string, prompt: string, jobId: string | null = null) {
+  return createRun({ agent: 'chief', kind: 'chief', mode: 'work', engagementId: null, jobId, input: { messageId, prompt } })
 }
 
 export async function runChief(runId: string) {
@@ -994,6 +1033,43 @@ export async function runChief(runId: string) {
   // Specialists this turn started may all have finished while it was still
   // talking; the report waits for the turn, so check once it has ended.
   if (ctx.jobId) await onSpecialistRunEnded(ctx.jobId).catch((err) => console.error('[hq] job report failed:', err instanceof Error ? err.message : err))
+}
+
+// ── After a photo run ───────────────────────────────────────────────────────
+
+/**
+ * A photo run in this job ended: wake the chief once, with the chat and a note
+ * of what was captioned, to file the batch (when Jacob has said whose) or ask
+ * whose they are. Only the photo tools and the board reads.
+ */
+export async function runChiefAfterPhotos(jobId: string) {
+  const job = await db.opsJob.findUniqueOrThrow({ where: { id: jobId }, select: { prompt: true } })
+  const runs = await db.agentRun.findMany({ where: { jobId, agent: 'photo' }, orderBy: { createdAt: 'asc' }, select: { status: true, error: true, output: true } })
+  const run = await createRun({ agent: 'chief', kind: 'chief', mode: 'work', engagementId: null, jobId, input: { afterPhotos: true, jobId } })
+  const ctx: ChiefContext = { runId: run.id, messageId: null, prompt: job.prompt, jobId }
+  const lines = runs.map((r) => {
+    const o = (r.output ?? {}) as { done?: number; total?: number; missed?: number }
+    return r.status === 'succeeded' ? `captioned ${o.done ?? 0} of ${o.total ?? 0}${o.missed ? ` (${o.missed} got no usable caption)` : ''}` : `${r.status}${r.error ? `: ${r.error}` : ''} after ${o.done ?? 0} of ${o.total ?? 0}`
+  })
+  const note = `[Note from HQ, not from Jacob] The Photo desk finished: ${lines.join('; ')}. If Jacob has said whose these photos are, read get_client and file them now with file_photos all: true (scoped with messageIds when list_inbox shows drops for more than one client), then say in one line what you filed. If he has not, ask "Who are these for?" in one line and nothing else. Never guess the client.`
+  try {
+    const history = await chatHistory(null)
+    const messages = mergeTurns([...history, { role: 'user', content: note }])
+    const result = await runAgentLoop({
+      runId: run.id,
+      model: chiefModel(),
+      system: `${SYSTEM}\n\nToday is ${today()} (${OPS_TIMEZONE}).`,
+      messages,
+      tools: chiefTools(ctx).filter((t) => ['get_board', 'get_client', 'list_inbox', 'file_photos'].includes(t.name)),
+      effort: 'medium',
+    })
+    const reply = result.finalText || 'The photos are captioned.'
+    await db.opsMessage.create({ data: { role: 'chief', body: reply, jobId } })
+    await finishRun(run.id, { afterPhotos: true, reply: oneLine(reply, 500), turns: result.turns, jobId })
+  } catch (err) {
+    const message = await failRun(run.id, err)
+    await db.opsMessage.create({ data: { role: 'chief', body: `The photos are captioned but I stopped before filing them: ${message}`, jobId } })
+  }
 }
 
 // ── The job report ──────────────────────────────────────────────────────────

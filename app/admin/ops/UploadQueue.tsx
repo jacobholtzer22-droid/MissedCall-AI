@@ -146,6 +146,12 @@ export function useUploadQueue<T>({ kind, limit, send }: { kind: UploadKind; lim
   )
 
   const retry = useCallback((id: string) => update(id, { status: 'waiting', progress: 0, reason: undefined, retryable: undefined }), [update])
+  const remove = useCallback((ids: string[]) => {
+    const drop = new Set(ids)
+    rowsRef.current.forEach((r) => drop.has(r.id) && r.thumb && URL.revokeObjectURL(r.thumb))
+    rowsRef.current = rowsRef.current.filter((r) => !drop.has(r.id))
+    setRows(rowsRef.current)
+  }, [])
   const clear = useCallback(() => {
     rowsRef.current.forEach((r) => r.thumb && URL.revokeObjectURL(r.thumb))
     rowsRef.current = []
@@ -154,7 +160,7 @@ export function useUploadQueue<T>({ kind, limit, send }: { kind: UploadKind; lim
 
   const saved = rows.filter((r) => r.status === 'saved').length
   const failed = rows.filter((r) => r.status === 'failed').length
-  return { rows, add, retry, clear, busy, saved, failed }
+  return { rows, add, retry, remove, clear, busy, saved, failed }
 }
 
 /** "10 of 12 saved, 2 not saved." */
