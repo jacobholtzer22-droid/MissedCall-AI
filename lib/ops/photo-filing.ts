@@ -281,6 +281,17 @@ export function orphanFilename(pathname: string): string {
 }
 
 const WORDS_MAX = 20
+const DANGLING = new Set(['a', 'an', 'the', 'and', 'or', 'with', 'in', 'on', 'of', 'at', 'to', 'by', 'beside', 'next', 'near', 'behind', 'along', 'from', 'for', 'its', 'their'])
+
+/** At most WORDS_MAX words, cut at the last comma in range when there is one, never ending on "a", "next" or "the". */
+function trimCaption(words: string[]): string {
+  if (words.length <= WORDS_MAX) return words.join(' ')
+  let cut = words.slice(0, WORDS_MAX)
+  const comma = cut.map((w) => w.endsWith(',')).lastIndexOf(true)
+  if (comma >= 7) cut = cut.slice(0, comma + 1)
+  while (cut.length > 3 && DANGLING.has(cut[cut.length - 1].toLowerCase().replace(/[^a-z]/g, ''))) cut.pop()
+  return cut.join(' ').replace(/[,;:]$/, '').replace(/([^.])$/, '$1.')
+}
 
 /** Clean one model result into a stored caption, or null when it is unusable. */
 export function cleanCaption(raw: Record<string, unknown>, now: Date): PhotoCaption | null {
@@ -289,7 +300,7 @@ export function cleanCaption(raw: Record<string, unknown>, now: Date): PhotoCapt
   const score = Math.round(Number(raw.heroScore))
   const service = typeof raw.suggestedService === 'string' ? raw.suggestedService.trim().slice(0, 80) : ''
   return {
-    caption: words.slice(0, WORDS_MAX).join(' '),
+    caption: trimCaption(words),
     suggestedService: service || null,
     heroScore: Number.isFinite(score) ? Math.min(5, Math.max(0, score)) : 0,
     beforeAfter: raw.beforeAfter === 'before' || raw.beforeAfter === 'after' ? raw.beforeAfter : null,
@@ -333,14 +344,25 @@ export async function captionInChunks(opts: {
 
 const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()
 
-const GENERIC = new Set(['service', 'services', 'work', 'with', 'and', 'the', 'home', 'residential', 'commercial'])
-const words = (s: string) => norm(s).split(' ').filter((w) => w.length >= 4 && !GENERIC.has(w))
+const STOP = new Set(['and', 'the', 'with', 'for', 'service', 'services', 'work'])
+const words = (s: string) => norm(s).split(' ').filter((w) => w.length >= 3 && !STOP.has(w))
+/** "mulch" ~ "mulching", "trim" ~ "trimming", "install" ~ "installation": a shared start of at least min(5, the shorter word). */
+const sameWord = (a: string, b: string) => {
+  if (a === b) return true
+  const short = Math.min(a.length, b.length)
+  if (short < 4) return false
+  let n = 0
+  while (n < short && a[n] === b[n]) n++
+  return n >= Math.min(5, short)
+}
+const covers = (have: string[], need: string[]) => need.length > 0 && need.every((w) => have.some((h) => sameWord(h, w)))
 
 /**
  * A suggested service onto one of the client's services by name: exact, else
- * the one service whose name contains it (or it contains), else the one
- * service sharing a word with it ("Roofline lighting" → "Permanent Lighting").
- * Two candidates at a step: blank.
+ * the one service every word of whose name is in the suggestion ("Mulch bed
+ * installation" → "Mulch Installation"; "Lawn care" is not "Lawn Mowing"),
+ * else the one service that holds every word of a short suggestion ("Mowing").
+ * Two candidates, or none: blank. Blank is the safe answer.
  */
 export function matchService(suggested: string | null | undefined, services: string[]): string | undefined {
   if (!suggested) return undefined
@@ -348,14 +370,11 @@ export function matchService(suggested: string | null | undefined, services: str
   if (!s) return undefined
   const exact = services.find((x) => norm(x) === s)
   if (exact) return exact
-  const near = services.filter((x) => {
-    const n = norm(x)
-    return n && (n.includes(s) || s.includes(n))
-  })
-  if (near.length) return near.length === 1 ? near[0] : undefined
-  const mine = new Set(words(suggested))
-  const shared = services.filter((x) => words(x).some((w) => mine.has(w)))
-  return shared.length === 1 ? shared[0] : undefined
+  const mine = words(suggested)
+  const named = services.filter((x) => covers(mine, words(x)))
+  if (named.length) return named.length === 1 ? named[0] : undefined
+  const within = services.filter((x) => covers(words(x), mine))
+  return within.length === 1 ? within[0] : undefined
 }
 
 const ORDER = { after: 0, none: 1, before: 2 } as const

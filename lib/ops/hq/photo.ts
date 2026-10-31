@@ -29,7 +29,7 @@ const photoModel = () => process.env.OPS_PHOTO_MODEL?.trim() || AGENT_MODEL_DEFA
 const SYSTEM = `You caption photos a local service business sent its marketing agency, for its website. You are not told the business, the town or the jobs, and you never name or guess any of them.
 
 For each photo, by its number, call record_captions once with every photo in this message:
-- caption: what is in the frame, 10 to 20 words, plain. The work, the surface, the material, the setting. No town, street, customer, brand you cannot read, or job you were not told. No em dashes.
+- caption: what is in the frame, one plain sentence of 12 to 18 words (never more than 20). The work, the surface, the material, the setting. No town, street, customer, brand you cannot read, or job you were not told. No em dashes.
 - suggestedService: the trade service it shows in two to four words ("Interior painting", "Roofline lighting"), or empty when it shows none (a truck, a team photo, a logo).
 - heroScore 0 to 5: how well it works as the wide image at the top of the home page. 5 is a sharp, bright, wide shot of finished work; 0 is a close-up, a dark or blurry shot, a screenshot, a document or a logo.
 - beforeAfter: "before" when it plainly shows the job not done yet, "after" when it plainly shows finished work next to a before shot or clearly staged as the result, otherwise empty.
@@ -65,7 +65,7 @@ const RECORD_TOOL: Block = {
 }
 
 /** One model turn: up to PHOTOS_PER_TURN photos as image blocks, results keyed by url. */
-async function captionChunk(chunk: InboxEntry[]): Promise<Map<string, PhotoCaption>> {
+export async function captionChunk(chunk: InboxEntry[]): Promise<Map<string, PhotoCaption>> {
   const content: Block[] = [{ type: 'text', text: `${chunk.length} photos. Caption every one with record_captions.` }]
   chunk.forEach((e, n) => {
     content.push({ type: 'text', text: `Photo ${n + 1}: ${e.filename}` })

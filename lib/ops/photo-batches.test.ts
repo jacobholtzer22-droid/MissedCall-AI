@@ -100,7 +100,12 @@ test('caption writer: each chunk is saved before the next, so a crash keeps prog
 
 test('caption cleaning and writing onto attachments', () => {
   const c = cleanCaption({ caption: 'Gray siding \u2014 one ' + 'word '.repeat(30), heroScore: 9, suggestedService: ' Siding ', beforeAfter: 'during', isLogo: 'yes' }, NOW)!
-  assert.equal(c.caption.split(' ').length, 20)
+  assert.ok(c.caption.split(' ').length <= 20)
+  const long = 'Narrow side yard with large concrete stepping pavers set in grass, black mulch bed with boxwood shrubs beside a white fence and gate'
+  assert.equal(cleanCaption({ caption: long }, NOW)!.caption, 'Narrow side yard with large concrete stepping pavers set in grass.')
+  const noComma = 'Front entry with fresh black mulch beds variegated grass plantings trimmed shrubs and a neat lawn edge in front of the porch steps today'
+  assert.equal(cleanCaption({ caption: noComma }, NOW)!.caption, 'Front entry with fresh black mulch beds variegated grass plantings trimmed shrubs and a neat lawn edge in front.')
+  assert.equal(cleanCaption({ caption: 'Fresh mulch along a brick wall.' }, NOW)!.caption, 'Fresh mulch along a brick wall.')
   assert.ok(!c.caption.includes('\u2014'))
   assert.equal(c.heroScore, 5)
   assert.equal(c.suggestedService, 'Siding')
@@ -114,11 +119,20 @@ test('caption cleaning and writing onto attachments', () => {
 
 const intake: Intake = { services: [{ name: 'Interior Painting' }, { name: 'Permanent Lighting' }, { name: 'Exterior Painting' }], assets: [] }
 
-test('matchService: exact by name, or the one service that contains it', () => {
+test('matchService: exact, or every word of one service name; blank when unsure', () => {
   const names = intake.services!.map((s) => s.name)
   assert.equal(matchService('interior painting', names), 'Interior Painting')
   assert.equal(matchService('Lighting', names), 'Permanent Lighting')
+  assert.equal(matchService('Permanent lighting install', names), 'Permanent Lighting')
+  assert.equal(matchService('Roofline lighting', names), undefined, 'a shared word alone is not enough')
   assert.equal(matchService('Painting', names), undefined, 'two services contain it: left blank')
+  const yard = ['Lawn Mowing', 'Hedge Trimming', 'Mulch Installation', 'Sod Installation']
+  assert.equal(matchService('Mulch bed installation', yard), 'Mulch Installation')
+  assert.equal(matchService('Hedge trimming and mulching', yard), 'Hedge Trimming')
+  assert.equal(matchService('Lawn care', yard), undefined)
+  assert.equal(matchService('Lawn renovation', yard), undefined)
+  assert.equal(matchService('Mowing', yard), 'Lawn Mowing')
+  assert.equal(matchService('Installation', yard), undefined)
   assert.equal(matchService('Roofing', names), undefined)
   assert.equal(matchService(null, names), undefined)
 })
@@ -126,7 +140,7 @@ test('matchService: exact by name, or the one service that contains it', () => {
 test('file_photos all:true: services mapped, one hero (highest, never a face), logo as logo, after before before', () => {
   const entries = [
     entry('before.jpg', cap({ beforeAfter: 'before', heroScore: 1 })),
-    entry('wide.jpg', cap({ heroScore: 4, suggestedService: 'Roofline lighting' })),
+    entry('wide.jpg', cap({ heroScore: 4, suggestedService: 'Permanent lighting on a roofline' })),
     entry('crew.jpg', cap({ heroScore: 5, hasFaceOrPlate: true, suggestedService: 'Interior painting' })),
     entry('best.jpg', cap({ heroScore: 5, suggestedService: 'Exterior painting' })),
     entry('after.jpg', cap({ beforeAfter: 'after', suggestedService: 'Deck staining' })),
