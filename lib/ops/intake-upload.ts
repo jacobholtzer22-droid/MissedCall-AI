@@ -4,12 +4,26 @@
 // Browser only (canvas, createImageBitmap, heic-to). HEIC and HEIF become
 // JPEG; any raster over UPLOAD_LONG_EDGE on its long side is shrunk and saved
 // as JPEG at UPLOAD_JPEG_QUALITY; everything else goes up untouched. The
-// original filename is kept with the extension changed. Also reads a drop,
+// original filename is kept with the extension changed. A video goes up as is
+// (nothing is transcoded in the browser); a <video> element and a canvas grab
+// three poster frames as JPEGs (1 second in, the middle, the last second) and
+// the container gives the codec (./video-meta). A browser that cannot play
+// the file (HEVC outside Safari and Apple Chrome) still uploads it, with the
+// size and duration from the container and no frames. Also reads a drop,
 // walking dropped folders. The rules themselves live in ./intake.
 
-import { UPLOAD_JPEG_QUALITY, fileType, fitWithin, isHeic, withExtension } from './intake'
+import { UPLOAD_JPEG_QUALITY, fileType, fitWithin, isHeic, isVideoType, withExtension } from './intake'
+import { frameTimes, sniffVideo } from './video-meta'
 
-export type Prepared = { file: Blob; filename: string; contentType: string; width: number | null; height: number | null }
+/** What the browser learned about a video before upload. */
+export type PreparedVideo = { duration: number | null; width: number | null; height: number | null; codec: string | null; frames: { blob: Blob; time: number }[] }
+
+export type Prepared = { file: Blob; filename: string; contentType: string; width: number | null; height: number | null; video?: PreparedVideo }
+
+/** Poster frames: long side at most this, JPEG. */
+const FRAME_LONG_EDGE = 1600
+/** A seek or a load that takes longer than this gives up (no frames, the upload still goes). */
+const VIDEO_STEP_MS = 15_000
 
 /** Decode a raster, honouring EXIF orientation. */
 async function decode(blob: Blob): Promise<ImageBitmap> {
@@ -60,9 +74,82 @@ async function svgSize(file: File): Promise<{ width: number; height: number } | 
   }
 }
 
+function once(el: HTMLVideoElement, event: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => done(new Error(`timed out waiting for ${event}`)), VIDEO_STEP_MS)
+    const ok = () => done()
+    const fail = () => done(new Error('this browser cannot play this video'))
+    function done(err?: Error) {
+      clearTimeout(timer)
+      el.removeEventListener(event, ok)
+      el.removeEventListener('error', fail)
+      if (err) reject(err)
+      else resolve()
+    }
+    el.addEventListener(event, ok)
+    el.addEventListener('error', fail)
+  })
+}
+
+/** Duration, display size and frames from a <video> element; throws when the browser cannot decode it. */
+async function grabFrames(file: File): Promise<Omit<PreparedVideo, 'codec'>> {
+  const url = URL.createObjectURL(file)
+  const el = document.createElement('video')
+  el.muted = true
+  el.playsInline = true
+  el.preload = 'auto'
+  try {
+    const loaded = once(el, 'loadeddata')
+    el.src = url
+    await loaded
+    const duration = Number.isFinite(el.duration) ? Math.round(el.duration * 100) / 100 : null
+    if (!el.videoWidth || !el.videoHeight) throw new Error('no picture')
+    const fit = fitWithin(el.videoWidth, el.videoHeight, FRAME_LONG_EDGE)
+    const canvas = document.createElement('canvas')
+    canvas.width = fit.width
+    canvas.height = fit.height
+    const ctx = canvas.getContext('2d')
+    if (!ctx) throw new Error('This browser cannot draw video frames')
+    const frames: PreparedVideo['frames'] = []
+    for (const time of frameTimes(duration ?? 0)) {
+      const seeked = once(el, 'seeked')
+      el.currentTime = time
+      await seeked
+      ctx.drawImage(el, 0, 0, fit.width, fit.height)
+      const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/jpeg', UPLOAD_JPEG_QUALITY))
+      if (blob) frames.push({ blob, time })
+    }
+    canvas.width = canvas.height = 0
+    return { duration, width: el.videoWidth, height: el.videoHeight, frames }
+  } finally {
+    el.removeAttribute('src')
+    el.load()
+    URL.revokeObjectURL(url)
+  }
+}
+
+async function prepareVideo(file: File, type: string): Promise<Prepared> {
+  const sniffed = await sniffVideo(async (start, end) => new Uint8Array(await file.slice(start, end).arrayBuffer()), file.size)
+  let seen: Omit<PreparedVideo, 'codec'> | null = null
+  try {
+    seen = await grabFrames(file)
+  } catch {
+    // Cannot play it here: upload anyway, with what the container says and no frames.
+  }
+  const video: PreparedVideo = {
+    duration: seen?.duration ?? sniffed.duration,
+    width: seen?.width ?? sniffed.width,
+    height: seen?.height ?? sniffed.height,
+    codec: sniffed.codec,
+    frames: seen?.frames ?? [],
+  }
+  return { file, filename: file.name, contentType: type, width: video.width, height: video.height, video }
+}
+
 /** What to upload for this file. Throws with a readable reason when it cannot be read. */
 export async function prepareFile(file: File): Promise<Prepared> {
   const type = fileType(file.name, file.type)
+  if (isVideoType(type)) return prepareVideo(file, type)
   if (type === 'application/pdf') return { file, filename: file.name, contentType: type, width: null, height: null }
   if (type === 'image/svg+xml') {
     const size = await svgSize(file)

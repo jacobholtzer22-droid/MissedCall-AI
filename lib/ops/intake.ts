@@ -13,8 +13,13 @@
 // key it was not given. Assets are only ever read from the engagement's own
 // intake, never from a free-text URL list.
 
-/** gbp: an owner-posted photo from the Google Business Profile (lookup_gbp), with its attribution. */
-export type IntakeAssetKind = 'logo' | 'photo' | 'document' | 'gbp'
+/**
+ * gbp: an owner-posted photo from the Google Business Profile (lookup_gbp), with its attribution.
+ * video: a clip as uploaded (never transcoded here); the build transcodes it (AA-Template's aa-build).
+ */
+export type IntakeAssetKind = 'logo' | 'photo' | 'document' | 'gbp' | 'video'
+/** One poster frame the browser grabbed from a video before upload: a JPEG in Blob, and where in the clip it was taken. */
+export type VideoFrame = { url: string; time: number }
 export type IntakeAsset = {
   id: string
   url: string
@@ -29,6 +34,21 @@ export type IntakeAsset = {
   /** Pixel size, recorded by the browser upload (absent on older entries and gbp photos). */
   width?: number
   height?: number
+  // ── video only ──
+  /** The poster: one of frames (the middle one unless set otherwise). */
+  posterUrl?: string
+  /** Three frames: 1 second in, the middle, the last second (lib/ops/video-meta frameTimes). */
+  frames?: VideoFrame[]
+  /** Seconds. */
+  duration?: number
+  /** The sample entry as the container names it: hvc1, avc1, vp09... */
+  codec?: string
+  /** File size as uploaded. */
+  bytes?: number
+  /** One line: what happens in the clip (the Photo desk, or the chief). */
+  happens?: string
+  /** The clip the site's hero plays. At most one per client, and only when Jacob says so. */
+  heroVideo?: boolean
   uploadedAt: string
 }
 
@@ -150,6 +170,8 @@ export function intakeSummary(i: Intake) {
     missing: intakeMissing(i),
     photos: photos.length,
     heroCandidates: photos.filter((p) => p.heroCandidate).length,
+    videos: (i.assets ?? []).filter((a) => a.kind === 'video').length,
+    heroVideo: (i.assets ?? []).find((a) => a.kind === 'video' && a.heroVideo)?.filename ?? null,
     logo: (i.assets ?? []).some((a) => a.kind === 'logo'),
     gbpPhotos: (i.assets ?? []).filter((a) => a.kind === 'gbp').length,
     documents: (i.assets ?? []).filter((a) => a.kind === 'document').length,
@@ -158,17 +180,31 @@ export function intakeSummary(i: Intake) {
   }
 }
 
-/** The asset list the build receives (no ids, no upload times). */
+/** The asset list the build receives (no ids, no upload times). Videos carry their poster, frames and probe. */
 export function payloadAssets(i: Intake) {
   return (i.assets ?? []).map((a) => ({
     url: a.url,
     kind: a.kind,
     filename: a.filename,
     caption: a.caption ?? null,
-    heroCandidate: Boolean(a.heroCandidate),
+    heroCandidate: a.kind !== 'video' && Boolean(a.heroCandidate),
     service: a.service ?? null,
     beforeAfter: a.beforeAfter ?? null,
     attribution: a.attribution ?? null,
+    ...(a.kind === 'video'
+      ? {
+          posterUrl: a.posterUrl ?? null,
+          posterTime: a.frames?.find((f) => f.url === a.posterUrl)?.time ?? null,
+          frames: a.frames ?? [],
+          duration: a.duration ?? null,
+          width: a.width ?? null,
+          height: a.height ?? null,
+          codec: a.codec ?? null,
+          bytes: a.bytes ?? null,
+          happens: a.happens ?? null,
+          heroVideo: Boolean(a.heroVideo),
+        }
+      : {}),
   }))
 }
 
@@ -189,8 +225,10 @@ export function withAssetSections(brief: string, i: Intake): string {
     .filter((part) => !/^## (Assets|Old site)\s*$/m.test(part.split('\n')[0]))
     .join('')
     .trimEnd()
-  const rows = (i.assets ?? []).map(
-    (a) => `- ${a.kind} | ${a.url} | ${a.caption?.trim() || a.filename} | ${a.heroCandidate ? 'hero candidate' : '-'} | ${a.service || '-'} | ${a.beforeAfter || '-'}`
+  const rows = (i.assets ?? []).map((a) =>
+    a.kind === 'video'
+      ? `- video | ${a.url} | ${a.caption?.trim() || a.filename}${a.happens ? ` (${a.happens.trim()})` : ''}${a.duration ? `, ${Math.round(a.duration)}s` : ''} | ${a.heroVideo ? 'hero video' : '-'} | ${a.service || '-'} | ${a.beforeAfter || '-'}`
+      : `- ${a.kind} | ${a.url} | ${a.caption?.trim() || a.filename} | ${a.heroCandidate ? 'hero candidate' : '-'} | ${a.service || '-'} | ${a.beforeAfter || '-'}`
   )
   const old = payloadOldSite(i)
   return [
@@ -198,7 +236,7 @@ export function withAssetSections(brief: string, i: Intake): string {
     '',
     '## Assets',
     '',
-    'kind | url | caption | heroCandidate | service | before/after',
+    'kind | url | caption | heroCandidate (hero video for a video) | service | before/after',
     '',
     ...(rows.length ? rows : ['- none on file']),
     '',
@@ -214,22 +252,27 @@ export function withAssetSections(brief: string, i: Intake): string {
 // before the file goes straight to Vercel Blob; no file passes through a
 // function body. These are the rules both sides agree on.
 
-export type UploadKind = 'photo' | 'logo' | 'document'
+/** chat: the HQ composer, which takes photos, a logo and videos. */
+export type UploadKind = 'photo' | 'logo' | 'document' | 'chat'
 
-/** Biggest file the page will even try (before conversion). */
+/** Biggest image or document the page will even try (before conversion). */
 export const MAX_SOURCE_BYTES = 40 * 1024 * 1024
+/** Biggest video: uploaded as is (never transcoded in the browser). */
+export const MAX_VIDEO_BYTES = 300 * 1024 * 1024
 export const UPLOAD_LONG_EDGE = 2400
 export const UPLOAD_JPEG_QUALITY = 0.85
 export const UPLOAD_CONCURRENCY = 3
 
 const RASTER = ['image/jpeg', 'image/png', 'image/webp']
 const HEIC = ['image/heic', 'image/heif']
+export const VIDEO_TYPES = ['video/mp4', 'video/quicktime', 'video/webm']
 
-/** Content types the token allows per kind (what lands in Blob after conversion, plus HEIC). */
+/** Content types the token allows per kind (what lands in Blob after conversion, plus HEIC). Photos and chat take videos too. */
 export const UPLOAD_TYPES: Record<UploadKind, string[]> = {
-  photo: [...RASTER, ...HEIC],
+  photo: [...RASTER, ...HEIC, ...VIDEO_TYPES],
   logo: [...RASTER, ...HEIC, 'image/svg+xml'],
   document: ['application/pdf', ...RASTER, ...HEIC, 'image/svg+xml'],
+  chat: [...RASTER, ...HEIC, 'image/svg+xml', ...VIDEO_TYPES],
 }
 
 const EXT_TYPE: Record<string, string> = {
@@ -241,6 +284,11 @@ const EXT_TYPE: Record<string, string> = {
   heif: 'image/heif',
   svg: 'image/svg+xml',
   pdf: 'application/pdf',
+  mp4: 'video/mp4',
+  m4v: 'video/mp4',
+  mov: 'video/quicktime',
+  qt: 'video/quicktime',
+  webm: 'video/webm',
 }
 
 /** The file's type, from the browser or (when the browser leaves it blank, as it often does for HEIC) the extension. */
@@ -251,16 +299,23 @@ export function fileType(name: string, type: string): string {
 }
 
 export const isHeic = (type: string) => HEIC.includes(type)
+export const isVideoType = (type: string) => VIDEO_TYPES.includes(type)
+/** A Blob path or filename that names a video, by its extension. */
+export const isVideoName = (name: string) => /\.(mp4|m4v|mov|qt|webm)$/i.test(name)
+/** The size cap for one file of this type. */
+export const maxBytesFor = (type: string) => (isVideoType(type) ? MAX_VIDEO_BYTES : MAX_SOURCE_BYTES)
 
 /** Why a file cannot be uploaded as this kind, or null when it can. */
 export function rejectReason(f: { name: string; type: string; size: number }, kind: UploadKind): string | null {
   const t = fileType(f.name, f.type)
   if (f.size === 0) return 'Empty file (or a folder this browser cannot open)'
   if (!UPLOAD_TYPES[kind].includes(t)) {
-    const allowed = kind === 'photo' ? 'JPG, PNG, WebP or HEIC' : kind === 'logo' ? 'JPG, PNG, WebP, HEIC or SVG' : 'PDF or an image'
+    const allowed =
+      kind === 'photo' ? 'JPG, PNG, WebP, HEIC, MP4, MOV or WebM' : kind === 'logo' ? 'JPG, PNG, WebP, HEIC or SVG' : kind === 'chat' ? 'a photo, an SVG, MP4, MOV or WebM' : 'PDF or an image'
     return `Bad type (${t || 'unknown'}): ${allowed} only`
   }
-  if (f.size > MAX_SOURCE_BYTES) return `Too large: ${formatBytes(f.size)}, the limit is ${formatBytes(MAX_SOURCE_BYTES)}`
+  const cap = maxBytesFor(t)
+  if (f.size > cap) return `Too large: ${formatBytes(f.size)}, the limit is ${formatBytes(cap)}${isVideoType(t) ? ' for a video' : ''}`
   return null
 }
 
@@ -299,7 +354,64 @@ export function uniqueFilename(name: string, taken: Iterable<string>): string {
 /** A filename as it goes into a Blob path: lower case, letters, digits, dot, dash and underscore. */
 export const safeBlobName = (filename: string) => filename.toLowerCase().replace(/[^a-z0-9._-]+/g, '-').replace(/^-+|-+$/g, '') || 'file'
 
+/** A video's poster frame n (1 to 3), uploaded next to it: <video path>.frame-<n>.jpg. */
+export const framePathFor = (videoPath: string, n: number) => `${videoPath}.frame-${n}.jpg`
+/** True for a poster frame's Blob path or URL. */
+export const isFramePath = (p: string) => /\.frame-\d\.jpg$/i.test(p)
+
 /** The Blob path for one upload. The uuid keeps every path unique, so nothing is ever overwritten. */
 export function uploadPath(engagementId: string, uuid: string, filename: string): string {
   return `ops-intake/${engagementId}/${uuid}-${safeBlobName(filename)}`
 }
+
+// ── Video fields (shared by POST .../assets and the HQ message route) ────────
+
+export type VideoFields = { frames: VideoFrame[]; posterUrl?: string; duration?: number; codec?: string; bytes?: number }
+
+/**
+ * Read the video fields of a request body: frames ([{ url, time }], at most
+ * 3, each a frame path beside the video and accepted by ownUrl), posterUrl
+ * (one of the frames; the middle one when left out), duration (seconds),
+ * codec (a short container name) and bytes (up to MAX_VIDEO_BYTES). Calls
+ * fail(message) on anything else.
+ */
+export function readVideoFields(o: Record<string, unknown>, videoUrl: string, ownUrl: (u: string) => boolean, fail: (message: string) => never, label = ''): VideoFields {
+  const at = (f: string) => `${label}${f}`
+  const raw = o.frames === undefined || o.frames === null ? [] : o.frames
+  if (!Array.isArray(raw) || raw.length > 3) fail(`${at('frames')} must be a list of at most 3`)
+  const frames = (raw as unknown[]).map((f, n): VideoFrame => {
+    const x = (f ?? {}) as Record<string, unknown>
+    const url = typeof x.url === 'string' ? x.url : ''
+    if (!ownUrl(url) || !isFramePath(url) || !url.startsWith(videoUrl)) fail(`${at(`frames[${n}].url`)} is not a poster frame of this video`)
+    const time = x.time
+    if (typeof time !== 'number' || !Number.isFinite(time) || time < 0 || time > 86_400) fail(`${at(`frames[${n}].time`)} must be seconds`)
+    return { url, time: Math.round((time as number) * 100) / 100 }
+  })
+  let posterUrl: string | undefined
+  if (o.posterUrl !== undefined && o.posterUrl !== null) {
+    if (typeof o.posterUrl !== 'string' || !frames.some((f) => f.url === o.posterUrl)) fail(`${at('posterUrl')} must be one of the frames`)
+    posterUrl = o.posterUrl as string
+  } else posterUrl = frames[Math.min(1, frames.length - 1)]?.url
+  const num = (v: unknown, field: string, max: number) => {
+    if (v === undefined || v === null) return undefined
+    if (typeof v !== 'number' || !Number.isFinite(v) || v <= 0 || v > max) fail(`${at(field)} is out of range`)
+    return v as number
+  }
+  const duration = num(o.duration, 'duration', 86_400)
+  const bytes = num(o.bytes, 'bytes', MAX_VIDEO_BYTES)
+  let codec: string | undefined
+  if (o.codec !== undefined && o.codec !== null) {
+    if (typeof o.codec !== 'string' || !/^[A-Za-z0-9._-]{1,16}$/.test(o.codec)) fail(`${at('codec')} must be a short codec name`)
+    codec = o.codec as string
+  }
+  return {
+    frames,
+    ...(posterUrl ? { posterUrl } : {}),
+    ...(duration ? { duration: Math.round(duration * 100) / 100 } : {}),
+    ...(codec ? { codec } : {}),
+    ...(bytes ? { bytes: Math.round(bytes) } : {}),
+  }
+}
+
+/** Every Blob URL an asset owns: the file, then a video's frames. */
+export const assetUrls = (a: Pick<IntakeAsset, 'url' | 'frames'>) => [a.url, ...(a.frames ?? []).map((f) => f.url)]

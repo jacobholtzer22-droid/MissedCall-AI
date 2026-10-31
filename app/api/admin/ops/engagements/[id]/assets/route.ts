@@ -3,6 +3,10 @@
 // ===========================================
 // Body { url, filename, kind, width?, height?, caption?, heroCandidate?,
 // service?, beforeAfter? } after the browser uploaded to Blob (see ./token).
+// A video (kind video) also brings frames [{ url, time }], posterUrl?,
+// duration?, codec? and bytes? (lib/ops/intake readVideoFields); its frames
+// must sit beside it under the same prefix. A video is never a hero
+// candidate.
 // The URL must be a public Blob URL under ops-intake/{id}/: assets are never
 // taken from anywhere else, and the record is written only once Blob confirms
 // the file exists (head). Appends to Engagement.intake.assets under a row
@@ -14,7 +18,7 @@ import { randomUUID } from 'node:crypto'
 import { NextResponse } from 'next/server'
 import { BlobNotFoundError, del, head } from '@vercel/blob'
 import { requireAdmin } from '@/lib/pipeline-server'
-import { uniqueFilename, type IntakeAsset } from '@/lib/ops/intake'
+import { isVideoName, readVideoFields, uniqueFilename, type IntakeAsset } from '@/lib/ops/intake'
 import { HEIC_MESSAGE, isOwnAssetUrl, updateIntake } from '@/lib/ops/intake-server'
 import { BadRequest, oneOf, optionalString, readJsonObject, rejectUnknownKeys } from '@/lib/ops/validate'
 
@@ -26,16 +30,23 @@ export async function POST(request: Request, context: { params: { id: string } }
   const id = context.params.id
   try {
     const body = readJsonObject(await request.json())
-    rejectUnknownKeys(body, ['url', 'filename', 'kind', 'width', 'height', 'caption', 'heroCandidate', 'service', 'beforeAfter'])
+    rejectUnknownKeys(body, ['url', 'filename', 'kind', 'width', 'height', 'caption', 'heroCandidate', 'service', 'beforeAfter', 'frames', 'posterUrl', 'duration', 'codec', 'bytes'])
     const url = typeof body.url === 'string' ? body.url : ''
     if (!isOwnAssetUrl(url, id)) throw new BadRequest('url is not an upload for this client')
     const filename = optionalString(body.filename, 'filename', 200) ?? url.split('/').pop()!
     if (/\.(heic|heif)$/i.test(filename)) throw new BadRequest(HEIC_MESSAGE)
-    const kind = oneOf(body.kind, ['photo', 'logo', 'document'] as const, 'kind')
+    const kind = oneOf(body.kind, ['photo', 'logo', 'document', 'video'] as const, 'kind')
+    if ((kind === 'video') !== isVideoName(url)) throw new BadRequest(kind === 'video' ? 'a video must be an MP4, MOV or WebM file' : 'a video must be registered as kind video')
+    const video =
+      kind === 'video'
+        ? readVideoFields(body, url, (u) => isOwnAssetUrl(u, id), (m) => {
+            throw new BadRequest(m)
+          })
+        : null
     const width = pixels(body.width, 'width')
     const height = pixels(body.height, 'height')
     try {
-      await head(url)
+      await Promise.all([url, ...(video?.frames ?? []).map((f) => f.url)].map((u) => head(u)))
     } catch (err) {
       if (err instanceof BlobNotFoundError) throw new BadRequest('That file is not in storage; upload it again')
       throw err
@@ -47,7 +58,8 @@ export async function POST(request: Request, context: { params: { id: string } }
       kind,
       ...(width && height ? { width, height } : {}),
       ...(optionalString(body.caption, 'caption', 300) ? { caption: optionalString(body.caption, 'caption', 300)! } : {}),
-      ...(body.heroCandidate === true ? { heroCandidate: true } : {}),
+      ...(body.heroCandidate === true && kind !== 'video' ? { heroCandidate: true } : {}),
+      ...(video ?? {}),
       ...(optionalString(body.service, 'service', 200) ? { service: optionalString(body.service, 'service', 200)! } : {}),
       ...(body.beforeAfter === 'before' || body.beforeAfter === 'after' ? { beforeAfter: body.beforeAfter } : {}),
       uploadedAt: new Date().toISOString(),

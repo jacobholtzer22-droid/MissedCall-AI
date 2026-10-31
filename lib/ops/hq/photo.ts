@@ -3,7 +3,8 @@
 // ===========================================
 // A background run (agent photo, mode work) that looks at unfiled inbox photos
 // PHOTOS_PER_TURN at a time and writes onto each one: caption, suggested
-// service, hero score, before/after guess, logo, face or plate. Started by the
+// service, hero score, before/after guess, logo, face or plate; a video is
+// shown as its three poster frames and also gets what happens in it. Started by the
 // message route when one message carries more than BATCH_THRESHOLD photos, or
 // by the chief's caption_photos. Each turn's captions are saved before the
 // next turn, so a crash keeps what was done and a new run picks up the rest.
@@ -13,7 +14,7 @@
 // Model: OPS_PHOTO_MODEL (default claude-sonnet-5-5), key ANTHROPIC_API_KEY_BUILDS.
 
 import { db } from '@/lib/db'
-import { captionInChunks, cleanCaption, type InboxEntry, type PhotoCaption } from '@/lib/ops/photo-filing'
+import { captionInChunks, cleanCaption, isVideoAttachment, type InboxEntry, type PhotoCaption } from '@/lib/ops/photo-filing'
 import { AGENT_MODEL_DEFAULT, type Block, streamMessage } from './anthropic'
 import { emit } from './events'
 import { adoptUnsent, listInbox, writeCaptions } from './inbox'
@@ -34,7 +35,9 @@ For each photo, by its number, call record_captions once with every photo in thi
 - heroScore 0 to 5: how well it works as the wide image at the top of the home page. 5 is a sharp, bright, wide shot of finished work; 0 is a close-up, a dark or blurry shot, a screenshot, a document or a logo.
 - beforeAfter: "before" when it plainly shows the job not done yet, "after" when it plainly shows finished work next to a before shot or clearly staged as the result, otherwise empty.
 - isLogo: true only for the business logo or a graphic of it.
-- hasFaceOrPlate: true when any person's face or any readable licence plate is in the frame.`
+- hasFaceOrPlate: true when any person's face or any readable licence plate is in the frame.
+
+Some items are videos, shown as three frames taken 1 second in, in the middle and in the last second. Treat the three frames as one clip and return one result for it: caption describes the scene, hasFaceOrPlate covers any of the three frames, heroScore is 0 (videos are never the hero image), and happens is one line of 8 to 16 words on what happens across the clip ("Camera pans along the finished roofline lights from the driveway at dusk"). For photos leave happens empty.`
 
 const RECORD_TOOL: Block = {
   type: 'custom',
@@ -55,6 +58,7 @@ const RECORD_TOOL: Block = {
             beforeAfter: { type: 'string', enum: ['before', 'after', ''] },
             isLogo: { type: 'boolean' },
             hasFaceOrPlate: { type: 'boolean' },
+            happens: { type: 'string', description: 'Videos only: what happens across the clip. Empty for a photo.' },
           },
           required: ['n', 'caption', 'suggestedService', 'heroScore', 'beforeAfter', 'isLogo', 'hasFaceOrPlate'],
         },
@@ -64,10 +68,23 @@ const RECORD_TOOL: Block = {
   },
 }
 
-/** One model turn: up to PHOTOS_PER_TURN photos as image blocks, results keyed by url. */
+/**
+ * One model turn: up to PHOTOS_PER_TURN items as image blocks (a video as its
+ * three frames), results keyed by url. A video with no frames (the uploading
+ * browser could not play it) is left out: it stays uncaptioned and the chief
+ * captions it from what Jacob says.
+ */
 export async function captionChunk(chunk: InboxEntry[]): Promise<Map<string, PhotoCaption>> {
-  const content: Block[] = [{ type: 'text', text: `${chunk.length} photos. Caption every one with record_captions.` }]
-  chunk.forEach((e, n) => {
+  const items = chunk.filter((e) => !isVideoAttachment(e) || (e.frames?.length ?? 0) > 0)
+  if (!items.length) return new Map()
+  const videos = items.filter(isVideoAttachment).length
+  const content: Block[] = [{ type: 'text', text: `${items.length} items${videos ? ` (${videos} of them videos, shown as frames)` : ''}. Caption every one with record_captions.` }]
+  items.forEach((e, n) => {
+    if (isVideoAttachment(e)) {
+      content.push({ type: 'text', text: `Photo ${n + 1}: ${e.filename} is a video${e.duration ? ` of ${Math.round(e.duration)} seconds` : ''}. Its frames:` })
+      for (const f of e.frames ?? []) content.push({ type: 'image', source: { type: 'url', url: f.url } })
+      return
+    }
     content.push({ type: 'text', text: `Photo ${n + 1}: ${e.filename}` })
     if (/\.svg$/i.test(e.filename)) content.push({ type: 'text', text: '(an SVG file: treat it as a logo or graphic, heroScore 0)' })
     else content.push({ type: 'image', source: { type: 'url', url: e.url } })
@@ -79,8 +96,8 @@ export async function captionChunk(chunk: InboxEntry[]): Promise<Map<string, Pho
   const now = new Date()
   const out = new Map<string, PhotoCaption>()
   for (const r of rows) {
-    const entry = chunk[Math.round(Number(r.n)) - 1]
-    const c = entry && cleanCaption(r, now)
+    const entry = items[Math.round(Number(r.n)) - 1]
+    const c = entry && cleanCaption(isVideoAttachment(entry) ? { ...r, heroScore: 0, isLogo: false } : { ...r, happens: '' }, now)
     if (entry && c && !out.has(entry.url)) out.set(entry.url, c)
   }
   return out

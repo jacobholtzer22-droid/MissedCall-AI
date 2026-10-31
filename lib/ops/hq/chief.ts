@@ -26,7 +26,7 @@ import { WEB_TASK_KINDS, briefTemplate, startWebTask, type WebTaskKind } from '.
 import { INTAKE_KEYS, intakeSummary, readIntake, withAssetSections } from '@/lib/ops/intake'
 import { loadIntake, patchIntake } from '@/lib/ops/intake-server'
 import { BATCH_THRESHOLD, FILE_PHOTOS_TOOL, InvalidAttachments, inboxText, readAttachments } from '@/lib/ops/photo-filing'
-import { fileAllPhotos, filePhotos } from '@/lib/ops/photo-filing-server'
+import { fileAllPhotos, filePhotos, setHeroVideo } from '@/lib/ops/photo-filing-server'
 import { listInbox } from './inbox'
 import { withPhotos } from './photo-view'
 import { activePhotoRun, runPhotoRun, startPhotoRun } from './photo'
@@ -76,6 +76,7 @@ What you do:
 - When Jacob points at a spec under docs/ads-specs/, read it with read_spec and pass its full text in the start_ads_task instructions, after one line with Jacob's own instructions (e.g. "Build it paused and queue the enable for my approval."). Do not shorten the spec.
 - Photos in chat: when Jacob drops photos in this chat you see them, listed with their url and filename. File them with file_photos, and only that way. First know whose they are: from his message, or from what he says next about the same photos. If he did not say, ask "Who are these for?" and wait; you may say what the photos show, but do not suggest whose they might be. Never guess, and never choose between two clients that could fit: ask. If he names a client you cannot find on the board, say so and ask. Read get_client first for the client's services. Caption each one from what you see: what is in the frame and which service it shows; never a town, street, customer or job you were not told. Set service only when it plainly matches one of the client's services, otherwise leave it out. At most one heroCandidate per call, the strongest wide shot. beforeAfter only for an obvious pair. kind logo only for the business logo. Filing photos is the whole job: never write, change or offer a brief because of them. Then say in one line what you filed on whom and what you are unsure about ("the two kitchen shots could be either service, I left service blank").
 - Photo batches: a message with more than ${BATCH_THRESHOLD} photos shows you only a count and the first ${BATCH_THRESHOLD}; the Photo desk captions all of them in the background (it starts on its own) and you are told when it finishes. Do not caption a batch yourself and do not file it before then: say in one line that the photos are being captioned, and ask "Who are these for?" if he did not say. Once captions are in, file the batch with file_photos all: true (scope with messageIds when list_inbox shows drops for more than one client). list_inbox shows every unfiled photo with its caption, counts per drop, and photos uploaded but never sent. caption_photos captions any unfiled photos that have no caption yet (for example the unsent ones). After filing a batch, say in one line how many you filed on whom, which one is the hero, and what stayed blank or unfiled.
+- Videos in chat: a video attachment is listed as VIDEO with its length, and you see it as three frames (1 second in, the middle, the last second), never the clip. File it with file_photos, kind video, like a photo: caption from the frames, happens in one line (what happens across the clip), service only on a plain match, beforeAfter only for an obvious pair. A video is never heroCandidate. heroVideo (in file_photos, or set_hero_video for one already filed) only when Jacob says that clip is the hero; never suggest it on your own. A video with no frames: ask Jacob what it shows before filing it. The build trims and compresses videos itself (hero 15 seconds, gallery 60).
 - After you start specialists, tell Jacob in a line or two what you started. Do not call finish_job then: when every run in the job has finished you will be asked for the report, and you write it with finish_job.
 
 Rules:
@@ -712,7 +713,7 @@ function chiefTools(ctx: ChiefContext): ClientTool[] {
       run: async (input) => {
         const engagementId = str(input.engagementId)
         const name = await engagementName(engagementId)
-        const plural = (n: number) => `${n} photo${n === 1 ? '' : 's'}`
+        const plural = (n: number) => `${n} file${n === 1 ? '' : 's'}`
         try {
           if (input.all === true) {
             if (input.photos !== undefined && input.photos !== null) throw new Error('pass photos or all: true, not both')
@@ -744,6 +745,29 @@ function chiefTools(ctx: ChiefContext): ClientTool[] {
         const [entries, running] = await Promise.all([listInbox(), activePhotoRun()])
         const { text, counts } = inboxText(entries, limit, running)
         return { result: { counts, text }, label: `Inbox: ${counts.unfiled} unfiled, ${counts.captioned} captioned` }
+      },
+    },
+    {
+      name: 'set_hero_video',
+      description: "Make one of a client's filed videos the clip the site hero plays (by its filename from get_client), or clear it with an empty filename. Only when Jacob says which clip is the hero; never on your own. One per client: it replaces any hero video on file. The build plays it muted and looping, trimmed to 15 seconds.",
+      input_schema: {
+        type: 'object',
+        properties: {
+          engagementId: { type: 'string', description: 'The client id from get_board.' },
+          filename: { type: 'string', description: 'The video filename exactly as get_client lists it, or an empty string to clear.' },
+        },
+        required: ['engagementId', 'filename'],
+      },
+      run: async (input) => {
+        const engagementId = str(input.engagementId)
+        try {
+          const res = await setHeroVideo(engagementId, typeof input.filename === 'string' && input.filename.trim() ? input.filename : null)
+          await ensureJob(ctx, [engagementId])
+          return { result: { ok: true, ...res }, label: res.heroVideo ? `Hero video on ${res.client}: ${res.heroVideo}` : `Cleared the hero video on ${res.client}` }
+        } catch (err) {
+          if (err instanceof InvalidAttachments) throw new Error(err.message)
+          throw err
+        }
       },
     },
     {

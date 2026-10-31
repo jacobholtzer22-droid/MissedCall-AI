@@ -5,13 +5,17 @@
 // section saves on blur (PATCH .../intake with that key) and shows Saved.
 // Photos and the logo go through the upload queue in ./Uploader (straight
 // from the browser to Vercel Blob, HEIC converted, big photos shrunk, three
-// at a time, a row per file). Per photo: caption, hero candidate, service,
-// before or after.
+// at a time, a row per file; videos too, as is). Per photo: caption, hero
+// candidate, service, before or after. Per video: its poster with a play
+// badge, caption, what happens, service, before or after, and Hero video
+// (one per client).
 
 import { useState } from 'react'
 import Link from 'next/link'
 import { ArrowLeft, Plus, Star, Trash2, X } from 'lucide-react'
-import { intakeMissing, type Intake, type IntakeAsset } from '@/lib/ops/intake'
+import { formatBytes, intakeMissing, type Intake, type IntakeAsset } from '@/lib/ops/intake'
+import { codecLabel, formatDuration } from '@/lib/ops/video-meta'
+import { VideoPoster } from '../../VideoPoster'
 import { Uploader } from './Uploader'
 
 const control =
@@ -221,8 +225,8 @@ export function IntakeClient({
           </label>
         </Section>
 
-        <Section title="Photos">
-          <Assets engagementId={engagementId} kind="photo" assets={(intake.assets ?? []).filter((a) => a.kind === 'photo')} services={serviceNames} onChange={setIntake} onError={setError} />
+        <Section title="Photos and videos">
+          <Assets engagementId={engagementId} kind="photo" assets={(intake.assets ?? []).filter((a) => a.kind === 'photo' || a.kind === 'video')} services={serviceNames} onChange={setIntake} onError={setError} />
         </Section>
 
         <Section title="Logo">
@@ -419,9 +423,57 @@ function Assets({
     <div className="space-y-3">
       <Uploader engagementId={engagementId} kind={kind} hasLogo={assets.length > 0} onSaved={onChange} />
 
-      {assets.length > 0 && (
+      {kind === 'photo' && assets.some((a) => a.kind === 'video') && (
+        <ul data-intake-videos className="grid gap-3 grid-cols-1 sm:grid-cols-2">
+          {assets
+            .filter((a) => a.kind === 'video')
+            .map((a) => (
+              <li key={a.id} className="rounded-lg border border-gray-800 bg-gray-950 overflow-hidden">
+                <VideoPoster url={a.url} posterUrl={a.posterUrl} filename={a.filename} duration={a.duration} className="aspect-video w-full" />
+                <div className="p-3 space-y-2">
+                  <p className="text-xs text-gray-500 truncate" title={a.filename}>
+                    {[a.filename, formatDuration(a.duration), a.width && a.height ? `${a.width} × ${a.height}` : '', a.codec ? codecLabel(a.codec) : '', a.bytes ? formatBytes(a.bytes) : ''].filter(Boolean).join(', ')}
+                  </p>
+                  {!a.posterUrl && <p className="text-xs text-amber-300">No poster: the browser that uploaded it could not play it. The build still makes one.</p>}
+                  <Field label="Caption (which job, which town)" value={a.caption ?? ''} onSave={(v) => patch(a.id, { caption: v })} />
+                  <Field label="What happens in the clip" value={a.happens ?? ''} onSave={(v) => patch(a.id, { happens: v })} />
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      aria-pressed={Boolean(a.heroVideo)}
+                      onClick={() => patch(a.id, { heroVideo: !a.heroVideo })}
+                      className={`${smallBtn} ${a.heroVideo ? 'border-amber-500 bg-amber-500/15 text-amber-200' : ''}`}
+                    >
+                      <Star className="h-3.5 w-3.5" /> Hero video
+                    </button>
+                    <select aria-label="Service" value={a.service ?? ''} onChange={(e) => patch(a.id, { service: e.target.value || null })} className={`${control} w-auto`}>
+                      <option value="">No service</option>
+                      {services.map((s) => (
+                        <option key={s} value={s}>
+                          {s}
+                        </option>
+                      ))}
+                    </select>
+                    <select aria-label="Before or after" value={a.beforeAfter ?? ''} onChange={(e) => patch(a.id, { beforeAfter: e.target.value || null })} className={`${control} w-auto`}>
+                      <option value="">Not a pair</option>
+                      <option value="before">Before</option>
+                      <option value="after">After</option>
+                    </select>
+                  </div>
+                  <button type="button" onClick={() => remove(a.id)} className={`${smallBtn} text-red-300`}>
+                    <Trash2 className="h-3.5 w-3.5" /> Delete
+                  </button>
+                </div>
+              </li>
+            ))}
+        </ul>
+      )}
+
+      {assets.some((a) => a.kind !== 'video') && (
         <ul className={`grid gap-3 ${kind === 'photo' ? 'grid-cols-1 sm:grid-cols-2' : 'grid-cols-1'}`}>
-          {assets.map((a) => (
+          {assets
+            .filter((a) => a.kind !== 'video')
+            .map((a) => (
             <li key={a.id} className="rounded-lg border border-gray-800 bg-gray-950 overflow-hidden">
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src={a.url} alt={a.caption || a.filename} className={`w-full ${kind === 'logo' ? 'h-24 object-contain bg-white/90 p-2' : 'aspect-[4/3] object-cover'}`} loading="lazy" />

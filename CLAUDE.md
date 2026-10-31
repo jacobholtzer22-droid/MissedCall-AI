@@ -3470,3 +3470,43 @@ chief's context whole.
   The explicit `photos[]` form is unchanged (20 per call).
 - Read-only check of what list_inbox would see: `listInbox()` + `inboxText()`.
 
+### Videos through the chief (Oct 31 2026)
+
+Videos ride the photo pipeline. Nothing is transcoded in the browser; the build does it.
+
+- **Upload**: the shared queue takes `video/mp4`, `video/quicktime` and `video/webm` up to
+  **300 MB** (`MAX_VIDEO_BYTES`; photos stay at 40 MB) on the intake page's photo uploader
+  and the HQ composer (`UploadQueue` kind `photo` and `chat`). Both token routes size the
+  cap by the path's extension. Before upload `prepareFile` (`lib/ops/intake-upload.ts`)
+  grabs three poster frames with a `<video>` and a canvas (1 s in, the middle, the last
+  second; `frameTimes`), JPEG, long side 1600, and reads duration, display size and codec:
+  `lib/ops/video-meta.ts` walks the MP4/MOV boxes by header (the moov can sit after a
+  300 MB mdat) and applies the quarter-turn matrix of an upright iPhone clip. A browser
+  that cannot decode the file (HEVC outside Safari and Apple Chrome) still uploads it,
+  with container metadata and **no frames**. Frames go up beside the video as
+  `<video path>.frame-<n>.jpg` (`uploadFrames`).
+- **Records**: an intake asset or chat attachment with kind `video` carries `url`,
+  `posterUrl` (the middle frame unless set), `frames[{ url, time }]`, `duration`, `width`,
+  `height`, `codec`, `bytes`, and later `caption`, `happens` (one line on what happens)
+  and `heroVideo`. `readVideoFields` (`lib/ops/intake.ts`) validates them for
+  `POST .../assets` and `parseChatMessage`: frames must sit beside the video under the same
+  prefix. The intake page and the chat bubble show the poster with a play badge
+  (`VideoPoster.tsx`); the intake page edits caption, happens, service, before/after and
+  Hero video. Deleting an asset deletes its frames.
+- **Inbox**: a video owns its frames (`attachmentUrls`): frames are never inbox entries, an
+  unsent video picks its frames up from Blob, and filing copies and deletes them with it.
+  The 7-day cleanup is unchanged.
+- **Photo desk**: a video goes to the model as its three frames, one result per clip with
+  `happens`; heroScore is forced to 0 and it is never a logo. A video with no frames is left
+  uncaptioned. The chief sees all three frames in a small drop (each counts against the
+  30-image budget) and the poster in a batch.
+- **file_photos**: kind `video` exactly for a video attachment, never `heroCandidate`,
+  `happens` allowed; `all: true` files captioned videos as kind video and never picks one as
+  the hero. `heroVideo` (in file_photos, or `set_hero_video(engagementId, filename)` for one
+  already filed) only when Jacob says so; one per client, a new one clears the old.
+- **Dispatch**: `payloadAssets` sends videos in ASSETS with kind `video`, `posterUrl`,
+  `posterTime`, `frames`, `duration`, `width`, `height`, `codec`, `bytes`, `happens` and
+  `heroVideo` (`heroCandidate` is always false for a video). AA-Template's aa-build
+  downloads and transcodes them (`scripts/transcode-videos.mjs`): hero 15 s / 8 MB silent,
+  gallery 60 s / 25 MB with audio, a poster from `posterTime`; verify check 27 gates them.
+

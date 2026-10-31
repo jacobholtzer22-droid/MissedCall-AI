@@ -37,7 +37,7 @@ import { repoFullName, repositoryDispatch } from '@/lib/ops/github'
 import { emit } from '@/lib/ops/hq/events'
 import { CALLBACK_URL, DISPATCH_EVENT, RUN_KINDS, loadWebsiteEngagement, type RunKind } from './shared'
 import { buildExtras, type BuildStyle, type RecentStyle } from '@/lib/ops/build-style'
-import { readIntake } from '@/lib/ops/intake'
+import { readIntake, type payloadAssets } from '@/lib/ops/intake'
 import { confirmWorkflowReady, watchForWorkflowRun } from './workflow-run'
 
 /** The last five finished site builds with a recorded style, across all clients, newest first. */
@@ -81,7 +81,8 @@ export async function dispatchRun(
     instructions?: string
     dry: boolean
     jobId?: string | null
-    assets?: { url: string; kind: string; filename: string; caption: string | null; heroCandidate: boolean; service: string | null; beforeAfter: string | null; attribution?: string | null }[]
+    /** lib/ops/intake payloadAssets: a video (kind video) also carries posterUrl, posterTime, frames, duration, width, height, codec, bytes, happens and heroVideo. */
+    assets?: ReturnType<typeof payloadAssets>
     oldSite?: { url: string; use: string; notes: string | null } | null
     withStock?: boolean
     /** A tracking install (site_update): the block it writes, kept on the run so the callback can set trackingInstalled. */
@@ -167,7 +168,7 @@ export async function dispatchRun(
         repo: out.repo,
         ...(brief && input.kind === 'site_build' ? { brief } : {}),
         ...(instructions && input.kind === 'site_update' ? { instructions } : {}),
-        ...(withFiles ? { assetCount: assets.length, photoCount: assets.filter((a) => a.kind === 'photo').length, assets, oldSite, withStock: Boolean(input.withStock) } : {}),
+        ...(withFiles ? { assetCount: assets.length, photoCount: assets.filter((a) => a.kind === 'photo').length, videoCount: assets.filter((a) => a.kind === 'video').length, assets, oldSite, withStock: Boolean(input.withStock) } : {}),
         ...(out.assetsInBriefOnly ? { assetsInBriefOnly: true } : {}),
         ...(input.tracking ? { tracking: input.tracking } : {}),
         ...(extras ? { extras } : {}),

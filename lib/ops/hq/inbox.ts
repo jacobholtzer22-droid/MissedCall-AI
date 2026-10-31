@@ -61,11 +61,18 @@ export async function updateAttachments(messageId: string, change: (list: ChatAt
 export async function adoptUnsent(entries: InboxEntry[]): Promise<InboxEntry[]> {
   const unsent = entries.filter((e) => !e.messageId)
   if (!unsent.length) return entries
-  const attachments: ChatAttachment[] = unsent.map((e) => ({ url: e.url, filename: e.filename, width: e.width, height: e.height, bytes: e.bytes }))
+  const attachments: ChatAttachment[] = unsent.map((e) => ({
+    url: e.url,
+    filename: e.filename,
+    width: e.width,
+    height: e.height,
+    bytes: e.bytes,
+    ...(e.kind === 'video' ? { kind: 'video' as const, frames: e.frames ?? [], ...(e.posterUrl ? { posterUrl: e.posterUrl } : {}) } : {}),
+  }))
   const message = await db.opsMessage.create({
     data: {
       role: 'jacob',
-      body: `(${unsent.length} photo${unsent.length === 1 ? '' : 's'} uploaded here but never sent)`,
+      body: `(${unsent.length} file${unsent.length === 1 ? '' : 's'} uploaded here but never sent)`,
       createdAt: new Date(unsent[0].uploadedAt),
       attachments: attachments as unknown as Prisma.InputJsonValue,
     },

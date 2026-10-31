@@ -5,8 +5,10 @@
 // a list of url and filename it can cite in file_photos. A batch (more than
 // BATCH_THRESHOLD): a count and the first BATCH_THRESHOLD unfiled photos only;
 // the rest are read as text through list_inbox and filed with all: true.
+// A video is shown as its frames (all three in a small drop, the poster in a
+// batch), never as the clip; each frame counts against the image budget.
 
-import { BATCH_THRESHOLD, INBOX_MAX_AGE_DAYS, isBatch, isCaptioned, type ChatAttachment } from '@/lib/ops/photo-filing'
+import { BATCH_THRESHOLD, INBOX_MAX_AGE_DAYS, isBatch, isCaptioned, isVideoAttachment, type ChatAttachment } from '@/lib/ops/photo-filing'
 import type { Block } from './anthropic'
 
 /**
@@ -24,7 +26,16 @@ export function withPhotos(body: string, list: ChatAttachment[], sentAt: Date, a
     const size = a.width && a.height ? `, ${a.width}x${a.height}` : ''
     if (a.filedTo) lines.push(`${n + 1}. ${a.filename}: already filed (client ${a.filedTo})`)
     else if (!fresh) lines.push(`${n + 1}. ${a.filename}: older than ${INBOX_MAX_AGE_DAYS} days, removed unfiled`)
-    else {
+    else if (isVideoAttachment(a)) {
+      const frames = (a.frames ?? []).filter(() => allow())
+      const len = a.duration ? `, ${Math.round(a.duration)}s` : ''
+      const seen = frames.length ? `, ${frames.length} frame${frames.length === 1 ? '' : 's'} shown` : a.frames?.length ? ' (not shown)' : ' (no frames: the uploading browser could not play it; ask Jacob what it shows)'
+      lines.push(`${n + 1}. VIDEO url=${a.url} filename=${a.filename}${size}${len}${seen}`)
+      if (frames.length) {
+        blocks.push({ type: 'text', text: `Video ${n + 1}: ${a.filename}, frames at ${frames.map((f) => `${f.time}s`).join(', ')}` })
+        for (const f of frames) blocks.push({ type: 'image', source: { type: 'url', url: f.url } })
+      }
+    } else {
       const shown = !/\.svg$/i.test(a.filename) && allow()
       lines.push(`${n + 1}. url=${a.url} filename=${a.filename}${size}${shown ? '' : ' (not shown)'}`)
       if (shown) blocks.push({ type: 'text', text: `Photo ${n + 1}: ${a.filename}` }, { type: 'image', source: { type: 'url', url: a.url } })
@@ -43,7 +54,11 @@ function batchView(body: string, list: ChatAttachment[], fresh: boolean, allow: 
   const unfiled = list.filter((a) => !a.filedTo)
   const head = `${body || '(no text)'}\n\n[${list.length} photos attached to this message: ${filed} filed, ${unfiled.length} unfiled, ${unfiled.filter(isCaptioned).length} of them captioned by the Photo desk.`
   if (!fresh || !unfiled.length) return [{ type: 'text', text: `${head}${fresh ? '' : ` Older than ${INBOX_MAX_AGE_DAYS} days: unfiled ones were removed.`}]` }]
-  const shown = unfiled.filter((a) => !/\.svg$/i.test(a.filename)).slice(0, BATCH_THRESHOLD).filter(() => allow())
-  const blocks: Block[] = shown.flatMap((a, n) => [{ type: 'text', text: `Photo ${n + 1}: ${a.filename}` }, { type: 'image', source: { type: 'url', url: a.url } }])
+  const view = (a: ChatAttachment) => (isVideoAttachment(a) ? a.posterUrl : /\.svg$/i.test(a.filename) ? undefined : a.url)
+  const shown = unfiled.filter((a) => view(a)).slice(0, BATCH_THRESHOLD).filter(() => allow())
+  const blocks: Block[] = shown.flatMap((a, n) => [
+    { type: 'text', text: isVideoAttachment(a) ? `Photo ${n + 1}: ${a.filename} (a video, its poster frame)` : `Photo ${n + 1}: ${a.filename}` },
+    { type: 'image', source: { type: 'url', url: view(a)! } },
+  ])
   return [{ type: 'text', text: `${head} The first ${shown.length} are shown. Use list_inbox for the rest and file_photos all: true to file them.]` }, ...blocks]
 }

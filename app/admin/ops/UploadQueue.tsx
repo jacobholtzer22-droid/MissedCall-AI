@@ -1,18 +1,19 @@
 'use client'
 
 // The upload queue shared by the intake page (./intake/[engagementId]/Uploader)
-// and the HQ composer (./HqChat). Each file is checked (type, 40 MB), prepared
-// in the browser (HEIC to JPEG, long side down to 2400 px;
-// lib/ops/intake-upload.ts), then handed to the caller's send(), which uploads
-// it straight to Vercel Blob and does whatever comes next. UPLOAD_CONCURRENCY
+// and the HQ composer (./HqChat). Each file is checked (type; 40 MB, or 300 MB
+// for a video), prepared in the browser (HEIC to JPEG, long side down to
+// 2400 px; a video's three poster frames and probe; lib/ops/intake-upload.ts),
+// then handed to the caller's send(), which uploads it straight to Vercel Blob
+// (a video's frames too, with uploadFrames) and does whatever comes next. UPLOAD_CONCURRENCY
 // run at once. Every file gets a row that ends in Saved or a red reason, with
 // Retry; nothing fails silently.
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { upload } from '@vercel/blob/client'
 import type { PutBlobResult } from '@vercel/blob'
-import { Check, ImageIcon, RotateCw } from 'lucide-react'
-import { fileType, formatBytes, isHeic, rejectReason, type UploadKind } from '@/lib/ops/intake'
+import { Check, Film, ImageIcon, RotateCw } from 'lucide-react'
+import { fileType, formatBytes, framePathFor, isHeic, isVideoType, rejectReason, type UploadKind, type VideoFrame } from '@/lib/ops/intake'
 import { prepareFile, type Prepared } from '@/lib/ops/intake-upload'
 
 type Status = 'waiting' | 'preparing' | 'uploading' | 'saving' | 'saved' | 'failed'
@@ -67,6 +68,24 @@ export async function uploadToBlob(
 }
 
 /**
+ * A video's poster frames, each to <video path>.frame-<n>.jpg next to it, in
+ * order. None when the browser could not play the video.
+ */
+export async function uploadFrames(videoPathname: string, prepared: Prepared, opts: { handleUploadUrl: string; clientPayload?: string }): Promise<VideoFrame[]> {
+  const out: VideoFrame[] = []
+  const frames = prepared.video?.frames ?? []
+  for (let n = 0; n < frames.length; n++) {
+    const file = { file: frames[n].blob, filename: `frame-${n + 1}.jpg`, contentType: 'image/jpeg', width: null, height: null }
+    const blob = await uploadToBlob(framePathFor(videoPathname, n + 1), file, opts, () => undefined)
+    out.push({ url: blob.url, time: frames[n].time })
+  }
+  return out
+}
+
+/** The poster: the middle frame of three, else the first. */
+export const posterOf = (frames: VideoFrame[]) => frames[Math.min(1, frames.length - 1)]?.url
+
+/**
  * send() uploads and finishes one prepared file. It calls saving() once the
  * bytes are in Blob and it moves on to registering them (if it does).
  */
@@ -86,6 +105,7 @@ export function useUploadQueue<T>({ kind, limit, send }: { kind: UploadKind; lim
       try {
         const prepared = await prepareFile(row.file)
         if (!row.thumb && prepared.contentType.startsWith('image/')) update(row.id, { thumb: URL.createObjectURL(prepared.file) })
+        if (!row.thumb && prepared.video?.frames.length) update(row.id, { thumb: URL.createObjectURL(prepared.video.frames[Math.min(1, prepared.video.frames.length - 1)].blob) })
         update(row.id, { status: 'uploading', progress: 0 })
         const done = await send(prepared, {
           progress: (progress) => update(row.id, { progress }),
@@ -200,6 +220,8 @@ function QueueRowView<T>({ row: r, onRetry }: { row: QueueRow<T>; onRetry: () =>
         {r.thumb ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img src={r.thumb} alt="" className="h-full w-full object-cover" />
+        ) : isVideoType(fileType(r.name, r.file.type)) ? (
+          <Film className="h-5 w-5 text-gray-600" />
         ) : (
           <ImageIcon className="h-5 w-5 text-gray-600" />
         )}

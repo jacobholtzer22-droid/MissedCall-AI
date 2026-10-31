@@ -57,7 +57,7 @@ test('planFiling refuses photos not unfiled in this chat, missing captions and b
   assert.throws(() => plan([{ ...photo('IMG_1.jpg'), url: `${HOST}/ops-inbox/elsewhere.jpg` }]), /not an unfiled photo from this chat/)
   assert.throws(() => plan([photo('IMG_1.jpg')], [att('IMG_1.jpg', { filedTo: 'e9' })]), /not an unfiled photo/)
   assert.throws(() => plan([photo('IMG_1.jpg', { caption: '  ' })]), /caption is required/)
-  assert.throws(() => plan([photo('IMG_1.jpg', { kind: 'document' })]), /kind must be photo or logo/)
+  assert.throws(() => plan([photo('IMG_1.jpg', { kind: 'document' })]), /kind must be photo, logo or video/)
   assert.throws(() => plan([photo('IMG_1.jpg'), photo('IMG_1.jpg')]), /listed twice/)
   assert.throws(() => plan([]), /non-empty list/)
 })
@@ -108,7 +108,7 @@ test('file_photos tool schema: required fields and enums', () => {
   assert.equal(s.properties.all.type, 'boolean')
   const item = s.properties.photos.items
   assert.deepEqual([...item.required], ['url', 'filename', 'caption', 'heroCandidate', 'kind'])
-  assert.deepEqual([...item.properties.kind.enum], ['photo', 'logo'])
+  assert.deepEqual([...item.properties.kind.enum], ['photo', 'logo', 'video'])
   assert.deepEqual([...item.properties.beforeAfter.enum], ['before', 'after'])
   assert.equal(s.properties.photos.maxItems, 20)
   assert.match(FILE_PHOTOS_TOOL.description, /never a town/)

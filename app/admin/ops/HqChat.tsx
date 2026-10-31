@@ -7,10 +7,12 @@
 // height it is given with fill, as on HQ). Enter sends, Shift+Enter is a new
 // line. The latest message is in view on load and whenever a new one arrives;
 // while pinned to the bottom, late growth (photos loading, the panel resizing)
-// keeps it there. Photos: drop them on the panel,
+// keeps it there. Photos and videos: drop them on the panel,
 // paste them, or the paperclip (the camera roll on a phone). They go through
-// the same upload queue as the intake page, straight to Blob under ops-inbox/,
-// and ride on the message as attachments; the chief files them on a client.
+// the same upload queue as the intake page, straight to Blob under ops-inbox/
+// (a video as is, up to 300 MB, with its three poster frames beside it), and
+// ride on the message as attachments; the chief files them on a client. A
+// video shows as its poster with a play badge.
 // Up to MAX_ATTACHMENTS (200) per message; a bigger drop is refused with the
 // reason. Send while uploads run queues the send for when they finish; rows
 // that failed stay in the list (Retry) for the next message.
@@ -19,8 +21,9 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { Check, ExternalLink, Paperclip, Send } from 'lucide-react'
 import { UPLOAD_CONCURRENCY } from '@/lib/ops/intake'
 import { filesFromDrop } from '@/lib/ops/intake-upload'
-import { MAX_ATTACHMENTS, inboxPath, type ChatAttachment } from '@/lib/ops/photo-filing'
-import { QueueList, QueueSummary, queueBtn, uploadToBlob, useUploadQueue, type Send as QueueSend } from './UploadQueue'
+import { MAX_ATTACHMENTS, inboxPath, isVideoAttachment, type ChatAttachment } from '@/lib/ops/photo-filing'
+import { QueueList, QueueSummary, posterOf, queueBtn, uploadFrames, uploadToBlob, useUploadQueue, type Send as QueueSend } from './UploadQueue'
+import { VideoPoster } from './VideoPoster'
 import { personaFor, PERSONAS } from '@/lib/ops/hq/personas'
 import { Avatar, Markdown, type FeedJob, type FeedMessage, type ReportSection } from './hqShared'
 
@@ -47,11 +50,27 @@ export function Chat({
   const [queued, setQueued] = useState(false)
   const picker = useRef<HTMLInputElement>(null)
   const uploadOne: QueueSend<ChatAttachment> = useCallback(async (prepared, { progress }) => {
-    const blob = await uploadToBlob(inboxPath(crypto.randomUUID(), prepared.filename), prepared, { handleUploadUrl: '/api/admin/ops/hq/attachments/token' }, progress)
-    return { result: { url: blob.url, filename: prepared.filename, width: prepared.width, height: prepared.height, bytes: prepared.file.size } }
+    const pathname = inboxPath(crypto.randomUUID(), prepared.filename)
+    const opts = { handleUploadUrl: '/api/admin/ops/hq/attachments/token' }
+    const blob = await uploadToBlob(pathname, prepared, opts, progress)
+    const base = { url: blob.url, filename: prepared.filename, width: prepared.width, height: prepared.height, bytes: prepared.file.size }
+    const v = prepared.video
+    if (!v) return { result: base }
+    const frames = await uploadFrames(pathname, prepared, opts)
+    const poster = posterOf(frames)
+    return {
+      result: {
+        ...base,
+        kind: 'video',
+        frames,
+        ...(poster ? { posterUrl: poster } : {}),
+        ...(v.duration ? { duration: v.duration } : {}),
+        ...(v.codec ? { codec: v.codec } : {}),
+      },
+    }
   }, [])
-  // kind logo: photos plus SVG, so a logo file can come along too.
-  const q = useUploadQueue({ kind: 'logo', limit: UPLOAD_CONCURRENCY, send: uploadOne })
+  // kind chat: photos, SVG (a logo file can come along) and videos.
+  const q = useUploadQueue({ kind: 'chat', limit: UPLOAD_CONCURRENCY, send: uploadOne })
   const savedRows = q.rows.filter((r) => r.status === 'saved' && r.result)
   const attachments = savedRows.map((r) => r.result!)
   const canSend = !sending && (Boolean(draft.trim()) || attachments.length > 0 || q.busy)
@@ -59,7 +78,7 @@ export function Chat({
     if (!files.length) return
     const waiting = q.rows.filter((r) => r.status !== 'failed').length
     if (waiting + files.length > MAX_ATTACHMENTS) {
-      setNotice(`${files.length} photos is more than one message takes (${MAX_ATTACHMENTS}${waiting ? `, ${waiting} already in this one` : ''}). Nothing was added: drop them in batches of ${MAX_ATTACHMENTS} or fewer.`)
+      setNotice(`${files.length} files is more than one message takes (${MAX_ATTACHMENTS}${waiting ? `, ${waiting} already in this one` : ''}). Nothing was added: drop them in batches of ${MAX_ATTACHMENTS} or fewer.`)
       return
     }
     setNotice(null)
@@ -222,7 +241,7 @@ export function Chat({
           ref={picker}
           type="file"
           multiple
-          accept="image/*,.heic,.heif,.svg"
+          accept="image/*,.heic,.heif,.svg,video/mp4,video/quicktime,video/webm,.mov,.mp4,.webm"
           className="sr-only"
           tabIndex={-1}
           aria-hidden
@@ -276,7 +295,7 @@ export function Chat({
   )
 }
 
-/** A message's photos: thumbnails that open the full image; a check once the chief filed one. */
+/** A message's photos and videos: thumbnails that open the full file (a video as its poster with a play badge); a check once the chief filed one. */
 const THUMBS_SHOWN = 12
 
 function Thumbs({ list }: { list: ChatAttachment[] }) {
@@ -287,11 +306,21 @@ function Thumbs({ list }: { list: ChatAttachment[] }) {
     <div className="space-y-1.5">
       {list.length > THUMBS_SHOWN && (
         <p className="text-xs text-gray-300 tabular-nums">
-          {list.length} photos{filed ? `, ${filed} filed` : ''}
+          {list.length} files{filed ? `, ${filed} filed` : ''}
         </p>
       )}
       <div className="flex flex-wrap gap-1.5" data-hq-thumbs>
-        {shown.map((a) => (
+        {shown.map((a) =>
+          isVideoAttachment(a) ? (
+            <div key={a.url} className="relative h-20 w-20">
+              <VideoPoster url={a.url} posterUrl={a.posterUrl} filename={a.filename} duration={a.duration} small className="h-20 w-20 rounded-md" />
+              {a.filedTo && (
+                <span className="pointer-events-none absolute bottom-1 right-1 inline-flex h-4 w-4 items-center justify-center rounded-full bg-emerald-500 text-gray-950">
+                  <Check className="h-3 w-3" />
+                </span>
+              )}
+            </div>
+          ) : (
           <a key={a.url} href={a.url} target="_blank" rel="noreferrer" title={a.filedTo ? `${a.filename} (filed)` : a.filename} className="relative isolate block h-20 w-20 overflow-hidden rounded-md bg-gray-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
@@ -311,7 +340,8 @@ function Thumbs({ list }: { list: ChatAttachment[] }) {
               </span>
             )}
           </a>
-        ))}
+          )
+        )}
         {list.length > THUMBS_SHOWN && (
           <button type="button" onClick={() => setAll((v) => !v)} className="h-20 min-w-[80px] px-2 rounded-md border border-gray-700 bg-gray-800 text-xs text-gray-200 hover:bg-gray-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500">
             {all ? 'Show fewer' : `+${list.length - THUMBS_SHOWN} more`}

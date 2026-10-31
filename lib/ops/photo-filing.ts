@@ -11,8 +11,13 @@
 // (duplicate-name suffixes, service matching, one hero per call), and for
 // batches: the inbox across messages, the photo run's captions on each entry,
 // and file_photos all:true built from those captions.
+// Videos ride the same path: an attachment with kind 'video' carries its
+// three poster frames (JPEGs beside it under ops-inbox/), duration, codec and
+// size; the photo run captions it from the frames, file_photos copies the
+// frames with it, and a video is never a hero candidate (heroVideo is set
+// only when Jacob says so).
 
-import { MAX_SOURCE_BYTES, safeBlobName, uniqueFilename, type Intake, type IntakeAsset } from './intake'
+import { MAX_SOURCE_BYTES, MAX_VIDEO_BYTES, isFramePath, isVideoName, readVideoFields, safeBlobName, uniqueFilename, type Intake, type IntakeAsset, type VideoFrame } from './intake'
 
 export const INBOX_PREFIX = 'ops-inbox/'
 /** Unfiled inbox blobs older than this are removed by the ops sync. */
@@ -33,7 +38,17 @@ export type ChatAttachment = {
   bytes: number
   /** The engagement it was filed onto; set by file_photos. */
   filedTo?: string
+  /** Set for a video; left out for a photo (every older entry). */
+  kind?: 'video'
+  posterUrl?: string
+  frames?: VideoFrame[]
+  duration?: number
+  codec?: string
 } & Partial<PhotoCaption>
+
+export const isVideoAttachment = (a: Pick<ChatAttachment, 'kind'>) => a.kind === 'video'
+/** Every inbox blob an attachment owns: the file, then a video's frames. */
+export const attachmentUrls = (a: Pick<ChatAttachment, 'url' | 'frames'>) => [a.url, ...(a.frames ?? []).map((f) => f.url)]
 
 /** What the photo run writes onto an inbox entry. */
 export type PhotoCaption = {
@@ -47,6 +62,8 @@ export type PhotoCaption = {
   isLogo: boolean
   /** A face or a licence plate: never the hero, never a service image. */
   hasFaceOrPlate: boolean
+  /** Videos: one line on what happens in the clip ("Camera pans along the finished patio lights at dusk"). */
+  happens?: string | null
   captionedAt: string
 }
 
@@ -97,17 +114,38 @@ export function parseChatMessage(raw: Record<string, unknown>): { text: string; 
   const attachments = list.map((a, n): ChatAttachment => {
     if (!a || typeof a !== 'object' || Array.isArray(a)) throw new InvalidAttachments(`attachments[${n}] must be an object`)
     const o = a as Record<string, unknown>
-    const extra = Object.keys(o).filter((k) => !['url', 'filename', 'width', 'height', 'bytes'].includes(k))
+    const extra = Object.keys(o).filter((k) => !['url', 'filename', 'width', 'height', 'bytes', 'kind', 'frames', 'posterUrl', 'duration', 'codec'].includes(k))
     if (extra.length) throw new InvalidAttachments(`attachments[${n}] has unknown fields: ${extra.join(', ')}`)
     const url = typeof o.url === 'string' ? o.url : ''
-    if (!isInboxUrl(url)) throw new InvalidAttachments(`attachments[${n}].url is not an HQ inbox upload`)
+    if (!isInboxUrl(url) || isFramePath(url)) throw new InvalidAttachments(`attachments[${n}].url is not an HQ inbox upload`)
     if (seen.has(url)) throw new InvalidAttachments(`attachments[${n}] is a duplicate`)
     seen.add(url)
+    if (o.kind !== undefined && o.kind !== 'video') throw new InvalidAttachments(`attachments[${n}].kind must be video or left out`)
+    const video = o.kind === 'video'
+    if (video !== isVideoName(url)) throw new InvalidAttachments(video ? `attachments[${n}] is not an MP4, MOV or WebM file` : `attachments[${n}] is a video: send it with kind video`)
     const filename = typeof o.filename === 'string' ? o.filename.trim() : ''
     if (!filename || filename.length > 200) throw new InvalidAttachments(`attachments[${n}].filename is required (200 characters at most)`)
     const bytes = o.bytes
-    if (typeof bytes !== 'number' || !Number.isInteger(bytes) || bytes < 1 || bytes > MAX_SOURCE_BYTES) throw new InvalidAttachments(`attachments[${n}].bytes must be the file size`)
-    return { url, filename, width: pixels(o.width, 'width', n), height: pixels(o.height, 'height', n), bytes }
+    if (typeof bytes !== 'number' || !Number.isInteger(bytes) || bytes < 1 || bytes > (video ? MAX_VIDEO_BYTES : MAX_SOURCE_BYTES)) throw new InvalidAttachments(`attachments[${n}].bytes must be the file size`)
+    const base = { url, filename, width: pixels(o.width, 'width', n), height: pixels(o.height, 'height', n), bytes }
+    if (!video) {
+      if (['frames', 'posterUrl', 'duration', 'codec'].some((k) => o[k] !== undefined)) throw new InvalidAttachments(`attachments[${n}]: frames, posterUrl, duration and codec are for videos`)
+      return base
+    }
+    const fields = readVideoFields(
+      o,
+      url,
+      isInboxUrl,
+      (m) => {
+        throw new InvalidAttachments(m)
+      },
+      `attachments[${n}].`
+    )
+    for (const f of fields.frames) {
+      if (seen.has(f.url)) throw new InvalidAttachments(`attachments[${n}] repeats a frame`)
+      seen.add(f.url)
+    }
+    return { ...base, kind: 'video', frames: fields.frames, ...(fields.posterUrl ? { posterUrl: fields.posterUrl } : {}), ...(fields.duration ? { duration: fields.duration } : {}), ...(fields.codec ? { codec: fields.codec } : {}) }
   })
   if (!text && attachments.length === 0) throw new InvalidAttachments('body or attachments is required')
   return { text, attachments }
@@ -118,7 +156,7 @@ export function parseChatMessage(raw: Record<string, unknown>): { text: string; 
 export const FILE_PHOTOS_TOOL = {
   name: 'file_photos',
   description:
-    "File photos Jacob dropped in this chat onto one client's intake, the way the intake page does by hand: each is copied to the client's files and added to intake.assets with your caption. Only for a client that exists (engagementId from get_board) and only after Jacob said whose they are. url is the attachment's url exactly as listed in his message. caption: what is in the frame and which service it shows, from what you see; never a town, street, customer or job you were not told. service: one of the client's intake service names exactly, or leave it out when unsure. heroCandidate on at most one photo per call. beforeAfter only when the pair is obvious. kind logo for the business logo (it replaces any logo on file). Never writes or changes the brief. For a batch the photo run captioned (list_inbox shows them), pass all: true instead of photos: it files every unfiled captioned photo with the stored captions, maps each suggested service onto the client's services by name (unmatched stays blank), picks the single best hero (none when the client already has one; never a photo with a face or plate) and files the logo as kind logo. When the inbox holds drops for more than one client, scope it with messageIds.",
+    "File photos Jacob dropped in this chat onto one client's intake, the way the intake page does by hand: each is copied to the client's files and added to intake.assets with your caption. Only for a client that exists (engagementId from get_board) and only after Jacob said whose they are. url is the attachment's url exactly as listed in his message. caption: what is in the frame and which service it shows, from what you see; never a town, street, customer or job you were not told. service: one of the client's intake service names exactly, or leave it out when unsure. heroCandidate on at most one photo per call. beforeAfter only when the pair is obvious. kind logo for the business logo (it replaces any logo on file). kind video for a video attachment (and only for one): its frames come along; give it a caption and happens (one line on what happens in the clip); a video is never heroCandidate; heroVideo true on at most one video, and only when Jacob said that clip is the hero (it replaces any hero video on file). Never writes or changes the brief. For a batch the photo run captioned (list_inbox shows them), pass all: true instead of photos: it files every unfiled captioned photo with the stored captions, maps each suggested service onto the client's services by name (unmatched stays blank), picks the single best hero (none when the client already has one; never a photo with a face or plate; never a video) and files the logo as kind logo and videos as kind video (no hero video: set that only when Jacob says so). When the inbox holds drops for more than one client, scope it with messageIds.",
   input_schema: {
     type: 'object',
     properties: {
@@ -136,9 +174,11 @@ export const FILE_PHOTOS_TOOL = {
             filename: { type: 'string', description: 'The attachment filename from the chat.' },
             caption: { type: 'string', description: 'One short line: what the photo shows.' },
             service: { type: 'string', description: "One of the client's intake service names, exactly. Leave out when unsure." },
-            heroCandidate: { type: 'boolean', description: 'At most one per call.' },
+            heroCandidate: { type: 'boolean', description: 'At most one per call. Never on a video.' },
             beforeAfter: { type: 'string', enum: ['before', 'after'] },
-            kind: { type: 'string', enum: ['photo', 'logo'] },
+            kind: { type: 'string', enum: ['photo', 'logo', 'video'], description: 'video exactly when the attachment is a video.' },
+            happens: { type: 'string', description: 'Videos only: one line on what happens in the clip.' },
+            heroVideo: { type: 'boolean', description: 'Videos only, at most one per call: true only when Jacob said this clip is the site hero.' },
           },
           required: ['url', 'filename', 'caption', 'heroCandidate', 'kind'],
         },
@@ -152,7 +192,9 @@ export type PlannedFile = {
   source: ChatAttachment
   /** Target path in Blob (ops-intake/{engagementId}/{uuid}-{name}). */
   pathname: string
-  asset: Omit<IntakeAsset, 'url'>
+  /** A video's frames: each copied to <pathname>.frame-<n>.jpg. */
+  frames: { from: string; pathname: string; time: number }[]
+  asset: Omit<IntakeAsset, 'url' | 'frames' | 'posterUrl'>
 }
 
 /**
@@ -182,6 +224,7 @@ export function planFiling(opts: {
 
   if (photos.filter((p) => p?.heroCandidate === true).length > 1) throw new InvalidAttachments('heroCandidate on at most one photo per call')
   if (photos.filter((p) => p?.kind === 'logo').length > 1) throw new InvalidAttachments('at most one logo per call')
+  if (photos.filter((p) => p?.heroVideo === true).length > 1) throw new InvalidAttachments('heroVideo on at most one video per call')
 
   const replacingLogo = photos.some((p) => p?.kind === 'logo')
   const taken = (intake.assets ?? []).filter((a) => !(replacingLogo && a.kind === 'logo')).map((a) => a.filename)
@@ -194,8 +237,13 @@ export function planFiling(opts: {
     if (!source) throw new InvalidAttachments(`photos[${n}].url is not an unfiled photo from this chat`)
     if (seen.has(url)) throw new InvalidAttachments(`photos[${n}] is listed twice`)
     seen.add(url)
-    const kind = p.kind === 'logo' ? 'logo' : p.kind === 'photo' ? 'photo' : null
-    if (!kind) throw new InvalidAttachments(`photos[${n}].kind must be photo or logo`)
+    const kind = p.kind === 'logo' ? 'logo' : p.kind === 'photo' ? 'photo' : p.kind === 'video' ? 'video' : null
+    if (!kind) throw new InvalidAttachments(`photos[${n}].kind must be photo, logo or video`)
+    if ((kind === 'video') !== isVideoAttachment(source)) throw new InvalidAttachments(kind === 'video' ? `photos[${n}] is not a video` : `photos[${n}] is a video: kind must be video`)
+    if (kind === 'video' && p.heroCandidate === true) throw new InvalidAttachments(`photos[${n}]: a video is never heroCandidate (heroVideo, only when Jacob says so)`)
+    if (kind !== 'video' && (p.heroVideo === true || (typeof p.happens === 'string' && p.happens.trim()))) throw new InvalidAttachments(`photos[${n}]: heroVideo and happens are for videos`)
+    const happens = kind === 'video' && typeof p.happens === 'string' ? p.happens.trim() : ''
+    if (happens.length > 300) throw new InvalidAttachments(`photos[${n}].happens is longer than 300 characters`)
     const caption = typeof p.caption === 'string' ? p.caption.trim() : ''
     if (!caption) throw new InvalidAttachments(`photos[${n}].caption is required`)
     if (caption.length > 300) throw new InvalidAttachments(`photos[${n}].caption is longer than 300 characters`)
@@ -216,26 +264,42 @@ export function planFiling(opts: {
     const filename = uniqueFilename(source.filename, taken)
     taken.push(filename)
     const id = opts.uuid()
+    const pathname = `ops-intake/${engagementId}/${id}-${safeBlobName(source.filename)}`
+    const media = kind === 'photo' || kind === 'video'
     return {
       source,
-      pathname: `ops-intake/${engagementId}/${id}-${safeBlobName(source.filename)}`,
+      pathname,
+      frames: (source.frames ?? []).map((f, i) => ({ from: f.url, pathname: `${pathname}.frame-${i + 1}.jpg`, time: f.time })),
       asset: {
         id,
         filename,
         kind,
         caption,
         ...(kind === 'photo' && p.heroCandidate === true ? { heroCandidate: true } : {}),
-        ...(kind === 'photo' && service ? { service } : {}),
-        ...(kind === 'photo' && (p.beforeAfter === 'before' || p.beforeAfter === 'after') ? { beforeAfter: p.beforeAfter } : {}),
+        ...(media && service ? { service } : {}),
+        ...(media && (p.beforeAfter === 'before' || p.beforeAfter === 'after') ? { beforeAfter: p.beforeAfter } : {}),
         ...(source.width && source.height ? { width: source.width, height: source.height } : {}),
+        ...(kind === 'video'
+          ? {
+              ...(source.duration ? { duration: source.duration } : {}),
+              ...(source.codec ? { codec: source.codec } : {}),
+              bytes: source.bytes,
+              ...(happens ? { happens } : {}),
+              ...(p.heroVideo === true ? { heroVideo: true } : {}),
+            }
+          : {}),
         uploadedAt: now,
       },
     }
   })
 }
 
-/** "Filed 6 photos from chat" (the logo counts as one of them). */
-export const filedNote = (n: number) => `Filed ${n} photo${n === 1 ? '' : 's'} from chat`
+/** "Filed 6 photos from chat" (the logo counts as one of them); "Filed 4 photos and 1 video from chat". */
+export const filedNote = (n: number, videos = 0) => {
+  const photos = n - videos
+  const parts = [photos ? `${photos} photo${photos === 1 ? '' : 's'}` : '', videos ? `${videos} video${videos === 1 ? '' : 's'}` : ''].filter(Boolean)
+  return `Filed ${parts.join(' and ') || '0 photos'} from chat`
+}
 
 // ── Batches: the inbox, captions, file_photos all:true ───────────────────────
 
@@ -246,7 +310,8 @@ export type InboxEntry = ChatAttachment & { messageId: string | null; uploadedAt
  * Every unfiled photo across Jacob's messages and the Blob inbox: entries on
  * messages (newest message wins a url that appears twice), then blobs no
  * message mentions at all (a drop whose send failed). Older than
- * INBOX_MAX_AGE_DAYS is left out: the sync deletes those blobs.
+ * INBOX_MAX_AGE_DAYS is left out: the sync deletes those blobs. A video's
+ * poster frames are part of their video, never entries of their own.
  */
 export function collectInbox(
   messages: { id: string; createdAt: Date; attachments: ChatAttachment[] }[],
@@ -259,16 +324,22 @@ export function collectInbox(
   const out: InboxEntry[] = []
   for (const m of [...messages].sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())) {
     for (const a of m.attachments) {
-      mentioned.add(a.url)
+      for (const u of attachmentUrls(a)) mentioned.add(u)
       if (a.filedTo || seen.has(a.url) || m.createdAt.getTime() < cutoff) continue
       seen.add(a.url)
       out.push({ ...a, messageId: m.id, uploadedAt: m.createdAt.toISOString() })
     }
   }
   const orphans = blobs
-    .filter((b) => !mentioned.has(b.url) && b.uploadedAt.getTime() >= cutoff && isInboxUrl(b.url))
+    .filter((b) => !mentioned.has(b.url) && b.uploadedAt.getTime() >= cutoff && isInboxUrl(b.url) && !isFramePath(b.pathname))
     .sort((a, b) => a.uploadedAt.getTime() - b.uploadedAt.getTime())
-    .map((b): InboxEntry => ({ url: b.url, filename: orphanFilename(b.pathname), width: null, height: null, bytes: b.size, messageId: null, uploadedAt: b.uploadedAt.toISOString() }))
+    .map((b): InboxEntry => {
+      const entry: InboxEntry = { url: b.url, filename: orphanFilename(b.pathname), width: null, height: null, bytes: b.size, messageId: null, uploadedAt: b.uploadedAt.toISOString() }
+      if (!isVideoName(b.pathname)) return entry
+      // An unsent video: its frames are the blobs beside it (their times were never sent).
+      const frames = blobs.filter((f) => f.pathname.startsWith(`${b.pathname}.frame-`) && isFramePath(f.pathname)).sort((x, y) => x.pathname.localeCompare(y.pathname))
+      return { ...entry, kind: 'video', frames: frames.map((f) => ({ url: f.url, time: 0 })), ...(frames.length ? { posterUrl: frames[Math.min(1, frames.length - 1)].url } : {}) }
+    })
   // Oldest drop first, in the order Jacob dropped them.
   const byDrop = out.sort((a, b) => a.uploadedAt.localeCompare(b.uploadedAt))
   return [...byDrop, ...orphans]
@@ -306,8 +377,14 @@ export function cleanCaption(raw: Record<string, unknown>, now: Date): PhotoCapt
     beforeAfter: raw.beforeAfter === 'before' || raw.beforeAfter === 'after' ? raw.beforeAfter : null,
     isLogo: raw.isLogo === true,
     hasFaceOrPlate: raw.hasFaceOrPlate === true,
+    ...(typeof raw.happens === 'string' && raw.happens.trim() ? { happens: oneLine(raw.happens) } : {}),
     captionedAt: now.toISOString(),
   }
+}
+
+/** One line of at most WORDS_MAX words, no em or en dashes. */
+function oneLine(s: string): string {
+  return trimCaption(s.replace(/\s*[\u2014\u2013]\s*/g, ', ').replace(/\s+/g, ' ').trim().split(' ').filter(Boolean))
 }
 
 /** Write captions onto a message's attachments by url (filed ones are left alone). */
@@ -379,14 +456,16 @@ export function matchService(suggested: string | null | undefined, services: str
 
 const ORDER = { after: 0, none: 1, before: 2 } as const
 
-/** One photo as file_photos lists it. */
-export type PhotoInput = { url: string; filename: string; caption: string; service?: string; heroCandidate: boolean; beforeAfter?: 'before' | 'after'; kind: 'photo' | 'logo' }
+/** One photo (or video) as file_photos lists it. */
+export type PhotoInput = { url: string; filename: string; caption: string; service?: string; heroCandidate: boolean; beforeAfter?: 'before' | 'after'; kind: 'photo' | 'logo' | 'video'; happens?: string }
 
 /**
  * file_photos all:true: the photos list planFiling takes, built from the stored
  * captions. After photos go before before photos; one hero for the client
- * (none when the intake already has one, never a face or plate); the first
- * logo is kind logo and any other logo is left in the inbox.
+ * (none when the intake already has one, never a face or plate, never a
+ * video); the first logo is kind logo and any other logo is left in the
+ * inbox; videos are kind video with what happens, and never the hero video
+ * (that waits for Jacob).
  */
 export function planAll(entries: InboxEntry[], intake: Intake): {
   photos: PhotoInput[]
@@ -397,12 +476,12 @@ export function planAll(entries: InboxEntry[], intake: Intake): {
 } {
   const services = (intake.services ?? []).map((s) => s.name).filter(Boolean)
   const captioned = entries.filter(isCaptioned)
-  const logos = captioned.filter((e) => e.isLogo)
+  const logos = captioned.filter((e) => e.isLogo && !isVideoAttachment(e))
   const logo = logos[0] ?? null
-  const photos = captioned.filter((e) => !e.isLogo)
+  const photos = captioned.filter((e) => !e.isLogo || isVideoAttachment(e))
   const hasHero = (intake.assets ?? []).some((a) => a.heroCandidate)
   let hero: InboxEntry | null = null
-  if (!hasHero) for (const e of photos) if (!e.hasFaceOrPlate && (e.heroScore ?? 0) > 0 && (!hero || (e.heroScore ?? 0) > (hero.heroScore ?? 0))) hero = e
+  if (!hasHero) for (const e of photos) if (!isVideoAttachment(e) && !e.hasFaceOrPlate && (e.heroScore ?? 0) > 0 && (!hero || (e.heroScore ?? 0) > (hero.heroScore ?? 0))) hero = e
   const unmatched: string[] = []
   const rank = (e: InboxEntry) => ORDER[e.beforeAfter ?? 'none']
   const ordered = photos.map((e, n) => ({ e, n })).sort((a, b) => rank(a.e) - rank(b.e) || a.n - b.n).map((x) => x.e)
@@ -416,7 +495,8 @@ export function planAll(entries: InboxEntry[], intake: Intake): {
       ...(service ? { service } : {}),
       heroCandidate: e === hero,
       ...(e.beforeAfter ? { beforeAfter: e.beforeAfter } : {}),
-      kind: 'photo',
+      kind: isVideoAttachment(e) ? 'video' : 'photo',
+      ...(isVideoAttachment(e) && e.happens ? { happens: e.happens } : {}),
     }
   })
   if (logo) out.push({ url: logo.url, filename: logo.filename, caption: logo.caption!, heroCandidate: false, kind: 'logo' })
@@ -447,8 +527,10 @@ export function inboxText(entries: InboxEntry[], limit: number, running: { done:
     ...(entries.length ? [`First ${Math.min(limit, entries.length)}:`] : []),
     ...entries.slice(0, limit).map((e, n) => {
       const size = e.width && e.height ? ` ${e.width}x${e.height}` : ''
-      if (!isCaptioned(e)) return `${n + 1}. ${e.filename}${size}: not captioned`
+      const video = isVideoAttachment(e) ? ` video${e.duration ? ` ${Math.round(e.duration)}s` : ''}${e.frames?.length ? '' : ' (no frames)'}` : ''
+      if (!isCaptioned(e)) return `${n + 1}. ${e.filename}${size}${video}: not captioned`
       const flags = [e.isLogo ? 'logo' : '', e.hasFaceOrPlate ? 'face or plate' : '', e.beforeAfter ?? ''].filter(Boolean).join(', ')
+      if (video) return `${n + 1}. ${e.filename}${size}${video}: "${e.caption}"${e.happens ? ` happens: "${e.happens}"` : ''} service: ${e.suggestedService ?? '-'}${flags ? `, ${flags}` : ''}`
       return `${n + 1}. ${e.filename}${size}: "${e.caption}" service: ${e.suggestedService ?? '-'}, hero ${e.heroScore ?? 0}/5${flags ? `, ${flags}` : ''}`
     }),
   ]
