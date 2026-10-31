@@ -104,7 +104,14 @@ async function website(engagementId: string) {
   }
 }
 
-/** The newest finished site_build / site_update / go_live run with a PR, and its links. */
+/**
+ * The newest succeeded site_build / site_update / go_live run with a PR, and its
+ * links. Skips a run whose gate failed (older rows were marked succeeded with a
+ * red gate) and one whose PR was closed without merging, so "merge <client>"
+ * never proposes a failed or abandoned PR. A merged PR is kept: merge then says
+ * it is already merged rather than reaching back to an older one. When GitHub
+ * cannot be asked, the run is kept.
+ */
 async function latestPr(engagementId: string, kinds: string[] = ['site_build', 'site_update']) {
   const runs = await db.agentRun.findMany({
     where: { engagementId, kind: { in: kinds }, status: 'succeeded' },
@@ -117,13 +124,17 @@ async function latestPr(engagementId: string, kinds: string[] = ['site_build', '
     const prUrl = typeof out.prUrl === 'string' ? out.prUrl : null
     const number = prUrl ? Number(/\/pull\/(\d+)/.exec(prUrl)?.[1]) : NaN
     if (!prUrl || !Number.isFinite(number)) continue
+    if (out.verifyPassed === false) continue
     const input = (r.input ?? {}) as Record<string, unknown>
+    const repo = typeof input.repo === 'string' ? input.repo : repoFullName(prUrl.replace(/\/pull\/\d+.*$/, ''))
+    const live = await getPullRequest(repo, number).catch(() => null)
+    if (live && live.state === 'closed' && !live.merged) continue
     return {
       runId: r.id,
       kind: r.kind,
       prUrl,
       prNumber: number,
-      repo: typeof input.repo === 'string' ? input.repo : repoFullName(prUrl.replace(/\/pull\/\d+.*$/, '')),
+      repo,
       branch: typeof out.branch === 'string' ? out.branch : null,
       previewUrl: typeof out.previewUrl === 'string' ? out.previewUrl : null,
       verifyPassed: out.verifyPassed ?? null,

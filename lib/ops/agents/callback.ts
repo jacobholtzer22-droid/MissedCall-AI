@@ -7,10 +7,15 @@
 // compare.
 //
 // Body (what the workflow sends): { run_id, kind, status, branch, pr_url,
-// verify_passed, failing_checks, report_excerpt, run_url?, failure_tail? }.
-// status is the GitHub job status: success | failure | cancelled.
-// failure_tail, on a failed run only, is the end of the agent's result text;
-// it is stored as output.failureTail and its last line goes into the error.
+// verify_passed, failing_checks, report_excerpt, run_url?, failure_tail?,
+// verify_tail? }. status is success | failure | cancelled; the workflow sends
+// failure for a red gate or a missing BUILD-REPORT.md even when the job itself
+// is green. A run is failed when status is not success OR verify_passed is
+// false, PR or not: a failed run keeps its PR and preview links but never moves
+// the website step to review. failure_tail (the end of the agent's result text)
+// and verify_tail (the end of the gate output, where a next build error is the
+// only readable trace) are stored on a failed run as output.failureTail and
+// output.verifyTail; the gate line and the agent's last line go into the error.
 // client_todo (CLIENT-TODO.md's "Questions for Jacob", 4k max) is stored as
 // output.clientTodo and written as an "Open questions from build" note on the
 // client. design_direction (the report's "Design direction" item, 2k max) is
@@ -34,7 +39,7 @@ import { listDeploymentsForBranch } from '@/lib/ops/vercel'
 import { emit } from '@/lib/ops/hq/events'
 import { mergeEvidence } from './shared'
 import { CALLBACK_NEVER_ARRIVED_REASON, NEVER_STARTED_REASON, lateCallbackMayFinish, runIdFromUrl } from './workflow-run'
-import { failureReason, readFailureTail } from '@/lib/ops/build-failure'
+import { failureReason, gateReason, readFailureTail } from '@/lib/ops/build-failure'
 import { parseDesignDirection, questionsFrom } from '@/lib/ops/build-style'
 
 /**
@@ -120,6 +125,7 @@ export type CallbackBody = {
   report_excerpt?: string | null
   run_url?: string | null
   failure_tail?: string | null
+  verify_tail?: string | null
   client_todo?: string | null
   design_direction?: string | null
 }
@@ -150,7 +156,8 @@ export async function applyCallback(raw: string): Promise<CallbackOutcome> {
     return { status: 200, body: { ok: true, runId: run.id, runStatus: run.status, duplicate: true } }
   }
 
-  const succeeded = SUCCESS.has(body.status.toLowerCase())
+  // A red gate is a failed run even when the job was green and a PR exists.
+  const succeeded = SUCCESS.has(body.status.toLowerCase()) && body.verify_passed !== false
   const status = succeeded ? 'succeeded' : 'failed'
   const output = {
     kind: body.kind,
@@ -162,10 +169,12 @@ export async function applyCallback(raw: string): Promise<CallbackOutcome> {
     reportExcerpt: body.report_excerpt ?? null,
     runUrl: body.run_url ?? null,
     failureTail: succeeded ? null : readFailureTail(body.failure_tail),
+    verifyTail: succeeded ? null : readFailureTail(body.verify_tail),
     clientTodo: typeof body.client_todo === 'string' && body.client_todo.trim() ? body.client_todo.trim().slice(0, 4000) : null,
     style: typeof body.design_direction === 'string' ? parseDesignDirection(body.design_direction.slice(0, 2000)) : null,
   }
   const reason = failureReason(output.failureTail)
+  const gate = gateReason(output.verifyPassed, output.failingChecks, output.verifyTail)
 
   // Claim the run: only one callback may finish it. A run the platform gave up
   // waiting on ("workflow never started", "callback never arrived") plainly
@@ -187,7 +196,7 @@ export async function applyCallback(raw: string): Promise<CallbackOutcome> {
       ...(body.run_url && !run.externalId ? { externalId: runIdFromUrl(body.run_url) ?? body.run_url } : {}),
       error: succeeded
         ? null
-        : `workflow ${body.status}${output.failingChecks.length ? `; failing: ${output.failingChecks.join(', ')}` : ''}${reason ? `; agent: ${reason}` : ''}`,
+        : [gate ?? `workflow ${body.status}${output.failingChecks.length ? `; failing: ${output.failingChecks.join(', ')}` : ''}`, reason ? `agent: ${reason}` : null].filter(Boolean).join('; '),
     },
   })
   if (claimed.count === 0) {
@@ -216,9 +225,10 @@ export async function applyCallback(raw: string): Promise<CallbackOutcome> {
     await mergeEvidence(website.id, { trackingInstalled: true, trackingInstalledAt: new Date().toISOString(), tracking: runInput.tracking, trackingPrUrl: output.prUrl })
   }
 
-  // The workflow could not open the PR (see openPrForRun): open it here.
+  // The workflow could not open the PR (see openPrForRun): open it here. A
+  // failed run gets its PR too: a red branch with its report is reviewable.
   const input = (run.input ?? {}) as { repo?: unknown }
-  if (succeeded && !output.prUrl && body.branch && typeof input.repo === 'string' && input.repo) {
+  if (!output.prUrl && body.branch && typeof input.repo === 'string' && input.repo) {
     const pr = await openPrForRun(input.repo, body.branch, body.kind, output.reportExcerpt)
     const next = { ...output, prUrl: pr.url, prOpenedBy: pr.url ? 'platform' : null, prError: pr.error }
     await db.agentRun.update({ where: { id: run.id }, data: { output: next as Prisma.InputJsonObject } })
@@ -268,9 +278,10 @@ export async function applyCallback(raw: string): Promise<CallbackOutcome> {
     stepSet = 'review'
   }
 
-  const verify = output.verifyPassed === null ? '' : output.verifyPassed ? ', gate passed' : `, gate FAILED (${output.failingChecks.join(', ') || 'see report'})`
+  const verify = succeeded ? (output.verifyPassed ? ', gate passed' : '') : gate ? `: ${gate}` : `: workflow ${body.status}`
+  const lastWords = !succeeded && reason ? ` Agent's last words: "${reason}".` : ''
   const mergeLine = merged ? ' PR merged; the site goes indexable on the next production deploy.' : mergeError ? ` PR not merged: ${mergeError}.` : ''
-  const line = `Agent ${body.kind} ${status}${verify}. ${output.prUrl ? `PR ${output.prUrl}` : 'No PR opened.'}${previewUrl ? ` Preview ${previewUrl}.` : ''}${mergeLine}${stepSet ? ' Website step → review.' : ''}`
+  const line = `Agent ${body.kind} ${status}${verify}.${lastWords} ${output.prUrl ? `PR ${output.prUrl}` : 'No PR opened.'}${previewUrl ? ` Preview ${previewUrl}.` : ''}${mergeLine}${stepSet ? ' Website step → review.' : ''}`
   await db.opsActivity.create({ data: { engagementId, kind: 'system', body: line } })
   await emit(run.id, succeeded && !mergeError ? 'status' : 'error', line, { ...output, previewUrl, mergedSha: merged, mergeError })
 

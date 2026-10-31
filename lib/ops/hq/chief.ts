@@ -1130,6 +1130,8 @@ async function jobRuns(jobId: string) {
             reportExcerpt: typeof out.reportExcerpt === 'string' ? out.reportExcerpt.slice(0, 1500) : null,
             // A failed run: the end of the agent's own result text, which says why.
             failureTail: typeof out.failureTail === 'string' ? out.failureTail : null,
+            // A red gate: the end of the gate output, where a next build error is the only trace.
+            verifyTail: typeof out.verifyTail === 'string' ? out.verifyTail : null,
             // What the build could not find out, for "Questions for you".
             clientTodo: typeof out.clientTodo === 'string' ? out.clientTodo : null,
             questions: questionsFrom(typeof out.clientTodo === 'string' ? out.clientTodo : null),
@@ -1181,7 +1183,11 @@ function fallbackSections(runs: Awaited<ReturnType<typeof jobRuns>>): ReportSect
       : null
     const did =
       r.status !== 'succeeded'
-        ? [`Run ${r.status}${r.error ? `: ${r.error}` : ''}`, ...(w?.failureTail ? [`Agent's last words:\n${w.failureTail}`] : [])]
+        ? [
+            `Run ${r.status}${r.error ? `: ${r.error}` : ''}`,
+            ...(w?.failureTail ? [`Agent's last words:\n${w.failureTail}`] : []),
+            ...(w?.verifyTail ? [`Gate output:\n${w.verifyTail}`] : []),
+          ]
         : webDid ?? (rep.done ?? []).map((d) => String(d.change ?? '')).filter(Boolean)
     return {
       agent: r.agent ?? 'ads',

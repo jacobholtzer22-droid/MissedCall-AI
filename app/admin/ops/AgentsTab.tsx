@@ -146,6 +146,9 @@ export function AgentsTab({ board, actions }: { board: OpsBoard; actions: OpsAct
                             {typeof r.output.failureTail === 'string' && r.output.failureTail && (
                               <RunDetail title="Why it failed (end of the agent's result)" text={r.output.failureTail} />
                             )}
+                            {typeof r.output.verifyTail === 'string' && r.output.verifyTail && (
+                              <RunDetail title="Gate output (end of npm run verify)" text={r.output.verifyTail} />
+                            )}
                             <RunDetail title="Input" text={describeInput(r.input)} />
                             <RunDetail
                               title={`Report${r.output.verifyPassed === false ? ' (gate failed)' : r.output.verifyPassed === true ? ' (gate passed)' : ''}`}

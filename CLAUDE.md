@@ -3095,13 +3095,40 @@ nothing; the UI always shows the dry result before a confirmed live call.
   `OPS_CALLBACK_SECRET` (`sha256=` prefix tolerated), compared in constant time before
   parsing; unset secret or bad signature ⇒ 401. Body `{ run_id, kind, status
   (success|failure|cancelled), branch, pr_url, verify_passed, failing_checks,
-  report_excerpt, run_url? }`. 400 bad body, 404 unknown run. Idempotent: a finished
+  report_excerpt, run_url?, failure_tail?, verify_tail? }`. 400 bad body, 404 unknown run. Idempotent: a finished
   run answers 200 `duplicate: true`; the update claims the run with
   `finishedAt IS NULL`. Sets status `succeeded`/`failed`, `output` (`prUrl`, `branch`,
-  `verifyPassed`, `failingChecks`, `reportExcerpt`, `runUrl`), `externalId` = run URL;
+  `verifyPassed`, `failingChecks`, `reportExcerpt`, `runUrl`, and on a failed run `failureTail`
+  and `verifyTail`), `externalId` = run URL;
   merges `previewBranch` into the website evidence; on success of `site_build` or
   `site_update` sets the website step to **`review`** (waiting on Jacob: "Review the
   agent's PR and preview", between `build` and `send_preview`). `go_live` leaves the step.
+  **A run is failed when `status` is not success OR `verify_passed` is false, even with a PR**
+  (Oct 31 2026, after AA-OneUnitedConstruction run 6 was recorded as succeeded with a red gate and a
+  stale report). The workflow's gate and PR steps are `continue-on-error`, so the job can be green
+  while the run failed; the workflow itself sends `status: failure` for a red gate or a missing
+  `BUILD-REPORT.md` (it deletes any committed BUILD-REPORT.md / CLIENT-TODO.md before the agent
+  runs, so a stale one is never sent). A failed run keeps its PR and preview links (the platform
+  opens the PR for it too) but never moves the step to review. `failure_tail` is the agent's last
+  words, `verify_tail` the last 40 lines of `npm run verify` (a `next build` error is only there;
+  the workflow then reports the failing check as `next build`). The run's error, the feed line and
+  the job report carry `gateReason()` (`lib/ops/build-failure.ts`: "gate red: next build failed on
+  Module not found: ...") plus the agent's last line. `latestPr()` in `lib/ops/hq/web.ts` skips
+  runs with `verifyPassed === false` and runs whose PR was closed unmerged, so "merge" and "review"
+  never pick a failed or abandoned PR.
+- **Where a `site_update` bases** (decided Oct 31 2026): the workflow, not the agent. When
+  `site.config.ts` on main does not carry the client's `businessSlug` (the first build is still an
+  open PR), the "Base for the update" step checks out the newest open `build/<slug>` or
+  `build/<slug>-<runid>` PR branch, merges main into it (skipped with a warning on conflict) and the
+  agent works there; the new PR (to main) carries the first build too, and its body says to close the
+  first build's PR. No open build PR: the run is refused before the agent starts (`refused.txt`,
+  reported as the failure). AGENT.md tells the agent never to check out, merge or rebase a branch itself.
+- **CI is one turn.** AGENT.md's CI section: nothing started in the background finishes after the
+  agent stops, so no subagents; `Task` and `Agent` are in `--disallowedTools`. With a caption on
+  every photo in ASSETS.json, the view-every-image rule relaxes (logo, hero candidates, chosen
+  service photos and 10 gallery photos are viewed; the rest get the caption as alt text), which is
+  what fits a 100+ photo swap in one run. An image original is never deleted before its references,
+  and `npm run images` is followed by `npm run build`.
   **When `pr_url` is null on a successful run, the callback opens the PR itself** (`openPrForRun`, GITHUB_OPS_TOKEN) from the pushed branch into the default branch, and records `prOpenedBy: 'platform'` or `prError` on the run's output. Repos default to "GitHub Actions may not create pull requests", so this is the normal path; the workflow's PR step is `continue-on-error`.
 - **Workflow requirements learned on the first live run (Oct 25 2026, Prestige):** the Claude step must pass `github_token: ${{ secrets.GITHUB_TOKEN }}` (otherwise claude-code-action tries an OIDC exchange and fails) and allow Bash (AGENT.md runs npm build/verify and commits); `git push` stays denied. Node comes from `.nvmrc` when present, else 20. `sync-workflow` only adds a missing workflow; it does not update an outdated copy, so a template workflow fix must be copied into already-synced repos by hand (Prestige is current as of AA-Template 5aee24d).
 - **Sync workflow** `POST /api/admin/ops/agents/sync-workflow` `{ mode: 'pr'|'direct', only?, dry }`
