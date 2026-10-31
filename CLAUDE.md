@@ -3055,6 +3055,18 @@ nothing; the UI always shows the dry result before a confirmed live call.
   `failed`. Both write an activity. Dry shows the payload with brief/instructions as
   character counts. `callback_url` is always
   `https://www.alignandacquire.com/api/ops/build-callback` (GitHub cannot reach dev).
+- **Payload files by URL** (`lib/ops/agents/dispatch-payload.ts`, Oct 31 2026). GitHub caps `client_payload` at
+  10 keys and about 64 KB; a 113-photo site_update once went out with no assets. The asset list, the GBP lookup
+  and the extras are written to public Vercel Blob as `ops-dispatch/{runId}/assets.json`, `gbp.json` and
+  `extras.json` (extras.json names gbp.json as `gbp_url`), and the payload's `assets` and `extras` keys carry
+  their URLs (150 photos ≈ 1 KB of payload). aa-build.yml reads a value that is not `https://` as base64 and
+  fetches only `*.public.blob.vercel-storage.com`. Only a repo whose aa-build.yml contains the line
+  `aa-payload-files: url` (`URL_MARKER`) gets URLs; an older one gets base64 inline as before. Either way a
+  payload over 60 KB (`PAYLOAD_LIMIT`) is **refused**, never sent without its assets. The four provisioned repos
+  were brought up with `scripts/ops-backfill-dispatch-workflow-2026-10.ts` (dry by default, `--live` writes;
+  updates only a repo whose workflow is exactly template main). ⚠️ `TEMPLATE_REF` (961cd0f) still pins the
+  template sync, and that ref's aa-build.yml predates URLs, so a template-sync PR on a backfilled repo would
+  propose the older workflow: do not merge that file from it.
 - **Workflow confirmation** (`lib/ops/agents/workflow-run.ts`, Oct 31 2026). Dispatch (dry and live) refuses
   with "repo has no aa-build workflow, run sync-workflow first" unless `aa-build.yml` reads back through the
   GitHub API, and refuses when the repo's Actions runs cannot be listed (`GITHUB_OPS_TOKEN` needs **Actions:

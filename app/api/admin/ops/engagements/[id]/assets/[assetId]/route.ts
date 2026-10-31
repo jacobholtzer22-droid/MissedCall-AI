@@ -1,9 +1,9 @@
 // ===========================================
 // /api/admin/ops/engagements/[id]/assets/[assetId]
-//   PATCH  — caption, heroCandidate, service, beforeAfter of one asset; for a
+//   PATCH:  caption, heroCandidate, service, beforeAfter of one asset; for a
 //            video also happens and heroVideo (one per client: setting it
 //            clears it on every other video), never heroCandidate
-//   DELETE — remove the entry and its blobs (a video's frames too)
+//   DELETE: remove the entry and its blobs (a video's frames too)
 // ===========================================
 
 import { NextResponse } from 'next/server'

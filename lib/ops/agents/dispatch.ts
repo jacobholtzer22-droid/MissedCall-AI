@@ -7,16 +7,18 @@
 //
 // client_payload, exactly what aa-build.yml reads:
 //   { kind, run_id, brief (base64), instructions (base64), business_slug, callback_url,
-//     assets (base64 JSON list), old_site (base64 JSON), with_stock, extras (base64 JSON) }
+//     assets (URL of assets.json), old_site (base64 JSON), with_stock, extras (URL of extras.json) }
 // extras (lib/ops/build-style.ts buildExtras) is { recent_styles, gbp, style }:
 // the last five site builds' direction, pairing and headingAccent (site_build
 // only, so the agent does not repeat them), the intake's GBP lookup (written
 // to GBP.json) and the client's sitesLiked and brandColors. '' when empty.
 // That is GitHub's limit of 10 top-level keys; nothing more fits.
-// assets and old_site come from the client's intake (lib/ops/intake.ts). GitHub
-// caps repository_dispatch (10 top-level keys, about 64 KB): when brief plus
-// assets would not fit, assets is sent empty and the run's input says the list
-// is in the brief only (its ## Assets section).
+// assets and old_site come from the client's intake (lib/ops/intake.ts).
+// GitHub caps repository_dispatch at about 64 KB, so the asset list, the GBP
+// lookup and the extras go to Vercel Blob under ops-dispatch/{runId}/ and the
+// payload carries their URLs (lib/ops/agents/dispatch-payload.ts). A repo whose
+// aa-build.yml predates URLs gets them base64 inline as before. Either way a
+// payload over PAYLOAD_LIMIT is refused, never sent without its assets.
 // business_slug is required by the workflow (it fails without one), so a run
 // needs a linked Business.
 //
@@ -31,6 +33,7 @@
 // live 204 the run's GitHub Actions run id is captured (lib/ops/agents/workflow-run.ts).
 
 import type { Prisma } from '@prisma/client'
+import { put } from '@vercel/blob'
 import { waitUntil } from '@vercel/functions'
 import { db } from '@/lib/db'
 import { repoFullName, repositoryDispatch } from '@/lib/ops/github'
@@ -38,7 +41,8 @@ import { emit } from '@/lib/ops/hq/events'
 import { CALLBACK_URL, DISPATCH_EVENT, RUN_KINDS, loadWebsiteEngagement, type RunKind } from './shared'
 import { buildExtras, type BuildStyle, type RecentStyle } from '@/lib/ops/build-style'
 import { readIntake, type payloadAssets } from '@/lib/ops/intake'
-import { confirmWorkflowReady, watchForWorkflowRun } from './workflow-run'
+import { DISPATCH_BLOB_PREFIX, blobFiles, choosePayloadMode, extrasBody, inlineFields, type DispatchFiles, type DispatchMode, type PayloadBase } from './dispatch-payload'
+import { watchForWorkflowRun, workflowStatus } from './workflow-run'
 
 /** The last five finished site builds with a recorded style, across all clients, newest first. */
 export async function recentStyles(): Promise<RecentStyle[]> {
@@ -59,8 +63,10 @@ export async function recentStyles(): Promise<RecentStyle[]> {
 }
 
 export type DispatchResult = {
-  /** The brief plus assets were too large: assets went in the brief only. */
-  assetsInBriefOnly?: boolean
+  /** url: assets and extras went by Blob URL; inline: base64 in the payload (a workflow that predates URLs). */
+  payloadMode?: DispatchMode
+  /** The payload's size in bytes of JSON, as sent (or as it would be). */
+  payloadBytes?: number
   ok: boolean
   dry: boolean
   blocked: string[]
@@ -72,6 +78,16 @@ export type DispatchResult = {
 }
 
 const b64 = (s: string) => Buffer.from(s, 'utf8').toString('base64')
+
+/** Writes assets.json, gbp.json and extras.json for a run; returns the URLs the payload carries. */
+async function putDispatchFiles(runId: string, files: DispatchFiles): Promise<{ assets: string; extras: string }> {
+  const b = blobFiles(files)
+  const write = async (name: string, body: string) =>
+    (await put(`${DISPATCH_BLOB_PREFIX}${runId}/${name}`, body, { access: 'public', contentType: 'application/json', addRandomSuffix: false, allowOverwrite: true })).url
+  const [assets, gbp] = await Promise.all([b.assets ? write('assets.json', b.assets) : '', b.gbp ? write('gbp.json', b.gbp) : ''])
+  const extras = b.extras ? await write('extras.json', extrasBody(b.extras, gbp || null)) : ''
+  return { assets, extras }
+}
 
 export async function dispatchRun(
   engagementId: string,
@@ -106,8 +122,8 @@ export async function dispatchRun(
   if (out.blocked.length > 0) return out
 
   // A dispatch to a repo without aa-build.yml is accepted (204) and runs nothing.
-  const noWorkflow = await confirmWorkflowReady(out.repo!)
-  if (noWorkflow) return { ...out, blocked: [noWorkflow] }
+  const workflow = await workflowStatus(out.repo!)
+  if (workflow.reason) return { ...out, blocked: [workflow.reason] }
 
   const withFiles = input.kind === 'site_build' || input.kind === 'site_update'
   const assets = withFiles ? input.assets ?? [] : []
@@ -122,34 +138,39 @@ export async function dispatchRun(
       style: intake.style ?? null,
     })
   }
-  const payloadFor = (runId: string, includeAssets = true) => ({
+  const files: DispatchFiles = { assets, extras }
+  const baseFor = (runId: string): PayloadBase => ({
     kind: input.kind,
     run_id: runId,
     brief: input.kind === 'site_build' ? b64(brief) : '',
     instructions: input.kind === 'site_update' ? b64(instructions) : '',
     business_slug: eng.businessSlug!,
     callback_url: CALLBACK_URL,
-    assets: includeAssets && assets.length ? b64(JSON.stringify(assets)) : '',
     old_site: oldSite ? b64(JSON.stringify(oldSite)) : '',
     with_stock: input.withStock ? 'true' : '',
-    extras: extras ? b64(JSON.stringify(extras)) : '',
   })
-  const PAYLOAD_LIMIT = 60_000
-  const fits = JSON.stringify(payloadFor('x'.repeat(25))).length <= PAYLOAD_LIMIT
-  out.assetsInBriefOnly = !fits && assets.length > 0
-  if (!fits && JSON.stringify(payloadFor('x'.repeat(25), false)).length > PAYLOAD_LIMIT) out.blocked.push('the brief is too large for a dispatch')
-  if (out.blocked.length > 0) return out
+  const choice = choosePayloadMode(baseFor('x'.repeat(25)), files, workflow.readsUrls)
+  out.payloadMode = choice.mode
+  out.payloadBytes = choice.bytes
+  if (choice.blocked) return { ...out, blocked: [choice.blocked] }
+  const b = blobFiles(files)
+  // What the payload shows in a preview and in the run's record: never the base64 itself.
+  const shown = (urls?: { assets: string; extras: string }) => ({
+    brief: input.kind === 'site_build' ? `(base64, ${brief.length} chars of brief)` : '',
+    instructions: input.kind === 'site_update' ? `(base64, ${instructions.length} chars of instructions)` : '',
+    old_site: oldSite ? `(base64 JSON: ${oldSite.url} ${oldSite.use})` : '',
+    assets:
+      choice.mode === 'url'
+        ? (urls?.assets ?? (b.assets ? `(URL of ${DISPATCH_BLOB_PREFIX}{runId}/assets.json, ${assets.length} files)` : ''))
+        : assets.length ? `(base64 JSON, ${assets.length} files)` : '',
+    extras:
+      choice.mode === 'url'
+        ? (urls?.extras ?? (b.extras ? `(URL of extras.json${b.gbp ? ', which names gbp.json' : ''})` : ''))
+        : extras ? '(base64 JSON)' : '',
+  })
 
   if (input.dry) {
-    const p = payloadFor('(new run id)', fits)
-    out.payload = {
-      ...p,
-      brief: p.brief ? `(base64, ${brief.length} chars of brief)` : '',
-      instructions: p.instructions ? `(base64, ${instructions.length} chars of instructions)` : '',
-      assets: p.assets ? `(base64 JSON, ${assets.length} files)` : '',
-      old_site: p.old_site ? `(base64 JSON: ${oldSite?.url} ${oldSite?.use})` : '',
-      extras: extras ?? '',
-    }
+    out.payload = { ...baseFor('(new run id)'), ...shown(), ...(choice.mode === 'url' ? {} : { extras: extras ?? '' }) }
     out.ok = true
     return out
   }
@@ -169,24 +190,19 @@ export async function dispatchRun(
         ...(brief && input.kind === 'site_build' ? { brief } : {}),
         ...(instructions && input.kind === 'site_update' ? { instructions } : {}),
         ...(withFiles ? { assetCount: assets.length, photoCount: assets.filter((a) => a.kind === 'photo').length, videoCount: assets.filter((a) => a.kind === 'video').length, assets, oldSite, withStock: Boolean(input.withStock) } : {}),
-        ...(out.assetsInBriefOnly ? { assetsInBriefOnly: true } : {}),
+        payloadMode: choice.mode,
         ...(input.tracking ? { tracking: input.tracking } : {}),
         ...(extras ? { extras } : {}),
       } as Prisma.InputJsonObject,
     },
   })
   out.runId = run.id
-  out.payload = {
-    ...payloadFor(run.id, fits),
-    brief: input.kind === 'site_build' ? '(base64 brief)' : '',
-    instructions: input.kind === 'site_update' ? '(base64 instructions)' : '',
-    assets: fits && assets.length ? `(base64 JSON, ${assets.length} files)` : '',
-    old_site: oldSite ? '(base64 JSON)' : '',
-    extras: extras ? '(base64 JSON)' : '',
-  }
+  out.payload = { ...baseFor(run.id), ...shown() }
 
   try {
-    const status = await repositoryDispatch(out.repo!, DISPATCH_EVENT, payloadFor(run.id, fits))
+    const fields = choice.mode === 'url' ? await putDispatchFiles(run.id, files) : inlineFields(files)
+    if (choice.mode === 'url') out.payload = { ...baseFor(run.id), ...shown(fields) }
+    const status = await repositoryDispatch(out.repo!, DISPATCH_EVENT, { ...baseFor(run.id), ...fields })
     if (status !== 204) throw new Error(`GitHub answered HTTP ${status}, expected 204`)
     const dispatchedAt = new Date()
     await db.$transaction([

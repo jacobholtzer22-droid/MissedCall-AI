@@ -228,7 +228,7 @@ export async function startWebTask(opts: {
       })
       if (d.blocked.length) throw new Error(`blocked: ${d.blocked.join('; ')}`)
       if (!d.ok) throw new Error(d.error ?? 'dispatch failed')
-      started.push(`${opts.kind} dispatched to ${d.repo} with ${photos} photo${photos === 1 ? '' : 's'}${d.assetsInBriefOnly ? ' (asset list in the brief only: payload too large)' : ''}`)
+      started.push(`${opts.kind} dispatched to ${d.repo} with ${photos} photo${photos === 1 ? '' : 's'}${d.payloadMode === 'inline' && photos > 0 ? ' (inline: this repo\'s workflow predates file URLs)' : ''}`)
       return { done: `${opts.kind} is running for ${w.name}. The report comes when the workflow calls back.`, started }
     }
 

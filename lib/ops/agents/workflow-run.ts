@@ -33,6 +33,7 @@ import { waitUntil } from '@vercel/functions'
 import { db } from '@/lib/db'
 import { getFileContent, listWorkflowFileRuns, type WorkflowRun } from '@/lib/ops/github'
 import { emit } from '@/lib/ops/hq/events'
+import { URL_MARKER } from './dispatch-payload'
 import { WORKFLOW_PATH } from './shared'
 
 export const NO_WORKFLOW_REASON = 'repo has no aa-build workflow, run sync-workflow first'
@@ -54,17 +55,24 @@ const errText = (err: unknown) => (err instanceof Error ? err.message : String(e
  * be listed, else why not.
  */
 export async function confirmWorkflowReady(repo: string): Promise<string | null> {
+  return (await workflowStatus(repo)).reason
+}
+
+/** confirmWorkflowReady's answer, plus whether the workflow fetches assets and extras by URL (URL_MARKER). */
+export async function workflowStatus(repo: string): Promise<{ reason: string | null; readsUrls: boolean }> {
+  let readsUrls = false
   try {
     const text = await getFileContent(repo, WORKFLOW_PATH)
-    if (!text?.trim()) return NO_WORKFLOW_REASON
+    if (!text?.trim()) return { reason: NO_WORKFLOW_REASON, readsUrls }
+    readsUrls = text.includes(URL_MARKER)
   } catch (err) {
-    return `${NO_WORKFLOW_REASON} (could not read it: ${errText(err)})`
+    return { reason: `${NO_WORKFLOW_REASON} (could not read it: ${errText(err)})`, readsUrls }
   }
   try {
     await listWorkflowFileRuns(repo, WORKFLOW_FILE, 'repository_dispatch', new Date())
-    return null
+    return { reason: null, readsUrls }
   } catch (err) {
-    return `${NO_ACTIONS_READ_REASON} (${errText(err)})`
+    return { reason: `${NO_ACTIONS_READ_REASON} (${errText(err)})`, readsUrls }
   }
 }
 

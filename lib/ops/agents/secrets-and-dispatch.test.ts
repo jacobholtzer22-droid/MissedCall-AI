@@ -3,7 +3,8 @@ import assert from 'node:assert/strict'
 import { PRODUCTION_ONLY_REASON, productionOnlyBlock, repoSecretsToSet } from './shared'
 import { resealPlan } from './reseal'
 import { readRunId, rejectionLabel, signBody, verifySignature } from './callback'
-import { NO_ACTIONS_READ_REASON, NO_WORKFLOW_REASON, confirmWorkflowReady } from './workflow-run'
+import { NO_ACTIONS_READ_REASON, NO_WORKFLOW_REASON, confirmWorkflowReady, workflowStatus } from './workflow-run'
+import { URL_MARKER } from './dispatch-payload'
 
 const prod = { NODE_ENV: 'production', VERCEL_ENV: 'production' }
 const keys = { ANTHROPIC_API_KEY_BUILDS: 'k', OPS_CALLBACK_SECRET: 's', GITHUB_OPS_TOKEN: 't' }
@@ -62,6 +63,18 @@ test('dispatch is allowed when aa-build.yml reads back and its runs can be liste
   await withFetch(
     (url) => (url.includes('/contents/') ? new Response('name: aa-build\n') : Response.json({ workflow_runs: [] })),
     async () => assert.equal(await confirmWorkflowReady('o/r'), null)
+  )
+})
+
+test('the workflow reads file URLs only when it carries the marker', async () => {
+  const runs = () => Response.json({ workflow_runs: [] })
+  await withFetch(
+    (url) => (url.includes('/contents/') ? new Response(`name: aa-build\n# ${URL_MARKER}\n`) : runs()),
+    async () => assert.deepEqual(await workflowStatus('o/r'), { reason: null, readsUrls: true })
+  )
+  await withFetch(
+    (url) => (url.includes('/contents/') ? new Response('name: aa-build\n') : runs()),
+    async () => assert.deepEqual(await workflowStatus('o/r'), { reason: null, readsUrls: false })
   )
 })
 
