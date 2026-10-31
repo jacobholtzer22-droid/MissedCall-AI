@@ -3129,6 +3129,10 @@ nothing; the UI always shows the dry result before a confirmed live call.
   service photos and 10 gallery photos are viewed; the rest get the caption as alt text), which is
   what fits a 100+ photo swap in one run. An image original is never deleted before its references,
   and `npm run images` is followed by `npm run build`.
+  Copied into AA-YualexPainting, AA-OneUnitedConstruction, KA-Lights and Anthony-Lonestar on their
+  default branch (AA-Template 9379175) by `scripts/ops-backfill-ci-one-turn-2026-10.ts`, since the pinned
+  template sync would not carry it. KA-Lights and Anthony-Lonestar lacked the AGENT.md start marker; the
+  script placed it before "Non-interactive (CI) mode", so later section syncs work there too.
   **When `pr_url` is null on a successful run, the callback opens the PR itself** (`openPrForRun`, GITHUB_OPS_TOKEN) from the pushed branch into the default branch, and records `prOpenedBy: 'platform'` or `prError` on the run's output. Repos default to "GitHub Actions may not create pull requests", so this is the normal path; the workflow's PR step is `continue-on-error`.
 - **Workflow requirements learned on the first live run (Oct 25 2026, Prestige):** the Claude step must pass `github_token: ${{ secrets.GITHUB_TOKEN }}` (otherwise claude-code-action tries an OIDC exchange and fails) and allow Bash (AGENT.md runs npm build/verify and commits); `git push` stays denied. Node comes from `.nvmrc` when present, else 20. `sync-workflow` only adds a missing workflow; it does not update an outdated copy, so a template workflow fix must be copied into already-synced repos by hand (Prestige is current as of AA-Template 5aee24d).
 - **Sync workflow** `POST /api/admin/ops/agents/sync-workflow` `{ mode: 'pr'|'direct', only?, dry }`
