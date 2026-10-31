@@ -1,7 +1,7 @@
 // ===========================================
 // /admin/ops intake: preparing files in the browser before upload
 // ===========================================
-// Browser only (canvas, createImageBitmap, heic2any). HEIC and HEIF become
+// Browser only (canvas, createImageBitmap, heic-to). HEIC and HEIF become
 // JPEG; any raster over UPLOAD_LONG_EDGE on its long side is shrunk and saved
 // as JPEG at UPLOAD_JPEG_QUALITY; everything else goes up untouched. The
 // original filename is kept with the extension changed. Also reads a drop,
@@ -32,14 +32,17 @@ async function toJpeg(img: ImageBitmap, width: number, height: number): Promise<
   return out
 }
 
-/** HEIC to a decodable image: Safari reads HEIC itself, other browsers go through heic2any (loaded only when needed). */
+/**
+ * HEIC to a decodable image: Safari reads HEIC itself; other browsers go
+ * through heic-to (a current libheif, loaded only when needed). heic2any was
+ * dropped: its libheif cannot read iOS 18 photos (iPhone 16, HDR gain maps).
+ */
 async function decodeHeic(file: File): Promise<ImageBitmap> {
   try {
     return await decode(file)
   } catch {
-    const heic2any = (await import('heic2any')).default
-    const out = await heic2any({ blob: file, toType: 'image/jpeg', quality: 0.95 })
-    return decode(Array.isArray(out) ? out[0] : out)
+    const { heicTo } = await import('heic-to')
+    return heicTo({ blob: file, type: 'bitmap', options: { imageOrientation: 'from-image' } })
   }
 }
 

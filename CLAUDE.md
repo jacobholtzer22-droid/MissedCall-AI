@@ -2836,7 +2836,8 @@ bearer or the admin, `?dry=1` writes nothing) and `POST /api/admin/ops/sync`
 engagement on exactly one phone/email match, otherwise create; two or more is
 reported as an ambiguity and nothing happens), deliverables for each
 engagement's services, Stripe, checks, status derivation. It writes only
-`Engagement`, `Deliverable` and `OpsCheck`.
+`Engagement`, `Deliverable` and `OpsCheck`, and deletes unfiled HQ chat photos
+(Blob `ops-inbox/`) older than 7 days (`cleanInbox`, `lib/ops/photo-filing-server.ts`).
 
 - **Sync-owned Engagement fields** (`SYNC_OWNED_FIELDS`), the only ones it changes
   on an existing row: `businessId` (link only, never unlink), `stripeCustomerId`,
@@ -3257,7 +3258,7 @@ after a send, Push, Reject or Stop.
 
 | Route | What it does |
 |---|---|
-| `POST /api/admin/ops/hq/message` | `{ body }` → saves the message, starts a chief run, returns `{ messageId, runId }` at once; the run continues under `waitUntil` (`maxDuration` 800). |
+| `POST /api/admin/ops/hq/message` | `{ body?, attachments? }` (`parseChatMessage`; one of the two required) → saves the message, starts a chief run, returns `{ messageId, runId }` at once; the run continues under `waitUntil` (`maxDuration` 800). |
 | `GET /api/admin/ops/hq/feed?since=` | New messages and events since `since` (events max 200; without `since`, the last 50 / 200), active runs plus runs finished in the last 30 min with their latest event, `lastRuns` (each HQ agent's most recent run, any age), approvals pending or decided in the last 30 min, the last 20 jobs with parsed reports, and `cursor` for the next poll. |
 | `POST /api/admin/ops/hq/approvals/[id]` | `{ decision }` → `decideApproval()`; an approved ads_change starts the apply run under `waitUntil` and answers `{ applyRunId }`. |
 | `GET /api/admin/ops/hq/jobs?engagementId=&before=&limit=` | Job history: jobs newest first with their runs and approvals, `nextBefore` for the next page. With `engagementId`, jobs whose `engagementIds` or runs include that client. No screen uses it since the Timeline (below); kept for scripts. |
@@ -3346,4 +3347,41 @@ order; "what did I approve" from `get_timeline`.
   hidden; try the same change in the Ads UI. That is what CM Home Services'
   (2035901601) AD_CALL conversion action hit on Oct 27; the raw error was already
   logged with the event.
+
+### Client photos: the intake page and the HQ chat (Oct 30 2026)
+
+Two ways in, one pipeline. Every file goes from the browser straight to Vercel Blob
+(`@vercel/blob/client` `upload()` with a token route); no file passes through a
+function body.
+
+- **Shared queue** (`app/admin/ops/UploadQueue.tsx`): `useUploadQueue` + `QueueList`.
+  Checks type and the 40 MB cap (`rejectReason`, `lib/ops/intake.ts`), prepares in
+  the browser (`lib/ops/intake-upload.ts`: HEIC/HEIF to JPEG via `heic-to`, any
+  raster over 2400 px shrunk to JPEG 0.85, filename kept with the new extension),
+  3 uploads at a time, a row per file ending in Saved or a red reason with Retry.
+  **Use `heic-to`, not `heic2any`:** heic2any's libheif cannot read iOS 18 photos
+  (iPhone 16, `tmap` HDR gain map brand); it failed on a real one.
+- **Intake page** (`/admin/ops/intake/[id]`, `Uploader.tsx`): token
+  `POST .../engagements/[id]/assets/token` (path `ops-intake/{id}/{uuid}-{name}`),
+  then `POST .../assets` writes the record only after `head()` confirms the blob,
+  with width and height; a filename already used by the client gets ` (2)`.
+- **HQ chat** (`HqChat.tsx`): drop on the panel, paste, or the paperclip. Token
+  `POST /api/admin/ops/hq/attachments/token` (path `ops-inbox/{uuid}-{name}`). The
+  message carries `attachments: [{ url, filename, width, height, bytes }]` on the new
+  nullable `OpsMessage.attachments` (`scripts/sql/2026-10-30_add_opsMessage_attachments.sql`,
+  applied to production Oct 30 2026); text is optional. Thumbnails render in the
+  bubble, with a check once filed.
+- **The chief sees them**: `chatHistory` turns a message's unfiled attachments
+  (under 7 days old, not SVG, 30 newest across the history) into image blocks
+  (`source: { type: 'url' }`, the public Blob URL) plus a list of url and filename.
+  Prompt: know whose they are or ask "Who are these for?" and wait, never guess or
+  choose between two clients, caption only what is in the frame, never touch the brief.
+- **`file_photos(engagementId, photos[])`** (`lib/ops/photo-filing.ts` rules +
+  `photo-filing-server.ts`): only unfiled photos from this chat; service must match one
+  of the client's intake services (case-insensitive, stored as written there) or be
+  left out; one hero per call; one logo per call (it replaces the logo on file). Copies
+  each blob to `ops-intake/{id}/` with `copy()`, appends to `intake.assets` under the
+  intake row lock (suffixes recomputed there), marks the attachments `filedTo`, deletes
+  the inbox blobs, writes one OpsActivity note "Filed N photos from chat".
+- Unfiled inbox blobs older than 7 days are deleted by the ops sync.
 

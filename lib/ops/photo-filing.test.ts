@@ -110,5 +110,5 @@ test('file_photos tool schema: required fields and enums', () => {
   assert.equal(s.properties.photos.maxItems, 20)
   assert.match(FILE_PHOTOS_TOOL.description, /never a town/)
   assert.match(FILE_PHOTOS_TOOL.description, /Never writes or changes the brief/)
-  assert.doesNotMatch(JSON.stringify(FILE_PHOTOS_TOOL), /—/)
+  assert.doesNotMatch(JSON.stringify(FILE_PHOTOS_TOOL), /\u2014/)
 })
