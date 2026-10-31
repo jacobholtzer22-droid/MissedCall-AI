@@ -13,7 +13,8 @@ import { RUN_KINDS } from '@/lib/ops/agents/shared'
 import { BadRequest, nullableString, oneOf, readJsonObject, rejectUnknownKeys } from '@/lib/ops/validate'
 
 export const dynamic = 'force-dynamic'
-export const maxDuration = 60
+// 800: the dispatch keeps watching for the GitHub Actions run (up to 10 minutes) after responding.
+export const maxDuration = 800
 
 export async function POST(request: Request, context: { params: { id: string } }) {
   const denied = await requireAdmin()

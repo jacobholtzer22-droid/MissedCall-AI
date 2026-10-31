@@ -26,14 +26,19 @@
 //
 // dry returns the payload it would send, with brief/instructions shown as
 // byte counts, and writes nothing.
+//
+// Both refuse when aa-build.yml cannot be confirmed through the API; after a
+// live 204 the run's GitHub Actions run id is captured (lib/ops/agents/workflow-run.ts).
 
 import type { Prisma } from '@prisma/client'
+import { waitUntil } from '@vercel/functions'
 import { db } from '@/lib/db'
 import { repoFullName, repositoryDispatch } from '@/lib/ops/github'
 import { emit } from '@/lib/ops/hq/events'
 import { CALLBACK_URL, DISPATCH_EVENT, RUN_KINDS, loadWebsiteEngagement, type RunKind } from './shared'
 import { buildExtras, type BuildStyle, type RecentStyle } from '@/lib/ops/build-style'
 import { readIntake } from '@/lib/ops/intake'
+import { confirmWorkflowReady, watchForWorkflowRun } from './workflow-run'
 
 /** The last five finished site builds with a recorded style, across all clients, newest first. */
 export async function recentStyles(): Promise<RecentStyle[]> {
@@ -98,6 +103,10 @@ export async function dispatchRun(
   if (!process.env.GITHUB_OPS_TOKEN?.trim()) out.blocked.push('GITHUB_OPS_TOKEN is not set')
   out.repo = repoUrl ? repoFullName(repoUrl) : null
   if (out.blocked.length > 0) return out
+
+  // A dispatch to a repo without aa-build.yml is accepted (204) and runs nothing.
+  const noWorkflow = await confirmWorkflowReady(out.repo!)
+  if (noWorkflow) return { ...out, blocked: [noWorkflow] }
 
   const withFiles = input.kind === 'site_build' || input.kind === 'site_update'
   const assets = withFiles ? input.assets ?? [] : []
@@ -178,13 +187,17 @@ export async function dispatchRun(
   try {
     const status = await repositoryDispatch(out.repo!, DISPATCH_EVENT, payloadFor(run.id, fits))
     if (status !== 204) throw new Error(`GitHub answered HTTP ${status}, expected 204`)
+    const dispatchedAt = new Date()
     await db.$transaction([
-      db.agentRun.update({ where: { id: run.id }, data: { status: 'dispatched', startedAt: new Date() } }),
+      db.agentRun.update({ where: { id: run.id }, data: { status: 'dispatched', startedAt: dispatchedAt } }),
       db.opsActivity.create({
         data: { engagementId: eng.id, kind: 'system', body: `Agent ${input.kind} dispatched to ${out.repo} (run ${run.id})` },
       }),
     ])
     await emit(run.id, 'status', `Dispatched ${input.kind} to ${out.repo}. The workflow builds, opens a PR and reports back; this takes a few minutes.`)
+    // Held open after the response (the route's maxDuration bounds it; the ops
+    // sync fails whatever a killed watcher leaves behind).
+    waitUntil(watchForWorkflowRun(run.id, out.repo!, dispatchedAt))
     out.status = 'dispatched'
     out.ok = true
   } catch (err) {

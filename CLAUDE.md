@@ -3055,6 +3055,15 @@ nothing; the UI always shows the dry result before a confirmed live call.
   `failed`. Both write an activity. Dry shows the payload with brief/instructions as
   character counts. `callback_url` is always
   `https://www.alignandacquire.com/api/ops/build-callback` (GitHub cannot reach dev).
+- **Workflow confirmation** (`lib/ops/agents/workflow-run.ts`, Oct 31 2026). Dispatch (dry and live) refuses
+  with "repo has no aa-build workflow, run sync-workflow first" unless `aa-build.yml` reads back through the
+  GitHub API, and refuses when the repo's Actions runs cannot be listed (`GITHUB_OPS_TOKEN` needs **Actions:
+  read**; without it only public repos answer). After a 204 a `waitUntil` watcher polls the aa-build
+  `repository_dispatch` runs every 15s for 10 minutes and writes the run id to `AgentRun.externalId` (URL to
+  `output.runUrl`); a match is the oldest unclaimed run created no earlier than 30s before the dispatch. None:
+  the run fails with "workflow never started". The ops sync fails any run still `dispatched` with no
+  `externalId` 20 minutes after `startedAt` (`summary.staleRunsFailed`). A callback still finishes a run failed
+  as never-started, so a slow queue never loses a result. The runs route's `maxDuration` is 800 for the watcher.
 - **Callback** `POST /api/ops/build-callback`, public (middleware does not cover
   `/api/ops`). Header `X-AA-Signature` = hex HMAC-SHA256 of the raw body keyed with
   `OPS_CALLBACK_SECRET` (`sha256=` prefix tolerated), compared in constant time before

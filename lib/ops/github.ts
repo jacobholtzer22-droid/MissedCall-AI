@@ -254,3 +254,15 @@ export async function listWorkflowRuns(repo: string, since: Date) {
   )
   return body?.workflow_runs ?? []
 }
+
+export type WorkflowRun = { id: number; html_url: string; status: string; created_at: string; event: string }
+
+/** Runs of one workflow file for one event, created at or after since, newest first. */
+export async function listWorkflowFileRuns(repo: string, workflowFile: string, event: string, since: Date): Promise<WorkflowRun[]> {
+  const q = `event=${encodeURIComponent(event)}&per_page=50&created=${encodeURIComponent(`>=${since.toISOString()}`)}`
+  const { body } = await read<{ workflow_runs: WorkflowRun[] }>(
+    `/repos/${repoFullName(repo)}/actions/workflows/${encodeURIComponent(workflowFile)}/runs?${q}`,
+    `${workflowFile} runs`
+  )
+  return body?.workflow_runs ?? []
+}

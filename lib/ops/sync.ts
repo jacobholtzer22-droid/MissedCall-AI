@@ -30,6 +30,7 @@ import { getMarketingBusiness } from '@/lib/marketing-funnel'
 import { normalizeToE164 } from '@/lib/phone-utils'
 import { getStripe } from '@/lib/ops/stripe'
 import { cleanInbox } from '@/lib/ops/photo-filing-server'
+import { failStaleDispatchedRuns } from '@/lib/ops/agents/workflow-run'
 import {
   DELIVERABLE_TYPES_FOR_SERVICE,
   SERVICE_KEYS,
@@ -85,6 +86,8 @@ export interface OpsSyncSummary {
   startedAt: string
   durationMs: number
   notes: string[]
+  /** Agent runs failed as "workflow never started": still dispatched with no run id 20 minutes on. */
+  staleRunsFailed: string[]
   engagementsCreated: (EngRef & {
     source: EngagementSource
     /** Final stage, after the post-Stripe finalization. */
@@ -334,6 +337,7 @@ export async function runOpsSync({ dryRun }: { dryRun: boolean }): Promise<OpsSy
     startedAt: now.toISOString(),
     durationMs: 0,
     notes: [],
+    staleRunsFailed: [],
     engagementsCreated: [],
     createdBySource: {},
     links: [],
@@ -825,6 +829,13 @@ export async function runOpsSync({ dryRun }: { dryRun: boolean }): Promise<OpsSy
   await eachLimited(writes, DB_CONCURRENCY, async (write) => {
     await write()
   })
+
+  // Agent runs GitHub accepted but never ran (see lib/ops/agents/workflow-run.ts).
+  try {
+    summary.staleRunsFailed = await failStaleDispatchedRuns({ dryRun, now })
+  } catch (err) {
+    summary.notes.push(`Stale agent run check failed: ${err instanceof Error ? err.message : String(err)}`)
+  }
 
   // Photos dropped in the HQ chat and never filed: gone after INBOX_MAX_AGE_DAYS.
   if (process.env.BLOB_READ_WRITE_TOKEN) {

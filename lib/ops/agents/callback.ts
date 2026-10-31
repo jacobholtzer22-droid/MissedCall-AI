@@ -33,6 +33,7 @@ import { deleteBranch, getRepo, mergePullRequest, openPullRequest } from '@/lib/
 import { listDeploymentsForBranch } from '@/lib/ops/vercel'
 import { emit } from '@/lib/ops/hq/events'
 import { mergeEvidence } from './shared'
+import { NEVER_STARTED_REASON, runIdFromUrl } from './workflow-run'
 import { failureReason, readFailureTail } from '@/lib/ops/build-failure'
 import { parseDesignDirection, questionsFrom } from '@/lib/ops/build-style'
 
@@ -110,7 +111,8 @@ export async function applyCallback(raw: string): Promise<CallbackOutcome> {
   // Only web runs reach this route, and they always carry a client (chief runs do not).
   const engagementId = run.engagementId
   if (!engagementId) return { status: 400, body: { error: `agent run ${run.id} has no client` } }
-  if (run.finishedAt && (run.status === 'succeeded' || run.status === 'failed')) {
+  const neverStarted = run.status === 'failed' && run.error === NEVER_STARTED_REASON
+  if (run.finishedAt && (run.status === 'succeeded' || run.status === 'failed') && !neverStarted) {
     return { status: 200, body: { ok: true, runId: run.id, runStatus: run.status, duplicate: true } }
   }
 
@@ -131,14 +133,16 @@ export async function applyCallback(raw: string): Promise<CallbackOutcome> {
   }
   const reason = failureReason(output.failureTail)
 
-  // Claim the run: only one callback may finish it.
+  // Claim the run: only one callback may finish it. A run failed as "workflow
+  // never started" plainly did start, so its callback still finishes it.
   const claimed = await db.agentRun.updateMany({
-    where: { id: run.id, finishedAt: null },
+    where: { id: run.id, OR: [{ finishedAt: null }, { status: 'failed', error: NEVER_STARTED_REASON }] },
     data: {
       status,
       finishedAt: new Date(),
       output: output as Prisma.InputJsonObject,
-      ...(body.run_url ? { externalId: body.run_url } : {}),
+      // The run id, as the dispatch watcher records it; kept when already known.
+      ...(body.run_url && !run.externalId ? { externalId: runIdFromUrl(body.run_url) ?? body.run_url } : {}),
       error: succeeded
         ? null
         : `workflow ${body.status}${output.failingChecks.length ? `; failing: ${output.failingChecks.join(', ')}` : ''}${reason ? `; agent: ${reason}` : ''}`,
