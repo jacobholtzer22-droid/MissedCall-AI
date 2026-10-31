@@ -3411,7 +3411,7 @@ chief's context whole.
 - **Photo desk** (`lib/ops/hq/photo.ts`, agent `photo`, kind `photo_caption`,
   model `OPS_PHOTO_MODEL`, default `claude-sonnet-5-5`): 10 photos per model turn as
   image blocks, one forced-shape tool `record_captions`. Writes onto each entry:
-  `caption` (10 to 20 words, no town or job), `suggestedService`, `heroScore` 0 to 5,
+  `caption` (one sentence, 12 to 18 words asked, trimmed at a clause past 20; no town or job), `suggestedService`, `heroScore` 0 to 5,
   `beforeAfter`, `isLogo`, `hasFaceOrPlate`, `captionedAt`. Each turn is saved
   before the next (`captionInChunks`), progress goes to the run's `output` and a
   feed line "Captioning 50 photos, 30 done". One photo run at a time; one still running
@@ -3426,8 +3426,9 @@ chief's context whole.
   photos (adopting unsent ones). `file_photos({ engagementId, all: true, messageIds? })`
   (`fileAllPhotos` + `planAll`): every unfiled **captioned** photo in scope, refused
   while a photo run is still captioning in scope. `suggestedService` is mapped by
-  `matchService` (exact, else the one service containing it, else the one sharing a
-  word; two candidates stay blank). Hero: the single highest `heroScore` above 0 that
+  `matchService` (exact, else the one service every word of whose name is in the
+  suggestion, else the one service holding every word of a short suggestion; two
+  candidates or none stay blank: "Lawn care" is not Lawn Mowing). Hero: the single highest `heroScore` above 0 that
   has no face or plate, and none when the client already has a hero. The first logo is
   filed as kind logo, other logos stay in the inbox. Photos with a face or plate never
   get a service. Order: after photos, then the rest in drop order, then before photos.
