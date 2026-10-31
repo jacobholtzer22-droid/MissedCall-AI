@@ -86,7 +86,7 @@ export interface OpsSyncSummary {
   startedAt: string
   durationMs: number
   notes: string[]
-  /** Agent runs failed as "workflow never started": still dispatched with no run id 20 minutes on. */
+  /** Agent runs failed as "callback never arrived": still dispatched 20 minutes after dispatch. */
   staleRunsFailed: string[]
   engagementsCreated: (EngRef & {
     source: EngagementSource

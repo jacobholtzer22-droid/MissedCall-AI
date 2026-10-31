@@ -33,7 +33,7 @@ import { deleteBranch, getRepo, mergePullRequest, openPullRequest } from '@/lib/
 import { listDeploymentsForBranch } from '@/lib/ops/vercel'
 import { emit } from '@/lib/ops/hq/events'
 import { mergeEvidence } from './shared'
-import { NEVER_STARTED_REASON, runIdFromUrl } from './workflow-run'
+import { CALLBACK_NEVER_ARRIVED_REASON, NEVER_STARTED_REASON, lateCallbackMayFinish, runIdFromUrl } from './workflow-run'
 import { failureReason, readFailureTail } from '@/lib/ops/build-failure'
 import { parseDesignDirection, questionsFrom } from '@/lib/ops/build-style'
 
@@ -75,6 +75,40 @@ export function verifySignature(rawBody: string, header: string | null, secret: 
   return timingSafeEqual(expected, Buffer.from(given, 'hex'))
 }
 
+/** run_id from a callback body that may be unsigned or malformed, or null. Pure. */
+export function readRunId(raw: string): string | null {
+  try {
+    const v = JSON.parse(raw) as { run_id?: unknown } | null
+    return v && typeof v.run_id === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(v.run_id) ? v.run_id : null
+  } catch {
+    return null
+  }
+}
+
+/** The feed line for a rejected callback. Pure. */
+export function rejectionLabel(repo: string | null, status: number, reason: string): string {
+  return `Callback from ${repo ?? 'an unknown repo'} rejected (${status}): ${reason}`
+}
+
+/**
+ * Record a rejected callback so it shows on the desk instead of vanishing: an
+ * AgentEvent on the run when the body names a run that exists, and a log line
+ * with the repo either way. The body may be unsigned, so only an existing run
+ * id is trusted, and nothing in the body but run_id is read. Never throws.
+ */
+export async function logCallbackRejection(raw: string, status: number, reason: string): Promise<void> {
+  try {
+    const runId = readRunId(raw)
+    const run = runId ? await db.agentRun.findUnique({ where: { id: runId }, select: { id: true, input: true } }) : null
+    const repo = (run?.input as { repo?: string } | null)?.repo ?? null
+    const label = rejectionLabel(repo, status, reason)
+    console.warn(`[ops/build-callback] ${label}${runId ? ` (run_id ${runId}${run ? '' : ', no such run'})` : ''}`)
+    if (run) await emit(run.id, 'error', label)
+  } catch (err) {
+    console.error('[ops/build-callback] could not record the rejection:', err instanceof Error ? err.message : err)
+  }
+}
+
 export type CallbackBody = {
   run_id: string
   kind: string
@@ -111,8 +145,8 @@ export async function applyCallback(raw: string): Promise<CallbackOutcome> {
   // Only web runs reach this route, and they always carry a client (chief runs do not).
   const engagementId = run.engagementId
   if (!engagementId) return { status: 400, body: { error: `agent run ${run.id} has no client` } }
-  const neverStarted = run.status === 'failed' && run.error === NEVER_STARTED_REASON
-  if (run.finishedAt && (run.status === 'succeeded' || run.status === 'failed') && !neverStarted) {
+  const late = lateCallbackMayFinish(run.status, run.error)
+  if (run.finishedAt && (run.status === 'succeeded' || run.status === 'failed') && !late) {
     return { status: 200, body: { ok: true, runId: run.id, runStatus: run.status, duplicate: true } }
   }
 
@@ -133,10 +167,18 @@ export async function applyCallback(raw: string): Promise<CallbackOutcome> {
   }
   const reason = failureReason(output.failureTail)
 
-  // Claim the run: only one callback may finish it. A run failed as "workflow
-  // never started" plainly did start, so its callback still finishes it.
+  // Claim the run: only one callback may finish it. A run the platform gave up
+  // waiting on ("workflow never started", "callback never arrived") plainly
+  // did run, so its callback still finishes it.
   const claimed = await db.agentRun.updateMany({
-    where: { id: run.id, OR: [{ finishedAt: null }, { status: 'failed', error: NEVER_STARTED_REASON }] },
+    where: {
+      id: run.id,
+      OR: [
+        { finishedAt: null },
+        { status: 'failed', error: NEVER_STARTED_REASON },
+        { status: 'failed', error: { startsWith: CALLBACK_NEVER_ARRIVED_REASON } },
+      ],
+    },
     data: {
       status,
       finishedAt: new Date(),

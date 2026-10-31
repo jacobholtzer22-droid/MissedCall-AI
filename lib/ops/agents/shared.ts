@@ -45,14 +45,28 @@ export const OPTIONAL_REPO_SECRETS = [
   { name: 'PIXABAY_API_KEY', env: 'PIXABAY_API_KEY' },
 ] as const
 
+type Env = Record<string, string | undefined>
+
 /** The required secrets plus every optional one whose env var is set. */
-export function repoSecretsToSet(): { name: string; env: string }[] {
-  return [...REPO_SECRETS, ...OPTIONAL_REPO_SECRETS.filter((s) => process.env[s.env]?.trim())]
+export function repoSecretsToSet(env: Env = process.env): { name: string; env: string }[] {
+  return [...REPO_SECRETS, ...OPTIONAL_REPO_SECRETS.filter((s) => env[s.env]?.trim())]
 }
 
 /** Names of the env vars a secret-setting action needs that are missing or empty. */
-export function missingSecretEnv(): string[] {
-  return REPO_SECRETS.filter((s) => !process.env[s.env]?.trim()).map((s) => s.env)
+export function missingSecretEnv(env: Env = process.env): string[] {
+  return REPO_SECRETS.filter((s) => !env[s.env]?.trim()).map((s) => s.env)
+}
+
+/**
+ * Repo secrets are sealed only from the production deployment. A local or
+ * preview run would seal that machine's OPS_CALLBACK_SECRET, which production
+ * does not hold, and every callback from the repo would then 401.
+ */
+export const PRODUCTION_ONLY_REASON = 'secrets must be sealed from production; use the Ops UI'
+
+/** null on the production deployment, else PRODUCTION_ONLY_REASON. */
+export function productionOnlyBlock(env: Env = process.env): string | null {
+  return env.NODE_ENV === 'production' && env.VERCEL_ENV === 'production' ? null : PRODUCTION_ONLY_REASON
 }
 
 export function secretValue(env: string): string {

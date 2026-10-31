@@ -10,13 +10,14 @@
 // failure, reporting what was done so far. A repo that already exists under
 // the name is never reused: the run stops and says so.
 //
-// dry returns the same plan with nothing written anywhere.
+// dry returns the same plan with nothing written anywhere. Both refuse off the
+// production deployment (productionOnlyBlock): secrets are sealed from there only.
 
 import { db } from '@/lib/db'
 import { GITHUB_OWNER, TEMPLATE_REPO, createRepoFromTemplate, repoExists, setRepoSecret } from '@/lib/ops/github'
 import { SITE_PROJECT_SETTINGS, createProjectLinkedToRepo, vercelProjectName } from '@/lib/ops/vercel'
 import { defaultWaitingOn } from '@/lib/ops/steps'
-import { defaultRepoName, repoSecretsToSet, loadWebsiteEngagement, mergeEvidence, missingSecretEnv, secretValue, type PlanStep } from './shared'
+import { defaultRepoName, repoSecretsToSet, loadWebsiteEngagement, mergeEvidence, missingSecretEnv, productionOnlyBlock, secretValue, type PlanStep } from './shared'
 
 export type ProvisionResult = {
   ok: boolean
@@ -39,6 +40,8 @@ export async function provisionSite(engagementId: string, opts: { repoName?: str
   const projectName = vercelProjectName(repoName)
   const out: ProvisionResult = { ok: false, dry: opts.dry, engagement: eng.displayName, repoName, blocked: [], steps: [] }
 
+  const notProd = productionOnlyBlock()
+  if (notProd) return { ...out, blocked: [notProd] }
   if (!eng.hasWebsiteService) out.blocked.push('no website service')
   if (!eng.website) out.blocked.push('no website deliverable')
   if (!eng.businessId) out.blocked.push('no platform account (businessId) linked, so there is no businessSlug')

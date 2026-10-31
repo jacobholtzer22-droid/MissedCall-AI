@@ -10,7 +10,8 @@
 //   mode "direct": commit straight to the default branch
 //
 // The secrets are set either way. dry lists each repo and what it would get,
-// and writes nothing.
+// and writes nothing. Both refuse off the production deployment
+// (productionOnlyBlock): secrets are sealed from there only.
 
 import { db } from '@/lib/db'
 import {
@@ -25,7 +26,7 @@ import {
   setRepoSecret,
 } from '@/lib/ops/github'
 import { mapLimited } from '@/lib/ops/checks/limit'
-import { CI_SECTION_HEADING, TEMPLATE_REF, repoSecretsToSet, WORKFLOW_PATH, asObject, mergeEvidence, missingSecretEnv, secretValue } from './shared'
+import { CI_SECTION_HEADING, TEMPLATE_REF, repoSecretsToSet, WORKFLOW_PATH, asObject, mergeEvidence, missingSecretEnv, productionOnlyBlock, secretValue } from './shared'
 
 export const CI_BRANCH = 'ci/aa-build'
 
@@ -67,6 +68,8 @@ export function extractCiSection(agentMd: string): string | null {
 export async function syncWorkflow(opts: { mode: 'pr' | 'direct'; only?: string[]; dry: boolean }): Promise<SyncWorkflowResult> {
   const out: SyncWorkflowResult = { dry: opts.dry, mode: opts.mode, blocked: [], repos: [], skipped: [] }
   const template = `${GITHUB_OWNER}/${TEMPLATE_REPO}`
+  const notProd = productionOnlyBlock()
+  if (notProd) return { ...out, blocked: [notProd] }
 
   const [workflow, templateAgent] = await Promise.all([
     getFileContent(template, WORKFLOW_PATH, TEMPLATE_REF),

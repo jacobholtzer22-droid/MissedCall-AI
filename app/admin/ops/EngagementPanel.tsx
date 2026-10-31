@@ -798,7 +798,7 @@ function DeliverableCard({
 
 // ── Web designer agent (website deliverable only) ───────────────────────────
 // Provision (no repo yet), Run agent (repo exists), Sync workflow (repo lacks
-// aa-build.yml). Every write runs dry first: the dry result is shown, and the
+// aa-build.yml), Reseal secrets (repo exists; the fix for callbacks that 401). Every write runs dry first: the dry result is shown, and the
 // real call needs a second, confirmed click.
 
 type PlanStep = { action: string; detail: string; result?: string; error?: string }
@@ -834,7 +834,10 @@ function WebsiteAgent({
       ) : (
         <>
           <RunAgentForm engagementId={engagementId} repoUrl={repoUrl} toast={toast} onRefresh={onRefresh} />
-          {d.evidence.repoHasWorkflow === false && <SyncWorkflowButton engagementId={engagementId} toast={toast} onRefresh={onRefresh} />}
+          <div className="flex flex-wrap gap-2">
+            {d.evidence.repoHasWorkflow === false && <SyncWorkflowButton engagementId={engagementId} toast={toast} onRefresh={onRefresh} />}
+            <ResealSecretsButton deliverableId={d.id} repoUrl={repoUrl} toast={toast} onRefresh={onRefresh} />
+          </div>
         </>
       )}
     </div>
@@ -1076,6 +1079,35 @@ function SyncWorkflowButton({
   return (
     <button type="button" disabled={busy} onClick={sync} className={smallButton}>
       {busy ? 'Syncing workflow…' : 'Sync workflow (PR)'}
+    </button>
+  )
+}
+
+function ResealSecretsButton({
+  deliverableId,
+  repoUrl,
+  toast,
+  onRefresh,
+}: {
+  deliverableId: string
+  repoUrl: string
+  toast: OpsActions['toast']
+  onRefresh: () => Promise<void>
+}) {
+  const [busy, setBusy] = useState(false)
+  const reseal = async () => {
+    if (!window.confirm(`Reseal ANTHROPIC_API_KEY and OPS_CALLBACK_SECRET (and the stock photo keys) on ${repoUrl} from production?`)) return
+    setBusy(true)
+    const r = await postJson(`/api/admin/ops/deliverables/${deliverableId}/reseal-secrets`, {})
+    setBusy(false)
+    const set = (r.data.set as string[] | undefined) ?? []
+    if (r.ok) toast(`Secrets resealed: ${set.join(', ')}`, 'success')
+    else toast(String(r.data.error ?? 'Reseal failed'), 'error')
+    await onRefresh()
+  }
+  return (
+    <button type="button" disabled={busy} onClick={reseal} className={smallButton}>
+      {busy ? 'Resealing…' : 'Reseal secrets'}
     </button>
   )
 }

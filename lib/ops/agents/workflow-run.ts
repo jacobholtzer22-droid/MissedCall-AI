@@ -13,13 +13,15 @@
 //      to WATCH_MS and writes the run id to AgentRun.externalId (and the run
 //      URL to output.runUrl). Nothing appears: the run fails with
 //      "workflow never started".
-//   3. The ops sync fails any run still 'dispatched' STALE_MS after dispatch
-//      with no run id (failStaleDispatchedRuns): the backstop for a watcher
-//      the platform killed before it finished.
+//   3. The ops sync fails any run still 'dispatched' STALE_MS after dispatch,
+//      run id or not (failStaleDispatchedRuns): "callback never arrived; check
+//      the workflow run", with the run URL when known. It is the backstop for
+//      a watcher the platform killed, and for a workflow that ran but whose
+//      callback was rejected or never sent.
 //
-// A run failed as "workflow never started" that turns out to have run is
-// still finished by its callback (callback.ts), so a slow GitHub queue never
-// loses a build's result.
+// A run failed by either guard that turns out to have run is still finished
+// by its callback (callback.ts, lateCallbackMayFinish), so a slow GitHub
+// queue never loses a build's result.
 //
 // Runs carry no run_id GitHub can see before the job starts, so a run is
 // matched by time: the oldest repository_dispatch run of aa-build.yml created
@@ -36,6 +38,9 @@ import { WORKFLOW_PATH } from './shared'
 export const NO_WORKFLOW_REASON = 'repo has no aa-build workflow, run sync-workflow first'
 export const NO_ACTIONS_READ_REASON = 'cannot read the repo\'s Actions runs, so the run could not be confirmed: GITHUB_OPS_TOKEN needs Actions: read'
 export const NEVER_STARTED_REASON = 'workflow never started'
+export const CALLBACK_NEVER_ARRIVED_REASON = 'callback never arrived; check the workflow run'
+/** Errors a late callback may overwrite: both mean "we gave up waiting", not "it failed". */
+export const LATE_CALLBACK_REASONS = [NEVER_STARTED_REASON, CALLBACK_NEVER_ARRIVED_REASON] as const
 export const WATCH_MS = 10 * 60_000
 export const POLL_MS = 15_000
 export const STALE_MS = 20 * 60_000
@@ -78,6 +83,22 @@ export function runIdFromUrl(url: string): string | null {
   return url.match(/\/actions\/runs\/(\d+)/)?.[1] ?? null
 }
 
+/** True when a failed run's error is one a late callback may overwrite. Pure. */
+export function lateCallbackMayFinish(status: string, error: string | null): boolean {
+  return status === 'failed' && !!error && LATE_CALLBACK_REASONS.some((r) => error.startsWith(r))
+}
+
+/** The stale-run error: the reason plus the workflow run URL when one is known. Pure. */
+export function staleRunError(repo: string | null, externalId: string | null, runUrl: unknown): string {
+  const url =
+    typeof runUrl === 'string' && runUrl.startsWith('http')
+      ? runUrl
+      : externalId && repo
+        ? `https://github.com/${repo}/actions/runs/${runIdFromUrl(externalId) ?? externalId}`
+        : null
+  return url ? `${CALLBACK_NEVER_ARRIVED_REASON}: ${url}` : CALLBACK_NEVER_ARRIVED_REASON
+}
+
 /** Run ids other AgentRuns on this repo already hold, so two dispatches never claim one run. */
 async function claimedRunIds(repo: string, exceptRunId: string): Promise<Set<string>> {
   const rows = await db.agentRun.findMany({
@@ -92,17 +113,25 @@ async function claimedRunIds(repo: string, exceptRunId: string): Promise<Set<str
  * found its run id meanwhile. Returns whether this call failed it.
  */
 export async function failNeverStarted(runId: string, detail: string): Promise<boolean> {
+  return failDispatchedRun(runId, NEVER_STARTED_REASON, detail, true)
+}
+
+/**
+ * Fail a run still 'dispatched' with error, writing the activity and the feed
+ * event and waking its job. withoutRunIdOnly: only when no run id was found.
+ */
+async function failDispatchedRun(runId: string, error: string, detail: string, withoutRunIdOnly: boolean): Promise<boolean> {
   const done = await db.agentRun.updateMany({
-    where: { id: runId, status: 'dispatched', finishedAt: null, externalId: null },
-    data: { status: 'failed', error: NEVER_STARTED_REASON, finishedAt: new Date() },
+    where: { id: runId, status: 'dispatched', finishedAt: null, ...(withoutRunIdOnly ? { externalId: null } : {}) },
+    data: { status: 'failed', error, finishedAt: new Date() },
   })
   if (done.count === 0) return false
   const run = await db.agentRun.findUnique({ where: { id: runId }, select: { kind: true, engagementId: true, jobId: true, input: true } })
   const repo = (run?.input as { repo?: string } | null)?.repo ?? 'the repo'
   if (run?.engagementId) {
-    await db.opsActivity.create({ data: { engagementId: run.engagementId, kind: 'system', body: `Agent ${run.kind} on ${repo} failed: ${NEVER_STARTED_REASON} (${detail})` } })
+    await db.opsActivity.create({ data: { engagementId: run.engagementId, kind: 'system', body: `Agent ${run.kind} on ${repo} failed: ${error} (${detail})` } })
   }
-  await emit(runId, 'error', `${NEVER_STARTED_REASON}: ${detail}`)
+  await emit(runId, 'error', `${error} (${detail})`)
   if (run?.jobId) {
     // The job report can be a long chief turn: held open in the background, as
     // the callback route does, so the ops sync is not kept waiting on it.
@@ -154,17 +183,19 @@ export async function watchForWorkflowRun(runId: string, repo: string, dispatche
   }
 }
 
-/** Ops sync backstop: runs still 'dispatched' STALE_MS after dispatch with no run id. */
+/** Ops sync backstop: runs still 'dispatched' STALE_MS after dispatch, with or without a run id. */
 export async function failStaleDispatchedRuns({ dryRun, now }: { dryRun: boolean; now: Date }): Promise<string[]> {
   const cutoff = new Date(now.getTime() - STALE_MS)
   const stale = await db.agentRun.findMany({
-    where: { status: 'dispatched', externalId: null, finishedAt: null, OR: [{ startedAt: { lt: cutoff } }, { startedAt: null, createdAt: { lt: cutoff } }] },
-    select: { id: true, kind: true, input: true },
+    where: { status: 'dispatched', finishedAt: null, OR: [{ startedAt: { lt: cutoff } }, { startedAt: null, createdAt: { lt: cutoff } }] },
+    select: { id: true, kind: true, input: true, externalId: true, output: true },
   })
   const failed: string[] = []
   for (const r of stale) {
-    const label = `${r.kind} ${r.id} (${(r.input as { repo?: string } | null)?.repo ?? 'no repo'})`
-    if (dryRun || (await failNeverStarted(r.id, `no GitHub Actions run id ${STALE_MS / 60_000} minutes after dispatch`))) failed.push(label)
+    const repo = (r.input as { repo?: string } | null)?.repo ?? null
+    const label = `${r.kind} ${r.id} (${repo ?? 'no repo'})`
+    const error = staleRunError(repo, r.externalId, (r.output as { runUrl?: unknown } | null)?.runUrl)
+    if (dryRun || (await failDispatchedRun(r.id, error, `still dispatched ${STALE_MS / 60_000} minutes after dispatch`, false))) failed.push(label)
   }
   return failed
 }

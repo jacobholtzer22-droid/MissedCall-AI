@@ -3061,9 +3061,23 @@ nothing; the UI always shows the dry result before a confirmed live call.
   read**; without it only public repos answer). After a 204 a `waitUntil` watcher polls the aa-build
   `repository_dispatch` runs every 15s for 10 minutes and writes the run id to `AgentRun.externalId` (URL to
   `output.runUrl`); a match is the oldest unclaimed run created no earlier than 30s before the dispatch. None:
-  the run fails with "workflow never started". The ops sync fails any run still `dispatched` with no
-  `externalId` 20 minutes after `startedAt` (`summary.staleRunsFailed`). A callback still finishes a run failed
-  as never-started, so a slow queue never loses a result. The runs route's `maxDuration` is 800 for the watcher.
+  the run fails with "workflow never started". The ops sync fails any run still `dispatched` 20 minutes after
+  `startedAt`, run id or not, with "callback never arrived; check the workflow run" plus the run URL when known
+  (`summary.staleRunsFailed`). A callback still finishes a run failed with either reason
+  (`lateCallbackMayFinish`), so a slow queue never loses a result. The runs route's `maxDuration` is 800 for
+  the watcher.
+- ⚠️ **Secrets are sealed from production only.** Provision and sync-workflow (dry and live) refuse unless
+  `NODE_ENV` and `VERCEL_ENV` are both `production`: "secrets must be sealed from production; use the Ops UI"
+  (`productionOnlyBlock`, `lib/ops/agents/shared.ts`). A local run seals the local `OPS_CALLBACK_SECRET`,
+  which production does not hold, and every callback from that repo 401s. Never run them from a script.
+- **Reseal secrets** `POST /api/admin/ops/deliverables/[id]/reseal-secrets` (`lib/ops/agents/reseal.ts`, the
+  button on the website card): sets `ANTHROPIC_API_KEY` and `OPS_CALLBACK_SECRET` (plus `PEXELS_API_KEY` /
+  `PIXABAY_API_KEY` when present) on that repo from production's env and writes an activity. Same production
+  rule; 409 with the reason when an env var, `GITHUB_OPS_TOKEN` or `evidence.repoUrl` is missing. The fix
+  for a repo whose callbacks 401.
+- **Callback rejections are logged.** No secret, bad signature, bad body and unknown run each log the repo and
+  reason, and land on the run's feed as an `error` AgentEvent when the body names a run that exists
+  (`logCallbackRejection`). Only an existing run id is trusted from an unsigned body.
 - **Callback** `POST /api/ops/build-callback`, public (middleware does not cover
   `/api/ops`). Header `X-AA-Signature` = hex HMAC-SHA256 of the raw body keyed with
   `OPS_CALLBACK_SECRET` (`sha256=` prefix tolerated), compared in constant time before
