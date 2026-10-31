@@ -71,9 +71,20 @@ async function read<T>(path: string, label: string, accept?: string): Promise<{ 
 
 export type RepoInfo = { fullName: string; url: string; defaultBranch: string; private: boolean }
 
+/**
+ * Whether a repo by exactly this name exists. GitHub redirects a renamed
+ * repo's old name to the new one (AA-YualexPainting answers as
+ * AA-YualexPainting-old), and creating a repo under the old name is allowed:
+ * it replaces the redirect. So a 200 for a different name means free.
+ */
 export async function repoExists(fullName: string): Promise<boolean> {
-  const { status } = await read(`/repos/${repoFullName(fullName)}`, `repo ${fullName}`)
-  return status === 200
+  const { status, body } = await read<{ full_name?: string }>(`/repos/${repoFullName(fullName)}`, `repo ${fullName}`)
+  return status === 200 && isSameRepo(fullName, body?.full_name)
+}
+
+/** GitHub names are case-insensitive: "owner/AA-X" is "Owner/aa-x". */
+export function isSameRepo(asked: string, returned: string | null | undefined): boolean {
+  return typeof returned === 'string' && repoFullName(asked).toLowerCase() === repoFullName(returned).toLowerCase()
 }
 
 export async function getRepo(fullName: string): Promise<RepoInfo | null> {
