@@ -54,7 +54,7 @@ test('with an intake link: the short version that points to it', () => {
   assert.equal(
     questionnaireText('Pat', url),
     [
-      `Hey Pat, Jacob here. Here's your setup page: ${url}`,
+      `Hey Pat, Jacob here. You're all set up on my end, and your setup page is ready: ${url}`,
       "It has my questions for your website, ads and Google listing, and you can upload your photos and logo right there. Rough answers are totally fine, it saves as you go, and you can come back to the same link anytime.",
       "If you're short on time, 1 through 14 and 17 through 19 come first. Those are what I need to build the campaign.",
     ].join('\n\n')
@@ -65,7 +65,7 @@ test('with an intake link: the short version that points to it', () => {
 test('preview text', () => {
   assert.equal(
     previewText('Pat', 'https://client-a.vercel.app'),
-    "Hey Pat, Jacob here. Your new website is ready for you to look at: https://client-a.vercel.app\n\nTake a look on your phone and tell me anything you want changed, or reply looks good and I'll get it ready to go live."
+    "Hey Pat, Jacob here. Your new website is built and ready for you to look at: https://client-a.vercel.app\n\nTake a look on your phone and tell me anything you want changed, or reply looks good and I'll get it ready to go live."
   )
 })
 
@@ -129,4 +129,17 @@ test('no sends: nothing in the drafts code path can send a text or email', () =>
   const board = readFileSync(join(process.cwd(), 'lib/ops/board.ts'), 'utf8')
   assert.match(board, /clientSendDraftsEnabled\(\) \? await loadSendDrafts\(live, now\) : null/)
   assert.ok(readdirSync(join(process.cwd(), 'lib', 'ops')).includes('send-drafts.ts'))
+})
+
+test('every draft but the verbatim questionnaire opens with what is done', () => {
+  const opener = (t: string) => t.split('\n')[0].replace(/^Hey( \w+)?, Jacob here\. /, '')
+  assert.match(opener(questionnaireText('Pat', 'https://x.example/intake/t')), /^You're all set up on my end/)
+  assert.match(opener(previewText('Pat', 'https://p.vercel.app')), /^Your new website is built/)
+  assert.match(opener(previewText('Pat', 'https://p.vercel.app', 'https://x.example/review/t')), /^Your new website is built/)
+  const live = sendDraftsFor(
+    facts({ stage: 'live', deliverables: [{ type: 'website', step: 'live', effectiveStatus: 'live', stepUpdatedAt: daysAgo(1), evidence: { productionUrl: 'https://client-a.vercel.app' } }] }),
+    NOW
+  ).find((d) => d.kind === 'live')
+  assert.match(opener(live!.text), /^You're live\. Your new website is up/)
+  assert.equal(questionnaireText('Pat', null), QUESTIONNAIRE_TEXT.replace(/\{Name\}/g, 'Pat'))
 })

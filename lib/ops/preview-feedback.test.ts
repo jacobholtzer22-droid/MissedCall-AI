@@ -159,11 +159,11 @@ test('rate limits and flag off: every route 404s with the flag off; a bad token 
 test('the preview text: unchanged without a review link, the review link first with one', () => {
   assert.equal(
     previewText('Pat', 'https://p.vercel.app'),
-    "Hey Pat, Jacob here. Your new website is ready for you to look at: https://p.vercel.app\n\nTake a look on your phone and tell me anything you want changed, or reply looks good and I'll get it ready to go live."
+    "Hey Pat, Jacob here. Your new website is built and ready for you to look at: https://p.vercel.app\n\nTake a look on your phone and tell me anything you want changed, or reply looks good and I'll get it ready to go live."
   )
   assert.equal(
     previewText('Pat', 'https://p.vercel.app', 'https://www.alignandacquire.com/review/tok'),
-    'Hey Pat, Jacob here. Your new website is ready for you to look at: https://www.alignandacquire.com/review/tok\n\nThat page opens the preview and has a box for each page, so you can tell me anything you want changed, or tap Looks good. The preview on its own is here: https://p.vercel.app'
+    'Hey Pat, Jacob here. Your new website is built and ready for you to look at: https://www.alignandacquire.com/review/tok\n\nThat page opens the preview and has a box for each page, so you can tell me anything you want changed, or tap Looks good. The preview on its own is here: https://p.vercel.app'
   )
   const chief = readFileSync(join(process.cwd(), 'lib', 'ops', 'hq', 'chief.ts'), 'utf8')
   assert.match(chief, /\.\.\.\(previewFeedbackEnabled\(\) \? \[previewFeedbackLinkTool\(ctx\)\] : \[\]\)/)

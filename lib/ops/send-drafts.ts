@@ -21,7 +21,8 @@
 //                  (website evidence openQuestions), not marked sent for that set.
 //                  One text, what is done first (lib/ops/build-questions.ts).
 //
-// All of it is GSM-7: straight quotes, no dashes, no emoji.
+// All of it is GSM-7: straight quotes, no dashes, no emoji. Each text opens with what is done
+// (Jacob's rule: client updates lead with what improved), except the verbatim questionnaire.
 
 import { autoflowEnabled } from '@/lib/ops/autoflow'
 import { openQuestionsOf, questionsText } from '@/lib/ops/build-questions'
@@ -78,7 +79,7 @@ export function prettyPhone(p: string | null | undefined): string | null {
 export function questionnaireText(name: string, linkUrl: string | null): string {
   if (linkUrl) {
     return [
-      `${hey(name)} Here's your setup page: ${linkUrl}`,
+      `${hey(name)} You're all set up on my end, and your setup page is ready: ${linkUrl}`,
       "It has my questions for your website, ads and Google listing, and you can upload your photos and logo right there. Rough answers are totally fine, it saves as you go, and you can come back to the same link anytime.",
       "If you're short on time, 1 through 14 and 17 through 19 come first. Those are what I need to build the campaign.",
     ].join('\n\n')
@@ -89,9 +90,9 @@ export function questionnaireText(name: string, linkUrl: string | null): string 
 export function previewText(name: string, url: string, reviewUrl?: string | null): string {
   if (reviewUrl) {
     // PREVIEW_FEEDBACK: the review page first; the bare preview stays in the text for a quick look.
-    return `${hey(name)} Your new website is ready for you to look at: ${reviewUrl}\n\nThat page opens the preview and has a box for each page, so you can tell me anything you want changed, or tap Looks good. The preview on its own is here: ${url}`
+    return `${hey(name)} Your new website is built and ready for you to look at: ${reviewUrl}\n\nThat page opens the preview and has a box for each page, so you can tell me anything you want changed, or tap Looks good. The preview on its own is here: ${url}`
   }
-  return `${hey(name)} Your new website is ready for you to look at: ${url}\n\nTake a look on your phone and tell me anything you want changed, or reply looks good and I'll get it ready to go live.`
+  return `${hey(name)} Your new website is built and ready for you to look at: ${url}\n\nTake a look on your phone and tell me anything you want changed, or reply looks good and I'll get it ready to go live.`
 }
 
 const host = (u: string) => u.replace(/^https?:\/\//, '').replace(/\/$/, '')
