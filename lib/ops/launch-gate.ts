@@ -18,6 +18,8 @@
 
 import { effectiveStatusOf } from '@/lib/ops/steps'
 import { SAMPLE_SITE_TEXT, sampleSiteGuardEnabled } from '@/lib/ops/sample-site'
+import { autoflowEnabled } from '@/lib/ops/autoflow'
+import { questionGateItems } from '@/lib/ops/build-questions'
 
 export type GateKey =
   | 'website_approved'
@@ -31,6 +33,8 @@ export type GateKey =
   | 'billing'
   | 'conversion_actions'
   | 'sample_site'
+  | 'open_question'
+  | 'missing_contact'
 
 export type GateItem = { key: GateKey; text: string }
 
@@ -60,6 +64,10 @@ const SKIP_WORDS: Record<GateKey, string[]> = {
   conversion_actions: ['conversion', 'conversions', 'conversion actions'],
   // SAMPLE_SITE_GUARD: never waived; the sample business must not go live.
   sample_site: [],
+  // OPS_AUTOFLOW: the build's open questions. "skip questions" waives them all at once.
+  open_question: ['questions', 'question', 'open questions', 'placeholders', 'gaps'],
+  // The site's public phone or email: never waived (AA-Template refuses go_live without them).
+  missing_contact: [],
 }
 
 /** The items Jacob waived: "go live, skip tag", "skip the domain and billing". */
@@ -112,6 +120,7 @@ export function goLiveGate(c: GateClient, said = ''): GateItem[] {
   if (hasAds(c) && !trackingOk(c)) items.push({ key: 'tracking', text: 'Google tag is not on the site' })
   items.push(...ownerItems(c))
   if (c.website?.evidence.siteIndexableFlag === true) items.push({ key: 'already_indexable', text: 'the site is already indexable' })
+  if (autoflowEnabled()) items.push(...questionGateItems(c.website?.evidence))
   if (sampleSiteGuardEnabled() && c.website?.evidence.sampleSite === true) items.push({ key: 'sample_site', text: `${SAMPLE_SITE_TEXT} (merge the first build PR; this one cannot be skipped)` })
   return waive(items, said)
 }

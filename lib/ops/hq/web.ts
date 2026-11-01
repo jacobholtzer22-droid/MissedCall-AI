@@ -44,6 +44,7 @@ import { db } from '@/lib/db'
 import { dispatchRun } from '@/lib/ops/agents/dispatch'
 import { provisionSite } from '@/lib/ops/agents/provision'
 import { mergeEvidence } from '@/lib/ops/agents/shared'
+import { autoflowEnabled } from '@/lib/ops/autoflow'
 import { GITHUB_OWNER, TEMPLATE_REPO, deleteBranch, getFileContent, getPullRequest, mergePullRequest, repoFullName, vercelBotNote } from '@/lib/ops/github'
 import { defaultWaitingOn } from '@/lib/ops/steps'
 import { addDnsRecord, addProjectDomain, buyDomain, domainOrder, domainQuote, domainRecords, listDeploymentsForBranch, registrantContact } from '@/lib/ops/vercel'
@@ -245,7 +246,10 @@ export async function startWebTask(opts: {
       // Real photos lead; stock-only builds are a second run Jacob asks for.
       const intake = readIntake((await db.engagement.findUnique({ where: { id: w.id }, select: { intake: true } }))?.intake)
       const photos = (intake.assets ?? []).filter((a) => a.kind === 'photo').length
-      if (opts.kind === 'site_build' && !photos && intake.oldSite?.use !== 'verbatim' && !opts.withStock) {
+      // OPS_AUTOFLOW (off by default): no photos never stops a build. It runs without images
+      // (no stock unless Jacob said so) and photos come back as a question for the client.
+      const noPhotos = opts.kind === 'site_build' && !photos && intake.oldSite?.use !== 'verbatim' && !opts.withStock
+      if (noPhotos && !autoflowEnabled()) {
         throw new Error(`No photos on file for ${w.name} and no old site to copy; add them at the intake page (/admin/ops/intake/${w.id}) or say build with stock`)
       }
       if (opts.kind === 'site_update' && !opts.instructions?.trim()) throw new Error('site_update needs instructions')
@@ -270,6 +274,8 @@ export async function startWebTask(opts: {
       if (d.blocked.length) throw new Error(`blocked: ${d.blocked.join('; ')}`)
       if (!d.ok) throw new Error(d.error ?? 'dispatch failed')
       started.push(`${opts.kind} dispatched to ${d.repo} with ${photos} photo${photos === 1 ? '' : 's'}${d.payloadMode === 'inline' && photos > 0 ? ' (inline: this repo\'s workflow predates file URLs)' : ''}`)
+      if (autoflowEnabled() && opts.kind === 'site_build') await mergeEvidence(w.site.id, { buildWithoutPhotos: noPhotos })
+      if (noPhotos) started.push('no photos on file: building without images (no stock); photos will be on the questions for the client')
       return { done: `${opts.kind} is running for ${w.name}. The report comes when the workflow calls back.`, started }
     }
 

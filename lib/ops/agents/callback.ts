@@ -41,6 +41,8 @@ import { mergeEvidence } from './shared'
 import { CALLBACK_NEVER_ARRIVED_REASON, NEVER_STARTED_REASON, lateCallbackMayFinish, runIdFromUrl } from './workflow-run'
 import { failureReason, gateReason, readFailureTail } from '@/lib/ops/build-failure'
 import { parseDesignDirection, questionsFrom } from '@/lib/ops/build-style'
+import { autoflowEnabled } from '@/lib/ops/autoflow'
+import { questionsEvidence } from '@/lib/ops/build-questions'
 
 /**
  * Open the PR the workflow could not. Repos default to "GitHub Actions may not
@@ -217,6 +219,11 @@ export async function applyCallback(raw: string): Promise<CallbackOutcome> {
   const questions = questionsFrom(output.clientTodo)
   if (questions.length && run.engagementId) {
     await db.opsActivity.create({ data: { engagementId: run.engagementId, kind: 'note', body: `Open questions from build:\n${questions.map((q) => `- ${q}`).join('\n')}` } })
+  }
+  // OPS_AUTOFLOW (off by default): the questions on the website evidence, for the client text and the go-live gate.
+  if (autoflowEnabled() && website) {
+    const ev = questionsEvidence(body.kind, succeeded, questions)
+    if (ev) await mergeEvidence(website.id, ev)
   }
 
   // A tracking install (install_tracking) that came back green: the tag is in the site's PR.

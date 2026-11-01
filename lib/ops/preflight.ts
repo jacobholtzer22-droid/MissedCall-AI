@@ -18,8 +18,6 @@
 //                          checks recorded repoHasWorkflow false)
 //   site_build
 //     brief stored         refused                                      lib/ops/hq/web.ts:214
-//     real photos          refused unless an old site is verbatim or
-//                          Jacob said "with stock" (web.ts:219)
 //     no repo yet: the build provisions first. Provisioning refuses without the first
 //     two (listed here so the refusal comes in the same list), and stops halfway without
 //     the Vercel pair (the repo exists, the Vercel project does not, and a retry is then
@@ -35,9 +33,13 @@
 //     ANTHROPIC_API_KEY_BUILDS  the run is created, then its first      lib/ops/hq/anthropic.ts:57-58, :67
 //                          model turn throws
 //     never-touch client   refused                                      ads.ts:186
-//     a campaign build from a launch spec: a phone number for the call asset (spec, platform
-//     account owner phone, or intake Q11); without one the run builds the campaign and stops
-//     short of the call asset                                           ads-tools.ts:941, Oct 28 2026 run
+//
+// Never blocked: anything from the client (Jacob's rule, M12: build with what is known,
+// look up the public listing, ask at the end). Real photos: with none, the build runs
+// without images (AA-Template rule 2e; stock stays his call, "with stock") and photos
+// come back as a question (lib/ops/build-questions.ts). The call-asset phone for a spec
+// build: the run builds the campaign and stops short of the call asset, and the enable
+// gate holds the campaign on "no call asset".
 //
 // Deliberately NOT blocked, because the run handles it: no Google Ads customer id (a work
 // run finds and binds the account), no stock photo keys (the build runs without stock),
@@ -68,9 +70,6 @@ export function webPreflight(f: WebFacts, env: Env = process.env): PreflightItem
   const out: PreflightItem[] = []
   if (f.kind === 'site_build') {
     if (!f.hasBrief) out.push({ group: 'From you', text: 'a stored brief (write it with the chief and say "looks good")' })
-    if (!f.photos && !f.oldSiteVerbatim && !f.withStock) {
-      out.push({ group: 'From the client', text: `real job photos (add them at /admin/ops/intake/${f.engagementId} or drop them in the chat), or say "build with stock"` })
-    }
   } else {
     if (!f.hasRepo) out.push({ group: 'From you', text: 'a built site: there is no repo yet, so build it first' })
     if (!f.hasInstructions) out.push({ group: 'From you', text: 'what to change (site_update needs instructions)' })
@@ -106,9 +105,6 @@ export type AdsFacts = {
 export function adsPreflight(f: AdsFacts, env: Env = process.env): PreflightItem[] {
   const out: PreflightItem[] = []
   if (f.neverTouch) out.push({ group: 'From you', text: 'this client is on the never-touch list in the ads playbook' })
-  if (isSpecBuild(f.instructions) && !hasPhone(f.instructions) && !hasPhone(f.ownerPhone) && !hasPhone(f.intakePhone)) {
-    out.push({ group: 'From the client', text: 'the business phone for the call asset (questionnaire Q11), or put it on the platform account' })
-  }
   for (const n of unset(env, ...ADS_ENV, 'ANTHROPIC_API_KEY_BUILDS')) out.push({ group: 'Setup', text: `${n} is not set` })
   return out
 }

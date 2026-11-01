@@ -1,7 +1,7 @@
 // ===========================================
 // POST /api/admin/ops/engagements/[id]/send-drafts: Jacob marks a draft sent (CLIENT_SEND_DRAFTS)
 // ===========================================
-// Body { kind: questionnaire | preview | live, key }. Sends nothing: Jacob sent the
+// Body { kind: questionnaire | preview | live | questions (OPS_AUTOFLOW), key }. Sends nothing: Jacob sent the
 // text himself. Writes the intake marker that hides the draft, a 'text' activity
 // and lastContactedAt. 404 with the flag off.
 
@@ -10,11 +10,12 @@ import { requireAdmin } from '@/lib/pipeline-server'
 import { db } from '@/lib/db'
 import { updateIntake } from '@/lib/ops/intake-server'
 import { clientSendDraftsEnabled, markSent, type SendKind, type SendMarks } from '@/lib/ops/send-drafts'
+import { autoflowEnabled } from '@/lib/ops/autoflow'
 
 export const dynamic = 'force-dynamic'
 
 const KINDS: SendKind[] = ['questionnaire', 'preview', 'live']
-const LABEL: Record<SendKind, string> = { questionnaire: 'onboarding questionnaire', preview: 'website preview', live: "you're live" }
+const LABEL: Record<SendKind, string> = { questionnaire: 'onboarding questionnaire', preview: 'website preview', live: "you're live", questions: 'build questions' }
 
 export async function POST(request: Request, context: { params: { id: string } }) {
   if (!clientSendDraftsEnabled()) return NextResponse.json({ error: 'Not found' }, { status: 404 })
@@ -22,7 +23,7 @@ export async function POST(request: Request, context: { params: { id: string } }
   if (denied) return denied
   const id = context.params.id
   const body = (await request.json().catch(() => ({}))) as { kind?: unknown; key?: unknown }
-  const kind = KINDS.find((k) => k === body.kind)
+  const kind = [...KINDS, ...(autoflowEnabled() ? (['questions'] as SendKind[]) : [])].find((k) => k === body.kind)
   const key = typeof body.key === 'string' ? body.key.slice(0, 500) : ''
   if (!kind || !key) return NextResponse.json({ error: 'kind and key are required' }, { status: 400 })
   const e = await db.engagement.findUnique({ where: { id }, select: { id: true } })

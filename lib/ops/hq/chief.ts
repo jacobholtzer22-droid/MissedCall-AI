@@ -63,6 +63,15 @@ const HISTORY_MESSAGES = 40
 
 const chiefModel = () => process.env.OPS_CHIEF_MODEL?.trim() || CHIEF_MODEL_DEFAULT
 
+/**
+ * OPS_AUTOFLOW (off by default): Jacob's rule M12 over the photo line in SYSTEM. Empty with the
+ * flag off, so the prompt is unchanged.
+ */
+const autoflowRules = () =>
+  autoflowEnabled()
+    ? '\n\nOverrides with autoflow on: build anyway with what is known. A missing client fact (photos, hours, towns, anything from the client) never stops a site_build: call start_web_task and the build runs, with no photos it runs without images (no stock unless Jacob said "with stock"), the public listing fills what it can, and the open questions come back as one text for Jacob to send. Only missing setup (keys, platform account, repo, a stored brief) stops a build.'
+    : ''
+
 const SYSTEM = `You are the operations chief for Align and Acquire, Jacob's agency. Jacob builds websites, runs Google Ads and sets up missed-call texting for local service businesses. You run the client delivery board with him.
 
 How you talk: short and plain. No preamble, no filler, no em dashes. Name clients by name. Give numbers and dates. When there is a list, use a list.
@@ -1117,7 +1126,7 @@ export async function runChief(runId: string) {
     const result = await runAgentLoop({
       runId,
       model: chiefModel(),
-      system: `${SYSTEM}\n\nToday is ${today()} (${OPS_TIMEZONE}).`,
+      system: `${SYSTEM}${autoflowRules()}\n\nToday is ${today()} (${OPS_TIMEZONE}).`,
       messages,
       tools: chiefTools(ctx),
       effort: 'medium',
@@ -1157,7 +1166,7 @@ export async function runChiefAfterPhotos(jobId: string) {
     const result = await runAgentLoop({
       runId: run.id,
       model: chiefModel(),
-      system: `${SYSTEM}\n\nToday is ${today()} (${OPS_TIMEZONE}).`,
+      system: `${SYSTEM}${autoflowRules()}\n\nToday is ${today()} (${OPS_TIMEZONE}).`,
       messages,
       tools: chiefTools(ctx).filter((t) => ['get_board', 'get_client', 'list_inbox', 'file_photos'].includes(t.name)),
       effort: 'medium',
@@ -1299,7 +1308,7 @@ export async function runChiefReport(jobId: string) {
     const result = await runAgentLoop({
       runId: run.id,
       model: chiefModel(),
-      system: `${SYSTEM}\n\nToday is ${today()} (${OPS_TIMEZONE}).`,
+      system: `${SYSTEM}${autoflowRules()}\n\nToday is ${today()} (${OPS_TIMEZONE}).`,
       messages: [{ role: 'user', content: prompt }],
       tools: chiefTools(ctx).filter((t) => t.name === 'finish_job' || t.name === 'get_client'),
       effort: 'medium',
@@ -1372,7 +1381,7 @@ export async function autoDraftBrief(engagementId: string, trigger: DraftTrigger
           const result = await runAgentLoop({
             runId: run.id,
             model: chiefModel(),
-            system: `${SYSTEM}\n\nToday is ${today()} (${OPS_TIMEZONE}).`,
+            system: `${SYSTEM}${autoflowRules()}\n\nToday is ${today()} (${OPS_TIMEZONE}).`,
             messages: [{ role: 'user', content: draftPrompt({ client, template, standards: standards.text }) }],
             tools: [],
             maxTurns: 1,
@@ -1440,7 +1449,7 @@ function adsSpecTools(ctx: ChiefContext): ClientTool[] {
           const result = await runAgentLoop({
             runId: run.id,
             model: chiefModel(),
-            system: `${SYSTEM}\n\nToday is ${today()} (${OPS_TIMEZONE}).`,
+            system: `${SYSTEM}${autoflowRules()}\n\nToday is ${today()} (${OPS_TIMEZONE}).`,
             messages: [{ role: 'user', content: specPrompt({ client, standards: standards.text, playbook, dailyBudget: facts.dailyBudget, missing, date: today() }) }],
             tools: [],
             maxTurns: 1,

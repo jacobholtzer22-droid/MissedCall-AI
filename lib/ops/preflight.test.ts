@@ -35,8 +35,8 @@ test('a ready site_build passes', () => {
 
 test('site_build: each thing the run would fail on, in its group', () => {
   assert.deepEqual(webPreflight(build({ hasBrief: false }), FULL_ENV), [{ group: 'From you', text: 'a stored brief (write it with the chief and say "looks good")' }])
-  assert.equal(webPreflight(build({ photos: 0 }), FULL_ENV)[0].group, 'From the client')
-  // Photos are not needed with an old site set to verbatim, or with "with stock".
+  // Photos never block (M12): the build runs without images and asks at the end.
+  assert.deepEqual(webPreflight(build({ photos: 0 }), FULL_ENV), [])
   assert.deepEqual(webPreflight(build({ photos: 0, oldSiteVerbatim: true }), FULL_ENV), [])
   assert.deepEqual(webPreflight(build({ photos: 0, withStock: true }), FULL_ENV), [])
   assert.match(texts(webPreflight(build({ businessLinked: false }), FULL_ENV))[0], /^a platform account/)
@@ -65,12 +65,11 @@ test('site_update: a repo and instructions; no brief or photo check', () => {
   assert.match(texts(webPreflight(upd({ hasInstructions: false }), FULL_ENV))[0], /instructions/)
 })
 
-test('ads: env, never-touch, and a call number for a launch-spec build only', () => {
+test('ads: env and never-touch block; a missing call number does not (M12)', () => {
   const spec = '# Client A | Google Ads launch spec | Oct 27 2026\nBuild it paused.'
   assert.deepEqual(adsPreflight({ neverTouch: false, instructions: 'Audit search terms, change nothing.', ownerPhone: null, intakePhone: null }, FULL_ENV), [])
-  assert.deepEqual(texts(adsPreflight({ neverTouch: false, instructions: spec, ownerPhone: null, intakePhone: null }, FULL_ENV)), [
-    'the business phone for the call asset (questionnaire Q11), or put it on the platform account',
-  ])
+  // The run builds the campaign and stops short of the call asset; the enable gate holds it.
+  assert.deepEqual(adsPreflight({ neverTouch: false, instructions: spec, ownerPhone: null, intakePhone: null }, FULL_ENV), [])
   for (const where of [{ ownerPhone: '+15555550100' }, { intakePhone: '(555) 555-0100' }, { instructions: `${spec}\nCall number: 555-555-0100` }]) {
     assert.deepEqual(adsPreflight({ neverTouch: false, instructions: spec, ownerPhone: null, intakePhone: null, ...where }, FULL_ENV), [], JSON.stringify(where))
   }
@@ -97,8 +96,6 @@ test('one grouped message, client first, then you, then setup; nothing when read
     msg,
     [
       'Not starting the site build for Client A. Missing:',
-      'From the client:',
-      '- real job photos (add them at /admin/ops/intake/eng1 or drop them in the chat), or say "build with stock"',
       'From you:',
       '- a stored brief (write it with the chief and say "looks good")',
       'Setup:',

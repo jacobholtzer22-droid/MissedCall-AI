@@ -126,7 +126,7 @@ export function SalesStrip({ sales, board, actions }: { sales: Triage['sales']; 
   )
 }
 
-const SEND_LABEL: Record<string, string> = { questionnaire: 'Onboarding questions', preview: 'Website preview', live: "You're live" }
+const SEND_LABEL: Record<string, string> = { questionnaire: 'Onboarding questions', preview: 'Website preview', live: "You're live", questions: 'Questions from the build' }
 
 /**
  * CLIENT_SEND_DRAFTS (off by default): texts ready for Jacob to send himself, with
