@@ -54,6 +54,8 @@ import { getCalendarEventState } from '@/lib/google-calendar'
 import { isSendableStatus } from '@/lib/reminder-status'
 import { nightBeforeText, hourBeforeText } from '@/lib/marketing-sms-copy'
 import { decideReminder, type ReminderKind } from '@/lib/demo-reminder-schedule'
+import { showRateFlags } from '@/lib/show-rate'
+import { runShowRateSteps, type ShowRateDeps, type ShowRateResult } from '@/lib/show-rate-cron'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
@@ -281,8 +283,75 @@ async function runAppointmentReminders(request: NextRequest) {
     }
   }
 
+  // Show-rate steps (lib/show-rate-cron.ts), each behind its own env flag and
+  // OFF by default. With every flag off nothing below runs and the response is
+  // exactly what it was.
+  const flags = showRateFlags()
+  let showRate: ShowRateResult | null = null
+  if (flags.noshowRebook) {
+    showRate = await runShowRateSteps(flags, showRateDeps(business.id, telnyx, fromNumber), now)
+  }
+
   console.log(
     `[reminders] run complete checked=${result.checked} sent=${result.sent.length} skipped=${result.skipped.length} failed=${result.failed.length}`
   )
-  return NextResponse.json({ ok: true, ...result })
+  return NextResponse.json(showRate ? { ok: true, ...result, showRate } : { ok: true, ...result })
+}
+
+const SHOW_RATE_SELECT = {
+  id: true,
+  scheduledAt: true,
+  duration: true,
+  createdAt: true,
+  customerName: true,
+  customerPhone: true,
+  customerTimezone: true,
+  customerTimezoneSource: true,
+  notes: true,
+  status: true,
+  showStatus: true,
+  googleMeetLink: true,
+  googleCalendarEventId: true,
+  reminderNightBeforeSentAt: true,
+} as const
+
+/** The real side effects behind lib/show-rate-cron.ts. Only built when a flag is on. */
+function showRateDeps(businessId: string, telnyx: Telnyx, fromNumber: string): ShowRateDeps {
+  return {
+    findNoShows: (since, until) =>
+      db.appointment.findMany({
+        where: { businessId, showStatus: 'no_show', scheduledAt: { gte: since, lte: until } },
+        orderBy: { scheduledAt: 'asc' },
+        take: 200,
+        select: SHOW_RATE_SELECT,
+      }),
+    claim: async (id, expected, next) =>
+      (await db.appointment.updateMany({ where: { id, notes: expected }, data: { notes: next } })).count,
+    reread: (id) => db.appointment.findUnique({ where: { id }, select: SHOW_RATE_SELECT }),
+    hasOptedOut: (phone) => hasOptedOut(businessId, phone),
+    hasNewerBooking: async (appt) =>
+      (await db.appointment.count({
+        where: {
+          businessId,
+          id: { not: appt.id },
+          customerPhone: normalizeToE164(appt.customerPhone),
+          createdAt: { gt: appt.createdAt },
+          status: 'confirmed',
+        },
+      })) > 0,
+    calendarState: (eventId) => getCalendarEventState(businessId, eventId),
+    leadForPhone: (phone) =>
+      db.websiteLead.findFirst({
+        where: { businessId, phone: normalizeToE164(phone), calendarToken: { not: null } },
+        orderBy: { createdAt: 'desc' },
+        select: { calendarToken: true, otpVerifiedAt: true, createdAt: true, funnelVariant: true },
+      }),
+    send: async (to, text) => {
+      const res = await telnyx.messages.send({ from: fromNumber, to, text })
+      return (res as { data?: { id?: string } })?.data?.id ?? null
+    },
+    logOutbound: async (to, text, providerId) => {
+      await logMarketingOutbound({ phone: to, body: text, telnyxSid: providerId, businessId, label: 'reminders' })
+    },
+  }
 }

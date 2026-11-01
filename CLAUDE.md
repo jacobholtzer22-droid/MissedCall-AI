@@ -2697,6 +2697,21 @@ to read `slotStart.getDate()` in the server zone (UTC on Vercel), so 8:00 and
 Both the GET and the write path treat an unreadable calendar as "no availability"
 rather than "free". Better to show no times than to double-book.
 
+### Show-rate layer (Nov 2026, every flag OFF by default)
+
+Each feature reads its own env flag as `process.env.X === 'true'`; anything else
+is off, and with every flag off the cron, the webhook, the copy and Ops HQ behave
+exactly as before. Decision logic is pure in `lib/show-rate.ts`; the cron steps
+live in `lib/show-rate-cron.ts` with every side effect injected (tests use fakes,
+nothing can send). **No schema change**: state is one marker line per event
+appended to `Appointment.notes` (like the consent marker), written with a
+conditional update on the exact notes value read, so a send is claimed once and
+a concurrent notes write is never clobbered (the losing run simply skips).
+
+| Flag | What | Where | Marker |
+|---|---|---|---|
+| `NOSHOW_REBOOK_SMS` | One rebook text after a booking is marked `no_show`: 3h after the call ends, moved into 10:00 AM to 7:00 PM booker-local (before 10 waits for 10:00 AM, 7 PM or later waits for 10:00 AM next day), only within 72h of the call. Skipped when the same phone booked again after it. Link: the lead's `/calendar?l=` token via `calendarLink`, bare `/calendar` when there is no unexpired token. | reminder cron, after the reminder loop | `Rebook text sent: <ISO>` |
+
 ---
 
 ## 20. Admin Pipeline (`/admin/pipeline`): outcome + follow-up CRM

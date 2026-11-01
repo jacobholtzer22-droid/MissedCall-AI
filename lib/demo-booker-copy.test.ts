@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { confirmationText, hourBeforeText, nightBeforeText } from './marketing-sms-copy'
+import { confirmationText, hourBeforeText, nightBeforeText, noShowRebookText } from './marketing-sms-copy'
 import {
   DEMO_EMAIL_FROM,
   confirmationEmail,
@@ -13,6 +13,8 @@ import {
 const TUE_4PM_ET = new Date('2026-09-22T20:00:00Z')
 const MEET = 'https://meet.google.com/abc-defg-hij'
 const VIDEO = 'https://www.alignandacquire.com/demo.mp4'
+const CAL_LINK =
+  'https://www.alignandacquire.com/calendar?l=Ab3dEf6hIj9kLm2n&utm_source=sms&utm_medium=funnel_return&utm_campaign=a'
 
 const GSM7 = /^[A-Za-z0-9 \n\r@£$¥èéùìòÇØøÅåΔ_ΦΓΛΩΠΨΣΘΞÆæßÉ!"#¤%&'()*+,\-./:;<=>?¡ÄÖÑÜ§¿äöñüà]*$/
 const NO_DASHES = /^[^\u2013\u2014]*$/
@@ -89,11 +91,24 @@ test('every text is GSM-7 across zones, seasons and fallbacks', () => {
   for (const at of [TUE_4PM_ET, new Date('2027-01-12T21:00:00Z')]) {
     for (const [timeZone, timeZoneSource] of zones) {
       const p = { ...pt, scheduledAt: at, timeZone, timeZoneSource }
-      for (const t of [confirmationText(p), nightBeforeText(p), hourBeforeText(p)]) {
+      const rebook = noShowRebookText({ ...p, rebookLink: CAL_LINK, sentAt: new Date(at.getTime() + 4 * 3600 * 1000) })
+      for (const t of [confirmationText(p), nightBeforeText(p), hourBeforeText(p), rebook]) {
         assert.match(t, GSM7, `not GSM-7: ${t}`)
       }
     }
   }
+})
+
+test('no-show rebook text, exact copy, today / yesterday / no day word', () => {
+  const sameDay = new Date(TUE_4PM_ET.getTime() + 4 * 3600 * 1000)
+  assert.equal(
+    noShowRebookText({ ...pt, rebookLink: CAL_LINK, sentAt: sameDay }),
+    `Hey Marcus, Jacob from Align and Acquire. Sorry we missed each other today. Grab a new time that works for you here: ${CAL_LINK}`
+  )
+  const nextDay = new Date(TUE_4PM_ET.getTime() + 20 * 3600 * 1000)
+  assert.match(noShowRebookText({ ...pt, rebookLink: CAL_LINK, sentAt: nextDay }), /each other yesterday\. Grab/)
+  const later = new Date(TUE_4PM_ET.getTime() + 50 * 3600 * 1000)
+  assert.match(noShowRebookText({ ...pt, firstName: null, rebookLink: CAL_LINK, sentAt: later }), /^Hey, Jacob .*each other\. Grab/)
 })
 
 test('MSG 5 email, exact subject and plain-text body', () => {
