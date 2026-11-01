@@ -131,6 +131,35 @@ export function SalesStrip({ sales, board, actions }: { sales: Triage['sales']; 
   )
 }
 
+/**
+ * LEAD_CALL_PROMPT (off by default): verified leads who never booked, newest
+ * first. Read only. Renders nothing when the board carries no list.
+ */
+export function CallPromptStrip({ board }: { board: OpsBoard }) {
+  const leads = board.callPrompts
+  if (!leads?.length) return null
+  return (
+    <section aria-label="Leads to call" className="bg-gray-900 border border-gray-800 rounded-lg px-4 py-3 space-y-2">
+      <h2 className="text-sm font-semibold text-gray-100">
+        Leads to call
+        <span className="ml-2 text-gray-500 font-normal">verified, never booked</span>
+      </h2>
+      <ul className="space-y-2">
+        {leads.map((l) => (
+          <li key={l.leadId} className="flex flex-wrap items-center gap-2 text-sm">
+            <span className="text-gray-200">{l.name || 'No name'}</span>
+            {l.company && <span className="text-gray-400">{l.company}</span>}
+            <a href={`tel:${l.phone}`} className="text-xs text-blue-400 tabular-nums">
+              {formatPhoneNumber(l.phone)}
+            </a>
+            <span className="ml-auto text-xs text-amber-300 tabular-nums">{l.hoursSinceOtp}h since verified</span>
+          </li>
+        ))}
+      </ul>
+    </section>
+  )
+}
+
 const BUCKET_TONE: Record<BucketKey, string> = {
   today: 'text-red-300',
   getDone: 'text-orange-300',

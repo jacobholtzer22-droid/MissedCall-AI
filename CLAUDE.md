@@ -2735,6 +2735,15 @@ the wizard on a return visit), so the claim is the outbound log row itself, a
 before the send (primary key = atomic) and deleted if the send fails, like touch
 2's release of `followUpSentAt`.
 
+### Ops HQ lists (read only, each OFF by default)
+
+- `LEAD_CALL_PROMPT`: "Leads to call" under the Sales strip. Marketing leads
+  OTP-verified 24h to 14 days ago, not booked (any non-cancelled appointment on
+  the phone), not spam/deleted/junk/test allowlist; name, company, `tel:` phone,
+  hours since OTP. Newest first, one row per phone, capped at 20
+  (`lib/ops/call-prompt.ts`, loaded by `lib/ops/board.ts` into
+  `OpsBoard.callPrompts`, absent when off).
+
 ---
 
 ## 20. Admin Pipeline (`/admin/pipeline`): outcome + follow-up CRM

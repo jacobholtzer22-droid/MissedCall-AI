@@ -19,6 +19,7 @@ import type { DeliverableStatus } from '@/lib/ops/types'
 import { isVerifiedMrr, mrrBucketOf } from '@/lib/ops/money'
 import { effectiveStatusOf, stepFor, type StepOwner } from '@/lib/ops/steps'
 import { needsConfirmFlag, showRateFlags } from '@/lib/show-rate'
+import { callPromptList, callPromptWindow, leadCallPromptEnabled, type BoardCallPrompt } from '@/lib/ops/call-prompt'
 
 /** Ops runs on Jacob's day: "today" and "this month" are America/Detroit. */
 export const OPS_TIMEZONE = 'America/Detroit'
@@ -171,6 +172,8 @@ export type OpsBoard = {
   ignored: BoardEngagement[]
   followUpsDue: BoardFollowUp[]
   bookedToday: BoardBooking[]
+  /** LEAD_CALL_PROMPT only (absent when off): verified leads who never booked, to call. */
+  callPrompts?: BoardCallPrompt[]
   money: BoardMoney
   agentRuns: BoardAgentRun[]
 }
@@ -248,6 +251,8 @@ export async function getOpsBoard(): Promise<OpsBoard> {
 
   // CONFIRM_TRACKING (off by default): one extra read, only when the flag is on.
   const noReplyIds = showRateFlags().confirmTracking ? await noConfirmReplyIds(bookings.map((b) => b.id), now) : null
+  // LEAD_CALL_PROMPT (off by default): two extra reads, only when the flag is on.
+  const callPrompts = leadCallPromptEnabled() && marketing ? await loadCallPrompts(marketing.id, now) : null
 
   // Prospect names: the latest lead or booking per person, two queries total.
   const phoneKeys = prospects.map((p) => p.personKey).filter((k) => !k.startsWith('lead:'))
@@ -417,6 +422,7 @@ export async function getOpsBoard(): Promise<OpsBoard> {
         ? { ...b, scheduledAt: b.scheduledAt.toISOString(), noConfirmReply: noReplyIds.has(b.id) }
         : { ...b, scheduledAt: b.scheduledAt.toISOString() }
     ),
+    ...(callPrompts ? { callPrompts } : {}),
     money,
     agentRuns: runs.flatMap((r) => (r.engagementId && r.engagement ? [{ ...r, engagementId: r.engagementId, engagement: r.engagement }] : [])).map((r) => ({
       id: r.id,
@@ -449,4 +455,30 @@ async function noConfirmReplyIds(ids: string[], now: Date): Promise<Set<string>>
     },
   })
   return new Set(rows.filter((r) => needsConfirmFlag(r, now)).map((r) => r.id))
+}
+
+/** Verified, never-booked leads for the Ops HQ call list (lib/ops/call-prompt.ts). */
+async function loadCallPrompts(businessId: string, now: Date): Promise<BoardCallPrompt[]> {
+  const { since, until } = callPromptWindow(now)
+  const leads = await db.websiteLead.findMany({
+    where: {
+      businessId,
+      otpVerifiedAt: { gte: since, lte: until },
+      phone: { not: null },
+      status: { notIn: ['spam', 'deleted'] },
+      junk: false,
+    },
+    orderBy: { otpVerifiedAt: 'desc' },
+    take: 200,
+    select: { id: true, name: true, phone: true, message: true, businessName: true, status: true, junk: true, otpVerifiedAt: true },
+  })
+  const phones = Array.from(new Set(leads.map((l) => l.phone).filter((p): p is string => Boolean(p))))
+  // Same "booked" rule as the follow-up cron: any non-cancelled appointment on the phone.
+  const booked = phones.length
+    ? await db.appointment.findMany({
+        where: { customerPhone: { in: phones }, status: { not: 'cancelled' } },
+        select: { customerPhone: true },
+      })
+    : []
+  return callPromptList(leads, new Set(booked.map((b) => b.customerPhone)), now)
 }
