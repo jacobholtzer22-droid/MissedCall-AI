@@ -58,6 +58,8 @@ import { FUNNEL_VARIANT_COOKIE } from '@/lib/funnel-variant'
 import { sendCapiLead } from '@/lib/meta-capi'
 import { logArmSchedule } from '@/lib/arm-log'
 import { resolveCalendarToken } from '@/lib/lead-token'
+import { showRateFlags } from '@/lib/show-rate'
+import { showRateCalendarLink } from '@/lib/show-rate-cron'
 
 export const dynamic = 'force-dynamic'
 
@@ -796,6 +798,9 @@ export async function POST(request: NextRequest) {
         timeZone: bookerZone?.timeZone,
         timeZoneSource: bookerZone?.source,
         videoUrl: getDemoVideoAbsoluteUrl(),
+        // RESCHEDULE_LINK (off by default): the lead's signed /calendar link.
+        // Undefined when off, which renders today's email exactly.
+        ...(showRateFlags().rescheduleLink ? { rescheduleLink: showRateCalendarLink(knownRow ?? null, new Date()) } : {}),
       })
       afterResponse(ROUTE, 'confirmation-email', async () => {
         const res = await fetch('https://api.resend.com/emails', {

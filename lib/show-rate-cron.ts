@@ -56,7 +56,7 @@ export type ShowRateDeps = {
   reread(id: string): Promise<ShowRateAppointment | null>
   hasOptedOut(phone: string): Promise<boolean>
   /** True when this phone booked again after this appointment was created, and that booking is live. */
-  hasNewerBooking(appt: ShowRateAppointment): Promise<boolean>
+  hasNewerBooking(appt: Pick<ShowRateAppointment, 'id' | 'customerPhone' | 'createdAt'>): Promise<boolean>
   calendarState(eventId: string): Promise<'active' | 'cancelled' | 'unknown'>
   /** The newest lead row for this phone, for the signed /calendar link. */
   leadForPhone(phone: string): Promise<LeadLinkRow | null>
@@ -188,4 +188,33 @@ async function sendOne(
     )
     result.failed.push({ id: appt.id, kind, error: message })
   }
+}
+
+// -------------------------------------------
+// RESCHEDULE_LINK, inside the existing reminder loop
+// -------------------------------------------
+
+export type ReminderExtras = { skip?: string; rescheduleLink?: string }
+
+/**
+ * What RESCHEDULE_LINK changes for one night-before / hour-before reminder.
+ * Flag off: always {}, and nothing is read.
+ *
+ * The /calendar link books a NEW slot; it does not cancel the old one. So once
+ * the link is live, a booking whose phone has booked again after it is treated
+ * as superseded and gets no further reminder. The old Google event and row are
+ * left for the owner to cancel by hand.
+ */
+export async function reminderExtras(
+  flags: ShowRateFlags,
+  kind: 'night_before' | 'hour_before',
+  appt: Pick<ShowRateAppointment, 'id' | 'customerPhone' | 'createdAt'>,
+  deps: Pick<ShowRateDeps, 'hasNewerBooking' | 'leadForPhone'>,
+  now: Date
+): Promise<ReminderExtras> {
+  if (!flags.rescheduleLink) return {}
+  if (await deps.hasNewerBooking(appt)) return { skip: 'superseded by a newer booking' }
+  if (kind !== 'night_before') return {}
+  const lead = await deps.leadForPhone(normalizeToE164(appt.customerPhone))
+  return { rescheduleLink: showRateCalendarLink(lead, now) }
 }

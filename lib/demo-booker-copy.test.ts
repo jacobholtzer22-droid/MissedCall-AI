@@ -120,6 +120,35 @@ test('start nudge text, exact copy', () => {
   assert.match(startNudgeText({ ...pt, firstName: '', meetLink: MEET }), /^Hey, Jacob from/)
 })
 
+test('RESCHEDULE_LINK off: night-before and email are exactly today\'s', () => {
+  for (const off of [undefined, null, '', '  ']) {
+    assert.equal(nightBeforeText({ ...pt, rescheduleLink: off }), nightBeforeText(pt))
+    assert.deepEqual(confirmationEmail({ ...pt, videoUrl: VIDEO, rescheduleLink: off }), confirmationEmail({ ...pt, videoUrl: VIDEO }))
+  }
+})
+
+test('RESCHEDULE_LINK on: night-before carries the link in place of the phone line', () => {
+  const t = nightBeforeText({ ...pt, rescheduleLink: CAL_LINK })
+  assert.equal(
+    t,
+    'Hey Marcus, Jacob from Align and Acquire. Looking forward to our call tomorrow at 1:00 PM PDT (your time). ' +
+      `Reply YES so I know you're still good. If you need a different time, pick one here: ${CAL_LINK}`
+  )
+  assert.match(t, GSM7)
+  // Two GSM-7 segments (153 characters each when concatenated).
+  assert.ok(t.length <= 306, `length ${t.length}`)
+})
+
+test('RESCHEDULE_LINK on: email adds the link and keeps the number', () => {
+  const mail = confirmationEmail({ ...pt, videoUrl: VIDEO, rescheduleLink: CAL_LINK })
+  assert.match(mail.text, new RegExp(`Need a different time\\? Pick a new one here: ${CAL_LINK.replace(/[?.]/g, '\\$&')} Or text or call my cell at 517-580-9709\\.`))
+  assert.ok(!mail.text.includes('Need a different time? Text or call'))
+  assert.match(mail.html, /Need a different time\? <a href="https:\/\/www\.alignandacquire\.com\/calendar\?l=Ab3dEf6hIj9kLm2n&amp;utm_source=sms[^"]*">Pick a new one here<\/a>\. Or text or call my cell at 517-580-9709\./)
+  for (const x of [mail.subject, mail.text, mail.html]) assert.match(x, NO_DASHES)
+  const noPhone = confirmationEmail({ ...pt, ownerPhone: null, rescheduleLink: CAL_LINK })
+  assert.match(noPhone.text, /Pick a new one here: \S+\n\nJacob/)
+})
+
 test('MSG 5 email, exact subject and plain-text body', () => {
   const mail = confirmationEmail({ ...pt, videoUrl: VIDEO })
   assert.equal(mail.subject, "You're booked: Tue, Sep 22 at 1:00 PM PDT (your time)")

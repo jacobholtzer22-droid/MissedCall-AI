@@ -55,7 +55,7 @@ import { isSendableStatus } from '@/lib/reminder-status'
 import { nightBeforeText, hourBeforeText } from '@/lib/marketing-sms-copy'
 import { decideReminder, type ReminderKind } from '@/lib/demo-reminder-schedule'
 import { showRateFlags } from '@/lib/show-rate'
-import { runShowRateSteps, type ShowRateDeps, type ShowRateResult } from '@/lib/show-rate-cron'
+import { reminderExtras, runShowRateSteps, type ShowRateDeps, type ShowRateResult } from '@/lib/show-rate-cron'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
@@ -88,9 +88,11 @@ function reminderText(
   meetLink: string | null,
   ownerPhone: string | null,
   timeZone: string | null,
-  timeZoneSource: string | null
+  timeZoneSource: string | null,
+  rescheduleLink?: string
 ): string {
-  const params = { scheduledAt, firstName, meetLink, ownerPhone, timeZone, timeZoneSource }
+  // rescheduleLink is only ever set with RESCHEDULE_LINK on; undefined renders today's copy.
+  const params = { scheduledAt, firstName, meetLink, ownerPhone, timeZone, timeZoneSource, rescheduleLink }
   return kind === 'night_before' ? nightBeforeText(params) : hourBeforeText(params)
 }
 
@@ -157,6 +159,10 @@ async function runAppointmentReminders(request: NextRequest) {
     take: 200,
   })
 
+  // Show-rate flags (lib/show-rate.ts), each OFF by default.
+  const flags = showRateFlags()
+  const showRateLinks = flags.rescheduleLink ? showRateDeps(business.id, telnyx, fromNumber) : null
+
   const result = {
     checked: candidates.length,
     sent: [] as { id: string; kind: ReminderKind }[],
@@ -184,6 +190,13 @@ async function runAppointmentReminders(request: NextRequest) {
 
     if (await hasOptedOut(business.id, appt.customerPhone)) {
       result.skipped.push({ id: appt.id, reason: 'opted out (STOP)' })
+      continue
+    }
+
+    // RESCHEDULE_LINK only: skip a superseded booking, link in the night-before.
+    const extras = showRateLinks ? await reminderExtras(flags, kind, appt, showRateLinks, now) : {}
+    if (extras.skip) {
+      result.skipped.push({ id: appt.id, reason: extras.skip })
       continue
     }
 
@@ -254,7 +267,8 @@ async function runAppointmentReminders(request: NextRequest) {
       fresh.googleMeetLink,
       business.ownerPhone,
       appt.customerTimezone,
-      appt.customerTimezoneSource
+      appt.customerTimezoneSource,
+      extras.rescheduleLink
     )
 
     try {
@@ -286,7 +300,6 @@ async function runAppointmentReminders(request: NextRequest) {
   // Show-rate steps (lib/show-rate-cron.ts), each behind its own env flag and
   // OFF by default. With every flag off nothing below runs and the response is
   // exactly what it was.
-  const flags = showRateFlags()
   let showRate: ShowRateResult | null = null
   if (flags.noshowRebook || flags.startNudge) {
     showRate = await runShowRateSteps(flags, showRateDeps(business.id, telnyx, fromNumber), now)

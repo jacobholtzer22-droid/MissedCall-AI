@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { runShowRateSteps, showRateCalendarLink, type ShowRateDeps, type LeadLinkRow } from './show-rate-cron'
+import { reminderExtras, runShowRateSteps, showRateCalendarLink, type ShowRateDeps, type LeadLinkRow } from './show-rate-cron'
 import { REBOOK_SENT_MARKER, START_NUDGE_SENT_MARKER, hasMarker, showRateFlags, type ShowRateAppointment, type ShowRateFlags } from './show-rate'
 
 const et = (iso: string) => new Date(`${iso}-04:00`)
@@ -239,4 +239,31 @@ test('start nudge: marked showed between the claim read and the send, nothing go
   const r = await runShowRateSteps(NUDGE, f.deps, START)
   assert.equal(r.skipped[0].reason, "showStatus 'showed' at send time")
   assert.equal(f.sent.length, 0)
+})
+
+// -------------------------------------------
+// RESCHEDULE_LINK inside the reminder loop
+// -------------------------------------------
+
+test('reminder extras: flag off returns nothing and reads nothing', async () => {
+  let reads = 0
+  const deps = {
+    hasNewerBooking: async () => (reads++, true),
+    leadForPhone: async () => (reads++, LEAD),
+  }
+  assert.deepEqual(await reminderExtras(OFF, 'night_before', appt(), deps, DUE), {})
+  assert.deepEqual(await reminderExtras(OFF, 'hour_before', appt(), deps, DUE), {})
+  assert.equal(reads, 0)
+})
+
+test('reminder extras: flag on links the night-before and skips a superseded booking', async () => {
+  const RL: ShowRateFlags = { ...OFF, rescheduleLink: true }
+  const live = { hasNewerBooking: async () => false, leadForPhone: async () => LEAD }
+  assert.deepEqual(await reminderExtras(RL, 'night_before', appt(), live, DUE), {
+    rescheduleLink:
+      'https://www.alignandacquire.com/calendar?l=Ab3dEf6hIj9kLm2n&utm_source=sms&utm_medium=funnel_return&utm_campaign=a',
+  })
+  assert.deepEqual(await reminderExtras(RL, 'hour_before', appt(), live, DUE), {})
+  const moved = { ...live, hasNewerBooking: async () => true }
+  assert.deepEqual(await reminderExtras(RL, 'hour_before', appt(), moved, DUE), { skip: 'superseded by a newer booking' })
 })

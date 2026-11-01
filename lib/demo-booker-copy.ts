@@ -51,6 +51,7 @@ export function confirmationEmail(params: DemoBookerCopyParams): {
   const phone = formatReschedulePhone(params.ownerPhone)
   const meet = params.meetLink?.trim()
   const video = params.videoUrl?.trim()
+  const reschedule = params.rescheduleLink?.trim()
 
   const paras: Para[] = [
     para(`Hi${greetingName(params.firstName)},`),
@@ -69,7 +70,20 @@ export function confirmationEmail(params: DemoBookerCopyParams): {
           ),
         ]
       : []),
-    ...(phone ? [para(`Need a different time? Text or call my cell at ${phone}.`)] : []),
+    // RESCHEDULE_LINK (off by default): reschedule is undefined and this line
+    // is exactly today's.
+    ...(reschedule
+      ? [
+          para(
+            `Need a different time? Pick a new one here: ${reschedule}` +
+              (phone ? ` Or text or call my cell at ${phone}.` : ''),
+            `Need a different time? ${link('Pick a new one here', reschedule)}.` +
+              (phone ? escapeHtml(` Or text or call my cell at ${phone}.`) : '')
+          ),
+        ]
+      : phone
+        ? [para(`Need a different time? Text or call my cell at ${phone}.`)]
+        : []),
     para('Jacob\nAlign and Acquire', 'Jacob<br>Align and Acquire'),
   ]
 

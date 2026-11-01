@@ -70,6 +70,11 @@ export type DemoSmsParams = {
    */
   timeZone?: string | null
   timeZoneSource?: string | null
+  /**
+   * RESCHEDULE_LINK only (off by default): the lead's signed /calendar link.
+   * Absent or null renders today's copy exactly.
+   */
+  rescheduleLink?: string | null
 }
 
 export function demoWhen(params: DemoSmsParams) {
@@ -99,6 +104,17 @@ export function confirmationText(params: DemoSmsParams): string {
 export function nightBeforeText(params: DemoSmsParams): string {
   const when = demoWhen(params)
   const phone = formatReschedulePhone(params.ownerPhone)
+  const reschedule = params.rescheduleLink?.trim()
+  // RESCHEDULE_LINK: the link takes the phone sentence's place, so the text
+  // stays at two segments instead of three. The confirmation text and email
+  // still carry the number.
+  if (reschedule) {
+    return (
+      `Hey${greetingName(params.firstName)}, Jacob from Align and Acquire. ` +
+      `Looking forward to our call tomorrow at ${when.timeMarked}. ` +
+      `Reply YES so I know you're still good. If you need a different time, pick one here: ${reschedule}`
+    )
+  }
   return (
     `Hey${greetingName(params.firstName)}, Jacob from Align and Acquire. ` +
     `Looking forward to our call tomorrow at ${when.timeMarked}. ` +
