@@ -8,6 +8,9 @@
 //     records detail.prNumber).
 // A PR merged or closed by hand in GitHub is not recorded, so it reads as open:
 // callers that must not run ahead of a merge treat "open" and "unknown" as not merged.
+// With OPS_AUTOFLOW on, pr-state-server also passes the PR numbers the web checks
+// saw production deployed from (website evidence productionPrsSeen, from the
+// production commit message; lib/ops/outside-hq.ts), so a hand merge counts.
 
 export type PrRun = { kind: string; status: string; finishedAt: Date | string | null; output: unknown }
 export type MergeRecord = { prNumber: number }

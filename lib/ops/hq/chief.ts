@@ -37,7 +37,9 @@ const detroitWhen = (d: Date) =>
 import { waitUntil } from '@vercel/functions'
 import { AdsOffline, adsClients, runAdsTask, startAdsRun } from './ads'
 import { type ApiMessage, type Block, CHIEF_MODEL_DEFAULT } from './anthropic'
-import { DECISION_PREFIX, decisionsByEngagement } from './decisions'
+import { DECISION_PREFIX, decisionsByEngagement, standingDecisionRows } from './decisions'
+import { findDecision, supersededMarker } from '@/lib/ops/outside-hq'
+import { runWebChecks } from '@/lib/ops/checks/run-web'
 import { noEmDash, oneLine } from './events'
 import { type ClientTool, runAgentLoop } from './loop'
 import { adsAccountUrl } from './links'
@@ -324,6 +326,62 @@ async function ensureJob(ctx: ChiefContext, engagementIds: string[]): Promise<st
   await db.agentRun.update({ where: { id: ctx.runId }, data: { jobId: job.id } })
   if (ctx.messageId) await db.opsMessage.update({ where: { id: ctx.messageId }, data: { jobId: job.id } })
   return job.id
+}
+
+/**
+ * OPS_AUTOFLOW: run_site_checks (the existing web checks for one client, writing only
+ * what they always write) and supersede_decision (keeps both decisions in the history).
+ */
+function outsideHqTools(): ClientTool[] {
+  return [
+    {
+      name: 'run_site_checks',
+      description:
+        'Run the website and domain checks for one client now (the same checks the nightly run does: Vercel project, production, indexing, pages, tag, DNS). Use after Jacob did something outside Ops HQ, like merging a PR or changing DNS by hand. It reads GitHub and Vercel and stores only what the checks always store.',
+      input_schema: { type: 'object', properties: { engagementId: { type: 'string' } }, required: ['engagementId'] },
+      run: async (input) => {
+        const engagementId = str(input.engagementId)
+        const name = await engagementName(engagementId)
+        const s = await runWebChecks({ dryRun: false, only: engagementId })
+        const result = {
+          ok: true,
+          client: name,
+          matched: s.matched,
+          failing: s.failingByKey,
+          couldNotRun: s.couldNotRunByKey,
+          statusChanges: s.statusChanges,
+          autoAdvances: s.autoAdvances,
+          apiErrors: s.apiErrors,
+          checksWritten: s.checksWritten,
+        }
+        return { result, label: `Ran the site checks for ${name}: ${s.checksWritten} checks, ${Object.keys(s.failingByKey).length} failing` }
+      },
+    },
+    {
+      name: 'supersede_decision',
+      description:
+        'Replace one of a client\'s standing decisions with a new one when Jacob changes his mind ("the budget cap is now $30/day"). oldDecision: the old decision word for word, or words only it contains. The old one stays in the history marked replaced; specialists get only the new one. Never use it for a decision Jacob did not change.',
+      input_schema: {
+        type: 'object',
+        properties: { engagementId: { type: 'string' }, oldDecision: { type: 'string' }, newDecision: { type: 'string', description: 'The new decision, one sentence.' } },
+        required: ['engagementId', 'oldDecision', 'newDecision'],
+      },
+      run: async (input) => {
+        const engagementId = str(input.engagementId)
+        const name = await engagementName(engagementId)
+        const next = noEmDash(str(input.newDecision))
+        if (!next) throw new Error('newDecision is empty')
+        const rows = (await standingDecisionRows([engagementId])).map((r) => ({ id: r.id, text: r.body.slice(DECISION_PREFIX.length).trim() }))
+        const old = findDecision(rows, str(input.oldDecision))
+        if ('error' in old) throw new Error(old.error)
+        await db.$transaction([
+          db.opsActivity.create({ data: { engagementId, kind: 'system', body: `${DECISION_PREFIX} ${next}` } }),
+          db.opsActivity.create({ data: { engagementId, kind: 'system', body: supersededMarker(old.id, old.text, next) } }),
+        ])
+        return { result: { ok: true, client: name, replaced: old.text, now: next }, label: `Decision for ${name}: "${old.text}" is replaced by "${next}"` }
+      },
+    },
+  ]
 }
 
 function chiefTools(ctx: ChiefContext): ClientTool[] {
@@ -661,6 +719,8 @@ function chiefTools(ctx: ChiefContext): ClientTool[] {
         return { result: { ok: true, client: name }, label: `Decision for ${name}: ${decision}` }
       },
     },
+    // OPS_AUTOFLOW (off by default): work Jacob did outside Ops HQ.
+    ...(autoflowEnabled() ? outsideHqTools() : []),
     {
       name: 'read_doc',
       description:

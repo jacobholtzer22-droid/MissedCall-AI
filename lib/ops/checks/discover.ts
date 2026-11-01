@@ -29,7 +29,14 @@ export const GITHUB = 'https://api.github.com'
 
 export type VercelDomain = { name: string; verified: boolean; redirect: string | null }
 
-export type VercelDeployment = { url: string; state: string; createdAt: string; branch: string | null }
+export type VercelDeployment = {
+  url: string
+  state: string
+  createdAt: string
+  branch: string | null
+  /** OPS_AUTOFLOW: the commit message Vercel recorded (already in the response). Present only with the flag on. */
+  commitMessage?: string | null
+}
 
 export type VercelProject = {
   id: string
@@ -89,7 +96,7 @@ export async function api<T>(url: string, token: string, label: string, errors: 
 // ── Vercel ──────────────────────────────────────────────────────────────────
 
 type RawProject = { id: string; name: string; framework?: string | null; link?: { type?: string; org?: string; repo?: string } | null }
-type RawDeployment = { url: string; state?: string; readyState?: string; createdAt?: number; created?: number; meta?: { githubCommitRef?: string } }
+type RawDeployment = { url: string; state?: string; readyState?: string; createdAt?: number; created?: number; meta?: { githubCommitRef?: string; githubCommitMessage?: string } }
 
 const toDeployment = (d: RawDeployment | undefined): VercelDeployment | null =>
   d
@@ -98,6 +105,7 @@ const toDeployment = (d: RawDeployment | undefined): VercelDeployment | null =>
         state: d.state ?? d.readyState ?? 'UNKNOWN',
         createdAt: new Date(d.createdAt ?? d.created ?? 0).toISOString(),
         branch: d.meta?.githubCommitRef ?? null,
+        ...(process.env.OPS_AUTOFLOW === 'true' ? { commitMessage: d.meta?.githubCommitMessage ?? null } : {}),
       }
     : null
 

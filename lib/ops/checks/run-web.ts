@@ -18,6 +18,8 @@ import { EXTERNAL_CONCURRENCY, mapLimited } from './limit'
 import { listDeploymentsForBranch, type BranchDeployment } from '@/lib/ops/vercel'
 import { domainChecks, websiteChecks, type CheckResult } from './web'
 import { sampleSiteGuardEnabled } from '@/lib/ops/sample-site'
+import { autoflowEnabled } from '@/lib/ops/autoflow'
+import { prsSeenAfter } from '@/lib/ops/outside-hq'
 
 /** Evidence keys the web checks own and overwrite; every other key is left alone. */
 export const WEBSITE_EVIDENCE_KEYS = [
@@ -96,7 +98,8 @@ function productionUrlOf(p: VercelProject | null, primary: string | null): strin
   return p?.production?.url ?? null
 }
 
-export async function runWebChecks({ dryRun }: { dryRun: boolean }): Promise<WebChecksSummary> {
+/** only (OPS_AUTOFLOW, run_site_checks): check one client; discovery still reads every project so matching is the same. */
+export async function runWebChecks({ dryRun, only }: { dryRun: boolean; only?: string }): Promise<WebChecksSummary> {
   const started = Date.now()
   const now = new Date(started)
 
@@ -171,7 +174,8 @@ export async function runWebChecks({ dryRun }: { dryRun: boolean }): Promise<Web
     /** Latest deployment of evidence.previewBranch (set by the agent callback), when there is one. */
     branchPreview: BranchDeployment | null
   }
-  const targets = engs.filter((e) => e.website || e.domain)
+  // only: every client is still matched (so no project is claimed by the wrong one); one is checked.
+  const targets = engs.filter((e) => (e.website || e.domain) && (!only || e.id === only))
   const plans: Plan[] = await mapLimited(targets, EXTERNAL_CONCURRENCY, async (eng) => {
     const repo = m.repoFor.get(eng.id)?.repo ?? null
     const project = m.projectFor.get(eng.id)?.project ?? null
@@ -216,6 +220,11 @@ export async function runWebChecks({ dryRun }: { dryRun: boolean }): Promise<Web
         previewState: p.branchPreview?.state ?? (typeof eng.website.evidence.previewBranch === 'string' ? null : project?.preview?.state ?? null),
         // The launch gates count a tag seen on production as installed.
         googleTagLive: p.websiteResults.find((x) => x.key === 'http.google_tag')?.passed ?? null,
+      }
+      // OPS_AUTOFLOW: PRs production has been seen at, so a PR merged by hand counts as merged (lib/ops/pr-state.ts).
+      if (autoflowEnabled()) {
+        const seen = prsSeenAfter(eng.website.evidence.productionPrsSeen, project?.production?.state, project?.production?.commitMessage)
+        if (seen) ev.productionPrsSeen = seen
       }
       // SAMPLE_SITE_GUARD: the go-live gate reads this (true = production is the sample).
       if (sampleSiteGuardEnabled()) {
