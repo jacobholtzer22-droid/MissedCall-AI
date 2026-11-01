@@ -50,6 +50,7 @@ import { reportGaps, type GateClient } from '@/lib/ops/launch-gate'
 import { clientIntakeEnabled } from '@/lib/ops/client-intake'
 import { autoflowEnabled } from '@/lib/ops/autoflow'
 import { autoflowForJob } from '@/lib/ops/autoflow-server'
+import { adsPreflightFor, webPreflightFor } from '@/lib/ops/preflight-server'
 import { briefShapeProblem, draftBriefIfReady, draftMessage, draftPrompt, shouldDraftBrief, type BriefDraftState, type DraftTrigger, type IntakeWithDraft } from '@/lib/ops/brief-draft'
 import { clientLinkFor } from '@/lib/ops/client-intake-server'
 
@@ -687,13 +688,22 @@ function chiefTools(ctx: ChiefContext): ClientTool[] {
         let jobId: string | null = null
         for (const c of clients) {
           try {
+            // OPS_AUTOFLOW (off by default): check what the run needs first, one grouped list (lib/ops/preflight.ts).
+            if (autoflowEnabled()) {
+              const refusal = await adsPreflightFor(c.id, instructions)
+              if (refusal) {
+                if (clients.length === 1) throw new PreflightRefusal(refusal)
+                skipped.push(`${c.name}: ${refusal}`)
+                continue
+              }
+            }
             // One run per account. The job is created on the first run that can start.
             if (!jobId) jobId = await ensureJob(ctx, clients.map((x) => x.id))
             const run = await startAdsRun({ engagementId: c.id, jobId, instructions })
             waitUntil(runAdsTask(run.id))
             started.push(c.name)
           } catch (err) {
-            if (err instanceof AdsOffline) throw err
+            if (err instanceof AdsOffline || err instanceof PreflightRefusal) throw err
             skipped.push(`${c.name}: ${err instanceof Error ? err.message : String(err)}`)
           }
         }
@@ -913,6 +923,12 @@ function chiefTools(ctx: ChiefContext): ClientTool[] {
       },
       run: async (input) => {
         const engagementId = str(input.engagementId)
+        // OPS_AUTOFLOW (off by default): check what the run needs first, one grouped list (lib/ops/preflight.ts).
+        const preKind = str(input.kind)
+        if (autoflowEnabled() && (preKind === 'site_build' || preKind === 'site_update')) {
+          const refusal = await webPreflightFor(engagementId, preKind, { withStock: input.withStock === true, instructions: input.instructions ? str(input.instructions) : undefined })
+          if (refusal) throw new Error(refusal)
+        }
         const r = await startWebTask({
           engagementId,
           kind: str(input.kind) as WebTaskKind,
@@ -1362,3 +1378,6 @@ export async function autoDraftBrief(engagementId: string, trigger: DraftTrigger
     console.error(`[autoflow] brief draft for ${engagementId} failed:`, err instanceof Error ? err.message : err)
   }
 }
+
+/** A pre-flight refusal for a single-client ads task: thrown to the chief as is. */
+class PreflightRefusal extends Error {}

@@ -3633,3 +3633,14 @@ Nothing is built, no step moves, nothing is sent.
   the intake link's Done route the standards file may be missing on Vercel, so that trigger
   fails retryably and the next chief-side trigger drafts. Adding the route to
   `outputFileTracingIncludes` is a protected-path change for Jacob.
+
+#### Autoflow: pre-flight before build and ads runs (same flag)
+
+With `OPS_AUTOFLOW` on, the chief's `start_web_task` (site_build, site_update) and
+`start_ads_task` check first what the run will need and refuse with one grouped list
+("From the client:", "From you:", "Setup:", then "Nothing was started.") instead of
+starting and stopping halfway. Rules and the file:line each one rests on are in the
+header of `lib/ops/preflight.ts`; facts are read in `lib/ops/preflight-server.ts`. Never
+blocked because the run handles it: no Google Ads customer id, no stock photo keys,
+vercel.app final URLs, billing and advertiser verification. Env vars are checked by name.
+Off: no new checks.
