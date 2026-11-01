@@ -105,7 +105,8 @@ function deps(card: { runId: string; jobId: string }): AccountDeps {
   }
 }
 
-export const proposeAccountFor = (engagementId: string, card: { runId: string; jobId: string }) => proposeAccount(engagementId, deps(card))
+export const proposeAccountFor = (engagementId: string, card: { runId: string; jobId: string }, timeZone?: string | null) =>
+  proposeAccount(engagementId, deps(card), timeZone)
 
 /** decideApproval's apply for the two card kinds. */
 export async function applyAccountCard(approval: { kind: string; runId: string; jobId: string }, detail: Record<string, unknown>): Promise<string> {

@@ -12,6 +12,8 @@ import {
   proposeAccount,
   stepAfterAccount,
   timeZoneFor,
+  validTimeZone,
+  zoneLine,
   type AccountDeps,
   type AccountFacts,
 } from './ads-account'
@@ -80,22 +82,23 @@ test('the flag is off unless exactly "true"', () => {
 })
 
 test('fields come from the board: name, USD, the time zone of a one-zone state', () => {
-  assert.deepEqual(accountFields(facts()), { fields: { descriptiveName: 'Client A Painting', currencyCode: 'USD', timeZone: 'America/Denver' } })
-  assert.deepEqual(timeZoneFor('Town B, nj'), { tz: 'America/New_York' })
-  assert.deepEqual(timeZoneFor('Town C, AZ 85001'), { tz: 'America/Phoenix' })
+  assert.deepEqual(accountFields(facts()), { fields: { descriptiveName: 'Client A Painting', currencyCode: 'USD', timeZone: 'America/Denver' }, zone: { split: false, source: 'state' } })
+  assert.deepEqual(timeZoneFor('Town B, nj'), { tz: 'America/New_York', split: false, source: 'state' })
+  assert.deepEqual(timeZoneFor('Town C, AZ 85001'), { tz: 'America/Phoenix', split: false, source: 'state' })
   // The intake's home base is used when the board has no location.
-  assert.deepEqual(accountFields(facts({ location: null, intakeAddress: '12 Main St, Town D, WA' })), { fields: { descriptiveName: 'Client A Painting', currencyCode: 'USD', timeZone: 'America/Los_Angeles' } })
+  assert.deepEqual(accountFields(facts({ location: null, intakeAddress: '12 Main St, Town D, WA' })), { fields: { descriptiveName: 'Client A Painting', currencyCode: 'USD', timeZone: 'America/Los_Angeles' }, zone: { split: false, source: 'state' } })
 })
 
 test('missing or ambiguous fields block the proposal with a list, never a guess', () => {
-  const r = accountFields(facts({ displayName: ' ', location: 'Town E, TX', businessId: null, hasAdsDeliverable: false }))
+  const r = accountFields(facts({ displayName: ' ', location: 'Town E, ZZ', businessId: null, hasAdsDeliverable: false }))
   assert.ok('blocked' in r)
   assert.deepEqual(r.blocked, [
     'the client has no ads service on the board',
     'the client has no platform account to store the account id on',
     'the business name (q1)',
-    'the time zone: TX spans two time zones, so tell me which one the client is in',
+    'the time zone: ZZ is not a US state I know',
   ])
+  assert.match(String((accountFields(facts(), 'Mars/Olympus') as { blocked: string[] }).blocked), /not a valid time zone name/)
   assert.match(String((accountFields(facts({ location: null })) as { blocked: string[] }).blocked), /client location \(City, ST\)/)
   assert.match(String((accountFields(facts({ existingCustomerId: '9876543210' })) as { blocked: string[] }).blocked), /already has a Google Ads account \(9876543210\)/)
   assert.match(String((accountFields(facts({ neverTouch: true })) as { blocked: string[] }).blocked), /never-touch/)
@@ -111,7 +114,7 @@ test('propose: one validate_only call, then one card with the exact fields; noth
     assert.equal(f.cards[0].kind, 'ads_account_create')
     assert.deepEqual(
       { ...f.cards[0].detail },
-      { action: 'create_customer_client', engagementId: 'eng1', descriptiveName: 'Client A Painting', currencyCode: 'USD', timeZone: 'America/Denver', accountEmail: 'owner@example.com', accessCheck: 'validate_only create passed' }
+      { action: 'create_customer_client', engagementId: 'eng1', descriptiveName: 'Client A Painting', currencyCode: 'USD', timeZone: 'America/Denver', timeZoneSource: 'state', accountEmail: 'owner@example.com', accessCheck: 'validate_only create passed' }
     )
     assert.deepEqual(f.binds, [])
   })
@@ -131,12 +134,50 @@ test('access check not allowed: plain words, no card, nothing created', async ()
 
 test('a blocked client never reaches Google', async () => {
   await withFlag(true, async () => {
-    const f = fakes(facts({ location: 'Town E, FL' }))
+    const f = fakes(facts({ location: null }))
     const r = await proposeAccount('eng1', f.deps)
     assert.equal(r.proposed, false)
-    assert.match((r as { reason: string }).reason, /FL spans two time zones/)
+    assert.match((r as { reason: string }).reason, /client location \(City, ST\)/)
     assert.equal(f.calls.length, 0)
   })
+})
+
+test('split states: the majority zone, flagged on the card for Jacob to confirm', async () => {
+  const table: [string, string][] = [
+    ['Town, FL', 'America/New_York'], ['Town, MI', 'America/New_York'], ['Town, IN', 'America/New_York'], ['Town, KY', 'America/New_York'],
+    ['Town, TN', 'America/Chicago'], ['Town, TX', 'America/Chicago'], ['Town, KS', 'America/Chicago'], ['Town, NE', 'America/Chicago'],
+    ['Town, SD', 'America/Chicago'], ['Town, ND', 'America/Chicago'], ['Town, OR', 'America/Los_Angeles'], ['Town, ID', 'America/Denver'],
+  ]
+  for (const [loc, tz] of table) assert.deepEqual(timeZoneFor(loc), { tz, split: true, source: 'state' }, loc)
+  assert.equal(zoneLine({ tz: 'America/New_York', split: true, source: 'state' }), 'Time zone: America/New_York (state spans two zones; confirm before Push)')
+  await withFlag(true, async () => {
+    const f = fakes(facts({ location: 'Port City, FL' }))
+    const r = await proposeAccount('eng1', f.deps)
+    assert.equal(r.proposed, true)
+    assert.equal(f.cards[0].detail.timeZone, 'America/New_York')
+    assert.equal(f.cards[0].detail.timeZoneNote, 'state spans two zones; confirm before Push')
+    // Push re-checks with the same default and goes ahead.
+    const g = fakes(facts({ location: 'Port City, FL' }))
+    assert.equal((await applyAccountCreate(f.cards[0].detail, g.deps, STEP_CATALOG.ads)).customerId, '1234567890')
+  })
+})
+
+test('an explicit time zone from Jacob wins, is validated, and is honoured at Push', async () => {
+  await withFlag(true, async () => {
+    const f = fakes(facts({ location: 'Far West Town, TX' }))
+    const r = await proposeAccount('eng1', f.deps, 'America/Denver')
+    assert.equal(r.proposed, true)
+    assert.equal(f.cards[0].detail.timeZone, 'America/Denver')
+    assert.equal(f.cards[0].detail.timeZoneSource, 'override')
+    assert.equal(f.cards[0].detail.timeZoneNote, undefined)
+    const g = fakes(facts({ location: 'Far West Town, TX' }))
+    assert.equal((await applyAccountCreate(f.cards[0].detail, g.deps, STEP_CATALOG.ads)).customerId, '1234567890')
+    assert.equal((g.calls[0].fields as { timeZone: string }).timeZone, 'America/Denver')
+    const bad = await proposeAccount('eng1', fakes(facts()).deps, 'Not/AZone')
+    assert.equal(bad.proposed, false)
+  })
+  assert.equal(validTimeZone('America/Chicago'), 'America/Chicago')
+  assert.equal(validTimeZone('chicago'), null)
 })
 
 test('Push: create for real, bind by id, step forward, then a separate invite card', async () => {

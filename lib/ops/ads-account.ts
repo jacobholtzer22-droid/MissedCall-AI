@@ -47,16 +47,53 @@ const STATE_TZ: Record<string, string> = {
   RI: 'America/New_York', SC: 'America/New_York', UT: 'America/Denver', VT: 'America/New_York', VA: 'America/New_York',
   WA: 'America/Los_Angeles', WV: 'America/New_York', WI: 'America/Chicago', WY: 'America/Denver',
 }
-/** States with more than one time zone: never guessed. */
-const SPLIT_STATES = ['FL', 'TX', 'TN', 'KY', 'IN', 'MI', 'ND', 'SD', 'NE', 'KS', 'OR', 'ID']
+/**
+ * States with two time zones: the zone that covers most of the state's people. The card
+ * says so and asks Jacob to confirm before Push; propose_ads_account takes an explicit
+ * time_zone when he says otherwise.
+ *   FL  Eastern: all but the western Panhandle.            KY  Eastern: Louisville, Lexington, the east.
+ *   MI  Eastern: all but four Upper Peninsula counties.    IN  Eastern: all but the northwest and southwest corners.
+ *   TN  Central: Nashville, Memphis and Middle and West TN outnumber East TN.
+ *   TX  Central: all but El Paso and Hudspeth.             KS, NE, SD, ND  Central: the western strips are Mountain.
+ *   OR  Pacific: all but most of Malheur County.           ID  Mountain: Boise and the south; the north is Pacific.
+ * Canonical zones only (America/New_York, Chicago, Denver, Los_Angeles), which keep the same
+ * offsets as America/Detroit, Indiana/Indianapolis, Kentucky/Louisville and Boise.
+ */
+export const SPLIT_STATE_TZ: Record<string, string> = {
+  FL: 'America/New_York', MI: 'America/New_York', IN: 'America/New_York', KY: 'America/New_York',
+  TN: 'America/Chicago', TX: 'America/Chicago', KS: 'America/Chicago', NE: 'America/Chicago', SD: 'America/Chicago', ND: 'America/Chicago',
+  OR: 'America/Los_Angeles', ID: 'America/Denver',
+}
 
-/** "City, ST" (Engagement.location, or the intake's home base) to a time zone, or why not. */
-export function timeZoneFor(location: string | null | undefined): { tz: string } | { missing: string } {
+export type ZoneResult = { tz: string; split: boolean; source: 'state' | 'override' } | { missing: string }
+
+/** A real IANA zone name, or null. */
+export function validTimeZone(v: unknown): string | null {
+  if (typeof v !== 'string' || !/^[A-Za-z]+(?:\/[A-Za-z0-9_+-]+){1,2}$/.test(v.trim())) return null
+  try {
+    return new Intl.DateTimeFormat('en-US', { timeZone: v.trim() }).resolvedOptions().timeZone
+  } catch {
+    return null
+  }
+}
+
+/** "City, ST" (Engagement.location, or the intake's home base) to a time zone, or why not. An override wins. */
+export function timeZoneFor(location: string | null | undefined, override?: string | null): ZoneResult {
+  if (override) {
+    const tz = validTimeZone(override)
+    return tz ? { tz, split: false, source: 'override' } : { missing: `the time zone: "${override}" is not a valid time zone name (e.g. America/Chicago)` }
+  }
   const st = location?.match(/,\s*([A-Za-z]{2})\b\s*(\d{5})?\s*$/)?.[1]?.toUpperCase()
   if (!st) return { missing: 'the time zone: the client location (City, ST) is not on the board or in the intake (q9)' }
-  if (SPLIT_STATES.includes(st)) return { missing: `the time zone: ${st} spans two time zones, so tell me which one the client is in` }
+  if (SPLIT_STATE_TZ[st]) return { tz: SPLIT_STATE_TZ[st], split: true, source: 'state' }
   const tz = STATE_TZ[st]
-  return tz ? { tz } : { missing: `the time zone: ${st} is not a US state I know` }
+  return tz ? { tz, split: false, source: 'state' } : { missing: `the time zone: ${st} is not a US state I know` }
+}
+
+/** The card's time zone line. */
+export function zoneLine(z: { tz: string; split: boolean; source: string }): string {
+  if (z.source === 'override') return `Time zone: ${z.tz} (as you said)`
+  return z.split ? `Time zone: ${z.tz} (state spans two zones; confirm before Push)` : `Time zone: ${z.tz}`
 }
 
 export type AccountFacts = {
@@ -74,9 +111,10 @@ export type AccountFacts = {
 }
 
 export type AccountFields = { descriptiveName: string; currencyCode: 'USD'; timeZone: string }
+export type AccountZone = { split: boolean; source: 'state' | 'override' }
 
 /** The exact fields, or the list of what blocks the proposal. Currency is USD only because the client is in a US state. */
-export function accountFields(f: AccountFacts): { fields: AccountFields } | { blocked: string[] } {
+export function accountFields(f: AccountFacts, timeZoneOverride?: string | null): { fields: AccountFields; zone: AccountZone } | { blocked: string[] } {
   const blocked: string[] = []
   if (f.neverTouch) blocked.push('this client is on the never-touch list in the ads playbook')
   if (f.existingCustomerId) blocked.push(`the client already has a Google Ads account (${f.existingCustomerId}); bind or use that one`)
@@ -84,10 +122,10 @@ export function accountFields(f: AccountFacts): { fields: AccountFields } | { bl
   if (!f.businessId) blocked.push('the client has no platform account to store the account id on')
   const name = f.displayName?.trim()
   if (!name) blocked.push('the business name (q1)')
-  const tz = timeZoneFor(f.location?.trim() || f.intakeAddress?.trim() || null)
+  const tz = timeZoneFor(f.location?.trim() || f.intakeAddress?.trim() || null, timeZoneOverride)
   if ('missing' in tz) blocked.push(tz.missing)
-  if (blocked.length) return { blocked }
-  return { fields: { descriptiveName: name!.slice(0, 120), currencyCode: 'USD', timeZone: (tz as { tz: string }).tz } }
+  if (blocked.length || 'missing' in tz) return { blocked }
+  return { fields: { descriptiveName: name!.slice(0, 120), currencyCode: 'USD', timeZone: tz.tz }, zone: { split: tz.split, source: tz.source } }
 }
 
 /** "customers/1234567890" to "1234567890", or null. */
@@ -131,12 +169,13 @@ export type AccountDeps = {
 export type ProposeResult = { proposed: true; approvalId: string; fields: AccountFields } | { proposed: false; reason: string }
 
 /** Step 1. Never creates anything: one validate_only call, then a card. */
-export async function proposeAccount(engagementId: string, deps: AccountDeps): Promise<ProposeResult> {
+export async function proposeAccount(engagementId: string, deps: AccountDeps, timeZoneOverride?: string | null): Promise<ProposeResult> {
   if (!adsAccountCreateEnabled()) return { proposed: false, reason: 'ADS_ACCOUNT_CREATE is off' }
   const f = await deps.facts(engagementId)
   if (!f) return { proposed: false, reason: 'no such client' }
-  const r = accountFields(f)
+  const r = accountFields(f, timeZoneOverride)
   if ('blocked' in r) return { proposed: false, reason: `Not proposing a Google Ads account. Missing or blocking: ${r.blocked.join('; ')}.` }
+  const tzLine = zoneLine({ tz: r.fields.timeZone, ...r.zone })
   try {
     await deps.createCustomerClient(r.fields, true)
   } catch (err) {
@@ -148,8 +187,16 @@ export async function proposeAccount(engagementId: string, deps: AccountDeps): P
     'ads_account_create',
     engagementId,
     `Create the Google Ads account for ${f.displayName}`,
-    { action: 'create_customer_client', engagementId, ...r.fields, accountEmail: f.accountEmail, accessCheck: 'validate_only create passed' },
-    `Creates "${r.fields.descriptiveName}" (${r.fields.currencyCode}, ${r.fields.timeZone}) under your manager and binds it to ${f.displayName} by id. No billing, no campaign, nothing spends.${f.accountEmail ? ` The invite to ${f.accountEmail} comes as its own card after.` : ' No q17 Gmail on the intake, so no invite card.'}`
+    {
+      action: 'create_customer_client',
+      engagementId,
+      ...r.fields,
+      timeZoneSource: r.zone.source,
+      ...(r.zone.split ? { timeZoneNote: 'state spans two zones; confirm before Push' } : {}),
+      accountEmail: f.accountEmail,
+      accessCheck: 'validate_only create passed',
+    },
+    `${tzLine}. Creates "${r.fields.descriptiveName}" (${r.fields.currencyCode}, ${r.fields.timeZone}) under your manager and binds it to ${f.displayName} by id. No billing, no campaign, nothing spends.${f.accountEmail ? ` The invite to ${f.accountEmail} comes as its own card after.` : ' No q17 Gmail on the intake, so no invite card.'}`
   )
   return { proposed: true, approvalId, fields: r.fields }
 }
@@ -159,8 +206,9 @@ export async function applyAccountCreate(detail: Record<string, unknown>, deps: 
   const engagementId = String(detail.engagementId ?? '')
   const f = await deps.facts(engagementId)
   if (!f) throw new Error('the client is gone')
-  // Re-check at Push time: an account may have been bound since the card was made.
-  const r = accountFields(f)
+  // Re-check at Push time: an account may have been bound since the card was made. The card's
+  // zone is what Jacob confirmed by pushing it, so an override on the card is honoured.
+  const r = accountFields(f, detail.timeZoneSource === 'override' ? String(detail.timeZone ?? '') : null)
   if ('blocked' in r) throw new Error(`not created: ${r.blocked.join('; ')}`)
   const fields: AccountFields = {
     descriptiveName: String(detail.descriptiveName ?? ''),

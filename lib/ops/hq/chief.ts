@@ -1489,12 +1489,19 @@ function proposeAdsAccountTool(ctx: ChiefContext): ClientTool {
   return {
     name: 'propose_ads_account',
     description:
-      "Propose creating the client's Google Ads account under Jacob's manager, bound to the client by id. Fields come from the board and intake only (name, USD, the time zone of the client's state); anything missing or ambiguous blocks with a list. First a validate_only check with Google (creates nothing); if Google would refuse, says why and makes no card. Otherwise one Push card; the account is created only when Jacob pushes it, then the q17 Gmail invite is its own card. Never billing, never a campaign, never spend.",
-    input_schema: { type: 'object', properties: { engagementId: { type: 'string' } }, required: ['engagementId'] },
+      "Propose creating the client's Google Ads account under Jacob's manager, bound to the client by id. Fields come from the board and intake only (name, USD, the time zone of the client's state; a two-zone state uses its majority zone, shown on the card for Jacob to confirm, or time_zone when he names one); anything missing blocks with a list. First a validate_only check with Google (creates nothing); if Google would refuse, says why and makes no card. Otherwise one Push card; the account is created only when Jacob pushes it, then the q17 Gmail invite is its own card. Never billing, never a campaign, never spend.",
+    input_schema: {
+      type: 'object',
+      properties: {
+        engagementId: { type: 'string' },
+        time_zone: { type: 'string', description: 'Only when Jacob names one: an IANA zone such as America/Chicago. Otherwise the client state decides (a two-zone state uses its majority zone and the card asks him to confirm).' },
+      },
+      required: ['engagementId'],
+    },
     run: async (input) => {
       const engagementId = str(input.engagementId)
       const jobId = await ensureJob(ctx, [engagementId])
-      const r = await proposeAccountFor(engagementId, { runId: ctx.runId, jobId })
+      const r = await proposeAccountFor(engagementId, { runId: ctx.runId, jobId }, input.time_zone ? str(input.time_zone) : null)
       if (!r.proposed) throw new Error(r.reason)
       return {
         result: { ok: true, approvalId: r.approvalId, fields: r.fields, waitingForPush: true },

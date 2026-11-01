@@ -3668,9 +3668,12 @@ Off: no new checks.
 `lib/ops/ads-account.ts` (rules, runners with Google injected), `lib/ops/ads-account-server.ts`
 (the platform's google-ads-api client as the manager). Three steps, each one Google call:
 1. The chief's `propose_ads_account`: name (board, else q1), USD, and the IANA time zone of the
-   client's US state (`Engagement.location` "City, ST", else the intake home base); states
-   that span two zones, a missing location, an existing account id, the never-touch list, no
-   ads service or no platform account block with a list. Then `CreateCustomerClient` with
+   client's US state (`Engagement.location` "City, ST", else the intake home base). A state that
+   spans two zones uses its majority zone (`SPLIT_STATE_TZ`: FL, MI, IN, KY Eastern; TN, TX, KS,
+   NE, SD, ND Central; OR Pacific; ID Mountain) and the card says "Time zone: <zone> (state
+   spans two zones; confirm before Push)"; Push is the confirmation. `time_zone` (a valid IANA
+   name) overrides it when Jacob names one. A missing location, an existing account id, the
+   never-touch list, no ads service or no platform account block with a list. Then `CreateCustomerClient` with
    `validate_only: true` (creates nothing); a refusal is reported in plain words and no card
    is made. Otherwise an OpsApproval `ads_account_create` with the exact fields.
 2. Push: the same call for real; the id from `resource_name` is bound by id
