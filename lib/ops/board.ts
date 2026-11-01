@@ -19,6 +19,7 @@ import type { DeliverableStatus } from '@/lib/ops/types'
 import { isVerifiedMrr, mrrBucketOf } from '@/lib/ops/money'
 import { effectiveStatusOf, stepFor, type StepOwner } from '@/lib/ops/steps'
 import { needsConfirmFlag, showRateFlags } from '@/lib/show-rate'
+import { clientChaseEnabled, clientChaseList, type BoardChaseRow } from '@/lib/ops/client-chase'
 import { callPromptList, callPromptWindow, leadCallPromptEnabled, type BoardCallPrompt } from '@/lib/ops/call-prompt'
 
 /** Ops runs on Jacob's day: "today" and "this month" are America/Detroit. */
@@ -174,6 +175,8 @@ export type OpsBoard = {
   bookedToday: BoardBooking[]
   /** LEAD_CALL_PROMPT only (absent when off): verified leads who never booked, to call. */
   callPrompts?: BoardCallPrompt[]
+  /** CLIENT_CHASE_LIST only (absent when off): client steps waiting over 3 days, each with a draft text. */
+  clientChase?: BoardChaseRow[]
   money: BoardMoney
   agentRuns: BoardAgentRun[]
 }
@@ -423,6 +426,8 @@ export async function getOpsBoard(): Promise<OpsBoard> {
         : { ...b, scheduledAt: b.scheduledAt.toISOString() }
     ),
     ...(callPrompts ? { callPrompts } : {}),
+    // CLIENT_CHASE_LIST (off by default): derived from the engagements above, no extra read.
+    ...(clientChaseEnabled() ? { clientChase: clientChaseList(live, now) } : {}),
     money,
     agentRuns: runs.flatMap((r) => (r.engagementId && r.engagement ? [{ ...r, engagementId: r.engagementId, engagement: r.engagement }] : [])).map((r) => ({
       id: r.id,

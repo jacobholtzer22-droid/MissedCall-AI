@@ -2743,6 +2743,14 @@ before the send (primary key = atomic) and deleted if the send fails, like touch
   hours since OTP. Newest first, one row per phone, capped at 20
   (`lib/ops/call-prompt.ts`, loaded by `lib/ops/board.ts` into
   `OpsBoard.callPrompts`, absent when off).
+- `CLIENT_CHASE_LIST`: "Chase clients" in the same panel. Every deliverable with
+  `waitingOn = 'client'` and `stepUpdatedAt` 3+ days old, oldest first, capped at
+  25, skipping terminal steps (including `paused_by_client`) and churned or
+  ignored engagements. Shows client, deliverable and step label, days waiting,
+  "last contacted N days ago" / "never contacted" from `Engagement.lastContactedAt`,
+  and a step-specific draft (`CHASE_DRAFTS` in `lib/ops/client-chase.ts`, generic
+  fallback otherwise) with a Copy button and an `sms:` link prefilled to
+  `Engagement.phone`. Jacob sends it himself; nothing is sent or written.
 
 ---
 

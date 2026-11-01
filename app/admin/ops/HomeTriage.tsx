@@ -10,7 +10,7 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
-import { ChevronDown, ExternalLink, Plus, Video } from 'lucide-react'
+import { Check, ChevronDown, Copy, ExternalLink, MessageSquare, Plus, Video } from 'lucide-react'
 import type { BoardEngagement, OpsBoard } from '@/lib/ops/board'
 import { BUCKET_LABELS, type BucketKey, type Triage, type TriageEntry } from '@/lib/ops/triage'
 import { formatPhoneNumber } from '@/lib/utils'
@@ -153,6 +153,60 @@ export function CallPromptStrip({ board }: { board: OpsBoard }) {
               {formatPhoneNumber(l.phone)}
             </a>
             <span className="ml-auto text-xs text-amber-300 tabular-nums">{l.hoursSinceOtp}h since verified</span>
+          </li>
+        ))}
+      </ul>
+    </section>
+  )
+}
+
+/**
+ * CLIENT_CHASE_LIST (off by default): client steps waiting over 3 days, oldest
+ * first, each with a drafted text Jacob copies or opens in Messages and sends
+ * himself. Nothing is sent from here. Renders nothing when the board carries no list.
+ */
+export function ClientChaseStrip({ board }: { board: OpsBoard }) {
+  const rows = board.clientChase
+  const [copied, setCopied] = useState<string | null>(null)
+  if (!rows?.length) return null
+  const copy = async (id: string, text: string) => {
+    try {
+      await navigator.clipboard.writeText(text)
+      setCopied(id)
+    } catch {
+      setCopied(null)
+    }
+  }
+  return (
+    <section aria-label="Chase clients" className="bg-gray-900 border border-gray-800 rounded-lg px-4 py-3 space-y-2">
+      <h2 className="text-sm font-semibold text-gray-100">
+        Chase clients
+        <span className="ml-2 text-gray-500 font-normal">waiting on them 3+ days</span>
+      </h2>
+      <ul className="space-y-3">
+        {rows.map((r) => (
+          <li key={r.deliverableId} className="space-y-1 text-sm">
+            <div className="flex flex-wrap items-baseline gap-2">
+              <span className="text-gray-100">{r.clientName}</span>
+              <span className="text-gray-400">
+                {r.deliverable}: {r.stepLabel}
+              </span>
+              <span className="text-xs text-amber-300 tabular-nums">
+                {r.daysWaiting} days waiting, {r.lastContacted}
+              </span>
+            </div>
+            <p className="text-xs text-gray-300 whitespace-pre-wrap">{r.draft}</p>
+            <div className="flex flex-wrap gap-2">
+              <button type="button" onClick={() => copy(r.deliverableId, r.draft)} className={`${smallButton} min-h-[44px]`}>
+                {copied === r.deliverableId ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+                {copied === r.deliverableId ? 'Copied' : 'Copy text'}
+              </button>
+              {r.phone && (
+                <a href={`sms:${r.phone}?&body=${encodeURIComponent(r.draft)}`} className={`${smallButton} min-h-[44px]`}>
+                  <MessageSquare className="h-3.5 w-3.5" /> Open in Messages
+                </a>
+              )}
+            </div>
           </li>
         ))}
       </ul>

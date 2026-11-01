@@ -12,7 +12,7 @@ import type { BoardEngagement, OpsBoard } from '@/lib/ops/board'
 import { headlineMrr } from '@/lib/ops/money'
 import type { Triage } from '@/lib/ops/triage'
 import { personaFor } from '@/lib/ops/hq/personas'
-import { ApprovalsStrip, CallPromptStrip, ClientBuckets, SalesStrip } from './HomeTriage'
+import { ApprovalsStrip, CallPromptStrip, ClientBuckets, ClientChaseStrip, SalesStrip } from './HomeTriage'
 import { HQ_CSS, isActive } from './hqShared'
 import { money, type OpsActions } from './opsUi'
 import type { HqFeedState } from './useHqFeed'
@@ -106,6 +106,7 @@ export function HomeTab({
         <ApprovalsStrip approvals={approvals} onDecide={hq.decide} />
         <SalesStrip sales={triage.sales} board={board} actions={actions} />
         <CallPromptStrip board={board} />
+        <ClientChaseStrip board={board} />
       </div>
 
       <div data-ops-panel="clients" className="min-w-0">
