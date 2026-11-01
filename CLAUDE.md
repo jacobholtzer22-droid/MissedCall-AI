@@ -2965,7 +2965,7 @@ Every Deliverable can sit at a **step** from `STEP_CATALOG` in `lib/ops/steps.ts
   sit collapsed under it. (The Today tab that listed these was folded into Home.)
 - Chips are coloured by step owner: you orange, client blue, vendor grey, done
   green (`paused_by_client` keeps the paused slate). A `manualStatus` still wins.
-- The sync never reads or writes steps. `scripts/ops-apply-2026-10-24-steps.ts` is the
+- The full sync never reads or writes steps. **`ensureDeliverables` does, on create only** (Nov 2026): a deliverable it creates starts at `INITIAL_STEP` (`lib/ops/steps.ts`): website `brief`, domain `owner_unknown`, gbp `manager_access`, ads `account`, missedcall `number`, email `workspace`, with `waitingOn` from the step's owner and `stepUpdatedAt` now. Left unset when the evidence it is created with shows the step done (ads with `adsCustomerId`, missedcall with `telnyxNumber`). An existing deliverable is never changed (the upsert's `update` is `{}`). The full sync's own creates (phase c) are unchanged: they backfill rows for long-running clients, where a first step would be wrong. `scripts/ops-apply-2026-10-24-steps.ts` is the
   one-off seed (`--dry` first).
 
 ### Web checks (`lib/ops/checks/`, Oct 24 2026)

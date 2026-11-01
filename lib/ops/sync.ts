@@ -31,6 +31,7 @@ import { normalizeToE164 } from '@/lib/phone-utils'
 import { getStripe } from '@/lib/ops/stripe'
 import { cleanInbox } from '@/lib/ops/photo-filing-server'
 import { failStaleDispatchedRuns } from '@/lib/ops/agents/workflow-run'
+import { initialStepData } from '@/lib/ops/steps'
 import {
   DELIVERABLE_TYPES_FOR_SERVICE,
   SERVICE_KEYS,
@@ -1269,14 +1270,25 @@ export async function ensureDeliverables(engagementId: string, services: Service
   const missing = Array.from(new Set(services.flatMap((s) => DELIVERABLE_TYPES_FOR_SERVICE[s] ?? []))).filter(
     (t) => !have.has(t)
   )
+  const now = new Date()
   await eachLimited(missing, DB_CONCURRENCY, async (type) => {
-    await db.deliverable.upsert({
-      where: { engagementId_type: { engagementId, type } },
-      create: { engagementId, type, evidence: (known[type] ?? {}) as Prisma.InputJsonObject },
-      update: {},
-    })
+    await db.deliverable.upsert(newDeliverableUpsert(engagementId, type, known[type] ?? {}, now))
   })
   return missing
+}
+
+/**
+ * The upsert ensureDeliverables sends for one missing deliverable. A created
+ * row starts at its first catalog step (initialStepData, lib/ops/steps.ts);
+ * an existing row is never changed (update stays {}). The evidence is the
+ * same sync-owned evidence as before.
+ */
+export function newDeliverableUpsert(engagementId: string, type: DeliverableType, evidence: Record<string, unknown>, now = new Date()) {
+  return {
+    where: { engagementId_type: { engagementId, type } },
+    create: { engagementId, type, evidence: evidence as Prisma.InputJsonObject, ...initialStepData(type, evidence, now) },
+    update: {},
+  }
 }
 
 /** The sync summary's unmatched paying customers, computed on demand. null = no Stripe key. */

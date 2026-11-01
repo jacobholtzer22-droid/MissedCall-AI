@@ -121,3 +121,47 @@ export function effectiveStatusOf(d: {
   if (s) return 'in_progress'
   return d.computedStatus as DeliverableStatus
 }
+
+// ── The step a new deliverable starts at ─────────────────────────────────────
+// ensureDeliverables (lib/ops/sync.ts) sets it when it CREATES a deliverable,
+// so a new client shows up in Needs you, the chase list and the gates from the
+// first minute instead of sitting step-less until someone sets one by hand.
+// Existing deliverables are never touched (the upsert's update stays {}).
+
+/** The intended first step per type. Each must exist in STEP_CATALOG (a test holds it). */
+export const INITIAL_STEP: Record<DeliverableType, string> = {
+  website: 'brief',
+  domain: 'owner_unknown',
+  gbp: 'manager_access',
+  ads: 'account',
+  missedcall: 'number',
+  email: 'workspace',
+}
+
+/**
+ * The first step for a new deliverable of this type, or null to leave it
+ * unset. Falls back to the type's first catalog step if INITIAL_STEP names a
+ * key the catalog lacks. Null when the evidence the deliverable is created
+ * with already shows that step done: an ads deliverable created with a known
+ * adsCustomerId (the account exists), a missedcall one with a telnyxNumber
+ * (the number is assigned). Guessing the later step there would be wrong, so
+ * those stay for Jacob or the chief to set, as today.
+ */
+export function initialStepFor(type: string, evidence: Record<string, unknown> = {}): Step | null {
+  if (type === 'ads' && typeof evidence.adsCustomerId === 'string' && evidence.adsCustomerId) return null
+  if (type === 'missedcall' && typeof evidence.telnyxNumber === 'string' && evidence.telnyxNumber) return null
+  const catalog = STEP_CATALOG[type as DeliverableType]
+  if (!catalog?.length) return null
+  return stepFor(type, INITIAL_STEP[type as DeliverableType]) ?? catalog[0]
+}
+
+/** The step columns a new deliverable is created with: step, waitingOn (the step's owner), stepUpdatedAt. */
+export function initialStepData(
+  type: string,
+  evidence: Record<string, unknown> = {},
+  now = new Date()
+): { step: string; waitingOn: WaitingOn | null; stepUpdatedAt: Date } | Record<string, never> {
+  const s = initialStepFor(type, evidence)
+  if (!s) return {}
+  return { step: s.key, waitingOn: defaultWaitingOn(type, s.key), stepUpdatedAt: now }
+}
