@@ -10,6 +10,7 @@
 // logged on the client as a note quoting Jacob.
 
 import type { Prisma } from '@prisma/client'
+import { duplicateGuardEnabled, telnyxClashWarning } from '@/lib/ops/duplicate-guard'
 import { db } from '@/lib/db'
 import { BUSINESS_PATCH_FIELDS, prepareBusinessPatch } from '@/lib/admin-business-patch'
 
@@ -71,6 +72,13 @@ export async function updateBusiness(opts: {
   for (const [field, to] of routed) {
     const jobId = await opts.jobId()
     const from = shown(before[field])
+    // DUPLICATE_GUARD (off by default): a texting number already on another account is named before Push.
+    const clash =
+      duplicateGuardEnabled() && field === 'telnyxPhoneNumber' && typeof to === 'string' && to
+        ? await db.business.findFirst({ where: { telnyxPhoneNumber: to, id: { not: opts.businessId } }, select: { name: true } })
+        : null
+    const warning = clash ? telnyxClashWarning(to as string, clash.name) : null
+    if (warning && engagement) await db.opsActivity.create({ data: { engagementId: engagement.id, kind: 'note', body: warning } })
     const a = await db.opsApproval.create({
       data: {
         jobId,
@@ -88,7 +96,7 @@ export async function updateBusiness(opts: {
           to: to ?? null,
           words: opts.words,
         } as Prisma.InputJsonObject,
-        expected: 'Changes how calls and texts for this client are routed as soon as it is written.',
+        expected: `Changes how calls and texts for this client are routed as soon as it is written.${warning ? ` ${warning}` : ''}`,
       },
     })
     waitingForPush.push({ approvalId: a.id, field, from, to: shown(to) })

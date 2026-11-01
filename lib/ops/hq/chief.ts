@@ -48,6 +48,8 @@ import { onSpecialistRunEnded } from './jobs'
 import { loadGateClients } from '@/lib/ops/gate-data'
 import { lookupGbp } from '@/lib/ops/gbp-server'
 import { questionsFrom } from '@/lib/ops/build-style'
+import { duplicateGuardEnabled, linkCardTitle } from '@/lib/ops/duplicate-guard'
+import { findLikely, proposeLink } from '@/lib/ops/duplicate-guard-server'
 import { CREDIT_NO_RERUN, averageRunCost, creditSetupItem, isCreditFailure } from '@/lib/ops/build-credit'
 import { reportGaps, type GateClient } from '@/lib/ops/launch-gate'
 import { clientIntakeEnabled } from '@/lib/ops/client-intake'
@@ -426,6 +428,9 @@ function chiefTools(ctx: ChiefContext): ClientTool[] {
           stripeCustomerId: { type: 'string', description: 'cus_ id when Jacob gives one; links and syncs Stripe.' },
           createBusiness: { type: 'boolean', description: 'Also create the platform account (needed for a website build, missed-call texting or an ads id).' },
           notes: { type: 'string', description: "Anything else Jacob said about the client, in his words." },
+          ...(duplicateGuardEnabled()
+            ? { notDuplicate: { type: 'boolean', description: 'Only after Jacob rejected a "Link to existing" card or said this is a different client from the likely match.' } }
+            : {}),
         },
         required: ['displayName', 'services'],
       },
@@ -434,6 +439,19 @@ function chiefTools(ctx: ChiefContext): ClientTool[] {
         for (const k of NEW_CLIENT_FIELDS) if (input[k] !== undefined) body[k] = typeof input[k] === 'string' ? noEmDash(input[k] as string) : input[k]
         if (typeof body.upfrontPaidAt === 'string') body.upfrontPaidAt = parseLocalDateTime(body.upfrontPaidAt, OPS_TIMEZONE)?.toISOString() ?? body.upfrontPaidAt
         try {
+          // DUPLICATE_GUARD (off by default): a likely match becomes a Link card, nothing is created.
+          if (duplicateGuardEnabled() && input.notDuplicate !== true) {
+            const parsed = parseNewClient(body)
+            const [m] = await findLikely({ name: parsed.displayName, email: parsed.email, phones: [parsed.phone] })
+            if (m) {
+              const jobId = await ensureJob(ctx, m.entry.engagementId ? [m.entry.engagementId] : [])
+              const approvalId = await proposeLink({ jobId, runId: ctx.runId }, parsed.displayName, m, { action: 'same_client', proposed: body })
+              return {
+                result: { ok: true, created: false, likelyDuplicateOf: m.entry.name.trim(), matchedOn: m.on, waitingForPush: { approvalId, title: linkCardTitle(m.entry.name) } },
+                label: `Did not create ${parsed.displayName}: it looks like ${m.entry.name.trim()} (same ${m.on.join(', ')}). Link card waits for Push.`,
+              }
+            }
+          }
           const created = await createClient(parseNewClient(body), 'the chief')
           await ensureJob(ctx, [created.engagementId])
           return {

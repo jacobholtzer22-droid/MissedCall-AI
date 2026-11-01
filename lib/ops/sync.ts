@@ -24,6 +24,8 @@
 // "dry:" ids so later phases can still see them.
 
 import type Stripe from 'stripe'
+import { duplicateGuardEnabled } from './duplicate-guard'
+import { holdSignupIfDuplicate } from './duplicate-guard-server'
 import type { Prisma } from '@prisma/client'
 import { db } from '@/lib/db'
 import { getMarketingBusiness } from '@/lib/marketing-funnel'
@@ -578,6 +580,14 @@ export async function runOpsSync({ dryRun }: { dryRun: boolean }): Promise<OpsSy
       continue
     }
 
+    // DUPLICATE_GUARD (off by default): a signup that looks like a client already on the board waits for a Link card.
+    if (duplicateGuardEnabled()) {
+      const held = await holdSignupIfDuplicate(b, dryRun)
+      if (held) {
+        summary.ambiguities.push({ businessId: b.id, businessName: b.name, reason: held, candidates: [] })
+        continue
+      }
+    }
     const services = inferServices(b, hasWebsiteLead)
     const stage = STAGE_FOR_SUBSCRIPTION[b.subscriptionStatus]
     if (!stage) summary.notes.push(`${b.name}: unknown subscriptionStatus "${b.subscriptionStatus}", stage set to onboarding.`)
