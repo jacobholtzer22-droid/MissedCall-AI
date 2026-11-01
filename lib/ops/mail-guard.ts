@@ -20,6 +20,12 @@ export type MailSnapshot = {
   /** DKIM selectors found (e.g. google, selector1). Only the common selectors are looked up. */
   dkim: string[]
   dmarc: string | null
+  /**
+   * Outlook and phone mail setup: CNAME autodiscover.<domain> and SRV
+   * _autodiscover._tcp.<domain>. Undefined when not read (the stored checks
+   * have no autodiscover).
+   */
+  autodiscover?: { cname: string | null; srv: string | null }
   checkedAt: string
   source: 'live' | 'stored'
 }
@@ -62,6 +68,12 @@ export function mailCardText(domain: string, snap: MailSnapshot | null, failure?
     `SPF: ${snap.spf ?? 'none'}`,
     `DKIM: ${snap.dkim.length ? `found at ${snap.dkim.map((s) => `${s}._domainkey`).join(', ')}` : snap.source === 'stored' ? 'not checked' : 'none at the common selectors'}`,
     `DMARC: ${snap.dmarc ?? 'none'}`,
+    ...(snap.autodiscover
+      ? [
+          `Autodiscover CNAME: ${snap.autodiscover.cname ? `autodiscover.${domain} -> ${snap.autodiscover.cname}` : 'none'}`,
+          `Autodiscover SRV: ${snap.autodiscover.srv ? `_autodiscover._tcp.${domain} -> ${snap.autodiscover.srv}` : 'none'}`,
+        ]
+      : [`Autodiscover: not checked`]),
     KEEP_RULE,
     ...(provider && !provider.google ? [`This client's email is with ${provider.name}; make sure the MX stays.`] : []),
   ].join('\n')

@@ -90,3 +90,20 @@ test('flag off: connect_domain card is unchanged (no read, nothing appended)', (
   // The read and the fallback live only inside mailOnCard.
   assert.equal(src.match(/readMailSnapshot\(/g)?.length, 1)
 })
+
+test('autodiscover CNAME and SRV are on the card, above the keep rule', () => {
+  const t = mailCardText('example.com', snap({ mx: ['example-com.mail.protection.outlook.com'], autodiscover: { cname: 'autodiscover.outlook.com', srv: 'autodiscover.example-host.net:443' } }))
+  assert.match(t, /Autodiscover CNAME: autodiscover\.example\.com -> autodiscover\.outlook\.com/)
+  assert.match(t, /Autodiscover SRV: _autodiscover\._tcp\.example\.com -> autodiscover\.example-host\.net:443/)
+  assert.ok(t.indexOf('Autodiscover CNAME') < t.indexOf(KEEP_RULE))
+})
+
+test('autodiscover: none when read and absent, not checked when not read', () => {
+  const none = mailCardText('example.com', snap({ autodiscover: { cname: null, srv: null } }))
+  assert.match(none, /Autodiscover CNAME: none/)
+  assert.match(none, /Autodiscover SRV: none/)
+  assert.match(mailCardText('example.com', snap()), /Autodiscover: not checked/)
+  const stored = storedMailSnapshot([{ key: 'dns.mx_present', passed: true, detail: 'aspmx.l.google.com', lastRunAt: new Date('2026-10-28T08:00:00Z') }])
+  assert.equal(stored?.autodiscover, undefined)
+  assert.match(mailCardText('example.com', stored), /Autodiscover: not checked/)
+})
