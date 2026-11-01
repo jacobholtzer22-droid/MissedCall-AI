@@ -83,6 +83,8 @@ export const OPS_CHECK_KEYS = [
   'http.homepage_200',
   'http.inner_page_200',
   'http.google_tag',
+  // SAMPLE_SITE_GUARD (off by default): production is not AA-Template's sample site. Written only with the flag on.
+  'http.not_sample',
   // Web checks: domain
   'dns.apex_points_to_vercel',
   'dns.www_cname',

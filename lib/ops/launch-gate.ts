@@ -17,6 +17,7 @@
 // "skip" is read from Jacob's message, never from text the chief wrote.
 
 import { effectiveStatusOf } from '@/lib/ops/steps'
+import { SAMPLE_SITE_TEXT, sampleSiteGuardEnabled } from '@/lib/ops/sample-site'
 
 export type GateKey =
   | 'website_approved'
@@ -29,6 +30,7 @@ export type GateKey =
   | 'final_urls'
   | 'billing'
   | 'conversion_actions'
+  | 'sample_site'
 
 export type GateItem = { key: GateKey; text: string }
 
@@ -56,6 +58,8 @@ const SKIP_WORDS: Record<GateKey, string[]> = {
   final_urls: ['final url', 'final urls', 'urls', 'url'],
   billing: ['billing', 'payment'],
   conversion_actions: ['conversion', 'conversions', 'conversion actions'],
+  // SAMPLE_SITE_GUARD: never waived; the sample business must not go live.
+  sample_site: [],
 }
 
 /** The items Jacob waived: "go live, skip tag", "skip the domain and billing". */
@@ -108,6 +112,7 @@ export function goLiveGate(c: GateClient, said = ''): GateItem[] {
   if (hasAds(c) && !trackingOk(c)) items.push({ key: 'tracking', text: 'Google tag is not on the site' })
   items.push(...ownerItems(c))
   if (c.website?.evidence.siteIndexableFlag === true) items.push({ key: 'already_indexable', text: 'the site is already indexable' })
+  if (sampleSiteGuardEnabled() && c.website?.evidence.sampleSite === true) items.push({ key: 'sample_site', text: `${SAMPLE_SITE_TEXT} (merge the first build PR; this one cannot be skipped)` })
   return waive(items, said)
 }
 

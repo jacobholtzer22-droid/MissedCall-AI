@@ -13,6 +13,7 @@ import { INFORMATIONAL_CHECK_KEYS, type OpsCheckKey } from '@/lib/ops/types'
 import { gtagIdsIn } from '@/lib/ops/tracking'
 import type { GithubRepo, VercelProject } from './discover'
 import { errMessage, fetchWithTimeout } from './limit'
+import { isSamplePage, sampleCheckDetail, sampleMarkersIn, sampleSiteGuardEnabled } from '@/lib/ops/sample-site'
 
 export type CheckResult = { key: OpsCheckKey; passed: boolean | null; detail: string | null }
 
@@ -30,10 +31,22 @@ const r = (key: OpsCheckKey, passed: boolean | null, detail: string | null = nul
 
 // ── HTTP ────────────────────────────────────────────────────────────────────
 
-export type PageProbe = { status: number | null; finalUrl: string | null; noindex: boolean; noindexWhere: string | null; gtagIds: string[]; error: string | null }
+export type PageProbe = {
+  status: number | null
+  finalUrl: string | null
+  noindex: boolean
+  noindexWhere: string | null
+  gtagIds: string[]
+  error: string | null
+  /** SAMPLE_SITE_GUARD: AA-Template sample markers in the HTML. Present only when asked for. */
+  sampleMarkers?: string[]
+}
 
-/** GET the page (redirects followed) and look for noindex in X-Robots-Tag or a robots meta tag. */
-export async function probePage(url: string): Promise<PageProbe> {
+/**
+ * GET the page (redirects followed) and look for noindex in X-Robots-Tag or a robots meta tag.
+ * With sampleCheck (SAMPLE_SITE_GUARD), also the template's sample markers.
+ */
+export async function probePage(url: string, opts: { sampleCheck?: boolean } = {}): Promise<PageProbe> {
   try {
     const res = await fetchWithTimeout(url, { redirect: 'follow', headers: { 'User-Agent': 'aa-ops-web-checks' } }, 10_000)
     const header = res.headers.get('x-robots-tag') ?? ''
@@ -42,7 +55,9 @@ export async function probePage(url: string): Promise<PageProbe> {
       .map((m) => m[0])
       .find((tag) => /name\s*=\s*["']?(robots|googlebot)["']?/i.test(tag) && /noindex/i.test(tag))
     const where = /noindex/i.test(header) ? `x-robots-tag: ${header}` : meta ? 'robots meta tag' : null
-    return { status: res.status, finalUrl: res.url, noindex: where !== null, noindexWhere: where, gtagIds: gtagIdsIn(html), error: null }
+    const out: PageProbe = { status: res.status, finalUrl: res.url, noindex: where !== null, noindexWhere: where, gtagIds: gtagIdsIn(html), error: null }
+    if (opts.sampleCheck) out.sampleMarkers = sampleMarkersIn(html)
+    return out
   } catch (err) {
     return { status: null, finalUrl: null, noindex: false, noindexWhere: null, gtagIds: [], error: errMessage(err) }
   }
@@ -97,13 +112,19 @@ export async function websiteChecks(w: WebsiteInput): Promise<{ results: CheckRe
   out.push(w.repo ? r('repo.has_workflow', w.repo.hasWorkflow, w.repo.hasWorkflow ? '.github/workflows/aa-build.yml' : 'no aa-build.yml') : r('repo.has_workflow', null, 'no repo matched'))
 
   let probe: PageProbe | null = null
+  const sampleGuard = sampleSiteGuardEnabled()
   if (!w.productionUrl) {
     out.push(r('http.indexing_matches_step', null, 'no production URL'))
     out.push(r('http.homepage_200', null, 'no production URL'))
     out.push(r('http.inner_page_200', null, 'no production URL'))
     out.push(r('http.google_tag', null, 'no production URL'))
+    if (sampleGuard) out.push(r('http.not_sample', null, 'no production URL'))
   } else {
-    probe = await probePage(w.productionUrl)
+    probe = await probePage(w.productionUrl, sampleGuard ? { sampleCheck: true } : {})
+    if (sampleGuard) {
+      const markers = probe.sampleMarkers ?? []
+      out.push(probe.error ? r('http.not_sample', null, `${w.productionUrl}: ${probe.error}`) : r('http.not_sample', !isSamplePage(markers), sampleCheckDetail(w.productionUrl, markers)))
+    }
     if (probe.error) {
       out.push(r('http.indexing_matches_step', null, `${w.productionUrl}: ${probe.error}`))
       out.push(r('http.homepage_200', null, `${w.productionUrl}: ${probe.error}`))

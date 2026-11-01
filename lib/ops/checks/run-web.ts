@@ -17,6 +17,7 @@ import { discover, matchDiscovery, type GithubRepo, type MatchableEngagement, ty
 import { EXTERNAL_CONCURRENCY, mapLimited } from './limit'
 import { listDeploymentsForBranch, type BranchDeployment } from '@/lib/ops/vercel'
 import { domainChecks, websiteChecks, type CheckResult } from './web'
+import { sampleSiteGuardEnabled } from '@/lib/ops/sample-site'
 
 /** Evidence keys the web checks own and overwrite; every other key is left alone. */
 export const WEBSITE_EVIDENCE_KEYS = [
@@ -215,6 +216,14 @@ export async function runWebChecks({ dryRun }: { dryRun: boolean }): Promise<Web
         previewState: p.branchPreview?.state ?? (typeof eng.website.evidence.previewBranch === 'string' ? null : project?.preview?.state ?? null),
         // The launch gates count a tag seen on production as installed.
         googleTagLive: p.websiteResults.find((x) => x.key === 'http.google_tag')?.passed ?? null,
+      }
+      // SAMPLE_SITE_GUARD: the go-live gate reads this (true = production is the sample).
+      if (sampleSiteGuardEnabled()) {
+        const ns = p.websiteResults.find((x) => x.key === 'http.not_sample')
+        if (ns && ns.passed !== null) {
+          ev.sampleSite = !ns.passed
+          ev.sampleSiteDetail = ns.detail
+        }
       }
       queueEvidence(eng.website, ev)
       touched.set(eng.website.id, { del: eng.website, client: eng.name, results: p.websiteResults })

@@ -54,6 +54,8 @@ import { trackingBlockFrom, trackingInstructions, type TrackingBlock } from '@/l
 import { errMessage, fetchWithTimeout } from '@/lib/ops/checks/limit'
 import { domainMailGuardEnabled, mailCardText, storedMailSnapshot, type MailSnapshot } from '@/lib/ops/mail-guard'
 import { readMailSnapshot } from '@/lib/ops/checks/mail'
+import { connectDomainRefusal, sampleOnProductionWith, sampleSiteGuardEnabled } from '@/lib/ops/sample-site'
+import { probePage } from '@/lib/ops/checks/web'
 import { emit } from './events'
 import { payloadAssets, payloadOldSite, readIntake } from '@/lib/ops/intake'
 import { createRun, failRun, finishRun } from './runs'
@@ -198,6 +200,15 @@ async function mailOnCard(domain: string, domainDeliverableId: string): Promise<
   }
 }
 
+/** SAMPLE_SITE_GUARD: production read now, else the last web check (lib/ops/sample-site.ts). */
+const sampleOnProduction = (engagementId: string, productionUrl: string | null) =>
+  sampleOnProductionWith(engagementId, productionUrl, probePage, storedWebsiteEvidence)
+
+async function storedWebsiteEvidence(engagementId: string): Promise<Record<string, unknown> | null> {
+  const d = await db.deliverable.findFirst({ where: { engagementId, type: 'website' }, select: { evidence: true } })
+  return d?.evidence && typeof d.evidence === 'object' && !Array.isArray(d.evidence) ? (d.evidence as Record<string, unknown>) : null
+}
+
 // ── start_web_task ──────────────────────────────────────────────────────────
 
 export type WebTaskResult = { done: string; started?: string[]; waitingForPush?: { approvalId: string; title: string }; links?: { label: string; url: string }[] }
@@ -328,6 +339,11 @@ export async function startWebTask(opts: {
       const domain = normalizeDomain(opts.domain ?? '')
       if (!w.projectId) throw new Error(`${w.name} has no Vercel project`)
       if (!w.domain) throw new Error(`${w.name} has no domain deliverable`)
+      // SAMPLE_SITE_GUARD (off by default): never point a domain at the template's sample site.
+      if (sampleSiteGuardEnabled()) {
+        const sample = await sampleOnProduction(w.id, w.productionUrl)
+        if (sample) throw new Error(connectDomainRefusal(w.name, domain, sample))
+      }
       const dnsHeldBy = opts.dnsHeldBy === 'jacob' ? 'jacob' : 'client'
       const [who, recs] = await Promise.all([rdapLookup(domain), domainRecords(domain).catch(() => null)])
       const records = (recs?.records ?? [
