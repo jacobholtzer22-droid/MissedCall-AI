@@ -52,6 +52,8 @@ import { loadGateClient } from '@/lib/ops/gate-data'
 import { goLiveGate, skipsIn } from '@/lib/ops/launch-gate'
 import { trackingBlockFrom, trackingInstructions, type TrackingBlock } from '@/lib/ops/tracking'
 import { errMessage, fetchWithTimeout } from '@/lib/ops/checks/limit'
+import { domainMailGuardEnabled, mailCardText, storedMailSnapshot, type MailSnapshot } from '@/lib/ops/mail-guard'
+import { readMailSnapshot } from '@/lib/ops/checks/mail'
 import { emit } from './events'
 import { payloadAssets, payloadOldSite, readIntake } from '@/lib/ops/intake'
 import { createRun, failRun, finishRun } from './runs'
@@ -176,6 +178,23 @@ async function provisionRun(engagementId: string, jobId: string | null): Promise
   } catch (err) {
     await failRun(run.id, err)
     throw err
+  }
+}
+
+/**
+ * DOMAIN_MAIL_GUARD: the domain's mail records for the connect_domain card. A read now,
+ * else the stored domain checks for that deliverable, else "not checked yet".
+ */
+async function mailOnCard(domain: string, domainDeliverableId: string): Promise<{ text: string; snapshot: MailSnapshot | null }> {
+  try {
+    const snapshot = await readMailSnapshot(domain)
+    return { text: mailCardText(domain, snapshot), snapshot }
+  } catch (err) {
+    const d = await db.deliverable.findUnique({ where: { id: domainDeliverableId }, select: { evidence: true } })
+    const primary = (d?.evidence as Record<string, unknown> | null)?.primaryDomain
+    const rows = primary === domain || primary === `www.${domain}` ? await db.opsCheck.findMany({ where: { deliverableId: domainDeliverableId, key: { in: ['dns.mx_present', 'dns.txt_spf', 'dns.txt_dmarc'] } } }) : []
+    const snapshot = storedMailSnapshot(rows)
+    return { text: mailCardText(domain, snapshot, snapshot ? null : `DNS lookup failed: ${errMessage(err)}`), snapshot }
   }
 }
 
@@ -316,12 +335,14 @@ export async function startWebTask(opts: {
         { type: 'CNAME' as const, name: 'www', value: 'cname.vercel-dns.com', why: '' },
       ]).map((r) => ({ type: r.type, name: r.name, value: r.value }))
       const instruction = dnsInstruction({ domain, registrar: who.registrar, records, nameservers: who.nameservers })
+      // DOMAIN_MAIL_GUARD (off by default): the card carries the mail records to keep.
+      const mail = domainMailGuardEnabled() ? await mailOnCard(domain, w.domain.id) : null
       const r = await createWebApproval(
         opts,
         w,
         `Connect ${domain} to ${w.name}'s site`,
-        { action: 'connect_domain', domain, projectId: w.projectId, domainDeliverableId: w.domain.id, dnsHeldBy, registrar: who.registrar ?? who.registrarRaw, records, instruction },
-        `Adds ${domain} and www.${domain} (redirecting to ${domain}) to the Vercel project. Then ${dnsHeldBy === 'jacob' ? 'you' : 'the client'}: ${instruction}`
+        { action: 'connect_domain', domain, projectId: w.projectId, domainDeliverableId: w.domain.id, dnsHeldBy, registrar: who.registrar ?? who.registrarRaw, records, instruction, ...(mail ? { mail: mail.snapshot } : {}) },
+        `Adds ${domain} and www.${domain} (redirecting to ${domain}) to the Vercel project. Then ${dnsHeldBy === 'jacob' ? 'you' : 'the client'}: ${instruction}${mail ? `\n\n${mail.text}` : ''}`
       )
       return { ...r, done: `${r.done} ${instruction}` }
     }
