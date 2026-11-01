@@ -18,6 +18,9 @@ import { computeEngagementAlerts, type OpsAlert, type OpsHealth } from '@/lib/op
 import type { DeliverableStatus } from '@/lib/ops/types'
 import { isVerifiedMrr, mrrBucketOf } from '@/lib/ops/money'
 import { effectiveStatusOf, stepFor, type StepOwner } from '@/lib/ops/steps'
+import { clientSendDraftsEnabled, sendDraftsFor, type BoardSendDraft, type SendMarks } from '@/lib/ops/send-drafts'
+import { intakeMissing, readIntake } from '@/lib/ops/intake'
+import { clientIntakeEnabled, clientIntakeKey, clientLinkUrl, signClientLink, type IntakeWithLink } from '@/lib/ops/client-intake'
 
 /** Ops runs on Jacob's day: "today" and "this month" are America/Detroit. */
 export const OPS_TIMEZONE = 'America/Detroit'
@@ -158,6 +161,8 @@ export type BoardAgentRun = {
 }
 
 export type OpsBoard = {
+  /** CLIENT_SEND_DRAFTS only (absent when off): texts ready for Jacob to send himself. */
+  sendDrafts?: BoardSendDraft[]
   generatedAt: string
   lastSyncAt: string | null
   engagements: BoardEngagement[]
@@ -396,7 +401,11 @@ export async function getOpsBoard(): Promise<OpsBoard> {
 
   const synced = engagements.map((e) => e.stripeSyncedAt).filter((d): d is string => Boolean(d)).sort()
 
+  // CLIENT_SEND_DRAFTS (off by default): one extra read, only when the flag is on.
+  const sendDrafts = clientSendDraftsEnabled() ? await loadSendDrafts(live, now) : null
+
   return {
+    ...(sendDrafts ? { sendDrafts } : {}),
     generatedAt: now.toISOString(),
     lastSyncAt: synced[synced.length - 1] ?? null,
     engagements: live,
@@ -417,4 +426,38 @@ export async function getOpsBoard(): Promise<OpsBoard> {
       createdAt: r.createdAt.toISOString(),
     })),
   }
+}
+
+/** The "Ready to send" drafts (lib/ops/send-drafts.ts). Reads each client's intake once. */
+async function loadSendDrafts(engagements: BoardEngagement[], now: Date): Promise<BoardSendDraft[]> {
+  if (!engagements.length) return []
+  const rows = await db.engagement.findMany({ where: { id: { in: engagements.map((e) => e.id) } }, select: { id: true, intake: true } })
+  const intakes = new Map(rows.map((r) => [r.id, readIntake(r.intake) as IntakeWithLink & { sendDrafts?: SendMarks }]))
+  const key = clientIntakeEnabled() ? clientIntakeKey() : null
+  const out: BoardSendDraft[] = []
+  for (const e of engagements) {
+    if (e.stage === 'churned') continue
+    const intake = intakes.get(e.id) ?? {}
+    const link = intake.clientLink
+    const linkUrl = key && link && Date.parse(link.expiresAt) > now.getTime() ? clientLinkUrl(signClientLink(e.id, link.nonce, Date.parse(link.expiresAt), key)) : null
+    out.push(
+      ...sendDraftsFor(
+        {
+          engagementId: e.id,
+          client: e.displayName.trim(),
+          contactName: e.contactName,
+          phone: e.phone,
+          stage: e.stage,
+          deliverables: e.deliverables.map((d) => ({ type: d.type, step: d.step, effectiveStatus: d.effectiveStatus, stepUpdatedAt: d.stepUpdatedAt, evidence: d.evidence })),
+          business: e.business ? { ownerEmail: e.business.ownerEmail, ownerPhone: e.business.ownerPhone, telnyxPhoneNumber: e.business.telnyxPhoneNumber } : null,
+          intakeMissing: intakeMissing(intake),
+          hasClientAnswers: Object.keys(intake.questionnaire?.answers ?? {}).length > 0,
+          marks: intake.sendDrafts ?? {},
+          intakeLinkUrl: linkUrl,
+        },
+        now
+      )
+    )
+  }
+  return out
 }

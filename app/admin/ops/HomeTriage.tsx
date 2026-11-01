@@ -10,7 +10,7 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
-import { ChevronDown, ExternalLink, Plus, Video } from 'lucide-react'
+import { Check, ChevronDown, Copy, ExternalLink, MessageSquare, Plus, Video } from 'lucide-react'
 import type { BoardEngagement, OpsBoard } from '@/lib/ops/board'
 import { BUCKET_LABELS, type BucketKey, type Triage, type TriageEntry } from '@/lib/ops/triage'
 import { formatPhoneNumber } from '@/lib/utils'
@@ -121,6 +121,75 @@ export function SalesStrip({ sales, board, actions }: { sales: Triage['sales']; 
             </Link>
           </li>
         ))}
+      </ul>
+    </section>
+  )
+}
+
+const SEND_LABEL: Record<string, string> = { questionnaire: 'Onboarding questions', preview: 'Website preview', live: "You're live" }
+
+/**
+ * CLIENT_SEND_DRAFTS (off by default): texts ready for Jacob to send himself, with
+ * Copy and Open in Messages. Nothing is sent from here. "Mark sent" is his tap and
+ * only records that he sent it. Renders nothing when the board carries no list.
+ */
+export function SendDraftsStrip({ board }: { board: OpsBoard }) {
+  const drafts = board.sendDrafts
+  const [copied, setCopied] = useState<string | null>(null)
+  const [done, setDone] = useState<Set<string>>(new Set())
+  if (!drafts?.length) return null
+  const shown = drafts.filter((d) => !done.has(`${d.engagementId}:${d.kind}`))
+  if (!shown.length) return null
+  const copy = async (id: string, text: string) => {
+    try {
+      await navigator.clipboard.writeText(text)
+      setCopied(id)
+    } catch {
+      setCopied(null)
+    }
+  }
+  const mark = async (engagementId: string, kind: string, key: string) => {
+    const res = await fetch(`/api/admin/ops/engagements/${engagementId}/send-drafts`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ kind, key }),
+    }).catch(() => null)
+    if (res?.ok) setDone((s) => new Set(s).add(`${engagementId}:${kind}`))
+  }
+  return (
+    <section aria-label="Ready to send" className="bg-gray-900 border border-gray-800 rounded-lg px-4 py-3 space-y-2">
+      <h2 className="text-sm font-semibold text-gray-100">
+        Ready to send
+        <span className="ml-2 text-gray-500 font-normal">you send these yourself</span>
+      </h2>
+      <ul className="space-y-3">
+        {shown.map((d) => {
+          const id = `${d.engagementId}:${d.kind}`
+          return (
+            <li key={id} className="space-y-1 text-sm">
+              <div className="flex flex-wrap items-baseline gap-2">
+                <span className="text-gray-100">{d.client}</span>
+                <span className="text-gray-400">{SEND_LABEL[d.kind] ?? d.kind}</span>
+                <span className="text-xs text-gray-500">{d.why}</span>
+              </div>
+              <p className="max-h-40 overflow-y-auto text-xs text-gray-300 whitespace-pre-wrap">{d.text}</p>
+              <div className="flex flex-wrap gap-2">
+                <button type="button" onClick={() => copy(id, d.text)} className={`${smallButton} min-h-[44px]`}>
+                  {copied === id ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+                  {copied === id ? 'Copied' : 'Copy text'}
+                </button>
+                {d.phone && (
+                  <a href={`sms:${d.phone}?&body=${encodeURIComponent(d.text)}`} className={`${smallButton} min-h-[44px]`}>
+                    <MessageSquare className="h-3.5 w-3.5" /> Open in Messages
+                  </a>
+                )}
+                <button type="button" onClick={() => void mark(d.engagementId, d.kind, d.key)} className={`${smallButton} min-h-[44px]`}>
+                  Mark sent
+                </button>
+              </div>
+            </li>
+          )
+        })}
       </ul>
     </section>
   )

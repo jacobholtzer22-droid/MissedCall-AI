@@ -3684,3 +3684,17 @@ Off: no new checks.
    (CreateCustomerClient's own email_address is allow-list only, per the v23 proto.)
 Never billing, never enabling, never spend, never an autoflow hop. Off: no tool, and
 `decideApproval` accepts the same kinds as before.
+
+### Ready to send (`CLIENT_SEND_DRAFTS`, off by default)
+
+Drafts of the three client-facing texts, shown on Home's "Ready to send" strip with Copy,
+Open in Messages (`sms:` to `Engagement.phone`) and Mark sent (`lib/ops/send-drafts.ts`,
+built in `lib/ops/board.ts` as `OpsBoard.sendDrafts`, absent when off). Nothing is sent.
+- **Questionnaire**: stage paid_upfront or onboarding, intake still missing something, no
+  answers from the client yet. The doc's text verbatim with the first name, or with
+  `CLIENT_INTAKE_LINK` on and a current link, a short text pointing to the link.
+- **Preview**: website step `send_preview` with `evidence.previewUrl`.
+- **You're live**: everything the client bought is live, the last one in the past 14 days.
+  What runs, where leads go and week one, from the board only.
+- **Mark sent** (`POST /api/admin/ops/engagements/[id]/send-drafts`, Jacob's tap only): an
+  `intake.sendDrafts` marker (not an INTAKE_KEY), a `text` activity and `lastContactedAt`.
