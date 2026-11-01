@@ -122,7 +122,8 @@ export async function decideApproval(
       engagementId,
       jobId: approval.jobId,
       mode: 'apply',
-      approval: { id, action, args },
+      // A check-up's proposal may name one of its cut-waste work tools (lib/ops/hq/ads-tools.ts CHECKUP_PROPOSABLE).
+      approval: { id, action, args, ...(detail.checkup === true ? { checkup: true } : {}) },
       instructions: [`Jacob approved: ${approval.title}.`, detail.why ? `Why: ${String(detail.why)}` : '', approval.expected ? `Expected: ${approval.expected}` : '']
         .filter(Boolean)
         .join('\n'),

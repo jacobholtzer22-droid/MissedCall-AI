@@ -3731,3 +3731,18 @@ start the $X/mo subscription for <client>" from `monthlyAmount` (else "(amount n
 plus the setup fee from `upfrontAmount` / `upfrontPaidAt`. A link to the "you're live" draft when
 one is waiting. Dismiss (`POST .../engagements/[id]/ready-to-bill`, Jacob's tap) writes a
 `[ready-to-bill] dismissed` activity. No Stripe call is added anywhere. Off: no rows, no route.
+
+### Weekly ads check-up (`ADS_WEEKLY_CHECKUP`, off by default)
+
+`/api/cron/ads-checkup`, Mondays 14:23 UTC (`vercel.json`; 404 with the flag off; the ops-sync
+auth, so an unset CRON_SECRET never opens it). `lib/ops/ads-checkup.ts` `planCheckup` picks
+clients with ads, a bound account and the ads deliverable live or running, skips the
+never-touch list, and budgets 1,200 Google Ads operations a pass (8 accounts at the 150-call
+run cap, under half of Explorer's 2,880 a day), least recently checked first; the rest get a
+"skipped" note. Each account gets the existing ads specialist in check-up mode
+(`AdsToolContext.checkup`): `checkupTools` hands the model only `CHECKUP_READ_TOOLS` (every
+read except read_conversion_labels), so no write runs, not even the playbook's AUTO ones.
+Everything comes back as proposals: the apply tools, or `CHECKUP_PROPOSABLE`
+(add_campaign_negatives, pause_campaign, exclude_conversion_goal), which apply only from a
+check-up's own pushed approval (`detail.checkup`). One note per client: what it found and how
+many proposals it filed.

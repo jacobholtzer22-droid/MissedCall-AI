@@ -29,7 +29,8 @@ import path from 'node:path'
 import type { Prisma } from '@prisma/client'
 import { db } from '@/lib/db'
 import { AGENT_MODEL_DEFAULT, type ApiMessage } from './anthropic'
-import { ADS_APPLY_TOOLS, adsTools, campaignStates, checkProposal, enableFacts, isNeverTouch, missingAdsEnv, setAdsStep, type AdsToolContext } from './ads-tools'
+import { checkupNote } from '@/lib/ops/ads-checkup'
+import { ADS_APPLY_TOOLS, CHECKUP_PROPOSABLE, adsTools, campaignStates, checkProposal, enableFacts, isNeverTouch, missingAdsEnv, setAdsStep, type AdsToolContext } from './ads-tools'
 import { loadGateClient } from '@/lib/ops/gate-data'
 import { enableGate, enableHold, trackingOk, type GateClient } from '@/lib/ops/launch-gate'
 import { DECISION_PREFIX } from './decisions'
@@ -144,8 +145,8 @@ async function syncAdsStep(runId: string, ctx: AdsToolContext, mode: 'work' | 'a
 
 // ── Starting and running ────────────────────────────────────────────────────
 
-type AdsApproval = { id: string; action: string; args: Record<string, unknown> }
-type AdsInput = { instructions: string; customerId: string; client: string; dry: boolean; allow?: string[]; approval?: AdsApproval; approvalId?: string }
+type AdsApproval = { id: string; action: string; args: Record<string, unknown>; checkup?: boolean }
+type AdsInput = { instructions: string; customerId: string; client: string; dry: boolean; allow?: string[]; approval?: AdsApproval; approvalId?: string; checkup?: boolean }
 
 export async function adsClients(): Promise<{ id: string; name: string; customerId: string }[]> {
   const rows = await db.engagement.findMany({
@@ -168,13 +169,15 @@ export async function startAdsRun(opts: {
   /** Apply mode: the approved proposal; its action is the only write tool the run gets. */
   approval?: AdsApproval
   dry?: boolean
+  /** ADS_WEEKLY_CHECKUP: a read-and-propose work run on a bound account. */
+  checkup?: boolean
 }) {
   const missing = missingAdsEnv()
   if (missing.length) throw new AdsOffline(`Ads specialist ${ADS_OFFLINE} (${missing.join(', ')})`)
   const mode = opts.mode ?? 'work'
   if (mode === 'apply') {
     if (!opts.approval) throw new Error('an apply run needs the approved proposal')
-    const bad = checkProposal(opts.approval.action, opts.approval.args)
+    const bad = checkProposal(opts.approval.action, opts.approval.args, { checkup: opts.approval.checkup === true })
     if (bad) throw new Error(`the approved proposal cannot be applied: ${bad}`)
   }
   const e = await db.engagement.findUnique({
@@ -188,12 +191,14 @@ export async function startAdsRun(opts: {
   const customerId = (e.business?.googleAdsCustomerId ?? (typeof ev?.adsCustomerId === 'string' ? ev.adsCustomerId : ''))?.replace(/-/g, '')
   // No id on the board: a work run finds the account under the manager and binds it (bind_account).
   if (!customerId && mode === 'apply') throw new Error(`${client} has no Google Ads customer id on the board`)
+  if (opts.checkup && (mode !== 'work' || !customerId)) throw new Error(`a check-up needs a work run on a bound account; ${client} has none`)
   const input: AdsInput = {
     instructions: opts.instructions,
     customerId,
     client,
     dry: Boolean(opts.dry),
     ...(mode === 'apply' && opts.approval ? { allow: [opts.approval.action], approval: opts.approval, approvalId: opts.approval.id } : {}),
+    ...(opts.checkup ? { checkup: true } : {}),
   }
   return createRun({
     agent: 'ads',
@@ -207,8 +212,9 @@ export async function startAdsRun(opts: {
 }
 
 function taskMessage(input: AdsInput, mode: 'work' | 'apply', decisions: string[], gate: GateClient | null): string {
-  const modeLine =
-    mode === 'work'
+  const modeLine = input.checkup
+    ? `Weekly check-up run: read only. You have no write tools in this run, so nothing is changed, not even the AUTO changes of the playbook. Every change you would make goes in "proposals" for Jacob's Push: "action" is one of ${[...ADS_APPLY_TOOLS, ...CHECKUP_PROPOSABLE].join(', ')} and "args" are its arguments without customerId. Put what you found in "expected" and leave "done" empty.`
+    : mode === 'work'
       ? [
           'Work run: make the AUTO changes yourself with your write tools.',
           `Anything that spends more, and any change you have no tool for in this run, goes in "proposals": "action" is the tool that would make it (${ADS_APPLY_TOOLS.join(', ')}) and "args" are that tool's arguments without customerId, e.g. {"campaignId": "123", "strategy": "MAXIMIZE_CLICKS", "cpcCeiling": 8}.`,
@@ -246,10 +252,10 @@ const API_DOABLE = [
 ]
 
 /** What is wrong with a work report: proposals that cannot be applied, UI steps a tool could do. */
-function reportProblems(report: AdsReport): string[] {
+function reportProblems(report: AdsReport, checkup = false): string[] {
   const problems: string[] = []
   report.proposals.forEach((p, n) => {
-    const bad = checkProposal(p.action, p.args)
+    const bad = checkProposal(p.action, p.args, { checkup })
     if (bad) problems.push(`proposal ${n + 1} ("${p.title}"): ${bad}`)
   })
   for (const step of report.ui_steps) if (API_DOABLE.some((re) => re.test(step))) problems.push(`ui_step "${oneLine(step, 120)}" is a change a tool can make`)
@@ -286,6 +292,8 @@ export async function runAdsTask(runId: string) {
       approved: input.approval ? { action: input.approval.action, args: input.approval.args } : undefined,
       calls: 0,
       writes: [],
+      ...(input.checkup ? { checkup: true } : {}),
+      ...(input.approval?.checkup ? { applyExtra: CHECKUP_PROPOSABLE } : {}),
     }
     const loop = (messages: ApiMessage[]) =>
       runAgentLoop({
@@ -304,7 +312,7 @@ export async function runAdsTask(runId: string) {
     let { report, error } = parseAdsReport(result.finalText)
 
     // One chance to fix a work report that breaks the rules; then whatever is left is flagged.
-    const problems = mode === 'work' && !result.cancelled ? (report ? reportProblems(report) : [`your report did not parse: ${error}`]) : []
+    const problems = mode === 'work' && !result.cancelled ? (report ? reportProblems(report, input.checkup === true) : [`your report did not parse: ${error}`]) : []
     if (problems.length) {
       await emit(runId, 'status', `Report needs a fix: ${problems.length} problem${problems.length === 1 ? '' : 's'}`, { problems })
       result = await loop([
@@ -316,7 +324,7 @@ export async function runAdsTask(runId: string) {
       ])
       turns += result.turns
       ;({ report, error } = parseAdsReport(result.finalText))
-      const left = report ? reportProblems(report) : []
+      const left = report ? reportProblems(report, input.checkup === true) : []
       if (left.length) await emit(runId, 'error', `Report still has ${left.length} problem${left.length === 1 ? '' : 's'}; those proposals get no approval`, { problems: left })
     }
     if (error) await emit(runId, 'error', `Report: ${error}`)
@@ -325,7 +333,7 @@ export async function runAdsTask(runId: string) {
     if (report && run.jobId && mode === 'work') {
       const said = (await db.opsJob.findUnique({ where: { id: run.jobId }, select: { prompt: true } }))?.prompt ?? ''
       for (const p of report.proposals) {
-        if (checkProposal(p.action, p.args)) continue
+        if (checkProposal(p.action, p.args, { checkup: input.checkup === true })) continue
         // An enable is never blocked, but every given still undone goes on the card in amber and Push becomes Push anyway.
         if (p.action === 'enable_campaign' && gate) {
           const campaignId = String(p.args.campaignId ?? p.campaignId ?? '')
@@ -345,7 +353,7 @@ export async function runAdsTask(runId: string) {
             agent: 'ads',
             kind: 'ads_change',
             title: oneLine(p.title, 200),
-            detail: { ...p, customerId: ctx.customerId } as Prisma.InputJsonObject,
+            detail: { ...p, customerId: ctx.customerId, ...(input.checkup ? { checkup: true } : {}) } as Prisma.InputJsonObject,
             expected: p.expected || null,
           },
         })
@@ -374,6 +382,10 @@ export async function runAdsTask(runId: string) {
     // Keep the board's ads step in line with what changed in the account.
     await syncAdsStep(runId, ctx, mode).catch((err) => emit(runId, 'error', `Could not move the ads step: ${err instanceof Error ? err.message : String(err)}`))
 
+    // ADS_WEEKLY_CHECKUP: one short note on the client for each check-up run.
+    if (input.checkup && run.engagementId) {
+      await db.opsActivity.create({ data: { engagementId: run.engagementId, kind: 'note', body: checkupNote(report?.expected, approvals, report ? null : error ?? 'no report') } })
+    }
     await finishRun(runId, {
       mode,
       dry: input.dry,

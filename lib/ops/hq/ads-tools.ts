@@ -63,6 +63,10 @@ export type AdsToolContext = {
   stepSet?: boolean
   /** Every write tool call that reached Google, in order, with its args (ads.ts moves the board after enable and pause). */
   writes: { tool: string; changed: boolean; args: Record<string, unknown> }[]
+  /** ADS_WEEKLY_CHECKUP: a read-and-propose run. Only CHECKUP_READ_TOOLS are given; no write, not even the AUTO ones. */
+  checkup?: boolean
+  /** Apply mode for a check-up's approved proposal: the one CHECKUP_PROPOSABLE work tool it names may run. */
+  applyExtra?: string[]
 }
 
 // ── Plumbing ────────────────────────────────────────────────────────────────
@@ -1341,14 +1345,24 @@ const APPLY_WRITES: Def[] = [
 ]
 
 export const ADS_READ_TOOLS = READS.map((t) => t.name)
+/**
+ * ADS_WEEKLY_CHECKUP: the only tools a check-up run gets. Every read except
+ * read_conversion_labels, which saves the labels on the board; a check-up writes
+ * nothing anywhere.
+ */
+export const CHECKUP_READ_TOOLS = ADS_READ_TOOLS.filter((n) => n !== 'read_conversion_labels')
+/** Work tools a check-up may PROPOSE (they only cut waste); each still needs Jacob's Push. */
+export const CHECKUP_PROPOSABLE = ['add_campaign_negatives', 'pause_campaign', 'exclude_conversion_goal']
 export const ADS_WORK_TOOLS = WORK_WRITES.map((t) => t.name)
 /** The tools a proposal's action may name: each one runs in apply mode after Jacob's Push. */
 export const ADS_APPLY_TOOLS = APPLY_WRITES.map((t) => t.name)
 
 /** A proposal's action and args, checked against the apply tool's schema (customerId is added at apply time). */
-export function checkProposal(action: string, args: Record<string, unknown>): string | null {
-  const tool = APPLY_WRITES.find((t) => t.name === action)
-  if (!tool) return `action "${action}" is not one of ${ADS_APPLY_TOOLS.join(', ')}`
+export function checkProposal(action: string, args: Record<string, unknown>, opts: { checkup?: boolean } = {}): string | null {
+  const tool =
+    APPLY_WRITES.find((t) => t.name === action) ??
+    (opts.checkup && CHECKUP_PROPOSABLE.includes(action) ? WORK_WRITES.find((t) => t.name === action) : undefined)
+  if (!tool) return `action "${action}" is not one of ${(opts.checkup ? [...ADS_APPLY_TOOLS, ...CHECKUP_PROPOSABLE] : ADS_APPLY_TOOLS).join(', ')}`
   if ('customerId' in args || 'validateOnly' in args) return 'args must not carry customerId or validateOnly'
   const schema = { ...tool.input_schema, required: (tool.input_schema.required ?? []).filter((k) => k !== 'customerId') }
   const invalid = validate(schema, args)
@@ -1363,7 +1377,11 @@ function sameArg(a: unknown, b: unknown): boolean {
 
 /** The tools for one run: reads plus the mode's writes (apply: only ctx.allow). Every call is locked to ctx.customerId. */
 export function adsTools(ctx: AdsToolContext): ClientTool[] {
-  const writes = ctx.mode === 'work' ? [...WORK_WRITES, SET_ADS_STEP] : APPLY_WRITES.filter((t) => ctx.allow?.includes(t.name))
+  // ADS_WEEKLY_CHECKUP: reads only. No write tool is handed to the model at all, so
+  // neither the playbook's AUTO writes nor anything else can run (see checkupTools).
+  if (ctx.checkup) return checkupTools(ctx)
+  const extra = ctx.mode === 'apply' ? WORK_WRITES.filter((t) => ctx.applyExtra?.includes(t.name) && CHECKUP_PROPOSABLE.includes(t.name)) : []
+  const writes = ctx.mode === 'work' ? [...WORK_WRITES, SET_ADS_STEP] : [...APPLY_WRITES, ...extra].filter((t) => ctx.allow?.includes(t.name))
   // A work run with no account yet starts by finding and binding one.
   const account = ctx.mode === 'work' && ctx.findAccount ? [FIND_CLIENT_ACCOUNT, PEEK_ACCOUNT, BIND_ACCOUNT] : []
   const unlocked = new Set([...account, SET_ADS_STEP].map((t) => t.name))
@@ -1391,6 +1409,22 @@ export function adsTools(ctx: AdsToolContext): ClientTool[] {
       const out = await t.run(ctx, input)
       if (isWrite) ctx.writes.push({ tool: t.name, changed: Boolean((out.result as { changed?: boolean })?.changed), args: input })
       return out
+    },
+  }))
+}
+
+/** A check-up run's tools: CHECKUP_READ_TOOLS only, locked to the run's account, refusing anything else. */
+function checkupTools(ctx: AdsToolContext): ClientTool[] {
+  if (!ctx.customerId) throw new Error('a check-up needs a bound account')
+  const allowed = new Set(CHECKUP_READ_TOOLS)
+  return READS.filter((t) => allowed.has(t.name)).map((t) => ({
+    name: t.name,
+    description: t.description,
+    input_schema: t.input_schema,
+    run: async (input) => {
+      if (!allowed.has(t.name)) throw new Error('a check-up run only reads')
+      if (String(input.customerId ?? '').replace(/-/g, '') !== ctx.customerId) throw new Error(`this run works only on ${ctx.client} (customer ${ctx.customerId})`)
+      return t.run(ctx, input)
     },
   }))
 }
