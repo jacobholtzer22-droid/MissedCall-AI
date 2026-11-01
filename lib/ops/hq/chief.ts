@@ -46,6 +46,7 @@ import { onSpecialistRunEnded } from './jobs'
 import { loadGateClients } from '@/lib/ops/gate-data'
 import { lookupGbp } from '@/lib/ops/gbp-server'
 import { questionsFrom } from '@/lib/ops/build-style'
+import { CREDIT_NO_RERUN, averageRunCost, creditSetupItem, isCreditFailure } from '@/lib/ops/build-credit'
 import { reportGaps, type GateClient } from '@/lib/ops/launch-gate'
 import { clientIntakeEnabled } from '@/lib/ops/client-intake'
 import { autoflowEnabled } from '@/lib/ops/autoflow'
@@ -69,7 +70,7 @@ const chiefModel = () => process.env.OPS_CHIEF_MODEL?.trim() || CHIEF_MODEL_DEFA
  */
 const autoflowRules = () =>
   autoflowEnabled()
-    ? '\n\nOverrides with autoflow on: build anyway with what is known. A missing client fact (photos, hours, towns, anything from the client) never stops a site_build: call start_web_task and the build runs, with no photos it runs without images (no stock unless Jacob said "with stock"), the public listing fills what it can, and the open questions come back as one text for Jacob to send. Only missing setup (keys, platform account, repo, a stored brief) stops a build.'
+    ? '\n\nOverrides with autoflow on: build anyway with what is known. A missing client fact (photos, hours, towns, anything from the client) never stops a site_build: call start_web_task and the build runs, with no photos it runs without images (no stock unless Jacob said "with stock"), the public listing fills what it can, and the open questions come back as one text for Jacob to send. Only missing setup (keys, platform account, repo, a stored brief) stops a build. A run that failed because the build credit is out ("credit balance is too low") is never rerun or offered a rerun: tell Jacob to add credit to the ANTHROPIC_API_KEY_BUILDS account first.'
     : ''
 
 const SYSTEM = `You are the operations chief for Align and Acquire, Jacob's agency. Jacob builds websites, runs Google Ads and sets up missed-call texting for local service businesses. You run the client delivery board with him.
@@ -1195,6 +1196,8 @@ async function jobRuns(jobId: string) {
   ])
   // The givens still undone per client: every report names them, asked or not.
   const gates = await loadGateClients(runs.map((r) => r.engagementId ?? '')).catch(() => new Map<string, GateClient>())
+  // OPS_AUTOFLOW: a run that failed on build credit gets a Setup line and no rerun offer.
+  const creditCost = autoflowEnabled() && runs.some((r) => r.status === 'failed' && isCreditFailure(r.error, (r.output as Record<string, unknown> | null)?.failureTail as string | undefined)) ? await recentRunCost() : undefined
   return runs.map((r) => {
     const out = (r.output ?? {}) as Record<string, unknown>
     const input = (r.input ?? {}) as Record<string, unknown>
@@ -1238,6 +1241,9 @@ async function jobRuns(jobId: string) {
       report: out.report ?? null,
       web,
       notDone: r.engagementId && gates.has(r.engagementId) ? reportGaps(gates.get(r.engagementId)!) : [],
+      ...(creditCost !== undefined && r.status === 'failed' && isCreditFailure(r.error, typeof out.failureTail === 'string' ? out.failureTail : null)
+        ? { setup: [creditSetupItem(creditCost)], rerun: CREDIT_NO_RERUN }
+        : {}),
       links: [
         ...(customerId ? [{ label: 'Google Ads account', url: adsAccountUrl(customerId) }] : []),
         ...(web?.prUrl ? [{ label: 'Pull request', url: web.prUrl }] : []),
@@ -1249,6 +1255,14 @@ async function jobRuns(jobId: string) {
         .map((a) => ({ title: a.title, status: a.status, monthlyCostChange: (a.detail as Record<string, unknown>)?.monthlyCostChange ?? null })),
     }
   })
+}
+
+/** The average recorded cost of the last 20 finished build and ads runs (null when none recorded one). */
+async function recentRunCost(): Promise<number | null> {
+  const rows = await db.agentRun
+    .findMany({ where: { agent: { in: ['ads', 'web'] }, status: 'succeeded' }, orderBy: { createdAt: 'desc' }, take: 20, select: { output: true } })
+    .catch(() => [])
+  return averageRunCost(rows.map((r) => r.output))
 }
 
 type ReportSection = { agent: string; client: string | null; did: string[]; expect: string; links: { label: string; url: string }[]; waitingForPush: string[]; questions: string[] }
@@ -1273,10 +1287,11 @@ function fallbackSections(runs: Awaited<ReturnType<typeof jobRuns>>): ReportSect
             ...(w?.verifyTail ? [`Gate output:\n${w.verifyTail}`] : []),
           ]
         : webDid ?? (rep.done ?? []).map((d) => String(d.change ?? '')).filter(Boolean)
+    const setup = 'setup' in r && Array.isArray(r.setup) ? r.setup.map((s) => `Setup: ${s}`) : []
     return {
       agent: r.agent ?? 'ads',
       client: r.client,
-      did: r.notDone.length ? [...did, `Not done: ${r.notDone.join('; ')}`] : did,
+      did: r.notDone.length ? [...did, ...setup, `Not done: ${r.notDone.join('; ')}`] : [...did, ...setup],
       expect: w ? `Next: ${w.nextStep}.` : String(rep.expected ?? ''),
       links: r.links,
       waitingForPush: r.approvals.filter((a) => a.status === 'pending').map((a) => a.title),
@@ -1301,6 +1316,9 @@ export async function runChiefReport(jobId: string) {
     `The runs, with each one's parsed report, links and approvals:\n${JSON.stringify(runs, null, 1)}`,
     ...(hops.length
       ? [`Autoflow already did this in code (report it in one line each; do not repeat or extend it): ${hops.map((h) => h.line).join(' / ')}`]
+      : []),
+    ...(runs.some((r) => 'setup' in r)
+      ? ['A run with a setup list failed for a setup reason: put each setup item in its did as "Setup: " plus the item, word for word, and follow its rerun note. Never offer a rerun for it.']
       : []),
     'Call finish_job once. sections: one per run, { agent, client, did: [what was done, one line each], expect: what to expect and when, links: [{ label, url }] (use the links given), waitingForPush: [titles of pending approvals], questions: [the web run\'s questions, one per item, word for word; [] when it has none] }. When a run\'s notDone is not empty, the last line of its did is "Not done: " followed by those items, word for word, even if nobody asked. Then reply to Jacob in two or three plain sentences: what is done and what waits for his Push, ending with the Not done items if there are any. No em dashes.',
   ].join('\n\n')
