@@ -14,8 +14,7 @@ import { NextResponse } from 'next/server'
 import { handleUpload, type HandleUploadBody } from '@vercel/blob/client'
 import { requireAdmin } from '@/lib/pipeline-server'
 import { db } from '@/lib/db'
-import { MAX_SOURCE_BYTES, MAX_VIDEO_BYTES, UPLOAD_TYPES, isVideoName } from '@/lib/ops/intake'
-import { assetPrefix } from '@/lib/ops/intake-server'
+import { uploadTokenOptions } from '@/lib/ops/intake-server'
 
 export const dynamic = 'force-dynamic'
 
@@ -30,13 +29,8 @@ export async function POST(request: Request, context: { params: { id: string } }
     const result = await handleUpload({
       body,
       request,
-      onBeforeGenerateToken: async (pathname, clientPayload) => {
-        if (!pathname.startsWith(assetPrefix(id))) throw new Error('upload path is not this client')
-        const kind = (JSON.parse(clientPayload || '{}') as { kind?: string }).kind
-        const types = UPLOAD_TYPES[kind as keyof typeof UPLOAD_TYPES]
-        if (!types || kind === 'chat') throw new Error('kind must be photo, logo or document')
-        return { allowedContentTypes: types, maximumSizeInBytes: isVideoName(pathname) ? MAX_VIDEO_BYTES : MAX_SOURCE_BYTES, addRandomSuffix: false }
-      },
+      // Path under ops-intake/{id}/, the kind's types, the size cap: lib/ops/intake-server.ts.
+      onBeforeGenerateToken: async (pathname, clientPayload) => uploadTokenOptions(id, pathname, clientPayload),
     })
     return NextResponse.json(result)
   } catch (err) {

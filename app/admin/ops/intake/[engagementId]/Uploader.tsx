@@ -14,10 +14,23 @@ import { UPLOAD_CONCURRENCY, uploadPath, type Intake, type UploadKind } from '@/
 import { filesFromDrop } from '@/lib/ops/intake-upload'
 import { QueueList, QueueSummary, posterOf, queueBtn, uploadFrames, uploadToBlob, useUploadQueue, type Send } from '../../UploadQueue'
 
-export function Uploader({ engagementId, kind, hasLogo, onSaved }: { engagementId: string; kind: Exclude<UploadKind, 'document'>; hasLogo?: boolean; onSaved: (i: Intake) => void }) {
+export function Uploader({
+  engagementId,
+  kind,
+  hasLogo,
+  onSaved,
+  apiBase,
+}: {
+  engagementId: string
+  kind: Exclude<UploadKind, 'document'>
+  hasLogo?: boolean
+  onSaved: (i: Intake) => void
+  /** Where the token and assets routes live. Default: the admin routes. The client's intake link passes /api/intake/<token>. */
+  apiBase?: string
+}) {
   const [over, setOver] = useState(false)
   const input = useRef<HTMLInputElement>(null)
-  const base = `/api/admin/ops/engagements/${engagementId}`
+  const base = apiBase ?? `/api/admin/ops/engagements/${engagementId}`
 
   const send: Send<null> = useCallback(
     async (prepared, { progress, saving }) => {

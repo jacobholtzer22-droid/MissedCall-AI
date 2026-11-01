@@ -3553,3 +3553,34 @@ Videos ride the photo pipeline. Nothing is transcoded in the browser; the build 
   downloads and transcodes them (`scripts/transcode-videos.mjs`): hero 15 s / 8 MB silent,
   gallery 60 s / 25 MB with audio, a poster from `posterTime`; verify check 27 gates them.
 
+
+### Client intake link (`CLIENT_INTAKE_LINK`, off by default)
+
+A signed per-client page, `/intake/<token>`, where the client answers the 28
+onboarding questions and uploads photos, videos and the logo straight into
+`Engagement.intake`. Off unless `CLIENT_INTAKE_LINK === 'true'`: the page and every
+`/api/intake/[token]/*` route answer 404 and the chief has no link tool. **No schema
+change; middleware untouched** (these paths are public under the existing rules,
+which protect only `/dashboard`, `/onboarding`, `/settings`).
+
+- **Token** (`lib/ops/client-intake.ts`): `<engagementId>.<expires base36>.<nonce>.<sig>`,
+  sig = HMAC-SHA256 over `client-intake:v1:` plus the first three parts, keyed by
+  `CLIENT_INTAKE_SECRET`, else `OTP_SECRET`. 30 days. **Revocable**: the nonce must equal
+  `Engagement.intake.clientLink.nonce`; a new link replaces it, revoke removes it.
+  `clientLink` and `questionnaire` are not `INTAKE_KEYS`, so no PATCH, `save_intake` or
+  merge can write them; the chief's intake view leaves `clientLink` out.
+- **Routes** (`lib/ops/client-intake-server.ts` `guard()`, in order): flag (404), per-IP
+  rate limit (`CLIENT_LINK_LIMITS`, 429), signed, unexpired, current token (else 404, same
+  for every reason). Everything after works only on the engagement id inside the token.
+  `GET`/`PATCH /api/intake/[token]` (answers, partial saves), `POST .../finish` (Done),
+  `POST .../assets/token` and `POST .../assets` (uploads through the shared
+  `uploadTokenOptions` / `registerIntakeAsset` in `lib/ops/intake-server.ts`, which the
+  admin routes now call too: photo, video and logo only, own `ops-intake/{id}/` prefix,
+  admin size caps, at most `CLIENT_LINK_MAX_FILES` files, stamped `via: 'client_link'`).
+  Responses carry only the client's answers and file names (`publicView`).
+- **Answers** are stored verbatim by question number in `intake.questionnaire.answers`.
+  Done writes one OpsActivity note ("Answers in ... Nothing was sent. Ask the chief to map
+  the answers; the brief still waits for your OK."), again only when something changed.
+  Nothing is sent, and no brief is written.
+- **Getting a link**: the chief's `client_intake_link(engagementId, mode get|new|revoke)`,
+  listed only with the flag on. It logs a system activity and sends nothing.

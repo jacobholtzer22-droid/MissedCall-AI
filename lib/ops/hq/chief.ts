@@ -47,6 +47,8 @@ import { loadGateClients } from '@/lib/ops/gate-data'
 import { lookupGbp } from '@/lib/ops/gbp-server'
 import { questionsFrom } from '@/lib/ops/build-style'
 import { reportGaps, type GateClient } from '@/lib/ops/launch-gate'
+import { clientIntakeEnabled } from '@/lib/ops/client-intake'
+import { clientLinkFor } from '@/lib/ops/client-intake-server'
 
 const HISTORY_MESSAGES = 40
 
@@ -225,7 +227,8 @@ async function clientDetail(engagementId: string) {
 /** The intake as the chief sees it: every answer, the files as captions and tags (no URLs), and what is still empty. */
 function intakeForChief(raw: unknown) {
   const i = readIntake(raw)
-  const { assets, ...answers } = i
+  // clientLink (the intake link's nonce) is plumbing, not an answer.
+  const { assets, clientLink: _link, ...answers } = i as typeof i & { clientLink?: unknown }
   return {
     ...answers,
     files: (assets ?? []).map((a) => ({ kind: a.kind, filename: a.filename, caption: a.caption ?? null, heroCandidate: Boolean(a.heroCandidate), service: a.service ?? null, beforeAfter: a.beforeAfter ?? null })),
@@ -983,7 +986,34 @@ function chiefTools(ctx: ChiefContext): ClientTool[] {
         return { result: { ok: true, pendingApprovals: pending }, label: `Wrote the job report${pending ? `, ${pending} waiting for Push` : ''}` }
       },
     },
+    // CLIENT_INTAKE_LINK (off by default): only listed when the flag is on.
+    ...(clientIntakeEnabled() ? [clientIntakeLinkTool(ctx)] : []),
   ]
+}
+
+/** The client's own intake link for Jacob to send himself. Generating it sends nothing. */
+function clientIntakeLinkTool(ctx: ChiefContext): ClientTool {
+  return {
+    name: 'client_intake_link',
+    description:
+      "The client's own intake link (/intake/<token>): the onboarding questions plus photo, video and logo upload, saved straight into that client's intake. Give it to Jacob to send himself; you never send it. mode get (default) returns the current link while it is valid, or issues one; new issues a fresh link and every older one stops working; revoke kills the current link. Links last 30 days. When the client presses Done, an 'Answers in' note lands on the client; their answers are in the intake as questionnaire.answers (by question number), and you map them with save_intake only when Jacob asks, the same way as pasted answers. Never write a brief because answers came in.",
+    input_schema: {
+      type: 'object',
+      properties: { engagementId: { type: 'string' }, mode: { type: 'string', enum: ['get', 'new', 'revoke'] } },
+      required: ['engagementId'],
+    },
+    run: async (input) => {
+      const engagementId = str(input.engagementId)
+      const mode = input.mode === 'new' || input.mode === 'revoke' ? input.mode : 'get'
+      const r = await clientLinkFor(engagementId, mode)
+      await ensureJob(ctx, [engagementId])
+      const name = await engagementName(engagementId)
+      return {
+        result: { ...r, sent: false },
+        label: mode === 'revoke' ? `Revoked the intake link for ${name}` : `Intake link for ${name}${r.issued ? ' (new)' : ''}, nothing sent`,
+      }
+    },
+  }
 }
 
 // ── Running the chief ───────────────────────────────────────────────────────

@@ -49,6 +49,8 @@ export type IntakeAsset = {
   happens?: string
   /** The clip the site's hero plays. At most one per client, and only when Jacob says so. */
   heroVideo?: boolean
+  /** client_link: the client uploaded it themselves through their intake link (lib/ops/client-intake.ts). */
+  via?: 'client_link'
   uploadedAt: string
 }
 
