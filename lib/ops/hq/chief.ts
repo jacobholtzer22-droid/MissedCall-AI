@@ -49,6 +49,7 @@ import { loadGateClients } from '@/lib/ops/gate-data'
 import { lookupGbp } from '@/lib/ops/gbp-server'
 import { questionsFrom } from '@/lib/ops/build-style'
 import { duplicateGuardEnabled, linkCardTitle } from '@/lib/ops/duplicate-guard'
+import { applyRunLine, approverOf, pushedByLine } from '@/lib/ops/approver'
 import { findLikely, proposeLink } from '@/lib/ops/duplicate-guard-server'
 import { CREDIT_NO_RERUN, averageRunCost, creditSetupItem, isCreditFailure } from '@/lib/ops/build-credit'
 import { reportGaps, type GateClient } from '@/lib/ops/launch-gate'
@@ -1270,7 +1271,7 @@ async function jobRuns(jobId: string) {
       orderBy: { createdAt: 'asc' },
       select: { id: true, agent: true, kind: true, mode: true, status: true, error: true, input: true, output: true, engagementId: true, engagement: { select: { displayName: true } } },
     }),
-    db.opsApproval.findMany({ where: { jobId }, orderBy: { createdAt: 'asc' }, select: { runId: true, title: true, status: true, detail: true } }),
+    db.opsApproval.findMany({ where: { jobId }, orderBy: { createdAt: 'asc' }, select: { id: true, runId: true, title: true, status: true, detail: true } }),
   ])
   // The givens still undone per client: every report names them, asked or not.
   const gates = await loadGateClients(runs.map((r) => r.engagementId ?? '')).catch(() => new Map<string, GateClient>())
@@ -1330,7 +1331,15 @@ async function jobRuns(jobId: string) {
       ],
       approvals: approvals
         .filter((a) => a.runId === r.id)
-        .map((a) => ({ title: a.title, status: a.status, monthlyCostChange: (a.detail as Record<string, unknown>)?.monthlyCostChange ?? null })),
+        .map((a) => ({
+          title: a.title,
+          status: a.status,
+          monthlyCostChange: (a.detail as Record<string, unknown>)?.monthlyCostChange ?? null,
+          // OPS_AUTOFLOW: who pushed it, for the report.
+          ...(autoflowEnabled() && approverOf(a.detail) ? { approvalId: a.id, pushedBy: pushedByLine(a.id, a.title, approverOf(a.detail)) } : {}),
+        })),
+      // OPS_AUTOFLOW: an apply run names the approval it applied and who pushed it.
+      ...(autoflowEnabled() && r.mode === 'apply' && applyRunLine(r.input) ? { appliedApproval: applyRunLine(r.input) } : {}),
     }
   })
 }
@@ -1365,7 +1374,11 @@ function fallbackSections(runs: Awaited<ReturnType<typeof jobRuns>>): ReportSect
             ...(w?.verifyTail ? [`Gate output:\n${w.verifyTail}`] : []),
           ]
         : webDid ?? (rep.done ?? []).map((d) => String(d.change ?? '')).filter(Boolean)
-    const setup = 'setup' in r && Array.isArray(r.setup) ? r.setup.map((s) => `Setup: ${s}`) : []
+    const setup = [
+      ...('appliedApproval' in r && typeof r.appliedApproval === 'string' ? [r.appliedApproval] : []),
+      ...r.approvals.flatMap((a) => ('pushedBy' in a && typeof a.pushedBy === 'string' ? [a.pushedBy] : [])),
+      ...('setup' in r && Array.isArray(r.setup) ? r.setup.map((s) => `Setup: ${s}`) : []),
+    ]
     return {
       agent: r.agent ?? 'ads',
       client: r.client,
@@ -1394,6 +1407,9 @@ export async function runChiefReport(jobId: string) {
     `The runs, with each one's parsed report, links and approvals:\n${JSON.stringify(runs, null, 1)}`,
     ...(hops.length
       ? [`Autoflow already did this in code (report it in one line each; do not repeat or extend it): ${hops.map((h) => h.line).join(' / ')}`]
+      : []),
+    ...(runs.some((r) => 'appliedApproval' in r || r.approvals.some((a) => 'pushedBy' in a))
+      ? ['Each run\'s appliedApproval and each approval\'s pushedBy is a did line, word for word: the report always says which approval a change came from and who pushed it.']
       : []),
     ...(runs.some((r) => 'setup' in r)
       ? ['A run with a setup list failed for a setup reason: put each setup item in its did as "Setup: " plus the item, word for word, and follow its rerun note. Never offer a rerun for it.']

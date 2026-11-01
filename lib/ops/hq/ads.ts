@@ -145,7 +145,7 @@ async function syncAdsStep(runId: string, ctx: AdsToolContext, mode: 'work' | 'a
 
 // ── Starting and running ────────────────────────────────────────────────────
 
-type AdsApproval = { id: string; action: string; args: Record<string, unknown>; checkup?: boolean }
+type AdsApproval = { id: string; action: string; args: Record<string, unknown>; checkup?: boolean; decidedBy?: string; decidedVia?: string }
 type AdsInput = { instructions: string; customerId: string; client: string; dry: boolean; allow?: string[]; approval?: AdsApproval; approvalId?: string; checkup?: boolean }
 
 export async function adsClients(): Promise<{ id: string; name: string; customerId: string }[]> {

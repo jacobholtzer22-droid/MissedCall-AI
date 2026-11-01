@@ -32,6 +32,7 @@ import { applyAccountCard } from '@/lib/ops/ads-account-server'
 import { autoflowAfterPush } from '@/lib/ops/autoflow-server'
 import { LINK_CARD_KIND, duplicateGuardEnabled } from '@/lib/ops/duplicate-guard'
 import { applyLinkCard } from '@/lib/ops/duplicate-guard-server'
+import { approvalStamp, pushedByLine } from '@/lib/ops/approver'
 
 export type DecideResult =
   | { ok: true; status: 'rejected' }
@@ -70,11 +71,18 @@ export async function decideApproval(
     await closeJobIfSettled(approval.jobId)
     return { ok: true, status: 'rejected' }
   }
+  // OPS_AUTOFLOW (off by default): who pushed it goes with what the Push did (lib/ops/approver.ts).
+  const stamp = autoflowEnabled() ? approvalStamp(id, by) : null
+  const pushedNote = async () => {
+    const engagementId = approval.run.engagementId ?? (typeof detail.engagementId === 'string' ? detail.engagementId : null)
+    if (stamp && engagementId) await db.opsActivity.create({ data: { engagementId, kind: 'system', body: pushedByLine(id, approval.title, by) } }).catch(() => undefined)
+  }
 
   if (approval.kind === 'web_push') {
     try {
-      await applyWebPush({ id, jobId: approval.jobId, detail })
+      await applyWebPush({ id, jobId: approval.jobId, detail: stamp ? { ...detail, ...stamp } : detail })
       await db.opsApproval.update({ where: { id }, data: { status: 'applied', appliedAt: new Date() } })
+      await pushedNote()
       await closeJobIfSettled(approval.jobId)
       // OPS_AUTOFLOW (off by default): one next step from the fixed table. Never throws.
       if (autoflowEnabled()) await autoflowAfterPush({ id, jobId: approval.jobId, runId: approval.runId }, detail)
@@ -91,6 +99,7 @@ export async function decideApproval(
     try {
       const line = await applyAccountCard({ kind: approval.kind, runId: approval.runId, jobId: approval.jobId }, detail)
       await db.opsApproval.update({ where: { id }, data: { status: 'applied', appliedAt: new Date(), detail: { ...detail, result: line } as Prisma.InputJsonObject } })
+      await pushedNote()
       await closeJobIfSettled(approval.jobId)
       return { ok: true, status: 'applied' }
     } catch (err) {
@@ -106,6 +115,7 @@ export async function decideApproval(
     try {
       const line = await applyLinkCard(detail)
       await db.opsApproval.update({ where: { id }, data: { status: 'applied', appliedAt: new Date(), detail: { ...detail, result: line } as Prisma.InputJsonObject } })
+      await pushedNote()
       await closeJobIfSettled(approval.jobId)
       return { ok: true, status: 'applied' }
     } catch (err) {
@@ -120,6 +130,7 @@ export async function decideApproval(
     try {
       await applyAdminChange(detail)
       await db.opsApproval.update({ where: { id }, data: { status: 'applied', appliedAt: new Date() } })
+      await pushedNote()
       await closeJobIfSettled(approval.jobId)
       return { ok: true, status: 'applied' }
     } catch (err) {
@@ -140,12 +151,13 @@ export async function decideApproval(
       jobId: approval.jobId,
       mode: 'apply',
       // A check-up's proposal may name one of its cut-waste work tools (lib/ops/hq/ads-tools.ts CHECKUP_PROPOSABLE).
-      approval: { id, action, args, ...(detail.checkup === true ? { checkup: true } : {}) },
+      approval: { id, action, args, ...(detail.checkup === true ? { checkup: true } : {}), ...(stamp ? { decidedBy: stamp.decidedBy, decidedVia: stamp.decidedVia } : {}) },
       instructions: [`Jacob approved: ${approval.title}.`, detail.why ? `Why: ${String(detail.why)}` : '', approval.expected ? `Expected: ${approval.expected}` : '']
         .filter(Boolean)
         .join('\n'),
     })
     await db.opsApproval.update({ where: { id }, data: { detail: { ...detail, applyRunId: run.id } as Prisma.InputJsonObject } })
+    await pushedNote()
     return { ok: true, status: 'approved', applyRunId: run.id }
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)

@@ -483,6 +483,11 @@ export async function applyWebPush(approval: { id: string; jobId: string; detail
 
   if (action === 'go_live') {
     const r = await dispatchRun(engagementId, { kind: 'go_live', dry: false, jobId: approval.jobId })
+    // OPS_AUTOFLOW: the approval and who pushed it ride on the go_live run (decideApproval adds them to detail).
+    if (autoflowEnabled() && r.runId && typeof d.approvalId === 'string') {
+      const row = await db.agentRun.findUnique({ where: { id: r.runId }, select: { input: true } })
+      await db.agentRun.update({ where: { id: r.runId }, data: { input: { ...((row?.input ?? {}) as Record<string, unknown>), approvalId: d.approvalId, decidedBy: d.decidedBy ?? null, decidedVia: d.decidedVia ?? null } as Prisma.InputJsonObject } })
+    }
     if (r.blocked.length) throw new Error(`blocked: ${r.blocked.join('; ')}`)
     if (!r.ok) throw new Error(r.error ?? 'go_live dispatch failed')
     // The job reports again when go_live calls back.
