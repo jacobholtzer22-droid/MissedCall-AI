@@ -157,7 +157,7 @@ export function SendDraftsStrip({ board }: { board: OpsBoard }) {
     if (res?.ok) setDone((s) => new Set(s).add(`${engagementId}:${kind}`))
   }
   return (
-    <section aria-label="Ready to send" className="bg-gray-900 border border-gray-800 rounded-lg px-4 py-3 space-y-2">
+    <section id="ops-ready-to-send" aria-label="Ready to send" className="scroll-mt-4 bg-gray-900 border border-gray-800 rounded-lg px-4 py-3 space-y-2">
       <h2 className="text-sm font-semibold text-gray-100">
         Ready to send
         <span className="ml-2 text-gray-500 font-normal">you send these yourself</span>
@@ -190,6 +190,54 @@ export function SendDraftsStrip({ board }: { board: OpsBoard }) {
             </li>
           )
         })}
+      </ul>
+    </section>
+  )
+}
+
+/**
+ * READY_TO_BILL (off by default): everything a client bought is live and no
+ * subscription is seen. One row each; Dismiss is Jacob's tap (an activity marker).
+ * Stripe is never touched from here. Renders nothing when the board carries no rows.
+ */
+export function ReadyToBillStrip({ board }: { board: OpsBoard }) {
+  const rows = board.billRows
+  const [gone, setGone] = useState<Set<string>>(new Set())
+  if (!rows?.length) return null
+  const shown = rows.filter((r) => !gone.has(r.engagementId))
+  if (!shown.length) return null
+  const liveDraft = new Set((board.sendDrafts ?? []).filter((d) => d.kind === 'live').map((d) => d.engagementId))
+  const dismiss = async (id: string) => {
+    const res = await fetch(`/api/admin/ops/engagements/${id}/ready-to-bill`, { method: 'POST' }).catch(() => null)
+    if (res?.ok) setGone((s) => new Set(s).add(id))
+  }
+  return (
+    <section aria-label="Ready to bill" className="bg-gray-900 border border-gray-800 rounded-lg px-4 py-3 space-y-2">
+      <h2 className="text-sm font-semibold text-gray-100">
+        Ready to bill
+        <span className="ml-2 text-gray-500 font-normal">set it up in Stripe yourself</span>
+      </h2>
+      <ul className="space-y-3">
+        {shown.map((r) => (
+          <li key={r.engagementId} className="space-y-1 text-sm">
+            <p className="text-gray-100">{r.text}</p>
+            {r.details.map((d) => (
+              <p key={d} className={`text-xs ${d.startsWith('Check Stripe') ? 'text-amber-300' : 'text-gray-400'}`}>
+                {d}
+              </p>
+            ))}
+            <div className="flex flex-wrap gap-2">
+              {liveDraft.has(r.engagementId) && (
+                <a href="#ops-ready-to-send" className={`${smallButton} min-h-[44px]`}>
+                  The you&apos;re live text is ready
+                </a>
+              )}
+              <button type="button" onClick={() => void dismiss(r.engagementId)} className={`${smallButton} min-h-[44px]`}>
+                Dismiss
+              </button>
+            </div>
+          </li>
+        ))}
       </ul>
     </section>
   )

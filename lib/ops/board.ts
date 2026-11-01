@@ -22,6 +22,7 @@ import { clientSendDraftsEnabled, sendDraftsFor, type BoardSendDraft, type SendM
 import { intakeMissing, readIntake } from '@/lib/ops/intake'
 import { clientIntakeEnabled, clientIntakeKey, clientLinkUrl, signClientLink, type IntakeWithLink } from '@/lib/ops/client-intake'
 import { currentPreviewLink } from '@/lib/ops/preview-feedback-server'
+import { DISMISS_MARKER, billRow, readyToBillEnabled, type BoardBillRow } from '@/lib/ops/ready-to-bill'
 import { prStatesFor } from '@/lib/ops/pr-state-server'
 import type { IntakeWithPreview } from '@/lib/ops/preview-feedback'
 
@@ -166,6 +167,8 @@ export type BoardAgentRun = {
 export type OpsBoard = {
   /** CLIENT_SEND_DRAFTS only (absent when off): texts ready for Jacob to send himself. */
   sendDrafts?: BoardSendDraft[]
+  /** READY_TO_BILL only (absent when off): everything live, no subscription seen. */
+  billRows?: BoardBillRow[]
   generatedAt: string
   lastSyncAt: string | null
   engagements: BoardEngagement[]
@@ -406,9 +409,12 @@ export async function getOpsBoard(): Promise<OpsBoard> {
 
   // CLIENT_SEND_DRAFTS (off by default): one extra read, only when the flag is on.
   const sendDrafts = clientSendDraftsEnabled() ? await loadSendDrafts(live, now) : null
+  // READY_TO_BILL (off by default): one extra read (dismissals), only when the flag is on.
+  const billRows = readyToBillEnabled() ? await loadBillRows(live) : null
 
   return {
     ...(sendDrafts ? { sendDrafts } : {}),
+    ...(billRows ? { billRows } : {}),
     generatedAt: now.toISOString(),
     lastSyncAt: synced[synced.length - 1] ?? null,
     engagements: live,
@@ -467,4 +473,35 @@ async function loadSendDrafts(engagements: BoardEngagement[], now: Date): Promis
     )
   }
   return out
+}
+
+/** The "ready to bill" rows (lib/ops/ready-to-bill.ts). Stripe facts are the sync's own, read from the engagement. */
+async function loadBillRows(engagements: BoardEngagement[]): Promise<BoardBillRow[]> {
+  if (!engagements.length) return []
+  const dismissed = new Set(
+    (
+      await db.opsActivity.findMany({
+        where: { engagementId: { in: engagements.map((e) => e.id) }, body: { startsWith: DISMISS_MARKER } },
+        select: { engagementId: true },
+      })
+    ).map((a) => a.engagementId)
+  )
+  return engagements.flatMap((e) => {
+    const row = billRow(
+      {
+        id: e.id,
+        displayName: e.displayName,
+        stage: e.stage,
+        deliverables: e.deliverables.map((d) => ({ effectiveStatus: d.effectiveStatus })),
+        stripeCustomerId: e.stripeCustomerId,
+        stripeSyncedAt: e.stripeSyncedAt,
+        stripeSubscriptionStatus: e.stripeSubscriptionStatus,
+        monthlyAmount: e.monthlyAmount,
+        upfrontAmount: e.upfrontAmount,
+        upfrontPaidAt: e.upfrontPaidAt,
+      },
+      dismissed.has(e.id)
+    )
+    return row ? [row] : []
+  })
 }

@@ -3720,3 +3720,14 @@ purpose prefix (`LINK_DOMAINS.preview`), nonce at `intake.previewLink`, notes at
 - **The link**: the chief's `preview_feedback_link(engagementId, get|new|revoke)`. With the
   flag on and a live link, the "Ready to send" preview draft points to it and keeps the bare
   preview URL. Off: 404, no tool, the preview draft unchanged.
+
+### Ready to bill (`READY_TO_BILL`, off by default)
+
+One "Ready to bill" row on Home per client whose bought deliverables are all live (the "you're
+live" all-live test, without its 14-day window) and whose `Engagement.stripeSubscriptionStatus`
+(written by the read-only ops sync) is not active, trialing, past_due, unpaid or scheduled. No
+Stripe customer linked or never synced: the row shows with "Check Stripe". Text: "All live:
+start the $X/mo subscription for <client>" from `monthlyAmount` (else "(amount not recorded)"),
+plus the setup fee from `upfrontAmount` / `upfrontPaidAt`. A link to the "you're live" draft when
+one is waiting. Dismiss (`POST .../engagements/[id]/ready-to-bill`, Jacob's tap) writes a
+`[ready-to-bill] dismissed` activity. No Stripe call is added anywhere. Off: no rows, no route.
