@@ -22,6 +22,7 @@ import { clientSendDraftsEnabled, sendDraftsFor, type BoardSendDraft, type SendM
 import { intakeMissing, readIntake } from '@/lib/ops/intake'
 import { clientIntakeEnabled, clientIntakeKey, clientLinkUrl, signClientLink, type IntakeWithLink } from '@/lib/ops/client-intake'
 import { currentPreviewLink } from '@/lib/ops/preview-feedback-server'
+import { prStatesFor } from '@/lib/ops/pr-state-server'
 import type { IntakeWithPreview } from '@/lib/ops/preview-feedback'
 
 /** Ops runs on Jacob's day: "today" and "this month" are America/Detroit. */
@@ -436,6 +437,7 @@ async function loadSendDrafts(engagements: BoardEngagement[], now: Date): Promis
   const rows = await db.engagement.findMany({ where: { id: { in: engagements.map((e) => e.id) } }, select: { id: true, intake: true } })
   const intakes = new Map(rows.map((r) => [r.id, readIntake(r.intake) as IntakeWithLink & { sendDrafts?: SendMarks }]))
   const key = clientIntakeEnabled() ? clientIntakeKey() : null
+  const prs = await prStatesFor(engagements.map((e) => e.id))
   const out: BoardSendDraft[] = []
   for (const e of engagements) {
     if (e.stage === 'churned') continue
@@ -458,6 +460,7 @@ async function loadSendDrafts(engagements: BoardEngagement[], now: Date): Promis
           intakeLinkUrl: linkUrl,
           // PREVIEW_FEEDBACK: the review link when one is live; null otherwise (and with the flag off).
           reviewLinkUrl: currentPreviewLink(e.id, intake as IntakeWithPreview, now.getTime()),
+          openPr: prs.get(e.id)?.state === 'open',
         },
         now
       )

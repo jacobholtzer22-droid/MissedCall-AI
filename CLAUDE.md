@@ -3711,8 +3711,12 @@ purpose prefix (`LINK_DOMAINS.preview`), nonce at `intake.previewLink`, notes at
   page, plus the standing limits), posted once per set of notes in the HQ chat; the chief runs
   it only on Jacob's "go". No model call: the client's words are the instruction.
 - **Looks good**: an activity, and the website step moves from `send_preview` or
-  `client_review` to `approved` (skipping `revisions`), waiting on Jacob for the merge.
-  Nothing merges, runs, goes live or is sent.
+  `client_review` to `approved` (skipping `revisions`) only when the site's recorded PR is
+  merged (`lib/ops/pr-state.ts`: the newest green site_build/site_update PR against applied
+  merge approvals; nothing recorded or not seen merged counts as open). Otherwise the step
+  stays, waiting on Jacob: "Client approved the preview; merge the open PR (#N) first". The
+  "you're live" draft also waits while a recorded PR is unmerged. Nothing merges, runs, goes
+  live or is sent.
 - **The link**: the chief's `preview_feedback_link(engagementId, get|new|revoke)`. With the
   flag on and a live link, the "Ready to send" preview draft points to it and keeps the bare
   preview URL. Off: 404, no tool, the preview draft unchanged.

@@ -49,6 +49,8 @@ export type SendFacts = {
   intakeLinkUrl: string | null
   /** The client's current preview review link, when PREVIEW_FEEDBACK is on and one is live. */
   reviewLinkUrl?: string | null
+  /** A site PR the platform recorded and has not seen merged (lib/ops/pr-state.ts). Blocks "you're live". */
+  openPr?: boolean
 }
 
 export const LIVE_RECENT_DAYS = 14
@@ -142,7 +144,7 @@ export function sendDraftsFor(f: SendFacts, now = new Date()): BoardSendDraft[] 
   const bought = f.deliverables
   const allLive = bought.length > 0 && bought.every((d) => d.effectiveStatus === 'live')
   const lastLive = Math.max(0, ...bought.map((d) => (d.stepUpdatedAt ? Date.parse(d.stepUpdatedAt) : 0)))
-  if (allLive && !f.marks.live && lastLive && now.getTime() - lastLive <= LIVE_RECENT_DAYS * 86_400_000) {
+  if (allLive && !f.openPr && !f.marks.live && lastLive && now.getTime() - lastLive <= LIVE_RECENT_DAYS * 86_400_000) {
     const text = liveText(name, f)
     if (text) out.push({ ...base, kind: 'live', key: 'live', text, why: 'everything they bought is live' })
   }
