@@ -190,3 +190,65 @@ export function decideStartNudge(appt: ShowRateAppointment, now: Date): ShowRate
   }
   return { send: true }
 }
+
+// -------------------------------------------
+// 3. Confirmed by reply (CONFIRM_TRACKING)
+// -------------------------------------------
+
+/** Whole-message replies that count as YES, after trim, punctuation strip and lowercasing. */
+export const YES_REPLIES = ['yes', 'y', 'yep', 'yeah', 'confirmed', 'ok']
+
+/** A YES reply only, never one that merely contains yes ("yes but can we move it"). */
+export function isYesReply(text: string | null | undefined): boolean {
+  // Letters and spaces only: punctuation and emoji go, so "Yes!", "ok." and
+  // "yes 👍" all read as their word. A thumbs-up alone is empty and is not YES.
+  const clean = (text ?? '')
+    .toLowerCase()
+    .replace(/[^a-z\s]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+  return YES_REPLIES.includes(clean)
+}
+
+/** A reply counts for a confirmed booking starting within this long. */
+export const CONFIRM_LOOKAHEAD_MS = 36 * 60 * 60 * 1000
+
+/**
+ * The booking a YES reply confirms: the soonest confirmed one starting in the
+ * next 36h that is not already marked. Null when there is none.
+ */
+export function pickConfirmTarget<T extends Pick<ShowRateAppointment, 'scheduledAt' | 'status' | 'notes'>>(
+  appts: T[],
+  now: Date
+): T | null {
+  const live = appts
+    .filter((a) => a.status === 'confirmed')
+    .filter((a) => a.scheduledAt.getTime() > now.getTime())
+    .filter((a) => a.scheduledAt.getTime() - now.getTime() <= CONFIRM_LOOKAHEAD_MS)
+    .sort((a, b) => a.scheduledAt.getTime() - b.scheduledAt.getTime())
+  const next = live[0]
+  if (!next || hasMarker(next.notes, CONFIRMED_BY_REPLY_MARKER)) return null
+  return next
+}
+
+/** Ops HQ flags a call with no YES by this hour, booker-local, on the day of the call. */
+export const CONFIRM_BY_HOUR = 9
+
+/**
+ * True when Ops HQ should flag this booking so the owner texts personally: the
+ * night-before text (which asks for YES) went out, no YES has been recorded,
+ * it is past 9:00 AM booker-local on the call day, and nobody has marked it.
+ */
+export function needsConfirmFlag(
+  appt: Pick<
+    ShowRateAppointment,
+    'scheduledAt' | 'status' | 'showStatus' | 'notes' | 'customerTimezone' | 'reminderNightBeforeSentAt'
+  >,
+  now: Date
+): boolean {
+  if (appt.status !== 'confirmed' || appt.showStatus !== 'pending') return false
+  if (!appt.reminderNightBeforeSentAt) return false
+  if (hasMarker(appt.notes, CONFIRMED_BY_REPLY_MARKER)) return false
+  const tz = reminderZone(appt)
+  return now.getTime() >= localAt(appt.scheduledAt, tz, CONFIRM_BY_HOUR).getTime()
+}

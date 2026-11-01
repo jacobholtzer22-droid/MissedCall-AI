@@ -18,6 +18,7 @@ import { computeEngagementAlerts, type OpsAlert, type OpsHealth } from '@/lib/op
 import type { DeliverableStatus } from '@/lib/ops/types'
 import { isVerifiedMrr, mrrBucketOf } from '@/lib/ops/money'
 import { effectiveStatusOf, stepFor, type StepOwner } from '@/lib/ops/steps'
+import { needsConfirmFlag, showRateFlags } from '@/lib/show-rate'
 
 /** Ops runs on Jacob's day: "today" and "this month" are America/Detroit. */
 export const OPS_TIMEZONE = 'America/Detroit'
@@ -122,6 +123,12 @@ export type BoardBooking = {
   status: string
   showStatus: string
   googleMeetLink: string | null
+  /**
+   * CONFIRM_TRACKING only (absent when the flag is off): the night-before text
+   * asked for YES, none came, and it is past 9:00 AM booker-local on the call
+   * day. Ops HQ shows it so the owner can text personally.
+   */
+  noConfirmReply?: boolean
 }
 
 export type MoneyBucket = { total: number; count: number; noStripe: number }
@@ -238,6 +245,9 @@ export async function getOpsBoard(): Promise<OpsBoard> {
     }),
   ])
   const statusBy = new Map(statuses.map((s) => [s.engagementId, s]))
+
+  // CONFIRM_TRACKING (off by default): one extra read, only when the flag is on.
+  const noReplyIds = showRateFlags().confirmTracking ? await noConfirmReplyIds(bookings.map((b) => b.id), now) : null
 
   // Prospect names: the latest lead or booking per person, two queries total.
   const phoneKeys = prospects.map((p) => p.personKey).filter((k) => !k.startsWith('lead:'))
@@ -402,7 +412,11 @@ export async function getOpsBoard(): Promise<OpsBoard> {
     engagements: live,
     ignored,
     followUpsDue,
-    bookedToday: bookings.map((b) => ({ ...b, scheduledAt: b.scheduledAt.toISOString() })),
+    bookedToday: bookings.map((b) =>
+      noReplyIds
+        ? { ...b, scheduledAt: b.scheduledAt.toISOString(), noConfirmReply: noReplyIds.has(b.id) }
+        : { ...b, scheduledAt: b.scheduledAt.toISOString() }
+    ),
     money,
     agentRuns: runs.flatMap((r) => (r.engagementId && r.engagement ? [{ ...r, engagementId: r.engagementId, engagement: r.engagement }] : [])).map((r) => ({
       id: r.id,
@@ -417,4 +431,22 @@ export async function getOpsBoard(): Promise<OpsBoard> {
       createdAt: r.createdAt.toISOString(),
     })),
   }
+}
+
+/** Today's bookings Ops HQ should flag for no YES reply (lib/show-rate needsConfirmFlag). */
+async function noConfirmReplyIds(ids: string[], now: Date): Promise<Set<string>> {
+  if (ids.length === 0) return new Set()
+  const rows = await db.appointment.findMany({
+    where: { id: { in: ids } },
+    select: {
+      id: true,
+      scheduledAt: true,
+      status: true,
+      showStatus: true,
+      notes: true,
+      customerTimezone: true,
+      reminderNightBeforeSentAt: true,
+    },
+  })
+  return new Set(rows.filter((r) => needsConfirmFlag(r, now)).map((r) => r.id))
 }

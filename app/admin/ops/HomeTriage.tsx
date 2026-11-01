@@ -83,6 +83,11 @@ export function SalesStrip({ sales, board, actions }: { sales: Triage['sales']; 
             <li key={b.id} className="flex flex-wrap items-center gap-2 text-sm">
               <span className="w-16 shrink-0 tabular-nums text-gray-100">{detroitTime(b.scheduledAt)}</span>
               <span className="text-gray-200">Demo call: {b.customerName}</span>
+              {full?.noConfirmReply && (
+                <a href={`sms:${full.customerPhone}`} className="text-xs text-amber-300" title="No YES to the night-before text by 9:00 AM their time">
+                  No YES reply. Text them
+                </a>
+              )}
               <span className="ml-auto flex flex-wrap gap-2">
                 {full?.googleMeetLink && (
                   <a href={full.googleMeetLink} target="_blank" rel="noreferrer" className={`${smallButton} min-h-[44px]`}>
