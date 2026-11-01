@@ -200,10 +200,10 @@ export type ReminderExtras = { skip?: string; rescheduleLink?: string }
  * What RESCHEDULE_LINK changes for one night-before / hour-before reminder.
  * Flag off: always {}, and nothing is read.
  *
- * The /calendar link books a NEW slot; it does not cancel the old one. So once
- * the link is live, a booking whose phone has booked again after it is treated
- * as superseded and gets no further reminder. The old Google event and row are
- * left for the owner to cancel by hand.
+ * The /calendar link books a NEW slot. /api/demo-book then cancels the earlier
+ * booking and deletes its event (lib/show-rate-supersede.ts). This skip is the
+ * backstop for when that did not run or did not finish: a booking whose phone
+ * has booked again after it gets no further reminder.
  */
 export async function reminderExtras(
   flags: ShowRateFlags,

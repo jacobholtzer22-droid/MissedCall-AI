@@ -60,6 +60,7 @@ import { logArmSchedule } from '@/lib/arm-log'
 import { resolveCalendarToken } from '@/lib/lead-token'
 import { showRateFlags } from '@/lib/show-rate'
 import { showRateCalendarLink } from '@/lib/show-rate-cron'
+import { supersedeForNewBooking } from '@/lib/show-rate-supersede-server'
 
 export const dynamic = 'force-dynamic'
 
@@ -826,6 +827,20 @@ export async function POST(request: NextRequest) {
       })
     } else {
       console.error(`[demo-book] confirmation email NOT SENT appointmentId=${appointment.id} reason=RESEND_API_KEY missing`)
+    }
+
+    // RESCHEDULE_LINK (off by default): this booking supersedes any earlier
+    // confirmed, upcoming booking from the same phone. Runs only after the new
+    // row is written and after the response; a failure is logged and can never
+    // touch this booking (lib/show-rate-supersede.ts).
+    if (showRateFlags().rescheduleLink) {
+      afterResponse(ROUTE, 'supersede-rebook', () =>
+        supersedeForNewBooking(business.id, {
+          id: appointment.id,
+          customerPhone: phoneE164,
+          createdAt: appointment.createdAt,
+        })
+      )
     }
 
     console.log(
