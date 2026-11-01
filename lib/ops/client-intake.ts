@@ -45,6 +45,9 @@ export function clientIntakeKey(env: Record<string, string | undefined> = proces
 export const CLIENT_LINK_TTL_MS = 30 * 24 * 60 * 60 * 1000
 const SIG_LENGTH = 32
 const DOMAIN = 'client-intake:v1:'
+/** The purpose prefix of each signed client link. Every link kind has its own, so one never verifies as another. */
+export const LINK_DOMAINS = { intake: DOMAIN, preview: 'preview-feedback:v1:' } as const
+export type LinkDomain = (typeof LINK_DOMAINS)[keyof typeof LINK_DOMAINS]
 
 /** What Engagement.intake.clientLink holds. */
 export type ClientLinkState = { nonce: string; issuedAt: string; expiresAt: string }
@@ -66,13 +69,13 @@ export function newNonce(): string {
   return randomBytes(9).toString('base64url')
 }
 
-function signature(payload: string, key: string): string {
-  return createHmac('sha256', key).update(DOMAIN + payload).digest('base64url').slice(0, SIG_LENGTH)
+function signature(payload: string, key: string, domain: LinkDomain = DOMAIN): string {
+  return createHmac('sha256', key).update(domain + payload).digest('base64url').slice(0, SIG_LENGTH)
 }
 
-export function signClientLink(engagementId: string, nonce: string, expiresAtMs: number, key: string): string {
+export function signClientLink(engagementId: string, nonce: string, expiresAtMs: number, key: string, domain: LinkDomain = DOMAIN): string {
   const payload = `${engagementId}.${expiresAtMs.toString(36)}.${nonce}`
-  return `${payload}.${signature(payload, key)}`
+  return `${payload}.${signature(payload, key, domain)}`
 }
 
 export type LinkClaim =
@@ -80,7 +83,7 @@ export type LinkClaim =
   | { ok: false; reason: 'missing' | 'malformed' | 'no_key' | 'bad_signature' | 'expired' }
 
 /** Signature and expiry only. The nonce is checked against the engagement by the server. */
-export function verifyClientLink(token: string | null | undefined, key: string | null, now = Date.now()): LinkClaim {
+export function verifyClientLink(token: string | null | undefined, key: string | null, now = Date.now(), domain: LinkDomain = DOMAIN): LinkClaim {
   if (!token) return { ok: false, reason: 'missing' }
   if (!key) return { ok: false, reason: 'no_key' }
   if (token.length > 200) return { ok: false, reason: 'malformed' }
@@ -90,7 +93,7 @@ export function verifyClientLink(token: string | null | undefined, key: string |
   if (!/^[a-z0-9]{10,40}$/.test(engagementId) || !/^[a-z0-9]{1,12}$/.test(exp) || !/^[A-Za-z0-9_-]{8,24}$/.test(nonce) || !sig) {
     return { ok: false, reason: 'malformed' }
   }
-  const expected = Buffer.from(signature(`${engagementId}.${exp}.${nonce}`, key), 'utf8')
+  const expected = Buffer.from(signature(`${engagementId}.${exp}.${nonce}`, key, domain), 'utf8')
   const given = Buffer.from(sig, 'utf8')
   if (expected.length !== given.length || !timingSafeEqual(expected, given)) return { ok: false, reason: 'bad_signature' }
   const expiresAt = parseInt(exp, 36)

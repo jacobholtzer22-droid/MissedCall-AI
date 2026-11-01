@@ -52,6 +52,8 @@ import { autoflowEnabled } from '@/lib/ops/autoflow'
 import { autoflowForJob } from '@/lib/ops/autoflow-server'
 import { adsPreflightFor, webPreflightFor } from '@/lib/ops/preflight-server'
 import { adsAccountCreateEnabled } from '@/lib/ops/ads-account'
+import { previewFeedbackEnabled } from '@/lib/ops/preview-feedback'
+import { previewLinkFor } from '@/lib/ops/preview-feedback-server'
 import { proposeAccountFor } from '@/lib/ops/ads-account-server'
 import { adsSpecEnabled, approveDraft, chooseSpecSource, missingOptional, missingRequired, specFacts, specMessage, specProblem, specPrompt, withDraft, type IntakeWithSpec } from '@/lib/ops/ads-spec'
 import { briefShapeProblem, draftBriefIfReady, draftMessage, draftPrompt, shouldDraftBrief, type BriefDraftState, type DraftTrigger, type IntakeWithDraft } from '@/lib/ops/brief-draft'
@@ -235,7 +237,7 @@ async function clientDetail(engagementId: string) {
 function intakeForChief(raw: unknown) {
   const i = readIntake(raw)
   // clientLink (the intake link's nonce) is plumbing, not an answer.
-  const { assets, clientLink: _link, ...answers } = i as typeof i & { clientLink?: unknown }
+  const { assets, clientLink: _link, previewLink: _review, ...answers } = i as typeof i & { clientLink?: unknown; previewLink?: unknown }
   return {
     ...answers,
     files: (assets ?? []).map((a) => ({ kind: a.kind, filename: a.filename, caption: a.caption ?? null, heroCandidate: Boolean(a.heroCandidate), service: a.service ?? null, beforeAfter: a.beforeAfter ?? null })),
@@ -1027,6 +1029,8 @@ function chiefTools(ctx: ChiefContext): ClientTool[] {
     ...(clientIntakeEnabled() ? [clientIntakeLinkTool(ctx)] : []),
     // ADS_SPEC_FROM_INTAKE (off by default): only listed when the flag is on.
     ...(adsSpecEnabled() ? adsSpecTools(ctx) : []),
+    // PREVIEW_FEEDBACK (off by default): only listed when the flag is on.
+    ...(previewFeedbackEnabled() ? [previewFeedbackLinkTool(ctx)] : []),
     // ADS_ACCOUNT_CREATE (off by default): only listed when the flag is on.
     ...(adsAccountCreateEnabled() ? [proposeAdsAccountTool(ctx)] : []),
   ]
@@ -1507,6 +1511,29 @@ function proposeAdsAccountTool(ctx: ChiefContext): ClientTool {
         result: { ok: true, approvalId: r.approvalId, fields: r.fields, waitingForPush: true },
         label: `Proposed a Google Ads account for ${await engagementName(engagementId)}, waiting for Push`,
       }
+    },
+  }
+}
+
+// ── The client's preview review page (PREVIEW_FEEDBACK, lib/ops/preview-feedback.ts) ─
+
+function previewFeedbackLinkTool(ctx: ChiefContext): ClientTool {
+  return {
+    name: 'preview_feedback_link',
+    description:
+      "The client's preview review page (/review/<token>): the preview, one note box per page and a Looks good button. Give it to Jacob to send himself; you never send it. mode get (default) returns the current link while valid or issues one; new replaces it; revoke kills it. Notes the client sends arrive in this chat as a drafted site_update that runs only when Jacob says go (start_web_task site_update with that text). Looks good moves the website step to approved; the merge stays his Push.",
+    input_schema: {
+      type: 'object',
+      properties: { engagementId: { type: 'string' }, mode: { type: 'string', enum: ['get', 'new', 'revoke'] } },
+      required: ['engagementId'],
+    },
+    run: async (input) => {
+      const engagementId = str(input.engagementId)
+      const mode = input.mode === 'new' || input.mode === 'revoke' ? input.mode : 'get'
+      const r = await previewLinkFor(engagementId, mode)
+      await ensureJob(ctx, [engagementId])
+      const name = await engagementName(engagementId)
+      return { result: { ...r, sent: false }, label: mode === 'revoke' ? `Revoked the review link for ${name}` : `Review link for ${name}${r.issued ? ' (new)' : ''}, nothing sent` }
     },
   }
 }

@@ -47,6 +47,8 @@ export type SendFacts = {
   marks: SendMarks
   /** The client's current intake link, when CLIENT_INTAKE_LINK is on and one is live. */
   intakeLinkUrl: string | null
+  /** The client's current preview review link, when PREVIEW_FEEDBACK is on and one is live. */
+  reviewLinkUrl?: string | null
 }
 
 export const LIVE_RECENT_DAYS = 14
@@ -76,7 +78,11 @@ export function questionnaireText(name: string, linkUrl: string | null): string 
   return QUESTIONNAIRE_TEXT.replace(/\{Name\}/g, name || 'there')
 }
 
-export function previewText(name: string, url: string): string {
+export function previewText(name: string, url: string, reviewUrl?: string | null): string {
+  if (reviewUrl) {
+    // PREVIEW_FEEDBACK: the review page first; the bare preview stays in the text for a quick look.
+    return `${hey(name)} Your new website is ready for you to look at: ${reviewUrl}\n\nThat page opens the preview and has a box for each page, so you can tell me anything you want changed, or tap Looks good. The preview on its own is here: ${url}`
+  }
   return `${hey(name)} Your new website is ready for you to look at: ${url}\n\nTake a look on your phone and tell me anything you want changed, or reply looks good and I'll get it ready to go live.`
 }
 
@@ -131,7 +137,7 @@ export function sendDraftsFor(f: SendFacts, now = new Date()): BoardSendDraft[] 
   const site = f.deliverables.find((d) => d.type === 'website')
   const preview = typeof site?.evidence.previewUrl === 'string' ? site.evidence.previewUrl : null
   if (site?.step === 'send_preview' && preview && f.marks.preview !== preview) {
-    out.push({ ...base, kind: 'preview', key: preview, text: previewText(name, preview), why: 'the website step is send_preview' })
+    out.push({ ...base, kind: 'preview', key: preview, text: previewText(name, preview, f.reviewLinkUrl), why: 'the website step is send_preview' })
   }
   const bought = f.deliverables
   const allLive = bought.length > 0 && bought.every((d) => d.effectiveStatus === 'live')

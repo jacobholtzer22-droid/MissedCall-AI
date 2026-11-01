@@ -3698,3 +3698,21 @@ built in `lib/ops/board.ts` as `OpsBoard.sendDrafts`, absent when off). Nothing 
   What runs, where leads go and week one, from the board only.
 - **Mark sent** (`POST /api/admin/ops/engagements/[id]/send-drafts`, Jacob's tap only): an
   `intake.sendDrafts` marker (not an INTAKE_KEY), a `text` activity and `lastContactedAt`.
+
+### Preview review page (`PREVIEW_FEEDBACK`, off by default)
+
+`/review/<token>`: the client opens their preview and leaves a note per page (Home, one
+per intake service, About, Contact, Anything else), autosaved, then presses "Send my notes
+to Jacob" or "Looks good, no changes". Same token scheme as the intake link with its own
+purpose prefix (`LINK_DOMAINS.preview`), nonce at `intake.previewLink`, notes at
+`intake.previewFeedback` (neither is an INTAKE_KEY), per-IP limits (`REVIEW_LIMITS`),
+`reviewGuard` on every `/api/review/[token]` route, noindex and no-referrer.
+- **Notes**: a fixed template turns them into a site_update instruction (their words, page by
+  page, plus the standing limits), posted once per set of notes in the HQ chat; the chief runs
+  it only on Jacob's "go". No model call: the client's words are the instruction.
+- **Looks good**: an activity, and the website step moves from `send_preview` or
+  `client_review` to `approved` (skipping `revisions`), waiting on Jacob for the merge.
+  Nothing merges, runs, goes live or is sent.
+- **The link**: the chief's `preview_feedback_link(engagementId, get|new|revoke)`. With the
+  flag on and a live link, the "Ready to send" preview draft points to it and keeps the bare
+  preview URL. Off: 404, no tool, the preview draft unchanged.

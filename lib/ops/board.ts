@@ -21,6 +21,8 @@ import { effectiveStatusOf, stepFor, type StepOwner } from '@/lib/ops/steps'
 import { clientSendDraftsEnabled, sendDraftsFor, type BoardSendDraft, type SendMarks } from '@/lib/ops/send-drafts'
 import { intakeMissing, readIntake } from '@/lib/ops/intake'
 import { clientIntakeEnabled, clientIntakeKey, clientLinkUrl, signClientLink, type IntakeWithLink } from '@/lib/ops/client-intake'
+import { currentPreviewLink } from '@/lib/ops/preview-feedback-server'
+import type { IntakeWithPreview } from '@/lib/ops/preview-feedback'
 
 /** Ops runs on Jacob's day: "today" and "this month" are America/Detroit. */
 export const OPS_TIMEZONE = 'America/Detroit'
@@ -454,6 +456,8 @@ async function loadSendDrafts(engagements: BoardEngagement[], now: Date): Promis
           hasClientAnswers: Object.keys(intake.questionnaire?.answers ?? {}).length > 0,
           marks: intake.sendDrafts ?? {},
           intakeLinkUrl: linkUrl,
+          // PREVIEW_FEEDBACK: the review link when one is live; null otherwise (and with the flag off).
+          reviewLinkUrl: currentPreviewLink(e.id, intake as IntakeWithPreview, now.getTime()),
         },
         now
       )
