@@ -3644,3 +3644,21 @@ header of `lib/ops/preflight.ts`; facts are read in `lib/ops/preflight-server.ts
 blocked because the run handles it: no Google Ads customer id, no stock photo keys,
 vercel.app final URLs, billing and advertiser verification. Env vars are checked by name.
 Off: no new checks.
+
+### Ads launch spec from the intake (`ADS_SPEC_FROM_INTAKE`, off by default)
+
+- `draft_ads_spec(engagementId)`: refused, with the list, when services (q2), service area
+  (q10) or the q18 budget are missing; otherwise one `runAgentLoop` turn (`maxTurns: 1`,
+  `tools: []`) with the chief's prompt, get_client's record, site brief standards (section 9
+  is the rule), the ads playbook and `SPEC_SHAPE` (the docs/ads-specs shape with no client
+  in it). The daily budget is computed in code (q18 / 30.4, rounded down to $0.50) and the
+  draft is refused unless its Budget line says exactly that (UNKNOWN with no q18), it is
+  PAUSED at build, PRESENCE only, and names no higher daily spend. Gaps are listed under
+  "## Missing from the intake". Posted in the HQ chat; stored as `intake.adsSpec.draft`.
+- `approve_ads_spec(engagementId)`: stores the draft as `intake.adsSpec.approved` only when
+  Jacob's own message says "looks good" (or approve / go ahead / ship it / lgtm).
+- `start_ads_task` gains `spec` ('intake' or a docs/ads-specs/ file): the approved intake
+  spec wins, then the named file; a draft is never used. The spec text is appended to the
+  instructions, so pre-flight sees it as a launch-spec build.
+- `adsSpec` is not an INTAKE_KEY: save_intake, the admin intake PATCH and the client link
+  cannot write it. Off: no new tools, no `spec` field, only docs/ads-specs via read_spec.

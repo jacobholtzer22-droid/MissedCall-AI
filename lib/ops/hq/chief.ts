@@ -51,6 +51,7 @@ import { clientIntakeEnabled } from '@/lib/ops/client-intake'
 import { autoflowEnabled } from '@/lib/ops/autoflow'
 import { autoflowForJob } from '@/lib/ops/autoflow-server'
 import { adsPreflightFor, webPreflightFor } from '@/lib/ops/preflight-server'
+import { adsSpecEnabled, approveDraft, chooseSpecSource, missingOptional, missingRequired, specFacts, specMessage, specProblem, specPrompt, withDraft, type IntakeWithSpec } from '@/lib/ops/ads-spec'
 import { briefShapeProblem, draftBriefIfReady, draftMessage, draftPrompt, shouldDraftBrief, type BriefDraftState, type DraftTrigger, type IntakeWithDraft } from '@/lib/ops/brief-draft'
 import { clientLinkFor } from '@/lib/ops/client-intake-server'
 
@@ -674,13 +675,26 @@ function chiefTools(ctx: ChiefContext): ClientTool[] {
         properties: {
           engagementId: { type: 'string', description: "A client id, or 'all_ads_clients'." },
           instructions: { type: 'string', description: 'What to do and why, with any limits.' },
+          // ADS_SPEC_FROM_INTAKE (off by default): only listed when the flag is on.
+          ...(adsSpecEnabled()
+            ? { spec: { type: 'string', description: "One client only: build from a launch spec. 'intake' uses the client's approved spec; or name a docs/ads-specs/ file. The approved intake spec always wins; a draft is never used." } }
+            : {}),
         },
         required: ['engagementId', 'instructions'],
       },
       run: async (input) => {
         const target = str(input.engagementId)
-        const instructions = noEmDash(str(input.instructions))
+        let instructions = noEmDash(str(input.instructions))
         if (!instructions) throw new Error('instructions are empty')
+        if (adsSpecEnabled() && input.spec) {
+          if (target === 'all_ads_clients') throw new Error('a spec is for one client; name the client')
+          const row = await db.engagement.findUnique({ where: { id: target }, select: { intake: true } })
+          const requested = str(input.spec)
+          const src = chooseSpecSource(row ? (readIntake(row.intake) as IntakeWithSpec) : null, requested === 'intake' ? null : requested)
+          if (src.source === 'none') throw new Error(`No spec to build from: ${src.reason}. Draft one with draft_ads_spec, or name a docs/ads-specs/ file.`)
+          const text = src.source === 'intake' ? src.text : (await readSpec(src.path)).text
+          instructions = `${instructions}\n\n${text}`
+        }
         const clients = target === 'all_ads_clients' ? await adsClients() : [{ id: target, name: await engagementName(target) }]
         if (clients.length === 0) throw new Error('no client has a Google Ads account on the board')
         const started: string[] = []
@@ -1009,6 +1023,8 @@ function chiefTools(ctx: ChiefContext): ClientTool[] {
     },
     // CLIENT_INTAKE_LINK (off by default): only listed when the flag is on.
     ...(clientIntakeEnabled() ? [clientIntakeLinkTool(ctx)] : []),
+    // ADS_SPEC_FROM_INTAKE (off by default): only listed when the flag is on.
+    ...(adsSpecEnabled() ? adsSpecTools(ctx) : []),
   ]
 }
 
@@ -1381,3 +1397,84 @@ export async function autoDraftBrief(engagementId: string, trigger: DraftTrigger
 
 /** A pre-flight refusal for a single-client ads task: thrown to the chief as is. */
 class PreflightRefusal extends Error {}
+
+// ── The ads launch spec from the intake (ADS_SPEC_FROM_INTAKE, lib/ops/ads-spec.ts) ─
+
+const ADS_PLAYBOOK = path.join(process.cwd(), 'lib/ops/hq/prompts/ads.md')
+
+function adsSpecTools(ctx: ChiefContext): ClientTool[] {
+  return [
+    {
+      name: 'draft_ads_spec',
+      description:
+        "Draft a client's Google Ads launch spec from the intake (site brief standards section 9, the ads playbook, the shape of docs/ads-specs). One writing call with no tools; it never invents a fact and lists what the intake is missing. The draft is posted in this chat for Jacob; you never approve it. Refused, with the list, when services, the service area or the q18 budget are missing. Nothing is built or spent.",
+      input_schema: { type: 'object', properties: { engagementId: { type: 'string' } }, required: ['engagementId'] },
+      run: async (input) => {
+        const engagementId = str(input.engagementId)
+        const e = await db.engagement.findUnique({
+          where: { id: engagementId },
+          select: { displayName: true, intake: true, deliverables: { where: { type: { in: ['website', 'domain'] } }, select: { type: true, evidence: true } } },
+        })
+        if (!e) throw new Error(`no client with id ${engagementId}`)
+        const name = e.displayName.trim()
+        const intake = readIntake(e.intake) as IntakeWithSpec
+        const ev = (t: string) => (e.deliverables.find((d) => d.type === t)?.evidence ?? {}) as Record<string, unknown>
+        const site = typeof ev('domain').primaryDomain === 'string' ? `https://${ev('domain').primaryDomain}` : typeof ev('website').productionUrl === 'string' ? String(ev('website').productionUrl) : intake.domain?.current ? `https://${intake.domain.current}` : null
+        const facts = specFacts(intake, { url: site })
+        const required = missingRequired(facts)
+        if (required.length) throw new Error(`Not drafting ${name}'s ads spec. Missing from the intake: ${required.join('; ')}. Nothing was written.`)
+        const missing = missingOptional(facts)
+        const run = await createRun({ agent: 'chief', kind: 'chief', mode: 'work', engagementId, jobId: ctx.jobId, input: { adsSpecDraft: true } })
+        let text: string
+        try {
+          const [standards, playbook, client] = await Promise.all([readDoc('site-brief-standards.md'), readFile(ADS_PLAYBOOK, 'utf8'), clientDetail(engagementId)])
+          // One turn, no tools: it can only write text.
+          const result = await runAgentLoop({
+            runId: run.id,
+            model: chiefModel(),
+            system: `${SYSTEM}\n\nToday is ${today()} (${OPS_TIMEZONE}).`,
+            messages: [{ role: 'user', content: specPrompt({ client, standards: standards.text, playbook, dailyBudget: facts.dailyBudget, missing, date: today() }) }],
+            tools: [],
+            maxTurns: 1,
+            effort: 'medium',
+          })
+          text = noEmDash(result.finalText.trim())
+          await finishRun(run.id, { adsSpecDraft: true, chars: text.length })
+        } catch (err) {
+          await failRun(run.id, err)
+          throw err
+        }
+        const problem = specProblem(text, facts.dailyBudget)
+        if (problem) throw new Error(`The draft was not posted: ${problem}. Nothing was stored.`)
+        await updateIntake(engagementId, (cur) => withDraft(cur as IntakeWithSpec, text, missing, new Date()))
+        await db.opsMessage.create({ data: { role: 'chief', body: noEmDash(specMessage(name, text, missing)), jobId: ctx.jobId } })
+        await db.opsActivity.create({ data: { engagementId, kind: 'note', body: 'Ads spec drafted from the intake, waiting for your OK. Nothing was built or spent.' } })
+        await ensureJob(ctx, [engagementId])
+        return { result: { ok: true, posted: true, missing, note: 'The full draft is already posted in the chat; do not repeat it. Say in one line that it is there and what is missing.' }, label: `Drafted ${name}'s ads spec, waiting for Jacob's OK` }
+      },
+    },
+    {
+      name: 'approve_ads_spec',
+      description:
+        "Store a client's ads spec draft as the approved spec, only when Jacob's own message says it looks good. start_ads_task with spec 'intake' then builds from it (paused; turning it on is still his Push).",
+      input_schema: { type: 'object', properties: { engagementId: { type: 'string' } }, required: ['engagementId'] },
+      run: async (input) => {
+        const engagementId = str(input.engagementId)
+        let error: string | null = null
+        await updateIntake(engagementId, (cur) => {
+          // Jacob's words, never the chief's: ctx.prompt is his message.
+          const r = approveDraft(cur as IntakeWithSpec, ctx.prompt, new Date())
+          if ('error' in r) {
+            error = r.error
+            return cur
+          }
+          return r.intake
+        })
+        if (error) throw new Error(error)
+        await db.opsActivity.create({ data: { engagementId, kind: 'note', body: `Ads spec approved by Jacob: "${oneLine(ctx.prompt, 120)}". Build it with start_ads_task spec intake.` } })
+        await ensureJob(ctx, [engagementId])
+        return { result: { ok: true }, label: `Stored ${await engagementName(engagementId)}'s approved ads spec` }
+      },
+    },
+  ]
+}
