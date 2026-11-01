@@ -51,6 +51,8 @@ import { clientIntakeEnabled } from '@/lib/ops/client-intake'
 import { autoflowEnabled } from '@/lib/ops/autoflow'
 import { autoflowForJob } from '@/lib/ops/autoflow-server'
 import { adsPreflightFor, webPreflightFor } from '@/lib/ops/preflight-server'
+import { adsAccountCreateEnabled } from '@/lib/ops/ads-account'
+import { proposeAccountFor } from '@/lib/ops/ads-account-server'
 import { adsSpecEnabled, approveDraft, chooseSpecSource, missingOptional, missingRequired, specFacts, specMessage, specProblem, specPrompt, withDraft, type IntakeWithSpec } from '@/lib/ops/ads-spec'
 import { briefShapeProblem, draftBriefIfReady, draftMessage, draftPrompt, shouldDraftBrief, type BriefDraftState, type DraftTrigger, type IntakeWithDraft } from '@/lib/ops/brief-draft'
 import { clientLinkFor } from '@/lib/ops/client-intake-server'
@@ -1025,6 +1027,8 @@ function chiefTools(ctx: ChiefContext): ClientTool[] {
     ...(clientIntakeEnabled() ? [clientIntakeLinkTool(ctx)] : []),
     // ADS_SPEC_FROM_INTAKE (off by default): only listed when the flag is on.
     ...(adsSpecEnabled() ? adsSpecTools(ctx) : []),
+    // ADS_ACCOUNT_CREATE (off by default): only listed when the flag is on.
+    ...(adsAccountCreateEnabled() ? [proposeAdsAccountTool(ctx)] : []),
   ]
 }
 
@@ -1477,4 +1481,25 @@ function adsSpecTools(ctx: ChiefContext): ClientTool[] {
       },
     },
   ]
+}
+
+// ── Create the Google Ads account by API (ADS_ACCOUNT_CREATE, lib/ops/ads-account.ts) ─
+
+function proposeAdsAccountTool(ctx: ChiefContext): ClientTool {
+  return {
+    name: 'propose_ads_account',
+    description:
+      "Propose creating the client's Google Ads account under Jacob's manager, bound to the client by id. Fields come from the board and intake only (name, USD, the time zone of the client's state); anything missing or ambiguous blocks with a list. First a validate_only check with Google (creates nothing); if Google would refuse, says why and makes no card. Otherwise one Push card; the account is created only when Jacob pushes it, then the q17 Gmail invite is its own card. Never billing, never a campaign, never spend.",
+    input_schema: { type: 'object', properties: { engagementId: { type: 'string' } }, required: ['engagementId'] },
+    run: async (input) => {
+      const engagementId = str(input.engagementId)
+      const jobId = await ensureJob(ctx, [engagementId])
+      const r = await proposeAccountFor(engagementId, { runId: ctx.runId, jobId })
+      if (!r.proposed) throw new Error(r.reason)
+      return {
+        result: { ok: true, approvalId: r.approvalId, fields: r.fields, waitingForPush: true },
+        label: `Proposed a Google Ads account for ${await engagementName(engagementId)}, waiting for Push`,
+      }
+    },
+  }
 }

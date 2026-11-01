@@ -3662,3 +3662,22 @@ Off: no new checks.
   instructions, so pre-flight sees it as a launch-spec build.
 - `adsSpec` is not an INTAKE_KEY: save_intake, the admin intake PATCH and the client link
   cannot write it. Off: no new tools, no `spec` field, only docs/ads-specs via read_spec.
+
+### Google Ads account by API (`ADS_ACCOUNT_CREATE`, off by default, Push-gated)
+
+`lib/ops/ads-account.ts` (rules, runners with Google injected), `lib/ops/ads-account-server.ts`
+(the platform's google-ads-api client as the manager). Three steps, each one Google call:
+1. The chief's `propose_ads_account`: name (board, else q1), USD, and the IANA time zone of the
+   client's US state (`Engagement.location` "City, ST", else the intake home base); states
+   that span two zones, a missing location, an existing account id, the never-touch list, no
+   ads service or no platform account block with a list. Then `CreateCustomerClient` with
+   `validate_only: true` (creates nothing); a refusal is reported in plain words and no card
+   is made. Otherwise an OpsApproval `ads_account_create` with the exact fields.
+2. Push: the same call for real; the id from `resource_name` is bound by id
+   (`Business.googleAdsCustomerId` only when empty, `evidence.adsCustomerId`), the ads step
+   moves from `account` to `verification_docs`, an activity. Then, with a q17 Gmail, a
+   separate `ads_invite` card.
+3. Push on that card: `CustomerUserAccessInvitationService` create (ADMIN) on the new account.
+   (CreateCustomerClient's own email_address is allow-list only, per the v23 proto.)
+Never billing, never enabling, never spend, never an autoflow hop. Off: no tool, and
+`decideApproval` accepts the same kinds as before.

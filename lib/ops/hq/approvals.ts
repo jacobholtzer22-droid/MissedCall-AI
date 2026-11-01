@@ -27,6 +27,8 @@ import { applyAdminChange } from './admin-change'
 import { applyWebPush } from './web'
 import { closeJobIfSettled } from './jobs'
 import { autoflowEnabled } from '@/lib/ops/autoflow'
+import { ACCOUNT_APPROVAL_KINDS, adsAccountCreateEnabled } from '@/lib/ops/ads-account'
+import { applyAccountCard } from '@/lib/ops/ads-account-server'
 import { autoflowAfterPush } from '@/lib/ops/autoflow-server'
 
 export type DecideResult =
@@ -48,7 +50,9 @@ export async function decideApproval(
   })
   if (!approval) return { ok: false, httpStatus: 404, error: 'Approval not found' }
   if (approval.status !== 'pending') return { ok: false, httpStatus: 409, error: `Approval is already ${approval.status}` }
-  if (decision === 'approve' && !['ads_change', 'admin_change', 'web_push'].includes(approval.kind)) {
+  // ADS_ACCOUNT_CREATE (off by default) adds its two card kinds; off, the list is as before.
+  const pushable = ['ads_change', 'admin_change', 'web_push', ...(adsAccountCreateEnabled() ? ACCOUNT_APPROVAL_KINDS : [])]
+  if (decision === 'approve' && !pushable.includes(approval.kind)) {
     return { ok: false, httpStatus: 400, error: `Pushing a ${approval.kind} is not wired` }
   }
 
@@ -72,6 +76,20 @@ export async function decideApproval(
       await closeJobIfSettled(approval.jobId)
       // OPS_AUTOFLOW (off by default): one next step from the fixed table. Never throws.
       if (autoflowEnabled()) await autoflowAfterPush({ id, jobId: approval.jobId, runId: approval.runId }, detail)
+      return { ok: true, status: 'applied' }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      await db.opsApproval.update({ where: { id }, data: { status: 'failed', error: message } })
+      await closeJobIfSettled(approval.jobId)
+      return { ok: false, httpStatus: 422, error: message }
+    }
+  }
+
+  if (adsAccountCreateEnabled() && (ACCOUNT_APPROVAL_KINDS as readonly string[]).includes(approval.kind)) {
+    try {
+      const line = await applyAccountCard({ kind: approval.kind, runId: approval.runId, jobId: approval.jobId }, detail)
+      await db.opsApproval.update({ where: { id }, data: { status: 'applied', appliedAt: new Date(), detail: { ...detail, result: line } as Prisma.InputJsonObject } })
+      await closeJobIfSettled(approval.jobId)
       return { ok: true, status: 'applied' }
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
