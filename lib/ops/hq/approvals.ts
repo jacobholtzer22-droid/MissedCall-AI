@@ -26,6 +26,8 @@ import { AdsOffline, startAdsRun } from './ads'
 import { applyAdminChange } from './admin-change'
 import { applyWebPush } from './web'
 import { closeJobIfSettled } from './jobs'
+import { autoflowEnabled } from '@/lib/ops/autoflow'
+import { autoflowAfterPush } from '@/lib/ops/autoflow-server'
 
 export type DecideResult =
   | { ok: true; status: 'rejected' }
@@ -68,6 +70,8 @@ export async function decideApproval(
       await applyWebPush({ id, jobId: approval.jobId, detail })
       await db.opsApproval.update({ where: { id }, data: { status: 'applied', appliedAt: new Date() } })
       await closeJobIfSettled(approval.jobId)
+      // OPS_AUTOFLOW (off by default): one next step from the fixed table. Never throws.
+      if (autoflowEnabled()) await autoflowAfterPush({ id, jobId: approval.jobId, runId: approval.runId }, detail)
       return { ok: true, status: 'applied' }
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)

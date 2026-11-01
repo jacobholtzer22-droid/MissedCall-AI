@@ -48,6 +48,8 @@ import { lookupGbp } from '@/lib/ops/gbp-server'
 import { questionsFrom } from '@/lib/ops/build-style'
 import { reportGaps, type GateClient } from '@/lib/ops/launch-gate'
 import { clientIntakeEnabled } from '@/lib/ops/client-intake'
+import { autoflowEnabled } from '@/lib/ops/autoflow'
+import { autoflowForJob } from '@/lib/ops/autoflow-server'
 import { clientLinkFor } from '@/lib/ops/client-intake-server'
 
 const HISTORY_MESSAGES = 40
@@ -1237,9 +1239,17 @@ export async function runChiefReport(jobId: string) {
   const runs = await jobRuns(jobId)
   const run = await createRun({ agent: 'chief', kind: 'chief', mode: 'work', engagementId: null, jobId, input: { report: true, jobId } })
   const ctx: ChiefContext = { runId: run.id, messageId: null, prompt: job.prompt, jobId }
+  // OPS_AUTOFLOW (off by default): code, not the model, runs at most one next
+  // step per finished run from the fixed table (lib/ops/autoflow.ts). The model
+  // gets no extra tools; it only reads what was done. Off: nothing runs and the
+  // prompt is unchanged.
+  const hops = autoflowEnabled() ? (await autoflowForJob(jobId, run.id)).filter((h) => h.acted) : []
   const prompt = [
     `Every specialist run in this job has finished. Jacob asked: "${job.prompt}"`,
     `The runs, with each one's parsed report, links and approvals:\n${JSON.stringify(runs, null, 1)}`,
+    ...(hops.length
+      ? [`Autoflow already did this in code (report it in one line each; do not repeat or extend it): ${hops.map((h) => h.line).join(' / ')}`]
+      : []),
     'Call finish_job once. sections: one per run, { agent, client, did: [what was done, one line each], expect: what to expect and when, links: [{ label, url }] (use the links given), waitingForPush: [titles of pending approvals], questions: [the web run\'s questions, one per item, word for word; [] when it has none] }. When a run\'s notDone is not empty, the last line of its did is "Not done: " followed by those items, word for word, even if nobody asked. Then reply to Jacob in two or three plain sentences: what is done and what waits for his Push, ending with the Not done items if there are any. No em dashes.',
   ].join('\n\n')
   try {

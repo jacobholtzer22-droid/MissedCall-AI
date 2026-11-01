@@ -3585,3 +3585,25 @@ which protect only `/dashboard`, `/onboarding`, `/settings`).
   Nothing is sent, and no brief is written.
 - **Getting a link**: the chief's `client_intake_link(engagementId, mode get|new|revoke)`,
   listed only with the flag on. It logs a system activity and sends nothing.
+
+### Autoflow (`OPS_AUTOFLOW`, off by default)
+
+After a job's runs finish (the report turn) and after an applied `web_push`, **code**
+(not the model) runs at most one next step per event from a fixed table in
+`lib/ops/autoflow.ts` (`nextStep`, `AUTOFLOW_TABLE`), wired in `lib/ops/autoflow-server.ts`.
+The report turn gets no new tools; it is only told, in one prompt line, what autoflow did.
+Off: `runChiefReport` and `decideApproval` are unchanged (same tools, same prompt, no call).
+
+| Event | Next step | Stops at |
+|---|---|---|
+| site_build / site_update run succeeded, website step `review`, not a tracking update, site not live | `review` (preview and PR posted, step `send_preview`) | Jacob sends the preview; merge is his Push |
+| merge Push applied | `go_live` card, through `goLiveGate` with no skips (a refusal is logged as the stop) | go-live Push |
+| buy_domain Push applied, email deliverable at `dns_records` | `set_email_records` card | its Push |
+| ads run succeeded, labels on the ads deliverable, site has a repo and no tag | `install_tracking` card | its Push |
+
+Only `review`, `go_live`, `set_email_records`, `install_tracking` can ever run
+(`AUTOFLOW_KINDS`); no ads runs, no apply mode, no merge, domain, brief, build or billing.
+Each event is handled once (an `[autoflow] event <type>:<id>` activity), a hop never
+starts another event, the same kind on the same deliverable at the same step with no
+step write since (`stepUpdatedAt`) stops with a note instead (loop guard), nothing is
+sent, and every hop or stop is an activity plus an `[autoflow]` console line.
