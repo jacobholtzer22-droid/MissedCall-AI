@@ -142,3 +142,12 @@ export function noShowRebookText(params: DemoSmsParams & { rebookLink: string; s
     `Sorry we missed each other${day}. Grab a new time that works for you here: ${params.rebookLink}`
   )
 }
+
+/**
+ * START_NUDGE_SMS (off by default). Sent once by the reminder cron at the start
+ * time while the booking is still unmarked. Never sent without a Meet link, so
+ * the link is required here.
+ */
+export function startNudgeText(params: DemoSmsParams & { meetLink: string }): string {
+  return `Hey${greetingName(params.firstName)}, Jacob from Align and Acquire. I'm on the call now. Join here: ${params.meetLink}`
+}

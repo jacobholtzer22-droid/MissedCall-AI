@@ -21,7 +21,7 @@
 // and a concurrent writer is never clobbered.
 
 import { TZDate } from '@date-fns/tz'
-import { reminderZone, localHour } from '@/lib/demo-reminder-schedule'
+import { reminderZone, localHour, QUIET_UNTIL_HOUR } from '@/lib/demo-reminder-schedule'
 
 // -------------------------------------------
 // Flags
@@ -160,6 +160,33 @@ export function decideRebook(appt: ShowRateAppointment, now: Date): ShowRateDeci
   if (h < REBOOK_WINDOW_START_HOUR || h >= REBOOK_WINDOW_END_HOUR) {
     // This window sits inside the cron's 7:00 AM quiet-hours rule by construction.
     return { send: false, skip: `outside 10:00 AM to 7:00 PM local (${tz}, local hour ${h})` }
+  }
+  return { send: true }
+}
+
+// -------------------------------------------
+// 2. Start nudge (START_NUDGE_SMS)
+// -------------------------------------------
+
+/** The nudge goes from the start time up to this long after it. */
+export const START_NUDGE_WINDOW_MS = 10 * 60 * 1000
+
+/**
+ * One "I'm on now" text with the Meet link, from scheduledAt to scheduledAt + 10
+ * minutes, while the booking is still confirmed and unmarked (showStatus
+ * pending: not showed, no_show or cancelled). Slots start on :00 and :30 and the
+ * cron runs on :00/:15/:30/:45, so the run at the start time lands inside it.
+ */
+export function decideStartNudge(appt: ShowRateAppointment, now: Date): ShowRateDecision {
+  if (appt.status !== 'confirmed') return { send: false }
+  if (appt.showStatus !== 'pending') return { send: false }
+  if (hasMarker(appt.notes, START_NUDGE_SENT_MARKER)) return { send: false }
+  const since = now.getTime() - appt.scheduledAt.getTime()
+  if (since < 0 || since > START_NUDGE_WINDOW_MS) return { send: false }
+  if (!appt.googleMeetLink?.trim()) return { send: false, skip: 'no Meet link' }
+  const tz = reminderZone(appt)
+  if (localHour(now, tz) < QUIET_UNTIL_HOUR) {
+    return { send: false, skip: `quiet hours before ${QUIET_UNTIL_HOUR}:00 local (${tz}, local hour ${localHour(now, tz)})` }
   }
   return { send: true }
 }

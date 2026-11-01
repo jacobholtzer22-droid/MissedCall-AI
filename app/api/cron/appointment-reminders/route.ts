@@ -288,7 +288,7 @@ async function runAppointmentReminders(request: NextRequest) {
   // exactly what it was.
   const flags = showRateFlags()
   let showRate: ShowRateResult | null = null
-  if (flags.noshowRebook) {
+  if (flags.noshowRebook || flags.startNudge) {
     showRate = await runShowRateSteps(flags, showRateDeps(business.id, telnyx, fromNumber), now)
   }
 
@@ -321,6 +321,13 @@ function showRateDeps(businessId: string, telnyx: Telnyx, fromNumber: string): S
     findNoShows: (since, until) =>
       db.appointment.findMany({
         where: { businessId, showStatus: 'no_show', scheduledAt: { gte: since, lte: until } },
+        orderBy: { scheduledAt: 'asc' },
+        take: 200,
+        select: SHOW_RATE_SELECT,
+      }),
+    findStarting: (since, until) =>
+      db.appointment.findMany({
+        where: { businessId, status: 'confirmed', scheduledAt: { gte: since, lte: until } },
         orderBy: { scheduledAt: 'asc' },
         take: 200,
         select: SHOW_RATE_SELECT,

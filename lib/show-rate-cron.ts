@@ -21,18 +21,21 @@
 
 import { calendarLink, LEAD_TOKEN_TTL_MS } from '@/lib/lead-token'
 import { normalizeToE164 } from '@/lib/phone-utils'
-import { noShowRebookText } from '@/lib/marketing-sms-copy'
+import { noShowRebookText, startNudgeText } from '@/lib/marketing-sms-copy'
 import {
   REBOOK_MAX_AGE_MS,
   REBOOK_SENT_MARKER,
+  START_NUDGE_SENT_MARKER,
+  START_NUDGE_WINDOW_MS,
   appendMarker,
   decideRebook,
+  decideStartNudge,
   hasConsent,
   type ShowRateAppointment,
   type ShowRateFlags,
 } from '@/lib/show-rate'
 
-export type ShowRateKind = 'noshow_rebook'
+export type ShowRateKind = 'noshow_rebook' | 'start_nudge'
 
 /** The lead row fields the /calendar link needs. */
 export type LeadLinkRow = {
@@ -45,6 +48,8 @@ export type LeadLinkRow = {
 export type ShowRateDeps = {
   /** Marketing-business appointments with showStatus no_show, scheduled in [since, until]. */
   findNoShows(since: Date, until: Date): Promise<ShowRateAppointment[]>
+  /** Marketing-business appointments with status confirmed, scheduled in [since, until]. */
+  findStarting(since: Date, until: Date): Promise<ShowRateAppointment[]>
   /** Conditional update: set notes to `next` only where notes still equals `expected`. Returns the row count. */
   claim(id: string, expected: string | null, next: string): Promise<number>
   /** Send-time re-read, after the claim. */
@@ -99,6 +104,13 @@ export async function runShowRateSteps(
     }
   }
 
+  if (flags.startNudge) {
+    const rows = await deps.findStarting(new Date(now.getTime() - START_NUDGE_WINDOW_MS), now)
+    for (const appt of rows) {
+      await sendOne('start_nudge', appt, deps, now, result, log)
+    }
+  }
+
   return result
 }
 
@@ -117,40 +129,48 @@ async function sendOne(
   if (!hasConsent(appt.notes)) return skip('no sms consent recorded')
   if (!appt.customerPhone?.trim()) return skip('no phone')
 
-  const decision = decideRebook(appt, now)
+  const decision = kind === 'noshow_rebook' ? decideRebook(appt, now) : decideStartNudge(appt, now)
   if (!decision.send) {
     if (decision.skip) skip(decision.skip)
     return
   }
 
   if (await deps.hasOptedOut(appt.customerPhone)) return skip('opted out (STOP)')
-  // They already picked a new time: a rebook text now would read as a glitch.
+  // They already picked a new time: a rebook text, or a nudge for the old
+  // slot, would read as a glitch.
   if (await deps.hasNewerBooking(appt)) return skip('already booked again')
 
-  const marker = REBOOK_SENT_MARKER
+  const marker = kind === 'noshow_rebook' ? REBOOK_SENT_MARKER : START_NUDGE_SENT_MARKER
   const claimed = await deps.claim(appt.id, appt.notes, appendMarker(appt.notes, marker, now))
   if (claimed === 0) return skip('already claimed by another run')
 
   // Deliberately AFTER the claim: if the state changed, the marker stays burned.
   const fresh = await deps.reread(appt.id)
   if (!fresh) return skip('deleted before send')
-  if (fresh.showStatus !== 'no_show') return skip(`showStatus '${fresh.showStatus}' at send time`)
-  if (['cancelled', 'canceled', 'deleted'].includes(fresh.status)) return skip(`status '${fresh.status}' at send time`)
+  if (kind === 'noshow_rebook') {
+    if (fresh.showStatus !== 'no_show') return skip(`showStatus '${fresh.showStatus}' at send time`)
+    if (['cancelled', 'canceled', 'deleted'].includes(fresh.status)) return skip(`status '${fresh.status}' at send time`)
+  } else {
+    if (fresh.status !== 'confirmed') return skip(`status '${fresh.status}' at send time`)
+    if (fresh.showStatus !== 'pending') return skip(`showStatus '${fresh.showStatus}' at send time`)
+    if (!fresh.googleMeetLink?.trim()) return skip('no Meet link at send time')
+  }
   if (fresh.googleCalendarEventId) {
     const state = await deps.calendarState(fresh.googleCalendarEventId)
     if (state === 'cancelled') return skip('cancelled in Google Calendar')
   }
 
   const to = normalizeToE164(appt.customerPhone)
-  const lead = await deps.leadForPhone(to)
-  const text = noShowRebookText({
+  const base = {
     scheduledAt: appt.scheduledAt,
     firstName: appt.customerName,
     timeZone: appt.customerTimezone,
     timeZoneSource: appt.customerTimezoneSource,
-    rebookLink: showRateCalendarLink(lead, now),
-    sentAt: now,
-  })
+  }
+  const text =
+    kind === 'noshow_rebook'
+      ? noShowRebookText({ ...base, rebookLink: showRateCalendarLink(await deps.leadForPhone(to), now), sentAt: now })
+      : startNudgeText({ ...base, meetLink: fresh.googleMeetLink!.trim() })
 
   try {
     const providerId = await deps.send(to, text)

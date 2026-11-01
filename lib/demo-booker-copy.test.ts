@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { confirmationText, hourBeforeText, nightBeforeText, noShowRebookText } from './marketing-sms-copy'
+import { confirmationText, hourBeforeText, nightBeforeText, noShowRebookText, startNudgeText } from './marketing-sms-copy'
 import {
   DEMO_EMAIL_FROM,
   confirmationEmail,
@@ -92,7 +92,8 @@ test('every text is GSM-7 across zones, seasons and fallbacks', () => {
     for (const [timeZone, timeZoneSource] of zones) {
       const p = { ...pt, scheduledAt: at, timeZone, timeZoneSource }
       const rebook = noShowRebookText({ ...p, rebookLink: CAL_LINK, sentAt: new Date(at.getTime() + 4 * 3600 * 1000) })
-      for (const t of [confirmationText(p), nightBeforeText(p), hourBeforeText(p), rebook]) {
+      const nudge = startNudgeText({ ...p, meetLink: MEET })
+      for (const t of [confirmationText(p), nightBeforeText(p), hourBeforeText(p), rebook, nudge]) {
         assert.match(t, GSM7, `not GSM-7: ${t}`)
       }
     }
@@ -109,6 +110,14 @@ test('no-show rebook text, exact copy, today / yesterday / no day word', () => {
   assert.match(noShowRebookText({ ...pt, rebookLink: CAL_LINK, sentAt: nextDay }), /each other yesterday\. Grab/)
   const later = new Date(TUE_4PM_ET.getTime() + 50 * 3600 * 1000)
   assert.match(noShowRebookText({ ...pt, firstName: null, rebookLink: CAL_LINK, sentAt: later }), /^Hey, Jacob .*each other\. Grab/)
+})
+
+test('start nudge text, exact copy', () => {
+  assert.equal(
+    startNudgeText({ ...pt, meetLink: MEET }),
+    `Hey Marcus, Jacob from Align and Acquire. I'm on the call now. Join here: ${MEET}`
+  )
+  assert.match(startNudgeText({ ...pt, firstName: '', meetLink: MEET }), /^Hey, Jacob from/)
 })
 
 test('MSG 5 email, exact subject and plain-text body', () => {

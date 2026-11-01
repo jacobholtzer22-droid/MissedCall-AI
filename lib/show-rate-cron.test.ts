@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { runShowRateSteps, showRateCalendarLink, type ShowRateDeps, type LeadLinkRow } from './show-rate-cron'
-import { REBOOK_SENT_MARKER, hasMarker, showRateFlags, type ShowRateAppointment, type ShowRateFlags } from './show-rate'
+import { REBOOK_SENT_MARKER, START_NUDGE_SENT_MARKER, hasMarker, showRateFlags, type ShowRateAppointment, type ShowRateFlags } from './show-rate'
 
 const et = (iso: string) => new Date(`${iso}-04:00`)
 const CONSENT = 'Trade: Roofing\nSMS consent: yes (captured at booking)'
@@ -45,6 +45,12 @@ function fakes(rows: ShowRateAppointment[], opts: { optedOut?: boolean; newer?: 
       // Copies, like rows off the database: a later write does not change them.
       return Array.from(store.values())
         .filter((r) => r.showStatus === 'no_show' && r.scheduledAt >= since && r.scheduledAt <= until)
+        .map((r) => ({ ...r }))
+    },
+    findStarting: async (since, until) => {
+      calls.push('findStarting')
+      return Array.from(store.values())
+        .filter((r) => r.status === 'confirmed' && r.scheduledAt >= since && r.scheduledAt <= until)
         .map((r) => ({ ...r }))
     },
     claim: async (id, expected, next) => {
@@ -167,4 +173,70 @@ test('rebook link: expired or missing token falls back to the bare /calendar pag
   assert.match(showRateCalendarLink(null, now), /\/calendar\?utm_source=sms/)
   const old = { ...LEAD, otpVerifiedAt: et('2026-08-01T12:00:00') }
   assert.match(showRateCalendarLink(old, now), /\/calendar\?utm_source=sms/)
+})
+
+// -------------------------------------------
+// START_NUDGE_SMS
+// -------------------------------------------
+
+const NUDGE: ShowRateFlags = { ...OFF, startNudge: true }
+const START = et('2026-09-22T13:00:00')
+const upcoming = (p: Partial<ShowRateAppointment> = {}) => appt({ showStatus: 'pending', ...p })
+
+test('start nudge: one text with the Meet link at start time, never twice', async () => {
+  const f = fakes([upcoming()])
+  const r = await runShowRateSteps(NUDGE, f.deps, new Date(START.getTime() + 20 * 1000))
+  assert.deepEqual(r.sent, [{ id: 'a1', kind: 'start_nudge' }])
+  assert.equal(
+    f.sent[0].text,
+    "Hey Marcus, Jacob from Align and Acquire. I'm on the call now. Join here: https://meet.google.com/abc-defg-hij"
+  )
+  assert.ok(hasMarker(f.store.get('a1')!.notes, START_NUDGE_SENT_MARKER))
+  await runShowRateSteps(NUDGE, f.deps, new Date(START.getTime() + 5 * 60 * 1000))
+  assert.equal(f.sent.length, 1)
+})
+
+test('start nudge: only from start to +10 min, only while unmarked and confirmed', async () => {
+  for (const at of [new Date(START.getTime() - 60 * 1000), new Date(START.getTime() + 11 * 60 * 1000)]) {
+    const f = fakes([upcoming()])
+    await runShowRateSteps(NUDGE, f.deps, at)
+    assert.equal(f.sent.length, 0)
+  }
+  for (const p of [{ showStatus: 'showed' }, { showStatus: 'no_show' }, { showStatus: 'cancelled' }, { status: 'cancelled' }]) {
+    const f = fakes([upcoming(p)])
+    await runShowRateSteps(NUDGE, f.deps, START)
+    assert.equal(f.sent.length, 0, JSON.stringify(p))
+  }
+  const noMeet = fakes([upcoming({ googleMeetLink: null })])
+  assert.equal((await runShowRateSteps(NUDGE, noMeet.deps, START)).skipped[0].reason, 'no Meet link')
+  assert.equal(noMeet.sent.length, 0)
+})
+
+test('start nudge guards: no consent, STOP, quiet hours, and the rebook step stays off', async () => {
+  let f = fakes([upcoming({ notes: null })])
+  await runShowRateSteps(NUDGE, f.deps, START)
+  assert.equal(f.sent.length, 0)
+
+  f = fakes([upcoming()], { optedOut: true })
+  assert.equal((await runShowRateSteps(NUDGE, f.deps, START)).skipped[0].reason, 'opted out (STOP)')
+  assert.equal(f.sent.length, 0)
+
+  // A 7:00 AM ET slot is 4:00 AM for a Pacific booker.
+  const early = et('2026-09-22T07:00:00')
+  f = fakes([upcoming({ scheduledAt: early, customerTimezone: 'America/Los_Angeles' })])
+  assert.match((await runShowRateSteps(NUDGE, f.deps, early)).skipped[0].reason, /^quiet hours/)
+  assert.equal(f.sent.length, 0)
+
+  f = fakes([upcoming()])
+  await runShowRateSteps(NUDGE, f.deps, START)
+  assert.ok(!f.calls.includes('findNoShows'))
+})
+
+test('start nudge: marked showed between the claim read and the send, nothing goes out', async () => {
+  const f = fakes([upcoming()])
+  const reread = f.deps.reread
+  f.deps.reread = async (id) => ({ ...(await reread(id))!, showStatus: 'showed' })
+  const r = await runShowRateSteps(NUDGE, f.deps, START)
+  assert.equal(r.skipped[0].reason, "showStatus 'showed' at send time")
+  assert.equal(f.sent.length, 0)
 })

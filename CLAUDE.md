@@ -2711,6 +2711,7 @@ a concurrent notes write is never clobbered (the losing run simply skips).
 | Flag | What | Where | Marker |
 |---|---|---|---|
 | `NOSHOW_REBOOK_SMS` | One rebook text after a booking is marked `no_show`: 3h after the call ends, moved into 10:00 AM to 7:00 PM booker-local (before 10 waits for 10:00 AM, 7 PM or later waits for 10:00 AM next day), only within 72h of the call. Skipped when the same phone booked again after it. Link: the lead's `/calendar?l=` token via `calendarLink`, bare `/calendar` when there is no unexpired token. | reminder cron, after the reminder loop | `Rebook text sent: <ISO>` |
+| `START_NUDGE_SMS` | One "I'm on the call now. Join here: <Meet>" text from `scheduledAt` to +10 min while `status` is `confirmed` and `showStatus` is still `pending`. Needs a Meet link; 7:00 AM quiet hours apply; skipped when the phone booked again after it. Relies on slots starting on :00/:30 and the cron running every 15 min. | reminder cron, after the rebook step | `Start nudge sent: <ISO>` |
 
 ---
 
