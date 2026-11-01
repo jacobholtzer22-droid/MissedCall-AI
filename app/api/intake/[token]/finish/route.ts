@@ -7,6 +7,8 @@
 // the brief only when Jacob asks, and the brief still waits for his OK.
 
 import { NextResponse } from 'next/server'
+import { waitUntil } from '@vercel/functions'
+import { autoflowEnabled } from '@/lib/ops/autoflow'
 import { db } from '@/lib/db'
 import { finishIntake, publicView, type IntakeWithLink } from '@/lib/ops/client-intake'
 import { guard } from '@/lib/ops/client-intake-server'
@@ -25,6 +27,11 @@ export async function POST(request: Request, context: { params: { token: string 
       return r.intake
     })
     if (note) await db.opsActivity.create({ data: { engagementId: g.client.id, kind: 'note', body: note } })
+    // OPS_AUTOFLOW (off by default): a ready intake gets a brief DRAFT for Jacob's OK. Sends nothing.
+    if (autoflowEnabled()) {
+      const id = g.client.id
+      waitUntil(import('@/lib/ops/hq/chief').then((m) => m.autoDraftBrief(id, 'intake_link_done')))
+    }
     return NextResponse.json({ ok: true, ...publicView({ ...g.client, intake: next as IntakeWithLink }) }, { headers: { 'Cache-Control': 'no-store' } })
   } catch (err) {
     console.error('[intake link] finish failed:', err instanceof Error ? err.message : err)

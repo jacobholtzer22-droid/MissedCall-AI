@@ -24,7 +24,7 @@ import { BadRequest } from '@/lib/ops/validate'
 import { ROUTING_FIELDS, updateBusiness } from './admin-change'
 import { WEB_TASK_KINDS, briefTemplate, startWebTask, type WebTaskKind } from './web'
 import { INTAKE_KEYS, intakeSummary, readIntake, withAssetSections } from '@/lib/ops/intake'
-import { loadIntake, patchIntake } from '@/lib/ops/intake-server'
+import { loadIntake, patchIntake, updateIntake } from '@/lib/ops/intake-server'
 import { BATCH_THRESHOLD, FILE_PHOTOS_TOOL, InvalidAttachments, inboxText, readAttachments } from '@/lib/ops/photo-filing'
 import { fileAllPhotos, filePhotos, setHeroVideo } from '@/lib/ops/photo-filing-server'
 import { listInbox } from './inbox'
@@ -50,6 +50,7 @@ import { reportGaps, type GateClient } from '@/lib/ops/launch-gate'
 import { clientIntakeEnabled } from '@/lib/ops/client-intake'
 import { autoflowEnabled } from '@/lib/ops/autoflow'
 import { autoflowForJob } from '@/lib/ops/autoflow-server'
+import { briefShapeProblem, draftBriefIfReady, draftMessage, draftPrompt, shouldDraftBrief, type BriefDraftState, type DraftTrigger, type IntakeWithDraft } from '@/lib/ops/brief-draft'
 import { clientLinkFor } from '@/lib/ops/client-intake-server'
 
 const HISTORY_MESSAGES = 40
@@ -725,6 +726,7 @@ function chiefTools(ctx: ChiefContext): ClientTool[] {
             const ids = Array.isArray(input.messageIds) ? input.messageIds.map(String) : undefined
             const res = await fileAllPhotos(engagementId, ids)
             await ensureJob(ctx, [engagementId])
+            if (autoflowEnabled()) waitUntil(autoDraftBrief(engagementId, 'file_photos'))
             // The full list of 50 is noise for the model: counts plus the first few.
             return {
               result: { ok: true, client: res.client, filed: res.filed.length, hero: res.hero, logo: res.filed.find((f) => f.kind === 'logo')?.filename ?? null, withService: res.filed.filter((f) => f.service).length, uncaptionedLeft: res.uncaptioned, extraLogosLeft: res.extraLogos, unmatchedServices: res.unmatchedServices, sample: res.filed.slice(0, 6) },
@@ -734,6 +736,7 @@ function chiefTools(ctx: ChiefContext): ClientTool[] {
           const photos = JSON.parse(noEmDash(JSON.stringify(input.photos ?? null)))
           const res = await filePhotos(engagementId, photos)
           await ensureJob(ctx, [engagementId])
+          if (autoflowEnabled()) waitUntil(autoDraftBrief(engagementId, 'file_photos'))
           return { result: { ok: true, client: res.client, filed: res.filed }, label: `Filed ${plural(res.filed.length)} on ${name}` }
         } catch (err) {
           if (err instanceof InvalidAttachments) throw new Error(err.message)
@@ -822,6 +825,8 @@ function chiefTools(ctx: ChiefContext): ClientTool[] {
         const clean = JSON.parse(noEmDash(JSON.stringify(raw)))
         const next = await patchIntake(engagementId, clean)
         await ensureJob(ctx, [engagementId])
+        // OPS_AUTOFLOW (off by default): draft the brief once the intake is ready. Never stores it.
+        if (autoflowEnabled()) waitUntil(autoDraftBrief(engagementId, 'save_intake'))
         const sum = intakeSummary(next)
         return { result: { ok: true, saved: Object.keys(raw), stillMissing: sum.missing }, label: `Saved intake (${Object.keys(raw).join(', ')}) for ${await engagementName(engagementId)}` }
       },
@@ -842,12 +847,10 @@ function chiefTools(ctx: ChiefContext): ClientTool[] {
       run: async (input) => {
         const engagementId = str(input.engagementId)
         const brief = noEmDash(str(input.brief))
-        if (brief.length < 200) throw new Error('the brief is too short to build from; fill the template')
-        // Site brief standards, rule 10: what came from the standards, not the client, is listed for Jacob.
-        if (!/^#{1,3}\s*Standards applied\s*$/im.test(brief)) {
-          throw new Error('the brief needs a "## Standards applied" section (docs/ops/site-brief-standards.md, rule 10): three to eight lines naming each standard you applied and any place the client\'s answers overrode one')
-        }
-        if (/indexable[^\n]*\btrue\b/i.test(brief)) throw new Error('launch.indexable must stay false in a brief; go_live flips it later')
+        // Length, the "Standards applied" section (site brief standards, rule 10) and
+        // launch.indexable, in that order (lib/ops/brief-draft.ts, shared with the autoflow draft).
+        const shape = briefShapeProblem(brief)
+        if (shape) throw new Error(shape)
         const e = await db.engagement.findUnique({
           where: { id: engagementId },
           select: { displayName: true, business: { select: { slug: true } }, deliverables: { where: { type: 'website' }, select: { id: true, step: true } } },
@@ -1279,4 +1282,83 @@ async function writeFallbackIfNeeded(jobId: string, runs: Awaited<ReturnType<typ
   const pending = await db.opsApproval.count({ where: { jobId, status: 'pending' } })
   const report = { text: 'Report built from the runs.', sections: fallbackSections(runs), pendingApprovals: pending }
   await db.opsJob.update({ where: { id: jobId }, data: { summary: JSON.stringify(report), status: pending > 0 ? 'awaiting_approval' : 'done' } })
+}
+
+// ── Autoflow: the brief draft (OPS_AUTOFLOW, lib/ops/brief-draft.ts) ─────────
+
+/**
+ * Draft the brief once the intake is ready: the chief's own system prompt and
+ * get_client record, one model turn, no tools. Posts the draft in the HQ chat
+ * for Jacob's "looks good" (which goes through set_brief); stores no brief,
+ * moves no step, sends nothing. Never throws. No-op with the flag off.
+ */
+export async function autoDraftBrief(engagementId: string, trigger: DraftTrigger): Promise<void> {
+  if (!autoflowEnabled()) return
+  const load = async (id: string) => {
+    const e = await db.engagement.findUnique({
+      where: { id },
+      select: { displayName: true, brief: true, intake: true, business: { select: { slug: true } }, deliverables: { where: { type: 'website' }, select: { step: true } } },
+    })
+    if (!e) return null
+    return {
+      name: e.displayName.trim(),
+      websiteStep: e.deliverables.length ? e.deliverables[0].step : undefined,
+      brief: e.brief,
+      slug: e.business?.slug ?? null,
+      intake: readIntake(e.intake) as IntakeWithDraft,
+    }
+  }
+  try {
+    await draftBriefIfReady(engagementId, trigger, {
+      load,
+      claim: async (id) => {
+        const fresh = await load(id)
+        if (!fresh) return null
+        let claimed: BriefDraftState | null = null
+        await updateIntake(id, (cur) => {
+          const i = cur as IntakeWithDraft
+          const d = shouldDraftBrief({ websiteStep: fresh.websiteStep, brief: fresh.brief, intake: i })
+          if (!d.draft) return i
+          claimed = { version: d.version, status: 'drafting', startedAt: new Date().toISOString(), count: (i.briefDraft?.count ?? 0) + 1 }
+          return { ...i, briefDraft: claimed }
+        })
+        return claimed
+      },
+      write: async (id) => {
+        const run = await createRun({ agent: 'chief', kind: 'chief', mode: 'work', engagementId: id, input: { briefDraft: true, trigger } })
+        try {
+          const [template, standards, client] = await Promise.all([briefTemplate(), readDoc('site-brief-standards.md'), clientDetail(id)])
+          // One turn, no tools: it can only write text.
+          const result = await runAgentLoop({
+            runId: run.id,
+            model: chiefModel(),
+            system: `${SYSTEM}\n\nToday is ${today()} (${OPS_TIMEZONE}).`,
+            messages: [{ role: 'user', content: draftPrompt({ client, template, standards: standards.text }) }],
+            tools: [],
+            maxTurns: 1,
+            effort: 'medium',
+          })
+          await finishRun(run.id, { briefDraft: true, chars: result.finalText.length })
+          return noEmDash(result.finalText)
+        } catch (err) {
+          await failRun(run.id, err)
+          throw err
+        }
+      },
+      finish: async (id, state) => {
+        await updateIntake(id, (cur) => {
+          const i = cur as IntakeWithDraft
+          return i.briefDraft?.version === state.version ? { ...i, briefDraft: state } : i
+        })
+      },
+      post: async (_id, name, text, replaces) => {
+        await db.opsMessage.create({ data: { role: 'chief', body: noEmDash(draftMessage(name, text, replaces)) } })
+      },
+      activity: async (id, body) => {
+        await db.opsActivity.create({ data: { engagementId: id, kind: 'note', body } })
+      },
+    })
+  } catch (err) {
+    console.error(`[autoflow] brief draft for ${engagementId} failed:`, err instanceof Error ? err.message : err)
+  }
 }

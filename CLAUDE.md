@@ -3607,3 +3607,29 @@ Each event is handled once (an `[autoflow] event <type>:<id>` activity), a hop n
 starts another event, the same kind on the same deliverable at the same step with no
 step write since (`stepUpdatedAt`) stops with a note instead (loop guard), nothing is
 sent, and every hop or stop is an activity plus an `[autoflow]` console line.
+
+#### Autoflow: the brief draft (same flag)
+
+When a client's intake is complete enough, the brief is drafted and posted in the HQ
+chat for Jacob's "looks good" without him asking (`lib/ops/brief-draft.ts`, wiring
+`autoDraftBrief` in `lib/ops/hq/chief.ts`). It is a DRAFT kept on `intake.briefDraft`
+(not an INTAKE_KEY); only the existing `set_brief` stores a brief, after Jacob's OK.
+Nothing is built, no step moves, nothing is sent.
+
+- **Complete enough** = `intakeMissing()` is empty (phone, services, service area, about,
+  photos) and at least `BRIEF_DRAFT_MIN_PHOTOS` (6) client photos are on file.
+- **Triggers**: `save_intake`, `file_photos` (both forms), and the client intake link's
+  Done (when `CLIENT_INTAKE_LINK` is also on). Each runs after the response (`waitUntil`).
+- **Never** when the client has no website deliverable, the website step is past `brief`,
+  or a brief is stored. **Once per intake version**: a hash of the material intake (every
+  answer field, Jacob's notes, the questionnaire answers; not files, timestamps, the GBP
+  lookup time, the link nonce or the draft). A new version while a draft waits replaces it
+  once; at most `BRIEF_DRAFT_MAX` (3) automatic drafts per client. A call that broke may be
+  retried by the next trigger; an output `set_brief` would refuse is never posted.
+- **The call**: one `runAgentLoop` turn (`maxTurns: 1`, `tools: []`) with the chief's own
+  system prompt and model, and one user turn carrying get_client's record for the client,
+  `BRIEF.template.md` and `docs/ops/site-brief-standards.md`. It can only return text.
+- ⚠️ `docs/ops/*.md` is traced into `/api/admin/ops/hq/message` only (`next.config.js`). From
+  the intake link's Done route the standards file may be missing on Vercel, so that trigger
+  fails retryably and the next chief-side trigger drafts. Adding the route to
+  `outputFileTracingIncludes` is a protected-path change for Jacob.
