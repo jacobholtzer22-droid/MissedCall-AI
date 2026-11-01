@@ -2715,6 +2715,26 @@ a concurrent notes write is never clobbered (the losing run simply skips).
 | `CONFIRM_TRACKING` | A whole-message YES reply (`yes`, `y`, `yep`, `yeah`, `confirmed`, `ok`; trimmed, punctuation and emoji stripped, case-insensitive) to the marketing line marks the soonest confirmed booking for that phone starting in the next 36h. Runs AFTER the owner forward, which is unchanged; sends nothing. Ops HQ Sales strip shows "No YES reply. Text them" (an `sms:` link) on a call today once it is 9:00 AM booker-local, the night-before text went out, no YES is recorded and `showStatus` is pending (`BoardBooking.noConfirmReply`, absent when off). | `webhooks/sms` marketing branch (`lib/show-rate-reply.ts`), `lib/ops/board.ts`, `HomeTriage.tsx` | `Confirmed by reply: <ISO>` |
 | `RESCHEDULE_LINK` | The lead's `/calendar?l=` link in the night-before text ("Our call is tomorrow at {time}. Reply YES if you're still good. Need to move it? Pick a new time here: <link>", in place of the phone sentence; at most 280 chars at the worst case of a 12-letter name plus an IP-guessed zone beside ET, asserted in `lib/demo-booker-copy.test.ts`; the link uses `calendarLinkShort`, which keeps `utm_source=sms` and `utm_medium=funnel_return` and drops `utm_campaign`) and in the confirmation email ("Need a different time? Pick a new one here: <link> Or text or call my cell at ..."). Off: both are exactly today's copy. **The link books a NEW slot**, so with the flag on `/api/demo-book`, after the new row is written and after the response, cancels every earlier confirmed upcoming booking from the same phone (`status` cancelled, conditional on the notes value read) and only then deletes its Google event with `sendUpdates: 'all'` (`lib/show-rate-supersede.ts`, wiring in `lib/show-rate-supersede-server.ts`). Delete, not move: there is no update helper in `lib/google-calendar.ts` and the new booking already has its own event and Meet link. A failed delete is logged and the old row stays cancelled. Backstop: the reminder loop also skips any booking whose phone booked again after it (`superseded by a newer booking`). | reminder cron loop (`reminderExtras`), `/api/demo-book` email and supersede | `Superseded by rebook: <newId> <ISO>` on the old row |
 
+### Lead touch 3 (`LEAD_TOUCH_3_SMS`, off by default)
+
+A third text to a verified lead who never booked: 72h to 168h after `otpVerifiedAt`
+(day 4 to 7), at least 24h after touch 2 (`followUpSentAt` set), inside the same
+11:00 AM to 7:00 PM ET window, as a second step of `/api/cron/lead-follow-up`
+(`lib/lead-touch-3.ts`, copy `leadTouch3Body` in `lib/lead-sms.ts`). Same
+exclusions as touch 2: spam/deleted statuses, `junk`, booked by phone (any
+non-cancelled appointment), test allowlist, STOP. Copy: "Hey {first}, Jacob from
+Align and Acquire. {LEAD_TOUCH_3_RESULT} Book: {short /calendar link}" plus the STOP
+line; no company (no room at the 300-char cap with a 120-char result).
+**`LEAD_TOUCH_3_RESULT` is a placeholder until Jacob writes a real result; while
+it contains `[RESULT:` the step sends nothing and logs
+`[lead-touch-3] SKIP reason=result_placeholder`.**
+
+Once-only claim: WebsiteLead has no safe free-text field (`message` is rebuilt by
+the wizard on a return visit), so the claim is the outbound log row itself, a
+`Message` with id `leadtouch3_<leadId>` on the person's demo-line thread, created
+before the send (primary key = atomic) and deleted if the send fails, like touch
+2's release of `followUpSentAt`.
+
 ---
 
 ## 20. Admin Pipeline (`/admin/pipeline`): outcome + follow-up CRM

@@ -25,6 +25,9 @@ import {
   isInFollowUpWindow,
 } from '@/lib/lead-follow-up-window'
 import { FOLLOW_UP_EXCLUDED_STATUSES } from './statuses'
+import Telnyx from 'telnyx'
+import { normalizeToE164 } from '@/lib/phone-utils'
+import { leadTouch3Enabled, runLeadTouch3, touch3MessageId, type LeadTouch3Result } from '@/lib/lead-touch-3'
 
 export const dynamic = 'force-dynamic'
 
@@ -156,8 +159,92 @@ export async function GET(request: NextRequest) {
     }
   }
 
+  // LEAD_TOUCH_3_SMS (off by default): the third text, as a second step. Same
+  // window (checked above), its own claim. Off: nothing below runs and the
+  // response is exactly what it was.
+  let touch3: LeadTouch3Result | null = null
+  if (leadTouch3Enabled()) {
+    touch3 = await runLeadTouch3(touch3Deps(business.id), new Date())
+  }
+
   console.log(`[cron/lead-follow-up] candidates=${candidates.length} sent=${sent} skipped=${skipped} errors=${errors.length}`)
-  return NextResponse.json({ candidates: candidates.length, sent, skipped, errors })
+  return NextResponse.json(
+    touch3 ? { candidates: candidates.length, sent, skipped, errors, touch3 } : { candidates: candidates.length, sent, skipped, errors }
+  )
+}
+
+/** The real side effects behind lib/lead-touch-3.ts. Only built when the flag is on. */
+function touch3Deps(businessId: string) {
+  const from = process.env.MARKETING_TELNYX_NUMBER || null
+  return {
+    findCandidates: (since: Date, until: Date) =>
+      db.websiteLead.findMany({
+        where: {
+          businessId,
+          otpVerifiedAt: { not: null, gte: since, lte: until },
+          demoSmsSentAt: { not: null },
+          // Touch 2 must have gone out.
+          followUpSentAt: { not: null },
+          phone: { not: null },
+          status: { notIn: FOLLOW_UP_EXCLUDED_STATUSES },
+          junk: false,
+        },
+        select: { id: true, phone: true, name: true, message: true, calendarToken: true, otpVerifiedAt: true, followUpSentAt: true },
+        take: 100,
+      }),
+    isBooked: async (phone: string) =>
+      (await db.appointment.count({ where: { customerPhone: phone, status: { not: 'cancelled' } } })) > 0,
+    isOptedOut: (phone: string, leadId: string) => isOptedOut(businessId, phone, `leadId=${leadId} touch=3`),
+    // The claim IS the outbound log row (see lib/lead-touch-3.ts): a Message
+    // with a deterministic id, so a second create fails on the primary key.
+    claim: async (lead: { id: string; phone: string | null }, body: string) => {
+      const to = normalizeToE164(lead.phone)
+      if (!to) return false
+      const existing = await db.conversation.findFirst({
+        where: { businessId, callerPhone: to },
+        orderBy: { lastMessageAt: 'desc' },
+        select: { id: true },
+      })
+      const conversationId =
+        existing?.id ??
+        (await db.conversation.create({
+          data: { businessId, callerPhone: to, status: 'active', lastMessageAt: new Date() },
+          select: { id: true },
+        })).id
+      try {
+        await db.message.create({
+          data: { id: touch3MessageId(lead.id), conversationId, direction: 'outbound', content: body },
+        })
+        return true
+      } catch {
+        return false
+      }
+    },
+    release: async (leadId: string) => {
+      await db.message.deleteMany({ where: { id: touch3MessageId(leadId) } })
+    },
+    send: async (phone: string, body: string) => {
+      const to = normalizeToE164(phone)
+      if (!from || !process.env.TELNYX_API_KEY) throw new Error('no_sender')
+      if (!to) throw new Error('unusable_phone')
+      const telnyx = new Telnyx({ apiKey: process.env.TELNYX_API_KEY })
+      const res = await telnyx.messages.send({ from, to, text: body })
+      return (res as { data?: { id?: string } })?.data?.id ?? null
+    },
+    recordSent: async (leadId: string, providerId: string | null) => {
+      // After the send, and never able to fail it.
+      try {
+        const row = await db.message.update({
+          where: { id: touch3MessageId(leadId) },
+          data: { telnyxSid: providerId },
+          select: { conversationId: true },
+        })
+        await db.conversation.update({ where: { id: row.conversationId }, data: { lastMessageAt: new Date() } })
+      } catch (err) {
+        console.error(`[lead-touch-3] outbound log update FAILED (text was sent) leadId=${leadId}:`, err)
+      }
+    },
+  }
 }
 
 export const POST = GET
