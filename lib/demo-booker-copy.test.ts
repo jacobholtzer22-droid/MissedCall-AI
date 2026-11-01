@@ -1,6 +1,14 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { confirmationText, hourBeforeText, nightBeforeText, noShowRebookText, startNudgeText } from './marketing-sms-copy'
+import {
+  NIGHT_BEFORE_LINK_MAX_CHARS,
+  confirmationText,
+  hourBeforeText,
+  nightBeforeText,
+  noShowRebookText,
+  startNudgeText,
+} from './marketing-sms-copy'
+import { bookerWhen } from './booker-time'
 import {
   DEMO_EMAIL_FROM,
   confirmationEmail,
@@ -15,6 +23,8 @@ const MEET = 'https://meet.google.com/abc-defg-hij'
 const VIDEO = 'https://www.alignandacquire.com/demo.mp4'
 const CAL_LINK =
   'https://www.alignandacquire.com/calendar?l=Ab3dEf6hIj9kLm2n&utm_source=sms&utm_medium=funnel_return&utm_campaign=a'
+/** The night-before reschedule link: short UTM set (calendarLinkShort). */
+const SHORT_LINK = 'https://www.alignandacquire.com/calendar?l=Ab3dEf6hIj9kLm2n&utm_source=sms&utm_medium=funnel_return'
 
 const GSM7 = /^[A-Za-z0-9 \n\r@£$¥èéùìòÇØøÅåΔ_ΦΓΛΩΠΨΣΘΞÆæßÉ!"#¤%&'()*+,\-./:;<=>?¡ÄÖÑÜ§¿äöñüà]*$/
 const NO_DASHES = /^[^\u2013\u2014]*$/
@@ -128,15 +138,48 @@ test('RESCHEDULE_LINK off: night-before and email are exactly today\'s', () => {
 })
 
 test('RESCHEDULE_LINK on: night-before carries the link in place of the phone line', () => {
-  const t = nightBeforeText({ ...pt, rescheduleLink: CAL_LINK })
+  const t = nightBeforeText({ ...pt, rescheduleLink: SHORT_LINK })
   assert.equal(
     t,
-    'Hey Marcus, Jacob from Align and Acquire. Looking forward to our call tomorrow at 1:00 PM PDT (your time). ' +
-      `Reply YES so I know you're still good. If you need a different time, pick one here: ${CAL_LINK}`
+    'Hey Marcus, Jacob from Align and Acquire. Our call is tomorrow at 1:00 PM PDT (your time). ' +
+      `Reply YES if you're still good. Need to move it? Pick a new time here: ${SHORT_LINK}`
   )
   assert.match(t, GSM7)
-  // Two GSM-7 segments (153 characters each when concatenated).
-  assert.ok(t.length <= 306, `length ${t.length}`)
+})
+
+test('RESCHEDULE_LINK on: night-before is at most 280 chars at its worst case', () => {
+  // Worst label the code can produce: an IP-guessed zone rendered beside ET,
+  // swept across every zone the runtime knows and every slot start (7:00 AM to
+  // 8:30 PM ET) on a summer and a winter day.
+  let worst = ''
+  let worstAt = TUE_4PM_ET
+  let worstZone = ''
+  const zones = (Intl as unknown as { supportedValuesOf(k: string): string[] }).supportedValuesOf('timeZone')
+  for (const day of [Date.parse('2026-09-22T11:00:00Z'), Date.parse('2027-01-12T12:00:00Z')]) {
+    for (let slot = 0; slot < 28; slot++) {
+      const at = new Date(day + slot * 30 * 60 * 1000)
+      for (const z of zones) {
+        const label = bookerWhen(at, { timeZone: z, source: 'ip' }).timeMarked
+        if (label.length > worst.length) [worst, worstAt, worstZone] = [label, at, z]
+      }
+    }
+  }
+  assert.ok(worst.length >= 33, `worst label ${worst}`)
+  const t = nightBeforeText({
+    ...pt,
+    firstName: 'Maximilianus',
+    scheduledAt: worstAt,
+    timeZone: worstZone,
+    timeZoneSource: 'ip',
+    rescheduleLink: SHORT_LINK,
+  })
+  assert.ok(t.includes(worst))
+  assert.match(t, /^Hey Maximilianus, /)
+  assert.match(t, GSM7)
+  assert.ok(t.length <= NIGHT_BEFORE_LINK_MAX_CHARS, `length ${t.length}: ${t}`)
+  // The bare /calendar fallback is shorter still.
+  const bare = 'https://www.alignandacquire.com/calendar?utm_source=sms&utm_medium=funnel_return'
+  assert.ok(nightBeforeText({ ...pt, firstName: 'Maximilianus', scheduledAt: worstAt, timeZone: worstZone, timeZoneSource: 'ip', rescheduleLink: bare }).length <= NIGHT_BEFORE_LINK_MAX_CHARS)
 })
 
 test('RESCHEDULE_LINK on: email adds the link and keeps the number', () => {

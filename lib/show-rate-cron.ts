@@ -19,7 +19,7 @@
 //     is a better failure than a second one.
 //   - Google 'cancelled' aborts; 'unknown' still sends on our own record.
 
-import { calendarLink, LEAD_TOKEN_TTL_MS } from '@/lib/lead-token'
+import { calendarLink, calendarLinkShort, LEAD_TOKEN_TTL_MS } from '@/lib/lead-token'
 import { normalizeToE164 } from '@/lib/phone-utils'
 import { noShowRebookText, startNudgeText } from '@/lib/marketing-sms-copy'
 import {
@@ -78,11 +78,12 @@ export type ShowRateResult = {
  * token or it has expired (resolveCalendarToken would reject it anyway, and the
  * page would quietly fall back to direct mode). Never a new token scheme.
  */
-export function showRateCalendarLink(lead: LeadLinkRow | null, now: Date): string {
+export function showRateCalendarLink(lead: LeadLinkRow | null, now: Date, opts: { short?: boolean } = {}): string {
   const token = lead?.calendarToken ?? null
   const issuedAt = lead ? (lead.otpVerifiedAt ?? lead.createdAt).getTime() : 0
   const usable = token && now.getTime() - issuedAt <= LEAD_TOKEN_TTL_MS ? token : null
-  return calendarLink(usable, lead?.funnelVariant ?? null)
+  // short: no utm_campaign, so the night-before text fits its cap.
+  return opts.short ? calendarLinkShort(usable) : calendarLink(usable, lead?.funnelVariant ?? null)
 }
 
 export async function runShowRateSteps(
@@ -216,5 +217,5 @@ export async function reminderExtras(
   if (await deps.hasNewerBooking(appt)) return { skip: 'superseded by a newer booking' }
   if (kind !== 'night_before') return {}
   const lead = await deps.leadForPhone(normalizeToE164(appt.customerPhone))
-  return { rescheduleLink: showRateCalendarLink(lead, now) }
+  return { rescheduleLink: showRateCalendarLink(lead, now, { short: true }) }
 }

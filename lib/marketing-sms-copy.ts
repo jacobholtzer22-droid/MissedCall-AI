@@ -101,18 +101,22 @@ export function confirmationText(params: DemoSmsParams): string {
  * forwards it to Jacob and auto-replies nothing. YES is not an opt-in keyword
  * there (only START and UNSTOP are).
  */
+/** Cap for the RESCHEDULE_LINK night-before text, asserted at its worst case in the tests. */
+export const NIGHT_BEFORE_LINK_MAX_CHARS = 280
+
 export function nightBeforeText(params: DemoSmsParams): string {
   const when = demoWhen(params)
   const phone = formatReschedulePhone(params.ownerPhone)
   const reschedule = params.rescheduleLink?.trim()
-  // RESCHEDULE_LINK: the link takes the phone sentence's place, so the text
-  // stays at two segments instead of three. The confirmation text and email
-  // still carry the number.
+  // RESCHEDULE_LINK: the link takes the phone sentence's place (the
+  // confirmation text and email still carry the number), and the wording is
+  // trimmed so the worst case, a 12-letter name plus an IP-guessed zone shown
+  // beside ET, stays at or under NIGHT_BEFORE_LINK_MAX_CHARS.
   if (reschedule) {
     return (
       `Hey${greetingName(params.firstName)}, Jacob from Align and Acquire. ` +
-      `Looking forward to our call tomorrow at ${when.timeMarked}. ` +
-      `Reply YES so I know you're still good. If you need a different time, pick one here: ${reschedule}`
+      `Our call is tomorrow at ${when.timeMarked}. ` +
+      `Reply YES if you're still good. Need to move it? Pick a new time here: ${reschedule}`
     )
   }
   return (

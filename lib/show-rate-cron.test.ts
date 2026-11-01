@@ -260,8 +260,8 @@ test('reminder extras: flag on links the night-before and skips a superseded boo
   const RL: ShowRateFlags = { ...OFF, rescheduleLink: true }
   const live = { hasNewerBooking: async () => false, leadForPhone: async () => LEAD }
   assert.deepEqual(await reminderExtras(RL, 'night_before', appt(), live, DUE), {
-    rescheduleLink:
-      'https://www.alignandacquire.com/calendar?l=Ab3dEf6hIj9kLm2n&utm_source=sms&utm_medium=funnel_return&utm_campaign=a',
+    // Short UTM set: utm_source and utm_medium kept, utm_campaign dropped.
+    rescheduleLink: 'https://www.alignandacquire.com/calendar?l=Ab3dEf6hIj9kLm2n&utm_source=sms&utm_medium=funnel_return',
   })
   assert.deepEqual(await reminderExtras(RL, 'hour_before', appt(), live, DUE), {})
   const moved = { ...live, hasNewerBooking: async () => true }
