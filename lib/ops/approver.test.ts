@@ -40,8 +40,8 @@ test('decideApproval stamps every apply path (OPS_AUTOFLOW)', () => {
   assert.match(s, /\.\.\.\(stamp \? \{ decidedBy: stamp\.decidedBy, decidedVia: stamp\.decidedVia \} : \{\}\)/)
   // web_push gets the stamp in its detail (go_live puts it on the dispatched run)
   assert.match(s, /applyWebPush\(\{ id, jobId: approval\.jobId, detail: stamp \? \{ \.\.\.detail, \.\.\.stamp \} : detail \}\)/)
-  // one "Pushed by" activity per applied card: web_push, account cards, link cards, admin_change, ads apply start
-  assert.equal(s.match(/await pushedNote\(\)/g)?.length, 5)
+  // one "Pushed by" activity per applied card: web_push, account cards, link cards, stripe_subscription, admin_change, ads apply start
+  assert.equal(s.match(/await pushedNote\(\)/g)?.length, 6)
   const w = src('./hq/web.ts')
   assert.match(w, /approvalId: d\.approvalId, decidedBy: d\.decidedBy \?\? null, decidedVia: d\.decidedVia \?\? null/)
 })

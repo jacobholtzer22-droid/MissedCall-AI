@@ -8,11 +8,12 @@
 // left off. Files go through the admin intake page's own Uploader at apiBase.
 // Done writes the Ops HQ "answers in" note and sends nothing.
 
-import { useCallback, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import type { Intake } from '@/lib/ops/intake'
 import type { Question } from '@/lib/ops/client-intake'
 import { COPY, SERVICE_LABEL, questionsFor, type Plan, type Service, type StepKey, type WizardView } from '@/lib/ops/intake-wizard'
 import { Uploader } from '@/app/admin/ops/intake/[engagementId]/Uploader'
+import { CARD_COPY } from '@/lib/ops/stripe-billing'
 
 type SaveState = 'idle' | 'saving' | 'saved' | 'error'
 
@@ -33,6 +34,40 @@ export function IntakeWizard({ apiBase, engagementId, initial, dashboardHref }: 
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [done, setDone] = useState(false)
+  // STRIPE_CARD_AT_SIGNUP (step 6, portal only): the card is typed on Stripe's page, never here.
+  const [card, setCard] = useState<'idle' | 'opening' | 'checking' | 'saved' | 'cancelled' | 'error'>(initial.cardSaved ? 'saved' : 'idle')
+
+  useEffect(() => {
+    if (!initial.steps.includes('card')) return
+    const q = new URLSearchParams(window.location.search)
+    const back = q.get('card')
+    if (!back) return
+    window.history.replaceState(null, '', window.location.pathname)
+    if (back === 'cancel') {
+      setCard('cancelled')
+      return
+    }
+    const sessionId = q.get('session_id')
+    if (back !== 'done' || !sessionId) return
+    setCard('checking')
+    fetch('/api/portal/billing/confirm', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sessionId }) })
+      .then((r) => setCard(r.ok ? 'saved' : 'error'))
+      .catch(() => setCard('error'))
+  }, [initial.steps])
+
+  async function openCard() {
+    setCard('opening')
+    try {
+      await savePending()
+      await wizard({ step: 'card' })
+      const res = await fetch('/api/portal/billing/setup', { method: 'POST' })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok || typeof data.url !== 'string' || !data.url.startsWith('https://checkout.stripe.com/')) throw new Error('setup')
+      window.location.assign(data.url)
+    } catch {
+      setCard('error')
+    }
+  }
 
   const wizard = useCallback(
     async (body: unknown) => {
@@ -277,8 +312,28 @@ export function IntakeWizard({ apiBase, engagementId, initial, dashboardHref }: 
       </div>
     )
   }
-  // 'card' (STRIPE_CARD_AT_SIGNUP, piece 2) and 'adsbilling' (ADS_BILLING_INVITE, piece 3) are stubs: with their
-  // flags off they are not in the step list; with them on they render nothing until those pieces land.
+  else if (view.step === 'card') {
+    body = (
+      <div className="space-y-4">
+        <p className="text-gray-300">{CARD_COPY.intro}</p>
+        <p className="text-gray-300">{CARD_COPY.whenCharged}</p>
+        {card === 'saved' ? (
+          <p className="text-emerald-300" role="status">{CARD_COPY.saved}</p>
+        ) : (
+          <>
+            {card === 'cancelled' && <p className="text-gray-300" role="status">{CARD_COPY.cancelled}</p>}
+            {card === 'error' && <p className="text-red-400" role="status">{CARD_COPY.error}</p>}
+            <button type="button" disabled={card === 'opening' || card === 'checking'} onClick={() => void openCard()} className={primary}>
+              {card === 'opening' || card === 'checking' ? COPY.saving : CARD_COPY.button}
+            </button>
+            <p className="text-sm text-gray-400">{CARD_COPY.later}</p>
+          </>
+        )}
+      </div>
+    )
+  }
+  // 'adsbilling' (ADS_BILLING_INVITE, piece 3) is a stub: with its flag off it is not in the step list; with it
+  // on it renders nothing until that piece lands.
 
   return (
     <Shell>

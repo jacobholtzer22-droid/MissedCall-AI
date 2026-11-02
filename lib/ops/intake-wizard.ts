@@ -109,7 +109,8 @@ export function appliesTo(n: number, plan: Plan): boolean {
   return used.some((s) => plan[s])
 }
 
-export function stepsFor(plan: Plan | undefined, env: Record<string, string | undefined> = process.env): StepKey[] {
+/** door: the card step is portal only (the signed link has no account, and its token must not go to Stripe in a return URL). */
+export function stepsFor(plan: Plan | undefined, env: Record<string, string | undefined> = process.env, door: 'portal' | 'link' = 'portal'): StepKey[] {
   const p = plan ?? NONE
   return [
     'plan',
@@ -118,7 +119,7 @@ export function stepsFor(plan: Plan | undefined, env: Record<string, string | un
     'legal',
     'files',
     // Pieces 2 and 3: absent with their flags off, so nothing renders.
-    ...(env.STRIPE_CARD_AT_SIGNUP === 'true' ? (['card'] as const) : []),
+    ...(env.STRIPE_CARD_AT_SIGNUP === 'true' && door === 'portal' ? (['card'] as const) : []),
     ...(env.ADS_BILLING_INVITE === 'true' && (p.ads || !hasAny(p)) ? (['adsbilling'] as const) : []),
   ]
 }
@@ -262,16 +263,19 @@ export type WizardView = {
   legal: { legalName: string; address: string; zip: string }
   files: { filename: string; kind: string }[]
   finished: boolean
+  /** STRIPE_CARD_AT_SIGNUP: a card is saved with Stripe (true/false only; no card details exist here). */
+  cardSaved: boolean
 }
 
 export function wizardView(
   e: { displayName: string; contactName: string | null; intake: IntakeWithWizard },
-  env: Record<string, string | undefined> = process.env
+  env: Record<string, string | undefined> = process.env,
+  door: 'portal' | 'link' = 'portal'
 ): WizardView {
   const i = e.intake
   const first = e.contactName?.trim().split(/\s+/)[0] ?? ''
   const plan = i.wizard?.plan ?? null
-  const steps = stepsFor(plan ?? undefined, env)
+  const steps = stepsFor(plan ?? undefined, env, door)
   const saved = i.wizard?.step
   // Resume where they left off; a plan not yet confirmed always starts at the plan.
   const step: StepKey = !i.wizard?.planConfirmedAt ? 'plan' : saved && steps.includes(saved) ? saved : 'plan'
@@ -288,6 +292,7 @@ export function wizardView(
     legal: { legalName: i.legal?.legalName ?? '', address: i.legal?.address ?? '', zip: i.legal?.zip ?? '' },
     files: (i.assets ?? []).filter((a) => a.kind === 'photo' || a.kind === 'video' || a.kind === 'logo').map((a) => ({ filename: a.filename, kind: a.kind })),
     finished: Boolean(i.questionnaire?.finishedAt),
+    cardSaved: Boolean((i as { billing?: { paymentMethodId?: string } }).billing?.paymentMethodId),
   }
 }
 

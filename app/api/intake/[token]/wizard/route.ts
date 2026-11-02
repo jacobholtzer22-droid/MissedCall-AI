@@ -16,5 +16,5 @@ export async function PATCH(request: Request, context: { params: { token: string
   if (!portalIntakeWizardEnabled()) return NextResponse.json({ error: 'Not found' }, { status: 404 })
   const g = await guard(request, context.params.token, 'save')
   if ('response' in g) return g.response
-  return saveWizard(request, { ...g.client, intake: g.client.intake as IntakeWithWizard }, 'intake link')
+  return saveWizard(request, { ...g.client, intake: g.client.intake as IntakeWithWizard }, 'intake link', 'link')
 }

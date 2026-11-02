@@ -203,6 +203,7 @@ export function SendDraftsStrip({ board }: { board: OpsBoard }) {
 export function ReadyToBillStrip({ board }: { board: OpsBoard }) {
   const rows = board.billRows
   const [gone, setGone] = useState<Set<string>>(new Set())
+  const [proposed, setProposed] = useState<Record<string, string>>({})
   if (!rows?.length) return null
   const shown = rows.filter((r) => !gone.has(r.engagementId))
   if (!shown.length) return null
@@ -210,6 +211,13 @@ export function ReadyToBillStrip({ board }: { board: OpsBoard }) {
   const dismiss = async (id: string) => {
     const res = await fetch(`/api/admin/ops/engagements/${id}/ready-to-bill`, { method: 'POST' }).catch(() => null)
     if (res?.ok) setGone((s) => new Set(s).add(id))
+  }
+  // STRIPE_CARD_AT_SIGNUP: propose the Start subscription card (nothing is charged until Push).
+  const propose = async (id: string) => {
+    setProposed((s) => ({ ...s, [id]: 'Proposing...' }))
+    const res = await fetch(`/api/admin/ops/engagements/${id}/start-subscription`, { method: 'POST' }).catch(() => null)
+    const data = (await res?.json().catch(() => ({}))) ?? {}
+    setProposed((s) => ({ ...s, [id]: res?.ok ? 'Waiting for your Push in Ops HQ' : String(data.error ?? 'Could not propose it') }))
   }
   return (
     <section aria-label="Ready to bill" className="bg-gray-900 border border-gray-800 rounded-lg px-4 py-3 space-y-2">
@@ -232,10 +240,16 @@ export function ReadyToBillStrip({ board }: { board: OpsBoard }) {
                   The you&apos;re live text is ready
                 </a>
               )}
+              {r.cardOnFile && (
+                <button type="button" onClick={() => void propose(r.engagementId)} className={`${smallButton} min-h-[44px]`}>
+                  Start subscription
+                </button>
+              )}
               <button type="button" onClick={() => void dismiss(r.engagementId)} className={`${smallButton} min-h-[44px]`}>
                 Dismiss
               </button>
             </div>
+            {proposed[r.engagementId] && <p className="text-xs text-gray-400">{proposed[r.engagementId]}</p>}
           </li>
         ))}
       </ul>

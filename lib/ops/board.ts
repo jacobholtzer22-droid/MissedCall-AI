@@ -23,6 +23,7 @@ import { intakeMissing, readIntake } from '@/lib/ops/intake'
 import { clientIntakeEnabled, clientIntakeKey, clientLinkUrl, signClientLink, type IntakeWithLink } from '@/lib/ops/client-intake'
 import { currentPreviewLink } from '@/lib/ops/preview-feedback-server'
 import { DISMISS_MARKER, billRow, readyToBillEnabled, type BoardBillRow } from '@/lib/ops/ready-to-bill'
+import { stripeCardAtSignupEnabled } from '@/lib/ops/stripe-billing'
 import { prStatesFor } from '@/lib/ops/pr-state-server'
 import type { IntakeWithPreview } from '@/lib/ops/preview-feedback'
 
@@ -486,7 +487,11 @@ async function loadBillRows(engagements: BoardEngagement[]): Promise<BoardBillRo
       })
     ).map((a) => a.engagementId)
   )
+  // STRIPE_CARD_AT_SIGNUP (off by default): a card on file offers Start subscription; one started here hides the row.
+  const cards = stripeCardAtSignupEnabled() ? await cardStates(engagements.map((e) => e.id)) : null
   return engagements.flatMap((e) => {
+    const card = cards?.get(e.id)
+    if (card?.subscriptionId) return []
     const row = billRow(
       {
         id: e.id,
@@ -502,6 +507,13 @@ async function loadBillRows(engagements: BoardEngagement[]): Promise<BoardBillRo
       },
       dismissed.has(e.id)
     )
+    if (row && card?.paymentMethodId) return [{ ...row, cardOnFile: true as const }]
     return row ? [row] : []
   })
+}
+
+/** Whether each client has a card on file or a subscription started from Ops HQ (intake.billing ids only). */
+async function cardStates(ids: string[]): Promise<Map<string, { paymentMethodId?: string; subscriptionId?: string }>> {
+  const rows = await db.engagement.findMany({ where: { id: { in: ids } }, select: { id: true, intake: true } })
+  return new Map(rows.map((r) => [r.id, ((r.intake ?? {}) as { billing?: { paymentMethodId?: string; subscriptionId?: string } }).billing ?? {}]))
 }

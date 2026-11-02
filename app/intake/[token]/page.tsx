@@ -38,7 +38,7 @@ export default async function ClientIntakePage({ params }: { params: { token: st
   // PORTAL_INTAKE_WIZARD (off by default): the link lands on the same wizard as the portal.
   if (portalIntakeWizardEnabled()) {
     const w = await linkWizardClient(client)
-    return <IntakeWizard apiBase={`/api/intake/${encodeURIComponent(params.token)}`} engagementId={client.id} initial={wizardView(w)} />
+    return <IntakeWizard apiBase={`/api/intake/${encodeURIComponent(params.token)}`} engagementId={client.id} initial={wizardView(w, process.env, 'link')} />
   }
   return <ClientIntakeForm token={params.token} engagementId={client.id} initial={publicView(client)} questions={QUESTIONS} />
 }

@@ -13,13 +13,13 @@ type Client = { id: string; displayName: string; contactName: string | null; int
 
 const noStore = { 'Cache-Control': 'no-store' }
 
-export async function saveWizard(request: Request, client: Client, label: string): Promise<NextResponse> {
+export async function saveWizard(request: Request, client: Client, label: string, door: 'portal' | 'link' = 'portal'): Promise<NextResponse> {
   try {
     const text = await request.text()
     if (text.length > 20_000) throw new WizardError('that is too much for one save')
     const patch = readWizardPatch(JSON.parse(text || '{}'))
     const next = await updateIntake(client.id, (cur) => applyWizardPatch(cur as IntakeWithWizard, patch))
-    return NextResponse.json({ ok: true, view: wizardView({ ...client, intake: next as IntakeWithWizard }) }, { headers: noStore })
+    return NextResponse.json({ ok: true, view: wizardView({ ...client, intake: next as IntakeWithWizard }, process.env, door) }, { headers: noStore })
   } catch (err) {
     if (err instanceof WizardError || err instanceof SyntaxError) return NextResponse.json({ error: err.message }, { status: 400 })
     console.error(`[${label}] wizard save failed:`, err instanceof Error ? err.message : err)
@@ -36,7 +36,7 @@ export async function finishWizard(client: Client, via: 'portal' | 'link', label
       return r.intake
     })
     if (note) await db.opsActivity.create({ data: { engagementId: client.id, kind: 'note', body: note } })
-    return NextResponse.json({ ok: true, view: wizardView({ ...client, intake: next as IntakeWithWizard }) }, { headers: noStore })
+    return NextResponse.json({ ok: true, view: wizardView({ ...client, intake: next as IntakeWithWizard }, process.env, via) }, { headers: noStore })
   } catch (err) {
     console.error(`[${label}] finish failed:`, err instanceof Error ? err.message : err)
     return NextResponse.json({ error: 'Could not save. Try again.' }, { status: 500 })

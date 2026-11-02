@@ -34,7 +34,15 @@ export type BillFacts = {
   upfrontPaidAt: string | null
 }
 
-export type BoardBillRow = { engagementId: string; client: string; text: string; details: string[]; checkStripe: boolean }
+export type BoardBillRow = {
+  engagementId: string
+  client: string
+  text: string
+  details: string[]
+  checkStripe: boolean
+  /** STRIPE_CARD_AT_SIGNUP: the client saved a card with Stripe, so Start subscription can be proposed. */
+  cardOnFile?: true
+}
 
 const dollars = (n: number) => (Number.isInteger(n) ? `$${n}` : `$${n.toFixed(2)}`)
 const day = (iso: string) => new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'America/Detroit' })

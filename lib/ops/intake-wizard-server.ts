@@ -27,7 +27,7 @@ import { mergeIntakes, planFromBoard, portalIntakeWizardEnabled, setupUnfinished
 export type PortalClient = { id: string; displayName: string; contactName: string | null; intake: IntakeWithWizard; businessId: string }
 
 /** Per-user and per-IP limits per route, per minute. */
-export const PORTAL_LIMITS = { page: 30, save: 60, token: 240, register: 120, finish: 10 } as const
+export const PORTAL_LIMITS = { page: 30, save: 60, token: 240, register: 120, finish: 10, billing: 10 } as const
 export type PortalRoute = keyof typeof PORTAL_LIMITS
 
 export function portalRateOk(route: PortalRoute, userId: string, ip: string): { allowed: boolean; retryAfterSeconds: number } {
