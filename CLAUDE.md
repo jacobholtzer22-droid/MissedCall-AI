@@ -3912,9 +3912,9 @@ trades, accounts read, Google calls, skipped and errors.
 
 | Route | What it does |
 |---|---|
-| `GET /api/cron/ads-learnings[?dry=1]` | CRON_SECRET bearer or the admin (the ops-sync auth). **Not in `vercel.json` yet**: add `{ "path": "/api/cron/ads-learnings", "schedule": "17 9 2 * *" }` (9:17 UTC on the 2nd) once Jacob says so. |
+| `GET /api/cron/ads-learnings[?dry=1]` | CRON_SECRET bearer or the admin (the ops-sync auth). `vercel.json`: `17 9 2 * *` (9:17 UTC on the 2nd). |
 | `POST /api/admin/ops/ads/learnings[?dry=1]` | `requireAdmin()`. The Research desk's buttons on the HQ tab: "Trade learnings (dry run)" (reads Google, writes nothing, no model call), then "Write learnings". |
 
 ⚠️ Apply `scripts/sql/2026-11-02_add_ads_research.sql` with `npx prisma db execute --file …`
 (never `db push`) before deploying: the feed, the chief and the brief page read `AdsBrief`.
-Not applied as of Nov 2 2026, and no learnings are seeded.
+Applied to production 2026-11-02.

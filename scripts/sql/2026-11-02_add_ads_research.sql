@@ -16,7 +16,7 @@
 -- Additive only. Run it BEFORE the code is deployed: the HQ feed and the board
 -- read AdsBrief. Code already deployed without the models ignores the tables.
 --
--- Not applied yet (waiting on Jacob).
+-- Applied to production 2026-11-02.
 
 -- CreateTable
 CREATE TABLE IF NOT EXISTS "AdsBrief" (

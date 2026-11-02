@@ -3,9 +3,7 @@
 // ===========================================
 // Monthly: one AdsTradeLearning row per trade from the last 30 days of every
 // bound ads account (lib/ops/hq/learnings.ts). Read only on Google Ads, at most
-// 5 GAQL calls per account. Not in vercel.json yet: add
-//   { "path": "/api/cron/ads-learnings", "schedule": "17 9 2 * *" }
-// (9:17 UTC on the 2nd) once Jacob says so.
+// 5 GAQL calls per account. vercel.json: "17 9 2 * *" (9:17 UTC on the 2nd).
 //
 // ?dry=1 reads Google and returns the rows, writes nothing, makes no model call.
 //
