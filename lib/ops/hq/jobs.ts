@@ -1,13 +1,13 @@
 // ===========================================
 // Ops HQ — closing a job
 // ===========================================
-// Called when a specialist run (ads, web, photo) ends, and when the chief's own turn
+// Called when a specialist run (ads, research, web, photo) ends, and when the chief's own turn
 // ends (it may still be starting specialists: a report written before the last
 // one starts would cover only some, and the late one would report again).
 // When no chief turn is active and it was the last active specialist run, the job is claimed (status running → reporting,
 // a conditional update, so two runs ending together report once) and the
 // chief is re-invoked once: after a photo run to file the captioned photos
-// (runChiefAfterPhotos), and when ads or web runs were in the job to write the
+// (runChiefAfterPhotos), and when ads, research or web runs were in the job to write the
 // report. A job with only photo runs closes as done after that. A job that already reported
 // (awaiting_approval) closes as done when its last approval is no longer
 // pending or being applied.
@@ -15,7 +15,7 @@
 import { db } from '@/lib/db'
 
 const ACTIVE = ['queued', 'running', 'dispatched']
-const SPECIALISTS = ['ads', 'web', 'photo']
+const SPECIALISTS = ['ads', 'research', 'web', 'photo']
 
 export async function onSpecialistRunEnded(jobId: string) {
   const runs = await db.agentRun.findMany({ where: { jobId, agent: { in: SPECIALISTS } }, select: { status: true, agent: true } })

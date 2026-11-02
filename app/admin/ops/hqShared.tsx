@@ -61,8 +61,20 @@ export type FeedJob = {
   prompt: string
   engagementIds: string[]
   report: { text: string; sections: ReportSection[]; pendingApprovals: number } | null
+  /** Research desk briefs written in this job (AdsBrief). */
+  briefs?: FeedBrief[]
   createdAt: string
   updatedAt: string
+}
+
+export type FeedBrief = {
+  id: string
+  engagementId: string
+  client: string
+  tradeKey: string | null
+  body: string
+  data: unknown
+  createdAt: string
 }
 
 export type Feed = {

@@ -21,7 +21,7 @@
 
 import type { Prisma } from '@prisma/client'
 import { adsBillingInviteEnabled } from '@/lib/ops/ads-billing'
-import { enums, type MutateOperation } from 'google-ads-api'
+import { enums, services, type MutateOperation } from 'google-ads-api'
 import { db } from '@/lib/db'
 import { getGoogleAdsClient } from '@/lib/google-ads'
 import { STEP_CATALOG, defaultWaitingOn, stepFor } from '@/lib/ops/steps'
@@ -38,6 +38,8 @@ export function missingAdsEnv(): string[] {
 
 /** Google API calls one run may make (Explorer access allows 2,880 a day across everything). */
 const MAX_CALLS = 150
+/** The Research desk reads more accounts in one run, so it gets a smaller cap of its own (lib/ops/hq/research.ts). */
+export const RESEARCH_MAX_CALLS = 60
 
 /** Accounts the playbook says never to touch. Matched on a client or account name, case-insensitive. */
 const NEVER_TOUCH = ['mk2 auto spa', "g's elite dump", 'g’s elite dump', 'valor', 'hail recovery', 'evergreen construction', 'apply nex']
@@ -60,6 +62,8 @@ export type AdsToolContext = {
   /** Apply mode: the approved call. A write must carry exactly these args. */
   approved?: { action: string; args: Record<string, unknown> }
   calls: number
+  /** Overrides MAX_CALLS for this run (the Research desk: RESEARCH_MAX_CALLS). */
+  maxCalls?: number
   /** set_ads_step ran in this run: the agent placed the step itself, so ads.ts leaves it. */
   stepSet?: boolean
   /** Every write tool call that reached Google, in order, with its args (ads.ts moves the board after enable and pause). */
@@ -73,7 +77,8 @@ export type AdsToolContext = {
 // ── Plumbing ────────────────────────────────────────────────────────────────
 
 function customer(ctx: AdsToolContext, customerId = ctx.customerId) {
-  if (++ctx.calls > MAX_CALLS) throw new Error(`this run has used its ${MAX_CALLS} Google Ads calls; finish with what you have`)
+  const cap = ctx.maxCalls ?? MAX_CALLS
+  if (++ctx.calls > cap) throw new Error(`this run has used its ${cap} Google Ads calls; finish with what you have`)
   return getGoogleAdsClient().Customer({
     customer_id: customerId,
     refresh_token: process.env.GOOGLE_ADS_REFRESH_TOKEN!,
@@ -1438,3 +1443,78 @@ function checkupTools(ctx: AdsToolContext): ClientTool[] {
     },
   }))
 }
+
+// ── Read-only access for the Research desk ──────────────────────────────────
+//
+// The only three ways lib/ops/hq/research-tools.ts reaches Google: a GAQL search
+// on one account under the manager, keyword ideas, and geo target suggestions.
+// None of them can write: each is a search or a planning lookup, and no service
+// that changes an account is reachable from here. Each one counts against the
+// run's cap (ctx.maxCalls); researchSearch refuses a never-touch account by
+// name. The Customer object never leaves this file.
+
+/** One GAQL search on any client account under the manager (or the manager itself). */
+export async function researchSearch(ctx: AdsToolContext, customerId: string, accountName: string, gaql: string): Promise<any[]> {
+  if (isNeverTouch(accountName)) throw new Error(`${accountName} is on the never-touch list`)
+  if (!/^\s*SELECT\b/i.test(gaql)) throw new Error('research reads only: a GAQL SELECT')
+  try {
+    return await customer(ctx, digits(customerId, 'customerId')).query(gaql)
+  } catch (err) {
+    throw new Error(`Google Ads query failed: ${adsError(err)}`)
+  }
+}
+
+export type KeywordIdea = { term: string; monthlyVolume: number | null; competition: string | null; bidLow: number | null; bidHigh: number | null }
+
+/** KeywordPlanIdeaService.generateKeywordIdeas with historical metrics, Google Search only, under one account. */
+export async function researchKeywordIdeas(ctx: AdsToolContext, customerId: string, opts: { seeds: string[]; geoTargets: string[]; languageId: string }): Promise<KeywordIdea[]> {
+  const request = new services.GenerateKeywordIdeasRequest({
+    customer_id: digits(customerId, 'customerId'),
+    language: `languageConstants/${digits(opts.languageId, 'language')}`,
+    geo_target_constants: opts.geoTargets,
+    include_adult_keywords: false,
+    keyword_plan_network: enums.KeywordPlanNetwork.GOOGLE_SEARCH,
+    keyword_seed: new services.KeywordSeed({ keywords: opts.seeds }),
+    page_size: 200,
+  })
+  let response: services.GenerateKeywordIdeaResponse
+  try {
+    response = await customer(ctx, customerId).keywordPlanIdeas.generateKeywordIdeas(request)
+  } catch (err) {
+    throw new Error(`Keyword Planner refused: ${adsError(err)}`)
+  }
+  return (response.results ?? []).slice(0, 200).map((r) => {
+    const m = r.keyword_idea_metrics
+    return {
+      term: String(r.text ?? ''),
+      monthlyVolume: m?.avg_monthly_searches === null || m?.avg_monthly_searches === undefined ? null : Number(m.avg_monthly_searches),
+      competition: en(enums.KeywordPlanCompetitionLevel, m?.competition),
+      bidLow: usd(m?.low_top_of_page_bid_micros),
+      bidHigh: usd(m?.high_top_of_page_bid_micros),
+    }
+  })
+}
+
+/** GeoTargetConstantService.suggestGeoTargetConstants: location names to geo target constants (US, English). */
+export async function researchSuggestGeo(ctx: AdsToolContext, names: string[]): Promise<{ query: string; resourceName: string; name: string; canonicalName: string; type: string | null; reach: number | null }[]> {
+  const mcc = process.env.GOOGLE_ADS_MCC_ID!.replace(/-/g, '')
+  const request = new services.SuggestGeoTargetConstantsRequest({ locale: 'en', country_code: 'US', location_names: new services.SuggestGeoTargetConstantsRequest.LocationNames({ names }) })
+  let response: services.SuggestGeoTargetConstantsResponse
+  try {
+    response = await customer(ctx, mcc).geoTargetConstants.suggestGeoTargetConstants(request)
+  } catch (err) {
+    throw new Error(`Geo target lookup failed: ${adsError(err)}`)
+  }
+  return (response.geo_target_constant_suggestions ?? []).map((g) => ({
+    query: String(g.search_term ?? ''),
+    resourceName: String(g.geo_target_constant?.resource_name ?? ''),
+    name: String(g.geo_target_constant?.name ?? ''),
+    canonicalName: String(g.geo_target_constant?.canonical_name ?? ''),
+    type: g.geo_target_constant?.target_type ? String(g.geo_target_constant.target_type) : null,
+    reach: g.reach === null || g.reach === undefined ? null : Number(g.reach),
+  }))
+}
+
+/** The enum helper, exported for the Research desk's row mapping. */
+export const enumName = en
+export const microsToUsd = usd

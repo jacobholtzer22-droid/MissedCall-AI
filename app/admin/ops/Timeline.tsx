@@ -195,6 +195,7 @@ export function Timeline({
             <option value="">Any agent</option>
             <option value="chief">Chief</option>
             <option value="ads">Ads</option>
+            <option value="research">Research</option>
             <option value="web">Web</option>
           </select>
           <label className="inline-flex items-center gap-2 text-xs text-gray-500">

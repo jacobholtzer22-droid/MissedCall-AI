@@ -114,7 +114,7 @@ export const OPS_ACTIVITY_KINDS = [
 ] as const
 export type OpsActivityKind = (typeof OPS_ACTIVITY_KINDS)[number]
 
-export const AGENT_RUN_KINDS = ['provision', 'site_build', 'site_update', 'go_live', 'seo_pass', 'ads_setup', 'ads_audit', 'chief', 'ads_task', 'photo_caption', 'other'] as const
+export const AGENT_RUN_KINDS = ['provision', 'site_build', 'site_update', 'go_live', 'seo_pass', 'ads_setup', 'ads_audit', 'chief', 'ads_task', 'photo_caption', 'ads_research', 'other'] as const
 export type AgentRunKind = (typeof AGENT_RUN_KINDS)[number]
 
 export const AGENT_RUN_STATUSES = ['queued', 'dispatched', 'running', 'succeeded', 'failed', 'cancelled'] as const
@@ -122,7 +122,7 @@ export type AgentRunStatus = (typeof AGENT_RUN_STATUSES)[number]
 
 // ── Ops HQ ──────────────────────────────────────────────────────────────────
 
-export const HQ_AGENTS = ['chief', 'ads', 'web', 'photo'] as const
+export const HQ_AGENTS = ['chief', 'ads', 'research', 'web', 'photo'] as const
 export type HqAgent = (typeof HQ_AGENTS)[number]
 
 export const AGENT_RUN_MODES = ['work', 'apply'] as const

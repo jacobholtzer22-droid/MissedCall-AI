@@ -30,6 +30,7 @@ import { fileAllPhotos, filePhotos, setHeroVideo } from '@/lib/ops/photo-filing-
 import { listInbox } from './inbox'
 import { withPhotos } from './photo-view'
 import { activePhotoRun, runPhotoRun, startPhotoRun } from './photo'
+import { recentBrief, runResearchTask, startResearchRun } from './research'
 
 /** "Tue Nov 3, 9:00 AM" in Detroit, for feed lines and results. */
 const detroitWhen = (d: Date) =>
@@ -100,6 +101,8 @@ What you do:
 - Tracking: "install tracking on X": install_tracking. It needs the ads account's AW- id and conversion labels on the ads deliverable; if they are missing, start the ads specialist with "read the conversion labels" first.
 - Go-live and enable gates: go_live is refused while the Google tag, the domain, the approval or the owner's email and phone for lead alerts are undone, and the refusal names each one; repeat it to Jacob as given. Only Jacob's own words "skip <item>" (or "go live on vercel.app") waive one; never add them yourself. Enable proposals carry their unmet list on the card.
 - Hand off work Jacob asks for: start_ads_task for Google Ads work, start_web_task for a change to a client's website. Each one starts a specialist run under the current job. Write instructions a specialist can act on without asking back: the client, the goal, the limits, and Jacob's decisions.
+- New campaigns start with research. "Build ads for X", "set up X's campaign": start_research first, show the brief (it appears in the chat as a card once the desk finishes), then wait for Jacob's word before start_ads_task. Skip research only when Jacob's own message says "skip research". When start_research says the client has a brief under 14 days old, say so in one line and offer to reuse it; research again (fresh) only if he says so. "Research and build X" runs both without stopping to ask: start_research now, and when the brief is in, start_ads_task with its briefId.
+- "Build <client>'s campaign from brief <id>" (the card's button): start_ads_task for that client with briefId <id> and instructions to build the campaign PAUSED from the brief and queue the enable for Jacob's Push.
 - When Jacob points at a spec under docs/ads-specs/, read it with read_spec and pass its full text in the start_ads_task instructions, after one line with Jacob's own instructions (e.g. "Build it paused and queue the enable for my approval."). Do not shorten the spec.
 - Photos in chat: when Jacob drops photos in this chat you see them, listed with their url and filename. File them with file_photos, and only that way. First know whose they are: from his message, or from what he says next about the same photos. If he did not say, ask "Who are these for?" and wait; you may say what the photos show, but do not suggest whose they might be. Never guess, and never choose between two clients that could fit: ask. If he names a client you cannot find on the board, say so and ask. Read get_client first for the client's services. Caption each one from what you see: what is in the frame and which service it shows; never a town, street, customer or job you were not told. Set service only when it plainly matches one of the client's services, otherwise leave it out. At most one heroCandidate per call, the strongest wide shot. beforeAfter only for an obvious pair. kind logo only for the business logo. Filing photos is the whole job: never write, change or offer a brief because of them. Then say in one line what you filed on whom and what you are unsure about ("the two kitchen shots could be either service, I left service blank").
 - Photo batches: a message with more than ${BATCH_THRESHOLD} photos shows you only a count and the first ${BATCH_THRESHOLD}; the Photo desk captions all of them in the background (it starts on its own) and you are told when it finishes. Do not caption a batch yourself and do not file it before then: say in one line that the photos are being captioned, and ask "Who are these for?" if he did not say. Once captions are in, file the batch with file_photos all: true (scope with messageIds when list_inbox shows drops for more than one client). list_inbox shows every unfiled photo with its caption, counts per drop, and photos uploaded but never sent. caption_photos captions any unfiled photos that have no caption yet (for example the unsent ones). After filing a batch, say in one line how many you filed on whom, which one is the hero, and what stayed blank or unfiled.
@@ -165,7 +168,7 @@ async function compactBoard() {
   }
 }
 
-async function clientDetail(engagementId: string) {
+export async function clientDetail(engagementId: string) {
   const board = await getOpsBoard()
   const e = board.engagements.find((x) => x.id === engagementId) ?? board.ignored.find((x) => x.id === engagementId)
   if (!e) throw new Error(`no client with id ${engagementId}`)
@@ -304,7 +307,7 @@ async function readMarkdownIn(dir: string, label: string, input: string): Promis
   return { rel: path.relative(process.cwd(), full), text }
 }
 
-const readSpec = (input: string) => readMarkdownIn(SPEC_DIR, 'docs/ads-specs/', input)
+export const readSpec = (input: string) => readMarkdownIn(SPEC_DIR, 'docs/ads-specs/', input)
 const readDoc = (input: string) => readMarkdownIn(DOCS_DIR, 'docs/ops/', input)
 
 // ── Tools ───────────────────────────────────────────────────────────────────
@@ -792,6 +795,7 @@ function chiefTools(ctx: ChiefContext): ClientTool[] {
           ...(adsSpecEnabled()
             ? { spec: { type: 'string', description: "One client only: build from a launch spec. 'intake' uses the client's approved spec; or name a docs/ads-specs/ file. The approved intake spec always wins; a draft is never used." } }
             : {}),
+          briefId: { type: 'string', description: "One client only: a Research desk brief id for this client. Its full text goes to the specialist first, under \"Research brief (read first)\"." },
         },
         required: ['engagementId', 'instructions'],
       },
@@ -799,6 +803,13 @@ function chiefTools(ctx: ChiefContext): ClientTool[] {
         const target = str(input.engagementId)
         let instructions = noEmDash(str(input.instructions))
         if (!instructions) throw new Error('instructions are empty')
+        if (input.briefId) {
+          if (target === 'all_ads_clients') throw new Error('a brief is for one client; name the client')
+          const brief = await db.adsBrief.findUnique({ where: { id: str(input.briefId) }, select: { id: true, engagementId: true, body: true, createdAt: true } })
+          if (!brief) throw new Error(`no research brief with id ${str(input.briefId)}`)
+          if (brief.engagementId !== target) throw new Error(`brief ${brief.id} is for another client`)
+          instructions = `${instructions}\n\n# Research brief (read first)\nBrief ${brief.id}, written ${detroitWhen(brief.createdAt)}.\n\n${brief.body}`
+        }
         if (adsSpecEnabled() && input.spec) {
           if (target === 'all_ads_clients') throw new Error('a spec is for one client; name the client')
           const row = await db.engagement.findUnique({ where: { id: target }, select: { intake: true } })
@@ -838,6 +849,37 @@ function chiefTools(ctx: ChiefContext): ClientTool[] {
           result: { started, skipped, jobId },
           label: `Started the ads specialist on ${started.length} account${started.length === 1 ? '' : 's'}${skipped.length ? `, skipped ${skipped.length}` : ''}`,
         }
+      },
+    },
+    {
+      name: 'start_research',
+      description:
+        "Start the Research desk on one client: it reads the client, its trade siblings' Google Ads accounts, Keyword Planner and the monthly learnings (read only, it changes nothing), and writes one campaign brief that shows in the chat as a card. Refused when the client already has a brief under 14 days old, unless fresh is true; the result then names that brief so you can offer to reuse it.",
+      input_schema: {
+        type: 'object',
+        properties: {
+          engagementId: { type: 'string', description: 'The client id from get_board.' },
+          goal: { type: 'string', description: "What the campaign is for, in Jacob's words, plus any limits (budget, services, towns)." },
+          fresh: { type: 'boolean', description: 'true: research again even when a recent brief exists (only when Jacob asked for a new one).' },
+        },
+        required: ['engagementId', 'goal'],
+      },
+      run: async (input) => {
+        const engagementId = str(input.engagementId)
+        const goal = noEmDash(str(input.goal))
+        if (!goal) throw new Error('goal is empty')
+        const name = await engagementName(engagementId)
+        const recent = input.fresh === true ? null : await recentBrief(engagementId)
+        if (recent) {
+          return {
+            result: { started: false, recentBrief: { id: recent.id, writtenAt: detroitWhen(recent.createdAt) }, note: `${name} has a brief from ${detroitWhen(recent.createdAt)}. Offer to reuse it (start_ads_task with briefId) or research again with fresh: true if Jacob says so.` },
+            label: `${name} already has a recent brief (${recent.id})`,
+          }
+        }
+        const jobId = await ensureJob(ctx, [engagementId])
+        const run = await startResearchRun({ engagementId, jobId, goal })
+        waitUntil(runResearchTask(run.id))
+        return { result: { started: true, client: name, runId: run.id, jobId }, label: `Started the Research desk on ${name}` }
       },
     },
     {
@@ -1123,7 +1165,7 @@ function chiefTools(ctx: ChiefContext): ClientTool[] {
       },
       run: async (input) => {
         if (!ctx.jobId) throw new Error('there is no job in this conversation to finish')
-        const active = await db.agentRun.count({ where: { jobId: ctx.jobId, agent: { in: ['ads', 'web'] }, status: { in: ['queued', 'running', 'dispatched'] } } })
+        const active = await db.agentRun.count({ where: { jobId: ctx.jobId, agent: { in: ['ads', 'research', 'web'] }, status: { in: ['queued', 'running', 'dispatched'] } } })
         if (active) throw new Error(`${active} specialist run${active === 1 ? ' is' : 's are'} still working; the report is asked for when they finish`)
         const pending = await db.opsApproval.count({ where: { jobId: ctx.jobId, status: 'pending' } })
         const report = { text: noEmDash(str(input.summary)), sections: Array.isArray(input.sections) ? input.sections : [], pendingApprovals: pending }
@@ -1287,12 +1329,14 @@ export async function runChiefAfterPhotos(jobId: string) {
 async function jobRuns(jobId: string) {
   const [runs, approvals] = await Promise.all([
     db.agentRun.findMany({
-      where: { jobId, agent: { in: ['ads', 'web'] } },
+      where: { jobId, agent: { in: ['ads', 'research', 'web'] } },
       orderBy: { createdAt: 'asc' },
       select: { id: true, agent: true, kind: true, mode: true, status: true, error: true, input: true, output: true, engagementId: true, engagement: { select: { displayName: true } } },
     }),
     db.opsApproval.findMany({ where: { jobId }, orderBy: { createdAt: 'asc' }, select: { id: true, runId: true, title: true, status: true, detail: true } }),
   ])
+  // A research run's brief, for its section of the report (the chat shows it as a card).
+  const briefs = await db.adsBrief.findMany({ where: { runId: { in: runs.filter((r) => r.agent === 'research').map((r) => r.id) } }, select: { id: true, runId: true, body: true, data: true } })
   // The givens still undone per client: every report names them, asked or not.
   const gates = await loadGateClients(runs.map((r) => r.engagementId ?? '')).catch(() => new Map<string, GateClient>())
   // OPS_AUTOFLOW: a run that failed on build credit gets a Setup line and no rerun offer.
@@ -1330,6 +1374,14 @@ async function jobRuns(jobId: string) {
                   : 'review the preview, send it to the client, then merge (Push)',
           }
         : null
+    const b = r.agent === 'research' ? briefs.find((x) => x.runId === r.id) : undefined
+    const bd = (b?.data ?? {}) as { terms?: unknown[]; negatives?: unknown[]; budget?: { dailyRecommended?: number; monthly?: number } }
+    const research =
+      r.agent === 'research'
+        ? b
+          ? { briefId: b.id, terms: bd.terms?.length ?? 0, negatives: bd.negatives?.length ?? 0, dailyBudget: bd.budget?.dailyRecommended ?? null, monthlyBudget: bd.budget?.monthly ?? null, body: b.body.slice(0, 8000) }
+          : { briefId: null }
+        : null
     return {
       agent: r.agent,
       client: r.engagement?.displayName.trim() ?? null,
@@ -1339,6 +1391,7 @@ async function jobRuns(jobId: string) {
       error: r.error,
       report: out.report ?? null,
       web,
+      research,
       notDone: r.engagementId && gates.has(r.engagementId) ? reportGaps(gates.get(r.engagementId)!) : [],
       ...(creditCost !== undefined && r.status === 'failed' && isCreditFailure(r.error, typeof out.failureTail === 'string' ? out.failureTail : null)
         ? { setup: [creditSetupItem(creditCost)], rerun: CREDIT_NO_RERUN }
@@ -1372,6 +1425,8 @@ async function recentRunCost(): Promise<number | null> {
   return averageRunCost(rows.map((r) => r.output))
 }
 
+const RESEARCH_EXPECT = 'Read the brief card; "Build from this brief" starts the ads specialist on it.'
+
 type ReportSection = { agent: string; client: string | null; did: string[]; expect: string; links: { label: string; url: string }[]; waitingForPush: string[]; questions: string[] }
 
 /** The report the chief failed to write, built from the runs themselves. */
@@ -1393,7 +1448,9 @@ function fallbackSections(runs: Awaited<ReturnType<typeof jobRuns>>): ReportSect
             ...(w?.failureTail ? [`Agent's last words:\n${w.failureTail}`] : []),
             ...(w?.verifyTail ? [`Gate output:\n${w.verifyTail}`] : []),
           ]
-        : webDid ?? (rep.done ?? []).map((d) => String(d.change ?? '')).filter(Boolean)
+        : r.research
+          ? [r.research.briefId ? `Brief saved: ${r.research.terms} target terms, ${r.research.dailyBudget}/day (${r.research.monthlyBudget}/month)` : 'No brief was saved']
+          : webDid ?? (rep.done ?? []).map((d) => String(d.change ?? '')).filter(Boolean)
     const setup = [
       ...('appliedApproval' in r && typeof r.appliedApproval === 'string' ? [r.appliedApproval] : []),
       ...r.approvals.flatMap((a) => ('pushedBy' in a && typeof a.pushedBy === 'string' ? [a.pushedBy] : [])),
@@ -1403,7 +1460,7 @@ function fallbackSections(runs: Awaited<ReturnType<typeof jobRuns>>): ReportSect
       agent: r.agent ?? 'ads',
       client: r.client,
       did: r.notDone.length ? [...did, ...setup, `Not done: ${r.notDone.join('; ')}`] : [...did, ...setup],
-      expect: w ? `Next: ${w.nextStep}.` : String(rep.expected ?? ''),
+      expect: w ? `Next: ${w.nextStep}.` : r.research ? RESEARCH_EXPECT : String(rep.expected ?? ''),
       links: r.links,
       waitingForPush: r.approvals.filter((a) => a.status === 'pending').map((a) => a.title),
       questions: w ? (w.questions as string[]) : [],
@@ -1422,6 +1479,8 @@ export async function runChiefReport(jobId: string) {
   // gets no extra tools; it only reads what was done. Off: nothing runs and the
   // prompt is unchanged.
   const hops = autoflowEnabled() ? (await autoflowForJob(jobId, run.id)).filter((h) => h.acted) : []
+  // "Research and build X": a brief is in and nothing has been built from it yet, so this turn may start the build.
+  const canBuild = runs.some((r) => r.research?.briefId) && !runs.some((r) => r.agent === 'ads')
   const prompt = [
     `Every specialist run in this job has finished. Jacob asked: "${job.prompt}"`,
     `The runs, with each one's parsed report, links and approvals:\n${JSON.stringify(runs, null, 1)}`,
@@ -1430,6 +1489,14 @@ export async function runChiefReport(jobId: string) {
       : []),
     ...(runs.some((r) => 'appliedApproval' in r || r.approvals.some((a) => 'pushedBy' in a))
       ? ['Each run\'s appliedApproval and each approval\'s pushedBy is a did line, word for word: the report always says which approval a change came from and who pushed it.']
+      : []),
+    ...(runs.some((r) => r.agent === 'research')
+      ? [
+          ...(canBuild
+            ? [`If Jacob's message asked to research AND build ("research and build X", "research it then build it"), do not write the report yet: call start_ads_task for that client with the brief's research.briefId and instructions to build the campaign PAUSED from the brief and queue the enable for his Push, then reply in one line that the build started from the brief. Otherwise write the report as below.`]
+            : []),
+          `A research run wrote a campaign brief (its research.body is the full text). Its section: did is one line, "Brief saved: <terms> target terms, $<daily>/day ($<monthly>/month)", or why no brief was saved; expect is "${RESEARCH_EXPECT}". The chat shows the brief itself as a card, so your reply for a research run is ONE line naming the client and the daily budget, nothing more; never paste the brief. Building waits for Jacob's word.`,
+        ]
       : []),
     ...(runs.some((r) => 'setup' in r)
       ? ['A run with a setup list failed for a setup reason: put each setup item in its did as "Setup: " plus the item, word for word, and follow its rerun note. Never offer a rerun for it.']
@@ -1442,7 +1509,7 @@ export async function runChiefReport(jobId: string) {
       model: chiefModel(),
       system: `${SYSTEM}${autoflowRules()}\n\nToday is ${today()} (${OPS_TIMEZONE}).`,
       messages: [{ role: 'user', content: prompt }],
-      tools: chiefTools(ctx).filter((t) => t.name === 'finish_job' || t.name === 'get_client'),
+      tools: chiefTools(ctx).filter((t) => t.name === 'finish_job' || t.name === 'get_client' || (canBuild && t.name === 'start_ads_task')),
       effort: 'medium',
     })
     await writeFallbackIfNeeded(jobId, runs)
@@ -1454,6 +1521,8 @@ export async function runChiefReport(jobId: string) {
     await writeFallbackIfNeeded(jobId, runs)
     await db.opsMessage.create({ data: { role: 'chief', body: `The job finished but I could not write the report: ${message}. The runs' own results are below.`, jobId } })
   }
+  // A build started from the brief in this turn may already have ended while the turn was still open.
+  if (canBuild) await onSpecialistRunEnded(jobId).catch((err) => console.error('[hq] job report failed:', err instanceof Error ? err.message : err))
 }
 
 /** A job still at reporting after the chief ran gets the plain report built from its runs. */

@@ -215,6 +215,7 @@ export function EngagementPanel({ engagement: e, focus, actions, unmatched, unma
                     d={d}
                     actions={actions}
                     onRefresh={onRefresh}
+                    latestBrief={d.type === 'ads' ? e.latestAdsBrief : null}
                   />
                 ))}
               </div>
@@ -627,12 +628,15 @@ function DeliverableCard({
   d,
   actions,
   onRefresh,
+  latestBrief = null,
 }: {
   engagementId: string
   displayName: string
   d: BoardDeliverable
   actions: OpsActions
   onRefresh: () => Promise<void>
+  /** Ads only: the client's newest Research desk brief. */
+  latestBrief?: BoardEngagement['latestAdsBrief']
 }) {
   const type = d.type as DeliverableType
   const editable = EVIDENCE_FIELDS_FOR_TYPE[type] ?? []
@@ -712,6 +716,16 @@ function DeliverableCard({
           onSave={(v) => save({ waitingNote: v }, { waitingNote: v })}
         />
       </div>
+
+      {latestBrief && (
+        <p className="text-xs text-gray-400" aria-label="Latest campaign brief">
+          Campaign brief <Age iso={latestBrief.createdAt} />: {latestBrief.terms} target term{latestBrief.terms === 1 ? '' : 's'}
+          {latestBrief.dailyBudget !== null ? `, ${latestBrief.dailyBudget}/day` : ''}.{' '}
+          <a href={`/admin/ops/brief/${latestBrief.id}`} target="_blank" rel="noreferrer" className="text-blue-400 hover:text-blue-300">
+            Read the full brief
+          </a>
+        </p>
+      )}
 
       {/* ADS_BILLING_INVITE: the wizard's legal details, for the advertiser verification step. Only present when that flag wrote them. */}
       {d.type === 'ads' && (d.step === 'verification_docs' || d.step === 'verification') && isAdvertiserLegal(d.evidence.advertiserLegal) && (

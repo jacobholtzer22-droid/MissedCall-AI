@@ -148,6 +148,54 @@ function DeskCard({
           {stopping ? 'Stopping…' : 'Stop'}
         </button>
       )}
+      {persona.key === 'research' && state !== 'working' && <LearningsButton />}
+    </div>
+  )
+}
+
+type LearningsResult = { trades: { tradeKey: string; accounts: number }[]; accountsRead: number; googleCalls: number; errors: string[]; dryRun: boolean }
+
+/**
+ * The Research desk's monthly per-trade learnings, on demand: a dry run first
+ * (reads Google, writes nothing), then "Write learnings" makes the real run.
+ */
+function LearningsButton() {
+  const [busy, setBusy] = useState(false)
+  const [dry, setDry] = useState<LearningsResult | null>(null)
+  const [line, setLine] = useState<string | null>(null)
+  const run = async (live: boolean) => {
+    setBusy(true)
+    setLine(live ? 'Writing learnings…' : 'Reading accounts…')
+    try {
+      const res = await fetch(`/api/admin/ops/ads/learnings${live ? '' : '?dry=1'}`, { method: 'POST' })
+      const data = (await res.json()) as LearningsResult & { error?: string }
+      if (!res.ok) throw new Error(data.error ?? `HTTP ${res.status}`)
+      const summary = `${data.trades.length} trade${data.trades.length === 1 ? '' : 's'}, ${data.accountsRead} account${data.accountsRead === 1 ? '' : 's'}, ${data.googleCalls} Google calls${data.errors.length ? `, ${data.errors.length} error${data.errors.length === 1 ? '' : 's'}` : ''}`
+      setLine(live ? `Wrote learnings: ${summary}` : `Dry run: ${summary}`)
+      setDry(live ? null : data)
+    } catch (err) {
+      setLine(`Learnings failed: ${err instanceof Error ? err.message : String(err)}`)
+    }
+    setBusy(false)
+  }
+  const btn = 'inline-flex items-center justify-center min-h-[44px] px-3 rounded-lg border border-gray-700 bg-gray-800 hover:bg-gray-700 text-sm text-gray-100 disabled:opacity-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500'
+  return (
+    <div className="space-y-2" onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
+      <div className="flex flex-wrap gap-2">
+        <button type="button" disabled={busy} onClick={() => run(false)} className={btn}>
+          Trade learnings (dry run)
+        </button>
+        {dry && dry.trades.length > 0 && (
+          <button type="button" disabled={busy} onClick={() => run(true)} className={`${btn} border-teal-600/60`}>
+            Write learnings
+          </button>
+        )}
+      </div>
+      {line && (
+        <p className="text-xs text-gray-400" aria-live="polite">
+          {line}
+        </p>
+      )}
     </div>
   )
 }

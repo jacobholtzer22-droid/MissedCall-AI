@@ -8,7 +8,8 @@
 // each HQ agent's most recent run whenever it was (the idle desks), approvals
 // that are pending or were decided in the last 30 minutes (so a pushed card can
 // show Applying, then Applied or the error), and the last 20 jobs with their
-// reports. cursor is the newest timestamp returned; pass it back as since.
+// reports and research briefs. cursor is the newest timestamp returned; pass it
+// back as since.
 
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
@@ -93,6 +94,16 @@ export async function GET(request: Request) {
       db.opsJob.findMany({ orderBy: { createdAt: 'desc' }, take: 20 }),
       Promise.all(HQ_AGENTS.map((agent) => db.agentRun.findFirst({ where: { agent }, orderBy: { createdAt: 'desc' }, include: runInclude }))),
     ])
+    // Research briefs written in those jobs: the chat shows each as a card under the job's last chief message.
+    const briefRuns = await db.agentRun.findMany({ where: { agent: 'research', jobId: { in: jobs.map((j) => j.id) } }, select: { id: true, jobId: true } })
+    const briefs = briefRuns.length
+      ? await db.adsBrief.findMany({
+          where: { runId: { in: briefRuns.map((r) => r.id) } },
+          orderBy: { createdAt: 'asc' },
+          select: { id: true, runId: true, engagementId: true, tradeKey: true, body: true, data: true, createdAt: true, engagement: { select: { displayName: true } } },
+        })
+      : []
+    const jobOfRun = new Map(briefRuns.map((r) => [r.id, r.jobId]))
     type RunRow = (typeof runs)[number]
     const runView = (r: RunRow) => ({
       id: r.id,
@@ -142,6 +153,9 @@ export async function GET(request: Request) {
         prompt: j.prompt,
         engagementIds: j.engagementIds,
         report: parseReport(j.summary),
+        briefs: briefs
+          .filter((b) => jobOfRun.get(b.runId!) === j.id)
+          .map((b) => ({ id: b.id, engagementId: b.engagementId, client: b.engagement.displayName.trim(), tradeKey: b.tradeKey, body: b.body, data: b.data, createdAt: b.createdAt.toISOString() })),
         createdAt: j.createdAt.toISOString(),
         updatedAt: j.updatedAt.toISOString(),
       })),

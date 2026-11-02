@@ -1153,6 +1153,7 @@ model Engagement {
   deliverables Deliverable[]
   activities   OpsActivity[]
   agentRuns    AgentRun[]
+  adsBriefs    AdsBrief[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -1370,4 +1371,43 @@ model OpsApproval {
 
   @@index([status, createdAt])
   @@index([jobId])
+}
+
+// Ops HQ Research desk (Nov 2026, scripts/sql/2026-11-02_add_ads_research.sql).
+// One campaign brief per research run: body is the markdown Jacob reads, data the
+// same brief as JSON (terms, negatives, geo, schedule, budget, siblings) that
+// lib/ops/ads-research.ts parseBrief checked before it was saved.
+model AdsBrief {
+  id           String     @id @default(cuid())
+  engagementId String
+  engagement   Engagement @relation(fields: [engagementId], references: [id], onDelete: Cascade)
+  // The research AgentRun that wrote it.
+  runId        String?
+  // lib/ops/trades.ts tradeKey; null when the client names no trade.
+  tradeKey     String?
+  body         String     @db.Text
+  data         Json
+  createdAt    DateTime   @default(now())
+
+  @@index([engagementId, createdAt])
+}
+
+// Per-trade learnings, one row per trade per month (lib/ops/hq/learnings.ts).
+// Numbers summed across every ads account in the trade over the period; summary
+// is 10 to 20 lines written from those numbers, no advice.
+model AdsTradeLearning {
+  id              String   @id @default(cuid())
+  tradeKey        String
+  periodStart     DateTime
+  periodEnd       DateTime
+  // [{ customerId, name, cost, conversions, costPerConv, cpc }]
+  accounts        Json
+  // [{ term, conversions, cost, accounts }], summed across accounts
+  convertingTerms Json
+  wastedTerms     Json
+  negativesInUse  Json
+  summary         String   @db.Text
+  createdAt       DateTime @default(now())
+
+  @@unique([tradeKey, periodStart])
 }

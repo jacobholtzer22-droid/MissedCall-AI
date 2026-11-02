@@ -23,7 +23,7 @@ export type TimelineQuery = {
   /** Only rows on or after this time. */
   from?: Date | null
   engagementId?: string | null
-  /** chief | ads | web. Activities have no agent and are left out when set. */
+  /** chief | ads | research | web | photo. Activities have no agent and are left out when set. */
   agent?: string | null
   kinds?: TimelineKind[]
   limit?: number

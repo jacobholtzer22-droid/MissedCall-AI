@@ -3801,3 +3801,120 @@ Everything comes back as proposals: the apply tools, or `CHECKUP_PROPOSABLE`
 (add_campaign_negatives, pause_campaign, exclude_conversion_goal), which apply only from a
 check-up's own pushed approval (`detail.checkup`). One note per client: what it found and how
 many proposals it filed.
+
+### The Research desk (branch `ops-research-desk`, Nov 2 2026)
+
+A fourth specialist that writes one campaign brief for one client before a build, every
+claim backed by a number and its source. It never builds anything and never changes a Google
+Ads account. Persona `research` ("Research", role "Ads research", teal, `lib/ops/hq/personas.ts`).
+
+**Runs.** `AgentRun` agent `research`, kind `ads_research`, mode `work`, one per client,
+under the chief's job (`lib/ops/hq/research.ts` `startResearchRun` / `runResearchTask`).
+Model `OPS_RESEARCH_MODEL` (default `claude-sonnet-5-5`), effort high, system prompt
+`lib/ops/hq/prompts/research.md`. Same runtime as the other specialists (`loop.ts`,
+`events.ts`, `runs.ts`, `anthropic.ts`). Refuses never-touch clients; missing Google Ads
+credentials stop it like the ads specialist (`AdsOffline`). `onSpecialistRunEnded` counts it
+with ads, web and photo; `finish_job` waits for it.
+
+**Google Ads access: read only, 60 calls a run.** Every call goes through three helpers at
+the bottom of `lib/ops/hq/ads-tools.ts`, the ads specialist's own client and credentials
+(`login_customer_id = GOOGLE_ADS_MCC_ID`): `researchSearch` (a GAQL SELECT on one account;
+refuses non-SELECT and never-touch names), `researchKeywordIdeas`
+(KeywordPlanIdeaService.generateKeywordIdeas, Google Search, historical metrics) and
+`researchSuggestGeo` (GeoTargetConstantService.suggestGeoTargetConstants, US, English).
+None of them can write: no mutate, no validate_only. The cap is `RESEARCH_MAX_CALLS` (60),
+counted in `customer()` where the ads specialist counts its 150 (`AdsToolContext.maxCalls`).
+Accounts it may read: the client's own and any bound to a board client by `adsClients()`,
+never-touch left out. A failing account comes back to the model as an error and the brief
+goes on without it. `lib/ops/ads-research.test.ts` checks that no research tool is a write
+tool by name, that the research files never mention a write path, and that they import only
+the read helpers from ads-tools.
+
+| Tool (`lib/ops/hq/research-tools.ts`) | What it reads |
+|---|---|
+| `get_client(engagementId)` | The chief's `clientDetail` plus the ads deliverable evidence, `Business.servicesOffered`, intake services, the Google profile (category, review count, rating, hours, address), answering hours, service area, budget, exclusions, the trade key, and the live `site.config.ts` (`getFileContent`) when `evidence.repoUrl` exists. This run's client only. |
+| `trade_siblings(engagementId)` | Board clients with `ads` in services, a customer id, the same trade key, not never-touch: name, customerId, metro, monthsLive (first `GoogleAdsSnapshot` day with spend), ads step. No Google call. |
+| `account_summary(customerId, days 30\|90)` | Campaign level: cost, clicks, conversions, cost per conversion, avg CPC, search impression share, bidding, budget, location option, plus location, radius and ad schedule criteria. 2 calls. |
+| `account_search_terms(customerId, days, minCost)` | `search_term_view` summed per term: converting (≥ 1 conversion, ≤ 100) and wasted (cost ≥ minCost, no conversion, ≤ 100). 2 calls. |
+| `account_keywords(customerId, days)` | `keyword_view`, ≤ 200, match type, Quality Score, cost, conversions, CPC. 1 call. |
+| `account_negatives(customerId)` | Campaign and ad group negative keywords. 2 calls. |
+| `keyword_ideas(seeds[], locations[], language)` | Location names to geo targets, then ideas with avg monthly searches, competition, low and high top-of-page bid, under the client's own account (the MCC when it has none). 2 calls. A refusal (developer token access level) returns `plannerUnavailable` with the reason; the brief says volumes were unavailable and the run goes on. Not yet tried live with Explorer access. |
+| `read_learnings(tradeKey)` | The last 3 months of `AdsTradeLearning` for the trade. |
+| `read_spec(path)` | The chief's `docs/ads-specs/` reader. |
+| `save_brief(engagementId, body, data)` | The only write: one `AdsBrief` row and one `OpsActivity` note. |
+
+**Trades** (`lib/ops/trades.ts`). `TRADES` is a plain editable table (key, label, synonym
+words), first match wins, whole words after normalising. `clientTradeKey` tries, in order,
+the intake's trade, the display name, `Engagement.trade`, `Business.businessType`, then the
+service names (most rows on the board say "Other", and some trade columns were copied wrong,
+e.g. Cowboy Spray Foam's say Car Detailing). The siblings tool and the learnings job use the
+same rule. Tests in `lib/ops/trades.test.ts`.
+
+**The brief** (`AdsBrief`, `scripts/sql/2026-11-02_add_ads_research.sql`: id, engagementId
+FK cascade, runId, tradeKey, body markdown, data JSON, createdAt; index (engagementId,
+createdAt)). Nine fixed `## ` sections in order, none skipped ("none found" instead): Client
+facts; Siblings in this trade; Target keywords (a table: term, match type, monthly volume,
+bid range, source); Negatives; Geo; Schedule; Budget check (daily and daily x 30.4 against
+the $300 to $500 norm, clicks a day at the median CPC); Risks and unknowns; Questions for
+Jacob. `data`: terms[] {term, matchType, monthlyVolume, bidLow, bidHigh, source},
+negatives[] {term, source}, geo {cities[], radiusMiles, presence}, schedule {summary,
+source}, budget {dailyRecommended, monthly, basis}, siblings[] {customerId, name,
+convertingTerms[], cpc, costPerConv}. `parseBrief` (`lib/ops/ads-research.ts`) checks both:
+sections, order, the keyword table, no em dashes, a source on every term and negative,
+monthly = daily x 30.4. A failing brief gets one more try; a second failure fails the run
+with the reasons. `PLAYBOOK_NEGATIVES` is the standing junk list it starts from.
+
+**In HQ.** The feed carries each job's briefs (`jobs[].briefs`); the chat renders each as a
+`BriefCard` (`app/admin/ops/BriefCard.tsx`) under the job's last chief message: sections
+collapsible, Target keywords as a table from `data.terms`, a "Full text" link to
+`/admin/ops/brief/<id>` (admin only, every section open), and one button, "Build from this
+brief", which sends the chief "build <client>'s campaign from brief <id>". The client
+panel shows the latest brief under the ads deliverable (`BoardEngagement.latestAdsBrief`,
+caught so a database without the table still loads the board). Desks come from PERSONAS, so
+the Research desk shows in the stacked column and below lg; the Agents tab lists its runs
+(they have a client); Timeline rows carry agent research and the agent filter has it.
+
+**Chief wiring.** `start_research(engagementId, goal, fresh?)` starts one research run under
+the current job; it refuses (and names the brief) when the client has one under
+`BRIEF_REUSE_DAYS` (14) unless `fresh`. Prompt rules: "build ads for X" / "set up X's
+campaign" means research first, show the brief, wait for Jacob's word; "skip research" in
+his own message skips it; "research and build X" runs both: the report turn after the
+research run gets `start_ads_task` (only while the job has a brief and no ads run yet) and
+starts the build from the brief instead of writing the report. `start_ads_task` takes an
+optional `briefId` (one client, the brief must be that client's): its body goes to the
+specialist under "Research brief (read first)", before any spec text. The ads playbook tells
+the specialist to build from the brief's terms, negatives, geo and schedule and to say in
+`expected` where it departed and why. The report section for a research run is one did line
+("Brief saved: N target terms, $X/day ($Y/month)") and the chief's chat line is one line; the
+card carries the brief.
+
+**What it never does.** No write to any Google Ads account (no mutate, no validate_only, no
+campaign, no step change), no never-touch client or account, no Google Trends, Analytics or
+competitor ad libraries.
+
+### Per-trade learnings (branch `ops-research-desk`, Nov 2 2026)
+
+`runAdsLearnings({ dryRun })` in `lib/ops/hq/learnings.ts`. For every trade key with at least
+one bound ads account that is not never-touch (`adsClients` plus `clientTradeKey`), each
+account's last 30 days ending yesterday (`learningWindow`), at most
+`LEARNING_CALLS_PER_ACCOUNT` (5) GAQL calls through `researchSearch`: campaign totals,
+converting terms, wasted terms (≥ $5 a row), campaign and ad group negatives. Per-account
+try/catch: a dead account is listed in `errors`. `aggregateLearnings` (pure, tested) sums the
+trade: per-account cost, conversions, cost per conversion, CPC; terms summed across accounts
+(converting ≥ 1 conversion; wasted ≥ $10 with none); negatives in use with how many accounts
+carry each. A sonnet call (`OPS_RESEARCH_MODEL`) writes the 10 to 20 line `summary` from the
+numbers only, no advice; on a model failure, or in a dry run, `codeSummary` writes it.
+
+`AdsTradeLearning` (same SQL file): id, tradeKey, periodStart, periodEnd, accounts,
+convertingTerms, wastedTerms, negativesInUse (JSON), summary, createdAt; unique (tradeKey,
+periodStart), so a rerun the same day replaces its rows (upsert). The run logs one line with
+trades, accounts read, Google calls, skipped and errors.
+
+| Route | What it does |
+|---|---|
+| `GET /api/cron/ads-learnings[?dry=1]` | CRON_SECRET bearer or the admin (the ops-sync auth). **Not in `vercel.json` yet**: add `{ "path": "/api/cron/ads-learnings", "schedule": "17 9 2 * *" }` (9:17 UTC on the 2nd) once Jacob says so. |
+| `POST /api/admin/ops/ads/learnings[?dry=1]` | `requireAdmin()`. The Research desk's buttons on the HQ tab: "Trade learnings (dry run)" (reads Google, writes nothing, no model call), then "Write learnings". |
+
+⚠️ Apply `scripts/sql/2026-11-02_add_ads_research.sql` with `npx prisma db execute --file …`
+(never `db push`) before deploying: the feed, the chief and the brief page read `AdsBrief`.
+Not applied as of Nov 2 2026, and no learnings are seeded.

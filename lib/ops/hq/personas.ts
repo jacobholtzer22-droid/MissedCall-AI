@@ -20,6 +20,7 @@ export type Persona = {
 export const PERSONAS: Persona[] = [
   { key: 'chief', name: 'Chief', role: 'Runs the board, hands out work', color: '#60a5fa', avatarLetter: 'C', idleLine: 'Waiting for your next message.' },
   { key: 'ads', name: 'Ads', role: 'Google Ads builds and fixes', color: '#34d399', avatarLetter: 'A', idleLine: 'No ads work in progress.' },
+  { key: 'research', name: 'Research', role: 'Ads research', color: '#2dd4bf', avatarLetter: 'R', idleLine: 'No brief in progress.' },
   { key: 'web', name: 'Web', role: 'Website changes and launches', color: '#c084fc', avatarLetter: 'W', idleLine: 'No site work in progress.' },
   { key: 'photo', name: 'Photo', role: 'Captions photo drops for filing', color: '#fbbf24', avatarLetter: 'P', idleLine: 'No photos to caption.' },
 ]

@@ -109,6 +109,8 @@ export type BoardEngagement = {
   /** The newest OpsActivity with kind 'status' (the chief or Jacob sets it); null when none. */
   statusLine: string | null
   statusAt: string | null
+  /** The newest Research desk brief (AdsBrief); null when none. */
+  latestAdsBrief: { id: string; createdAt: string; terms: number; dailyBudget: number | null } | null
   lastActivityAt: string | null
   business: BoardBusiness | null
   pipelinePerson: { status: string; nextFollowUpAt: string | null; lastContactedAt: string | null } | null
@@ -263,6 +265,12 @@ export async function getOpsBoard(): Promise<OpsBoard> {
     }),
   ])
   const statusBy = new Map(statuses.map((s) => [s.engagementId, s]))
+  // Each client's newest Research desk brief (the panel shows it under the ads deliverable).
+  // Caught so a database without the AdsBrief table still loads the board.
+  const latestBriefs = await db.adsBrief
+    .findMany({ orderBy: [{ engagementId: 'asc' }, { createdAt: 'desc' }], distinct: ['engagementId'], select: { id: true, engagementId: true, createdAt: true, data: true } })
+    .catch(() => [])
+  const briefBy = new Map(latestBriefs.map((b) => [b.engagementId, b]))
 
   // CONFIRM_TRACKING (off by default): one extra read, only when the flag is on.
   const noReplyIds = showRateFlags().confirmTracking ? await noConfirmReplyIds(bookings.map((b) => b.id), now) : null
@@ -346,6 +354,7 @@ export async function getOpsBoard(): Promise<OpsBoard> {
       activities,
       statusLine: statusBy.get(e.id)?.body ?? null,
       statusAt: iso(statusBy.get(e.id)?.createdAt),
+      latestAdsBrief: briefView(briefBy.get(e.id)),
       lastActivityAt: activities[0]?.createdAt ?? null,
       business: e.business ? { ...e.business, createdAt: e.business.createdAt.toISOString() } : null,
       pipelinePerson: e.pipelinePerson
@@ -585,4 +594,11 @@ async function loadCallPrompts(businessId: string, now: Date): Promise<BoardCall
       })
     : []
   return callPromptList(leads, new Set(booked.map((b) => b.customerPhone)), now)
+}
+
+function briefView(b: { id: string; createdAt: Date; data: unknown } | undefined) {
+  if (!b) return null
+  const d = (b.data ?? {}) as { terms?: unknown[]; budget?: { dailyRecommended?: unknown } }
+  const daily = d.budget?.dailyRecommended
+  return { id: b.id, createdAt: b.createdAt.toISOString(), terms: Array.isArray(d.terms) ? d.terms.length : 0, dailyBudget: typeof daily === 'number' ? daily : null }
 }

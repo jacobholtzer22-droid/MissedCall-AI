@@ -1,13 +1,14 @@
 'use client'
 
 // Chat with the chief: Jacob on the right, the chief on the left (markdown),
-// the job report as a card under the job's last chief message, "Chief is
-// thinking" while a chief run is open, and the composer pinned to the bottom of
-// the panel: the message list scrolls, the panel never grows (60vh, or the whole
-// height it is given with fill, as on HQ). Enter sends, Shift+Enter is a new
-// line. The latest message is in view on load and whenever a new one arrives;
-// while pinned to the bottom, late growth (photos loading, the panel resizing)
-// keeps it there. Photos and videos: drop them on the panel,
+// the job report and any Research desk brief as cards under the job's last
+// chief message, "Chief is thinking" while a chief run is open, and the
+// composer pinned to the bottom of the panel: the message list scrolls, the
+// panel never grows (60vh, or the whole height it is given with fill, as on
+// HQ). Enter sends, Shift+Enter is a new line. The latest message is in view
+// on load and whenever a new one arrives; while pinned to the bottom, late
+// growth (photos loading, the panel resizing) keeps it there. Photos and
+// videos: drop them on the panel,
 // paste them, or the paperclip (the camera roll on a phone). They go through
 // the same upload queue as the intake page, straight to Blob under ops-inbox/
 // (a video as is, up to 300 MB, with its three poster frames beside it), and
@@ -26,6 +27,7 @@ import { QueueList, QueueSummary, posterOf, queueBtn, uploadFrames, uploadToBlob
 import { VideoPoster } from './VideoPoster'
 import { personaFor, PERSONAS } from '@/lib/ops/hq/personas'
 import { Avatar, Markdown, type FeedJob, type FeedMessage, type ReportSection } from './hqShared'
+import { BriefCard } from './BriefCard'
 
 const chief = personaFor('chief') ?? PERSONAS[0]
 
@@ -91,10 +93,14 @@ export function Chat({
 
   // The report card goes under the last chief message of its job.
   const reportAfter = new Map<string, FeedJob>()
+  // Research briefs too: one card each, above the report.
+  const briefsAfter = new Map<string, FeedJob>()
   for (const job of jobs) {
-    if (!job.report) continue
+    if (!job.report && !job.briefs?.length) continue
     const last = [...messages].reverse().find((m) => m.jobId === job.id && m.role === 'chief')
-    if (last) reportAfter.set(last.id, job)
+    if (!last) continue
+    if (job.report) reportAfter.set(last.id, job)
+    if (job.briefs?.length) briefsAfter.set(last.id, job)
   }
 
   // A new message always brings the list to the bottom; other changes only when pinned.
@@ -193,6 +199,7 @@ export function Chat({
                   </div>
                 </div>
               )}
+              {briefsAfter.get(m.id)?.briefs?.map((b) => <BriefCard key={b.id} brief={b} onBuild={(text) => onSend(text, [])} />)}
               {reportAfter.has(m.id) && <ReportCard job={reportAfter.get(m.id)!} />}
             </div>
           ))}
