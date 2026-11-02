@@ -5,6 +5,8 @@ import { getBusinessForDashboard } from '@/lib/get-business-for-dashboard'
 import { getBusinessFeatures } from '@/lib/business-features'
 import { normalizePhoneNumber } from '@/lib/phone-utils'
 import { OverviewClient } from './OverviewClient'
+import { dashboardSetupLink } from '@/lib/ops/intake-wizard-server'
+import { COPY } from '@/lib/ops/intake-wizard'
 
 export default async function DashboardPage() {
   const { userId } = await auth()
@@ -130,11 +132,40 @@ export default async function DashboardPage() {
     .sort((x, y) => new Date(y.createdAt).getTime() - new Date(x.createdAt).getTime())
     .slice(0, 15)
 
+  // PORTAL_INTAKE_WIZARD (off by default): a link back to an unfinished setup. Off: null, the page as before.
+  const setupHref = await dashboardSetupLink(business.id)
+  if (setupHref) {
+    return (
+      <>
+        <FinishSetupBanner href={setupHref} />
+        <OverviewClient
+          features={features}
+          initialVoicemails={initialVoicemails}
+          callLog={callLog}
+        />
+      </>
+    )
+  }
+
   return (
     <OverviewClient
       features={features}
       initialVoicemails={initialVoicemails}
       callLog={callLog}
     />
+  )
+}
+
+function FinishSetupBanner({ href }: { href: string }) {
+  return (
+    <div role="region" aria-label={COPY.finishBannerTitle} className="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-blue-500/40 bg-blue-500/10 px-4 py-3">
+      <div>
+        <p className="font-semibold">{COPY.finishBannerTitle}</p>
+        <p className="text-sm opacity-80">{COPY.finishBannerBody}</p>
+      </div>
+      <a href={href} className="min-h-[44px] inline-flex items-center rounded-lg bg-blue-600 px-4 font-medium text-white hover:bg-blue-500">
+        {COPY.finishBannerLink}
+      </a>
+    </div>
   )
 }

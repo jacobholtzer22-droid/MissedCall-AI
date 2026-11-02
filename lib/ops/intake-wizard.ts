@@ -310,6 +310,16 @@ export function wizardFinishNote(note: string, intake: IntakeWithWizard, via: 'p
   return [head, ...wizardNoteLines(intake), ...rest].join('; ')
 }
 
+/**
+ * The dashboard's "Finish your setup" link: only for a client still being set up
+ * (paid_upfront or onboarding) whose intake was never finished. Live and older
+ * clients never see it.
+ */
+export function setupUnfinished(e: { stage: string; intake: IntakeWithWizard } | null): boolean {
+  if (!e || !['paid_upfront', 'onboarding'].includes(e.stage)) return false
+  return !e.intake.questionnaire?.finishedAt
+}
+
 // -------------------------------------------
 // Copy (client-facing)
 // -------------------------------------------
@@ -348,6 +358,9 @@ export const COPY = {
   thanksBody: "I'll go through your answers and reach out if I need anything else. You can come back here anytime to add more or change an answer.",
   backToAnswers: 'Back to my answers',
   toDashboard: 'Go to your dashboard',
+  finishBannerTitle: 'Finish your setup',
+  finishBannerBody: "A few questions and your photos, so I can build everything for you. It saves as you go.",
+  finishBannerLink: 'Continue setup',
   doneError: "That didn't go through. Check your connection and press Done again.",
   signoff: 'Thanks, looking forward to helping you out. Jacob',
 }

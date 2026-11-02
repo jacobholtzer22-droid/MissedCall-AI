@@ -20,6 +20,7 @@ import {
   portalIntakeWizardEnabled,
   questionsFor,
   readWizardPatch,
+  setupUnfinished,
   stepsFor,
   withBoardPlan,
   wizardFinishNote,
@@ -201,4 +202,17 @@ test('finish: the "answers in" note names the portal, the plan and the legal det
 
 test('client copy has no dashes', () => {
   assert.doesNotMatch(JSON.stringify(COPY), /[\u2013\u2014]/)
+})
+
+test('dashboard link back to an unfinished setup: only while being set up and not finished; off with the flag off', () => {
+  assert.equal(setupUnfinished(null), false)
+  assert.equal(setupUnfinished({ stage: 'onboarding', intake: {} }), true)
+  assert.equal(setupUnfinished({ stage: 'paid_upfront', intake: { wizard: { step: 'legal' } } }), true)
+  assert.equal(setupUnfinished({ stage: 'onboarding', intake: { questionnaire: { answers: {}, updatedAt: 'x', finishedAt: 'y' } } }), false)
+  for (const stage of ['active', 'one_time', 'paused', 'churned', 'ignored', 'prospect']) assert.equal(setupUnfinished({ stage, intake: {} }), false, stage)
+  const s = src('./intake-wizard-server.ts')
+  assert.match(s, /export async function dashboardSetupLink\(businessId: string\): Promise<string \| null> \{\n\s+if \(!portalIntakeWizardEnabled\(\)\) return null/)
+  const page = src('../../app/(dashboard)/dashboard/page.tsx')
+  // Flag off: setupHref is null and the page returns exactly the original element.
+  assert.match(page, /if \(setupHref\) \{[\s\S]+?\n  \}\n\n  return \(\n    <OverviewClient\n      features=\{features\}\n      initialVoicemails=\{initialVoicemails\}\n      callLog=\{callLog\}\n    \/>\n  \)\n\}/)
 })

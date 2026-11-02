@@ -22,7 +22,7 @@ import { updateIntake } from '@/lib/ops/intake-server'
 import { createRun } from '@/lib/ops/hq/runs'
 import { LINK_CARD_KIND } from '@/lib/ops/duplicate-guard'
 import { findLikely, proposeLink } from '@/lib/ops/duplicate-guard-server'
-import { mergeIntakes, planFromBoard, portalIntakeWizardEnabled, withBoardPlan, type IntakeWithWizard } from '@/lib/ops/intake-wizard'
+import { mergeIntakes, planFromBoard, portalIntakeWizardEnabled, setupUnfinished, withBoardPlan, type IntakeWithWizard } from '@/lib/ops/intake-wizard'
 
 export type PortalClient = { id: string; displayName: string; contactName: string | null; intake: IntakeWithWizard; businessId: string }
 
@@ -158,4 +158,11 @@ export async function linkWizardClient(c: { id: string; displayName: string; con
   if (!plan) return c
   const intake = (await updateIntake(c.id, (cur) => withBoardPlan(cur as IntakeWithWizard, plan, 'board'))) as IntakeWithWizard
   return { ...c, intake }
+}
+
+/** PORTAL_INTAKE_WIZARD: where the dashboard's "Finish your setup" link points, or null for no link. Read only. */
+export async function dashboardSetupLink(businessId: string): Promise<string | null> {
+  if (!portalIntakeWizardEnabled()) return null
+  const e = await db.engagement.findUnique({ where: { businessId }, select: { stage: true, intake: true } })
+  return setupUnfinished(e ? { stage: e.stage, intake: readIntake(e.intake) as IntakeWithWizard } : null) ? '/onboarding/intake' : null
 }
