@@ -10,7 +10,9 @@
 // (runChiefAfterPhotos), and when ads, research or web runs were in the job to write the
 // report. A job with only photo runs closes as done after that. A job that already reported
 // (awaiting_approval) closes as done when its last approval is no longer
-// pending or being applied.
+// pending or being applied. A weekly ads review job (every run kind ads_review, or an apply
+// run of one of its approvals) gets its report written in code (ads-review.ts reportReviewJob),
+// not by the chief.
 
 import { db } from '@/lib/db'
 
@@ -18,7 +20,7 @@ const ACTIVE = ['queued', 'running', 'dispatched']
 const SPECIALISTS = ['ads', 'research', 'web', 'photo']
 
 export async function onSpecialistRunEnded(jobId: string) {
-  const runs = await db.agentRun.findMany({ where: { jobId, agent: { in: SPECIALISTS } }, select: { status: true, agent: true } })
+  const runs = await db.agentRun.findMany({ where: { jobId, agent: { in: SPECIALISTS } }, select: { status: true, agent: true, kind: true, mode: true } })
   if (!runs.length || runs.some((r) => ACTIVE.includes(r.status))) return
   const chiefBusy = await db.agentRun.count({ where: { jobId, agent: 'chief', status: { in: ACTIVE } } })
   if (chiefBusy) return
@@ -27,6 +29,14 @@ export async function onSpecialistRunEnded(jobId: string) {
   if (claimed.count === 0) {
     const waiting = await db.opsApproval.count({ where: { jobId, status: { in: ['pending', 'approved'] } } })
     if (!waiting) await db.opsJob.updateMany({ where: { id: jobId, status: 'awaiting_approval' }, data: { status: 'done' } })
+    return
+  }
+  const review = await import('./ads-review')
+  if (review.isReviewJob(runs)) {
+    await review.reportReviewJob(jobId).catch(async (err) => {
+      console.error('[hq] review report failed:', err instanceof Error ? err.message : err)
+      await db.opsJob.updateMany({ where: { id: jobId, status: 'reporting' }, data: { status: 'failed', summary: `review report failed: ${err instanceof Error ? err.message : String(err)}` } })
+    })
     return
   }
   // chief.ts imports ads.ts, which imports this file: load the chief lazily.

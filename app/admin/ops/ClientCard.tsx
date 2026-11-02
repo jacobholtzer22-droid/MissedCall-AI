@@ -11,7 +11,7 @@
 import type { ReactNode } from 'react'
 import Link from 'next/link'
 import type { BoardEngagement } from '@/lib/ops/board'
-import { adsState, derivedStatusLine, waitingLine } from '@/lib/ops/client-status'
+import { adsState, adsWeekLine, derivedStatusLine, waitingLine } from '@/lib/ops/client-status'
 import { Age, HealthDot } from '../ui'
 import { StagePill, detroitDate, money } from './opsUi'
 
@@ -32,6 +32,7 @@ export function ClientCard({
 }) {
   const status = e.statusLine ?? derivedStatusLine(e)
   const waiting = waitingLine(e)
+  const adsWeek = adsWeekLine(e.latestAdsReview)
   const ads = adsState(e)
   const due = e.nextFollowUpAt && new Date(e.nextFollowUpAt) <= new Date()
   return (
@@ -73,6 +74,7 @@ export function ClientCard({
             }`}
           >
             Ads: {ads}
+            {adsWeek ? `, ${adsWeek}` : ''}
           </span>
         )}
       </span>

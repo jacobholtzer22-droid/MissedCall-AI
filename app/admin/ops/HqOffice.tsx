@@ -149,6 +149,7 @@ function DeskCard({
         </button>
       )}
       {persona.key === 'research' && state !== 'working' && <LearningsButton />}
+      {persona.key === 'ads' && <ReviewButton />}
     </div>
   )
 }
@@ -189,6 +190,66 @@ function LearningsButton() {
           <button type="button" disabled={busy} onClick={() => run(true)} className={`${btn} border-teal-600/60`}>
             Write learnings
           </button>
+        )}
+      </div>
+      {line && (
+        <p className="text-xs text-gray-400" aria-live="polite">
+          {line}
+        </p>
+      )}
+    </div>
+  )
+}
+
+type ReviewStart = { jobId: string | null; dryRun: boolean; runs: { client: string }[]; skipped: { name: string; reason: string }[]; failed: { client: string; error: string }[]; error?: string }
+
+/**
+ * The Ads desk's weekly review, on demand: one click asks, the second starts it
+ * (live, or a dry run that sends every write validate_only and files nothing).
+ * The report lands in the chat when the last account is done.
+ */
+function ReviewButton() {
+  const [asking, setAsking] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [line, setLine] = useState<string | null>(null)
+  const start = async (dry: boolean) => {
+    setBusy(true)
+    setAsking(false)
+    setLine('Queuing the review…')
+    try {
+      const res = await fetch(`/api/admin/ops/ads/review${dry ? '?dry=1' : ''}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' })
+      const data = (await res.json()) as ReviewStart
+      if (!res.ok) throw new Error(data.error ?? `HTTP ${res.status}`)
+      setLine(
+        data.jobId
+          ? `${dry ? 'Dry run' : 'Review'} started on ${data.runs.length} account${data.runs.length === 1 ? '' : 's'}${data.skipped.length ? `, ${data.skipped.length} skipped` : ''}. The report lands in the chat.`
+          : `Nothing to review: ${data.skipped.map((s) => `${s.name} (${s.reason})`).join(', ') || 'no ads running'}`
+      )
+    } catch (err) {
+      setLine(`Review failed to start: ${err instanceof Error ? err.message : String(err)}`)
+    }
+    setBusy(false)
+  }
+  const btn = 'inline-flex items-center justify-center min-h-[44px] px-3 rounded-lg border border-gray-700 bg-gray-800 hover:bg-gray-700 text-sm text-gray-100 disabled:opacity-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500'
+  return (
+    <div className="space-y-2" onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
+      <div className="flex flex-wrap gap-2">
+        {!asking ? (
+          <button type="button" disabled={busy} onClick={() => setAsking(true)} className={btn}>
+            Run weekly review
+          </button>
+        ) : (
+          <>
+            <button type="button" disabled={busy} onClick={() => start(false)} className={`${btn} border-emerald-600/60`}>
+              Review every running account
+            </button>
+            <button type="button" disabled={busy} onClick={() => start(true)} className={btn}>
+              Dry run
+            </button>
+            <button type="button" disabled={busy} onClick={() => setAsking(false)} className={btn}>
+              Cancel
+            </button>
+          </>
         )}
       </div>
       {line && (

@@ -30,6 +30,7 @@ import type { Prisma } from '@prisma/client'
 import { db } from '@/lib/db'
 import { AGENT_MODEL_DEFAULT, type ApiMessage } from './anthropic'
 import { checkupNote } from '@/lib/ops/ads-checkup'
+import { REVIEW_PROPOSABLE } from './ads-gates'
 import { ADS_APPLY_TOOLS, CHECKUP_PROPOSABLE, adsTools, campaignStates, checkProposal, enableFacts, isNeverTouch, missingAdsEnv, setAdsStep, type AdsToolContext } from './ads-tools'
 import { loadGateClient } from '@/lib/ops/gate-data'
 import { enableGate, enableHold, trackingOk, type GateClient } from '@/lib/ops/launch-gate'
@@ -145,8 +146,8 @@ async function syncAdsStep(runId: string, ctx: AdsToolContext, mode: 'work' | 'a
 
 // ── Starting and running ────────────────────────────────────────────────────
 
-type AdsApproval = { id: string; action: string; args: Record<string, unknown>; checkup?: boolean; decidedBy?: string; decidedVia?: string }
-type AdsInput = { instructions: string; customerId: string; client: string; dry: boolean; allow?: string[]; approval?: AdsApproval; approvalId?: string; checkup?: boolean }
+type AdsApproval = { id: string; action: string; args: Record<string, unknown>; checkup?: boolean; review?: boolean; decidedBy?: string; decidedVia?: string }
+export type AdsInput = { instructions: string; customerId: string; client: string; dry: boolean; allow?: string[]; approval?: AdsApproval; approvalId?: string; checkup?: boolean; review?: boolean }
 
 export async function adsClients(): Promise<{ id: string; name: string; customerId: string }[]> {
   const rows = await db.engagement.findMany({
@@ -171,13 +172,15 @@ export async function startAdsRun(opts: {
   dry?: boolean
   /** ADS_WEEKLY_CHECKUP: a read-and-propose work run on a bound account. */
   checkup?: boolean
+  /** Weekly ads review (ads-review.ts): kind ads_review, run by runAdsReviewTask, created queued. */
+  review?: boolean
 }) {
   const missing = missingAdsEnv()
   if (missing.length) throw new AdsOffline(`Ads specialist ${ADS_OFFLINE} (${missing.join(', ')})`)
   const mode = opts.mode ?? 'work'
   if (mode === 'apply') {
     if (!opts.approval) throw new Error('an apply run needs the approved proposal')
-    const bad = checkProposal(opts.approval.action, opts.approval.args, { checkup: opts.approval.checkup === true })
+    const bad = checkProposal(opts.approval.action, opts.approval.args, { checkup: opts.approval.checkup === true, review: opts.approval.review === true })
     if (bad) throw new Error(`the approved proposal cannot be applied: ${bad}`)
   }
   const e = await db.engagement.findUnique({
@@ -192,6 +195,7 @@ export async function startAdsRun(opts: {
   // No id on the board: a work run finds the account under the manager and binds it (bind_account).
   if (!customerId && mode === 'apply') throw new Error(`${client} has no Google Ads customer id on the board`)
   if (opts.checkup && (mode !== 'work' || !customerId)) throw new Error(`a check-up needs a work run on a bound account; ${client} has none`)
+  if (opts.review && (mode !== 'work' || !customerId)) throw new Error(`a weekly review needs a bound account; ${client} has none`)
   const input: AdsInput = {
     instructions: opts.instructions,
     customerId,
@@ -199,10 +203,12 @@ export async function startAdsRun(opts: {
     dry: Boolean(opts.dry),
     ...(mode === 'apply' && opts.approval ? { allow: [opts.approval.action], approval: opts.approval, approvalId: opts.approval.id } : {}),
     ...(opts.checkup ? { checkup: true } : {}),
+    ...(opts.review ? { review: true } : {}),
   }
   return createRun({
     agent: 'ads',
-    kind: 'ads_task',
+    kind: opts.review ? 'ads_review' : 'ads_task',
+    queued: opts.review,
     mode,
     engagementId: opts.engagementId,
     jobId: opts.jobId,
@@ -294,6 +300,7 @@ export async function runAdsTask(runId: string) {
       writes: [],
       ...(input.checkup ? { checkup: true } : {}),
       ...(input.approval?.checkup ? { applyExtra: CHECKUP_PROPOSABLE } : {}),
+      ...(input.approval?.review ? { applyExtra: REVIEW_PROPOSABLE } : {}),
     }
     const loop = (messages: ApiMessage[]) =>
       runAgentLoop({

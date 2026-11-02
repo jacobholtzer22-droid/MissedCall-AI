@@ -69,7 +69,7 @@ export function HqTab({ hq }: { hq: HqFeedState }) {
       </div>
 
       <div data-ops-panel="chat" className="flex-1 min-h-0 lg:h-full">
-        <Chat messages={hq.messages} jobs={hq.feed?.jobs ?? []} thinking={runs.some((r) => r.agent === 'chief' && isActive(r))} onSend={hq.send} fill />
+        <Chat messages={hq.messages} jobs={hq.feed?.jobs ?? []} thinking={runs.some((r) => r.agent === 'chief' && isActive(r))} onSend={hq.send} approvals={approvals} onDecide={hq.decide} fill />
       </div>
 
       {openRun && <RunDrawer runId={openRun} liveEvents={hq.events} runs={runs} onClose={() => setOpenRun(null)} onStop={hq.stop} />}

@@ -18,6 +18,11 @@ export type OpsAlertCode =
   | 'onboarding_stale'
   | 'follow_up_due'
   | 'no_owner_contact'
+  | 'ads_tag_unverified'
+  | 'ads_no_conversions'
+  | 'ads_budget_limited'
+  | 'ads_disapproved'
+  | 'ads_zero_spend'
 
 export interface OpsAlert {
   code: OpsAlertCode
@@ -30,6 +35,60 @@ export const OPS_ALERT_THRESHOLDS = {
   onboardingStaleDays: 14,
   /** no_subscription: yellow until this many days after upfrontPaidAt, red after. */
   noSubscriptionGraceDays: 30,
+  /** Ads alerts read the latest weekly ads review only while it is this fresh. */
+  adsReviewMaxAgeDays: 14,
+  /** ads_no_conversions: 30-day spend at or above this with zero conversions. */
+  adsNoConversionsCost: 100,
+  /** ads_budget_limited: share of search impressions lost to budget (7 days) above this. */
+  adsLostToBudget: 0.2,
+}
+
+/** The subset of the latest AdsReview the ads alerts read (lib/ops/hq/ads-review.ts writes it). */
+export interface AdsReviewAlertInput {
+  trackingState: string
+  createdAt: Date | string
+  metrics: {
+    d7?: { cost?: number; clicks?: number; conversions?: number; lostToBudget?: number | null } | null
+    d30?: { cost?: number; clicks?: number; conversions?: number } | null
+    enabledCampaigns?: number
+    disapprovedAds?: number
+  } | null
+}
+
+const usd0 = (n: number) => `$${Math.round(n)}`
+const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? '' : 's'}`
+
+/**
+ * The five ads alerts, from the latest weekly ads review (ignored once it is
+ * older than adsReviewMaxAgeDays). Also what the review stores as its flags.
+ *   ads_tag_unverified  red     an enabled campaign and conversion tracking unverified
+ *   ads_disapproved     red     an ad disapproved
+ *   ads_no_conversions  yellow  30d spend >= $100, zero conversions, tracking recording
+ *   ads_budget_limited  yellow  over 20% of search impressions lost to budget (7d)
+ *   ads_zero_spend      yellow  an enabled campaign and zero spend in 7 days
+ */
+export function adsReviewAlerts(review: AdsReviewAlertInput | null | undefined, now: Date): OpsAlert[] {
+  if (!review) return []
+  const at = time(review.createdAt)
+  if (at === null || now.getTime() - at > OPS_ALERT_THRESHOLDS.adsReviewMaxAgeDays * DAY_MS) return []
+  const T = OPS_ALERT_THRESHOLDS
+  const m = review.metrics ?? {}
+  const d7 = m.d7 ?? {}
+  const d30 = m.d30 ?? {}
+  const enabled = m.enabledCampaigns ?? 0
+  const out: OpsAlert[] = []
+  if (enabled > 0 && review.trackingState === 'unverified') {
+    out.push({ code: 'ads_tag_unverified', severity: 'red', message: `Conversion tracking unverified, ${plural(enabled, 'campaign')} running, ${usd0(d7.cost ?? 0)} spent in 7 days` })
+  }
+  if ((m.disapprovedAds ?? 0) > 0) out.push({ code: 'ads_disapproved', severity: 'red', message: `${plural(m.disapprovedAds ?? 0, 'ad')} disapproved` })
+  if (review.trackingState === 'recording' && (d30.cost ?? 0) >= T.adsNoConversionsCost && (d30.conversions ?? 0) === 0) {
+    out.push({ code: 'ads_no_conversions', severity: 'yellow', message: `${usd0(d30.cost ?? 0)} in 30 days, ${d30.clicks ?? 0} clicks, 0 conversions` })
+  }
+  if ((d7.lostToBudget ?? 0) > T.adsLostToBudget) {
+    out.push({ code: 'ads_budget_limited', severity: 'yellow', message: `Lost ${Math.round((d7.lostToBudget ?? 0) * 100)}% of search impressions to budget in 7 days` })
+  }
+  if (enabled > 0 && (d7.cost ?? 0) === 0) out.push({ code: 'ads_zero_spend', severity: 'yellow', message: `${plural(enabled, 'campaign')} enabled, $0 spent in 7 days` })
+  return out
 }
 
 type DateLike = Date | string | null
@@ -72,7 +131,8 @@ export function computeEngagementAlerts(
   engagement: EngagementAlertInput,
   deliverables: DeliverableAlertInput[],
   business: BusinessAlertInput | null,
-  now: Date
+  now: Date,
+  adsReview?: AdsReviewAlertInput | null
 ): { alerts: OpsAlert[]; health: OpsHealth } {
   const e = engagement
   // Ignored rows (test or junk) get no alerts at all; health is 'gray'.
@@ -168,6 +228,9 @@ export function computeEngagementAlerts(
       alerts.push({ code: 'onboarding_stale', severity: 'yellow', message: `In ${e.stage.replace('_', ' ')} for ${days} days` })
     }
   }
+
+  // The weekly ads review's alerts, for a client still buying ads.
+  if (services.includes('ads') && e.stage !== 'churned') alerts.push(...adsReviewAlerts(adsReview, now))
 
   // follow_up_due (yellow)
   const followUp = time(e.nextFollowUpAt)

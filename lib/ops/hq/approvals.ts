@@ -177,7 +177,7 @@ export async function decideApproval(
       jobId: approval.jobId,
       mode: 'apply',
       // A check-up's proposal may name one of its cut-waste work tools (lib/ops/hq/ads-tools.ts CHECKUP_PROPOSABLE).
-      approval: { id, action, args, ...(detail.checkup === true ? { checkup: true } : {}), ...(stamp ? { decidedBy: stamp.decidedBy, decidedVia: stamp.decidedVia } : {}) },
+      approval: { id, action, args, ...(detail.checkup === true ? { checkup: true } : {}), ...(detail.review === true ? { review: true } : {}), ...(stamp ? { decidedBy: stamp.decidedBy, decidedVia: stamp.decidedVia } : {}) },
       instructions: [`Jacob approved: ${approval.title}.`, detail.why ? `Why: ${String(detail.why)}` : '', approval.expected ? `Expected: ${approval.expected}` : '']
         .filter(Boolean)
         .join('\n'),

@@ -18,6 +18,8 @@ export async function createRun(data: {
   jobId?: string | null
   deliverableId?: string | null
   input: Record<string, unknown>
+  /** Created queued (not started): a worker claims it later (the weekly ads review). */
+  queued?: boolean
 }) {
   const run = await db.agentRun.create({
     data: {
@@ -27,12 +29,12 @@ export async function createRun(data: {
       engagementId: data.engagementId,
       jobId: data.jobId ?? null,
       deliverableId: data.deliverableId ?? null,
-      status: 'running',
-      startedAt: new Date(),
+      status: data.queued ? 'queued' : 'running',
+      startedAt: data.queued ? null : new Date(),
       input: data.input as Prisma.InputJsonObject,
     },
   })
-  await emit(run.id, 'status', 'Started')
+  await emit(run.id, 'status', data.queued ? 'Queued' : 'Started')
   return run
 }
 

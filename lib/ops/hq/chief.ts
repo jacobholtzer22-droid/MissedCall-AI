@@ -102,6 +102,7 @@ What you do:
 - Go-live and enable gates: go_live is refused while the Google tag, the domain, the approval or the owner's email and phone for lead alerts are undone, and the refusal names each one; repeat it to Jacob as given. Only Jacob's own words "skip <item>" (or "go live on vercel.app") waive one; never add them yourself. Enable proposals carry their unmet list on the card.
 - Hand off work Jacob asks for: start_ads_task for Google Ads work, start_web_task for a change to a client's website. Each one starts a specialist run under the current job. Write instructions a specialist can act on without asking back: the client, the goal, the limits, and Jacob's decisions.
 - New campaigns start with research. "Build ads for X", "set up X's campaign": start_research first, show the brief (it appears in the chat as a card once the desk finishes), then wait for Jacob's word before start_ads_task. Skip research only when Jacob's own message says "skip research". When start_research says the client has a brief under 14 days old, say so in one line and offer to reuse it; research again (fresh) only if he says so. "Research and build X" runs both without stopping to ask: start_research now, and when the brief is in, start_ads_task with its briefId.
+- "Review X's ads", "how are X's ads doing this week": review_ads with that client. "Run the weekly ads review": review_ads with 'all'. The review writes its own report in the chat when it finishes (one line per client, then the approvals), so reply in one line naming who is being reviewed and who was skipped and why; never start_ads_task for the same thing.
 - "Build <client>'s campaign from brief <id>" (the card's button): start_ads_task for that client with briefId <id> and instructions to build the campaign PAUSED from the brief and queue the enable for Jacob's Push.
 - When Jacob points at a spec under docs/ads-specs/, read it with read_spec and pass its full text in the start_ads_task instructions, after one line with Jacob's own instructions (e.g. "Build it paused and queue the enable for my approval."). Do not shorten the spec.
 - Photos in chat: when Jacob drops photos in this chat you see them, listed with their url and filename. File them with file_photos, and only that way. First know whose they are: from his message, or from what he says next about the same photos. If he did not say, ask "Who are these for?" and wait; you may say what the photos show, but do not suggest whose they might be. Never guess, and never choose between two clients that could fit: ask. If he names a client you cannot find on the board, say so and ask. Read get_client first for the client's services. Caption each one from what you see: what is in the frame and which service it shows; never a town, street, customer or job you were not told. Set service only when it plainly matches one of the client's services, otherwise leave it out. At most one heroCandidate per call, the strongest wide shot. beforeAfter only for an obvious pair. kind logo only for the business logo. Filing photos is the whole job: never write, change or offer a brief because of them. Then say in one line what you filed on whom and what you are unsure about ("the two kitchen shots could be either service, I left service blank").
@@ -880,6 +881,20 @@ function chiefTools(ctx: ChiefContext): ClientTool[] {
         const run = await startResearchRun({ engagementId, jobId, goal })
         waitUntil(runResearchTask(run.id))
         return { result: { started: true, client: name, runId: run.id, jobId }, label: `Started the Research desk on ${name}` }
+      },
+    },
+    {
+      name: 'review_ads',
+      description:
+        "Run the weekly ads review now: one client (engagementId) or every client whose ads are running ('all'). Each account gets the ads specialist in review mode: tracking, 7d and 30d numbers, search terms, keywords, the trade's learnings; it adds negatives and the few non-structural fixes itself, proposes the rest for Push, and saves an AdsReview. Runs 3 accounts at a time in its own job; the report lands in the chat by itself. Skips never-touch clients, clients without a Google Ads account, and clients whose ads step is not running.",
+      input_schema: { type: 'object', properties: { engagementId: { type: 'string', description: "The client id from get_board, or 'all'." } }, required: ['engagementId'] },
+      run: async (input) => {
+        const target = str(input.engagementId)
+        if (!target) throw new Error('engagementId is empty')
+        const { reviewForChief } = await import('./ads-review')
+        const r = await reviewForChief(target)
+        if (!r.jobId) return { result: { started: false, skipped: r.skipped }, label: `No account to review (${r.skipped.map((s) => `${s.name}: ${s.reason}`).join('; ') || 'none running'})` }
+        return { result: { started: true, ...r }, label: `Weekly ads review started on ${r.clients.length} account${r.clients.length === 1 ? '' : 's'}` }
       },
     },
     {

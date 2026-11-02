@@ -26,6 +26,7 @@ import { db } from '@/lib/db'
 import { getGoogleAdsClient } from '@/lib/google-ads'
 import { STEP_CATALOG, defaultWaitingOn, stepFor } from '@/lib/ops/steps'
 import { classifyConversionActions, parseSendTo, type ConversionRow } from '@/lib/ops/tracking'
+import { REVIEW_AUTO_TOOLS, REVIEW_PROPOSABLE, cpcCutAllowed, type TrackingState } from './ads-gates'
 import { emit, noEmDash, oneLine } from './events'
 import { validate, type ClientTool } from './loop'
 
@@ -67,11 +68,24 @@ export type AdsToolContext = {
   /** set_ads_step ran in this run: the agent placed the step itself, so ads.ts leaves it. */
   stepSet?: boolean
   /** Every write tool call that reached Google, in order, with its args (ads.ts moves the board after enable and pause). */
-  writes: { tool: string; changed: boolean; args: Record<string, unknown> }[]
+  writes: { tool: string; changed: boolean; args: Record<string, unknown>; result?: unknown; at?: string }[]
   /** ADS_WEEKLY_CHECKUP: a read-and-propose run. Only CHECKUP_READ_TOOLS are given; no write, not even the AUTO ones. */
   checkup?: boolean
   /** Apply mode for a check-up's approved proposal: the one CHECKUP_PROPOSABLE work tool it names may run. */
   applyExtra?: string[]
+  /**
+   * Weekly ads review (lib/ops/hq/ads-review.ts): the run gets the reads, read_learnings
+   * and only REVIEW_AUTO_TOOLS as writes, each checked here against the gates
+   * (ads-gates.ts) before it reaches Google.
+   */
+  review?: {
+    tracking: TrackingState
+    tradeKey: string | null
+    /** Median CPC across the trade's accounts in the latest learnings row; null when unknown. */
+    tradeMedianCpc: number | null
+    /** Ad groups with a disapproved ad: the only ones upsert_rsa may touch. */
+    disapprovedAdGroups: string[]
+  }
 }
 
 // ── Plumbing ────────────────────────────────────────────────────────────────
@@ -1373,11 +1387,10 @@ export const ADS_WORK_TOOLS = WORK_WRITES.map((t) => t.name)
 export const ADS_APPLY_TOOLS = APPLY_WRITES.map((t) => t.name)
 
 /** A proposal's action and args, checked against the apply tool's schema (customerId is added at apply time). */
-export function checkProposal(action: string, args: Record<string, unknown>, opts: { checkup?: boolean } = {}): string | null {
-  const tool =
-    APPLY_WRITES.find((t) => t.name === action) ??
-    (opts.checkup && CHECKUP_PROPOSABLE.includes(action) ? WORK_WRITES.find((t) => t.name === action) : undefined)
-  if (!tool) return `action "${action}" is not one of ${(opts.checkup ? [...ADS_APPLY_TOOLS, ...CHECKUP_PROPOSABLE] : ADS_APPLY_TOOLS).join(', ')}`
+export function checkProposal(action: string, args: Record<string, unknown>, opts: { checkup?: boolean; review?: boolean } = {}): string | null {
+  const extra = [...(opts.checkup ? CHECKUP_PROPOSABLE : []), ...(opts.review ? REVIEW_PROPOSABLE : [])]
+  const tool = APPLY_WRITES.find((t) => t.name === action) ?? (extra.includes(action) ? WORK_WRITES.find((t) => t.name === action) : undefined)
+  if (!tool) return `action "${action}" is not one of ${[...ADS_APPLY_TOOLS, ...extra.filter((n) => !ADS_APPLY_TOOLS.includes(n))].join(', ')}`
   if ('customerId' in args || 'validateOnly' in args) return 'args must not carry customerId or validateOnly'
   const schema = { ...tool.input_schema, required: (tool.input_schema.required ?? []).filter((k) => k !== 'customerId') }
   const invalid = validate(schema, args)
@@ -1395,14 +1408,19 @@ export function adsTools(ctx: AdsToolContext): ClientTool[] {
   // ADS_WEEKLY_CHECKUP: reads only. No write tool is handed to the model at all, so
   // neither the playbook's AUTO writes nor anything else can run (see checkupTools).
   if (ctx.checkup) return checkupTools(ctx)
-  const extra = ctx.mode === 'apply' ? WORK_WRITES.filter((t) => ctx.applyExtra?.includes(t.name) && CHECKUP_PROPOSABLE.includes(t.name)) : []
-  const writes = ctx.mode === 'work' ? [...WORK_WRITES, SET_ADS_STEP] : [...APPLY_WRITES, ...extra].filter((t) => ctx.allow?.includes(t.name))
+  const extra = ctx.mode === 'apply' ? WORK_WRITES.filter((t) => ctx.applyExtra?.includes(t.name) && [...CHECKUP_PROPOSABLE, ...REVIEW_PROPOSABLE].includes(t.name)) : []
+  // Weekly review: only the three changes it may make any week, each gated in reviewGuard.
+  const writes = ctx.review
+    ? WORK_WRITES.filter((t) => REVIEW_AUTO_TOOLS.includes(t.name))
+    : ctx.mode === 'work'
+      ? [...WORK_WRITES, SET_ADS_STEP]
+      : [...APPLY_WRITES, ...extra].filter((t) => ctx.allow?.includes(t.name))
   // A work run with no account yet starts by finding and binding one.
-  const account = ctx.mode === 'work' && ctx.findAccount ? [FIND_CLIENT_ACCOUNT, PEEK_ACCOUNT, BIND_ACCOUNT] : []
+  const account = ctx.mode === 'work' && ctx.findAccount && !ctx.review ? [FIND_CLIENT_ACCOUNT, PEEK_ACCOUNT, BIND_ACCOUNT] : []
   const unlocked = new Set([...account, SET_ADS_STEP].map((t) => t.name))
   if (ctx.mode === 'apply' && !writes.length) throw new Error('apply mode needs the approved proposal’s tool in allow')
   const writeNames = new Set(writes.filter((t) => t !== SET_ADS_STEP).map((t) => t.name))
-  return [...account, ...READS, ...writes].map((t) => ({
+  return [...account, ...READS, ...(ctx.review ? [READ_LEARNINGS] : []), ...writes].map((t) => ({
     name: t.name,
     description: t.description,
     input_schema: t.input_schema,
@@ -1421,11 +1439,66 @@ export function adsTools(ctx: AdsToolContext): ClientTool[] {
           throw new Error(`apply mode makes only the approved call: ${ctx.approved?.action}(${JSON.stringify(want)})`)
         }
       }
+      if (isWrite && ctx.review) await reviewGuard(ctx, t.name, input)
       const out = await t.run(ctx, input)
-      if (isWrite) ctx.writes.push({ tool: t.name, changed: Boolean((out.result as { changed?: boolean })?.changed), args: input })
+      if (isWrite) ctx.writes.push({ tool: t.name, changed: Boolean((out.result as { changed?: boolean })?.changed), args: input, result: out.result, at: new Date().toISOString() })
       return out
     },
   }))
+}
+
+// ── Weekly ads review ───────────────────────────────────────────────────────
+
+/** The trade's monthly learnings row (lib/ops/hq/learnings.ts), for the weekly review. Reads the platform database only. */
+const READ_LEARNINGS: Def = {
+  name: 'read_learnings',
+  description:
+    "The newest per-trade learnings row for this client's trade (or the tradeKey given): each account's cost, conversions and CPC, the trade's converting and wasted search terms, the negatives other accounts use, and its summary.",
+  input_schema: { type: 'object', properties: { tradeKey: { type: 'string', description: 'Default: this client’s trade.' } } },
+  run: async (ctx, i) => {
+    const key = String(i.tradeKey ?? ctx.review?.tradeKey ?? '').trim()
+    if (!key) return { result: { error: 'this client has no trade on the board' }, label: 'No trade for learnings' }
+    const row = await db.adsTradeLearning.findFirst({ where: { tradeKey: key }, orderBy: { periodStart: 'desc' } })
+    if (!row) return { result: { tradeKey: key, error: 'no learnings for this trade yet' }, label: `No learnings for ${key}` }
+    const { id: _id, ...rest } = row
+    return { result: rest, label: `Learnings for ${key}, ${row.periodStart.toISOString().slice(0, 10)} to ${row.periodEnd.toISOString().slice(0, 10)}` }
+  },
+}
+
+const dollars = (n: number | null) => (n === null ? 'unknown' : `$${n}`)
+
+/**
+ * A review write must pass its gate before it reaches Google:
+ *   set_ad_group_cpc        never while tracking is unverified; only an ad group over 2x
+ *                           the trade median CPC with zero conversions on 30+ clicks in
+ *                           30 days (the tool itself refuses anything but a lower bid)
+ *   upsert_rsa              only in an ad group with a disapproved ad
+ *   add_campaign_negatives  any week
+ */
+async function reviewGuard(ctx: AdsToolContext, tool: string, input: Record<string, any>) {
+  const rv = ctx.review!
+  if (tool === 'set_ad_group_cpc') {
+    if (rv.tracking === 'unverified') throw new Error('conversion tracking is unverified: no bid change this week; lead the report with the tracking fix')
+    const id = digits(input.adGroupId, 'adGroupId')
+    const r = range(30, 30)
+    const rows = await query(ctx, `SELECT ad_group.id, metrics.clicks, metrics.conversions, metrics.cost_micros FROM ad_group WHERE ad_group.id = ${id} AND segments.date BETWEEN '${r.start}' AND '${r.end}'`)
+    const clicks = rows.reduce((n, x) => n + Number(x.metrics.clicks ?? 0), 0)
+    const conversions = rows.reduce((n, x) => n + Number(x.metrics.conversions ?? 0), 0)
+    const cost = rows.reduce((n, x) => n + Number(x.metrics.cost_micros ?? 0), 0)
+    const avgCpc = clicks ? Math.round(cost / clicks / 10_000) / 100 : null
+    if (!cpcCutAllowed({ avgCpc, tradeMedianCpc: rv.tradeMedianCpc, conversions30d: conversions, clicks30d: clicks })) {
+      throw new Error(
+        `ad group ${id} does not qualify for a CPC cut this week: avg CPC ${dollars(avgCpc)}, trade median ${dollars(rv.tradeMedianCpc)}, ${conversions} conversions on ${clicks} clicks in 30 days (needs over 2x the median, 0 conversions, 30+ clicks). Put it in proposals instead.`
+      )
+    }
+    return
+  }
+  if (tool === 'upsert_rsa') {
+    const id = digits(input.adGroupId, 'adGroupId')
+    if (!rv.disapprovedAdGroups.includes(id)) throw new Error(`ad group ${id} has no disapproved ad; a review only replaces a disapproved RSA. Put other ad changes in proposals.`)
+    return
+  }
+  if (tool !== 'add_campaign_negatives') throw new Error(`a weekly review does not make ${tool} itself; propose it`)
 }
 
 /** A check-up run's tools: CHECKUP_READ_TOOLS only, locked to the run's account, refusing anything else. */

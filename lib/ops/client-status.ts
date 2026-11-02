@@ -68,6 +68,18 @@ export function waitingLine(e: Client & { statusLine?: string | null }): string 
   return `Waiting on ${WHO[d.waitingOn!]}: ${d.waitingNote || d.stepLabel || d.step}`
 }
 
+/**
+ * The ads line's weekly number from the latest weekly ads review: 7-day cost
+ * per conversion, "no conversions" when tracking records and nothing came in,
+ * null otherwise (no review, or tracking not recording).
+ */
+export function adsWeekLine(r: { trackingState: string; d7: { conversions: number; costPerConversion: number | null } } | null | undefined): string | null {
+  if (!r) return null
+  if (r.d7.conversions > 0 && r.d7.costPerConversion !== null) return `$${Math.round(r.d7.costPerConversion)}/conv (7d)`
+  if (r.trackingState === 'recording') return 'no conversions'
+  return null
+}
+
 export function adsState(e: Client): string | null {
   if (!e.services.includes('ads')) return null
   const d = e.deliverables.find((x) => x.type === 'ads')

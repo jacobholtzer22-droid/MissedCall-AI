@@ -8,6 +8,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { legalLines, type AdvertiserLegal } from '@/lib/ops/ads-billing'
+import { FLAG_LABEL } from '@/lib/ops/hq/ads-review-report'
 import Link from 'next/link'
 import { ExternalLink, X } from 'lucide-react'
 import type { BoardActivity, BoardDeliverable, BoardEngagement } from '@/lib/ops/board'
@@ -216,6 +217,7 @@ export function EngagementPanel({ engagement: e, focus, actions, unmatched, unma
                     actions={actions}
                     onRefresh={onRefresh}
                     latestBrief={d.type === 'ads' ? e.latestAdsBrief : null}
+                    latestReview={d.type === 'ads' ? e.latestAdsReview : null}
                   />
                 ))}
               </div>
@@ -629,6 +631,7 @@ function DeliverableCard({
   actions,
   onRefresh,
   latestBrief = null,
+  latestReview = null,
 }: {
   engagementId: string
   displayName: string
@@ -637,6 +640,8 @@ function DeliverableCard({
   onRefresh: () => Promise<void>
   /** Ads only: the client's newest Research desk brief. */
   latestBrief?: BoardEngagement['latestAdsBrief']
+  /** Ads only: the client's newest weekly ads review. */
+  latestReview?: BoardEngagement['latestAdsReview']
 }) {
   const type = d.type as DeliverableType
   const editable = EVIDENCE_FIELDS_FOR_TYPE[type] ?? []
@@ -716,6 +721,8 @@ function DeliverableCard({
           onSave={(v) => save({ waitingNote: v }, { waitingNote: v })}
         />
       </div>
+
+      {latestReview && <AdsThisWeek review={latestReview} />}
 
       {latestBrief && (
         <p className="text-xs text-gray-400" aria-label="Latest campaign brief">
@@ -1299,3 +1306,36 @@ function LogContactForm({
 
 const isAdvertiserLegal = (v: unknown): v is AdvertiserLegal =>
   Boolean(v) && typeof v === 'object' && typeof (v as AdvertiserLegal).legalName === 'string' && typeof (v as AdvertiserLegal).address === 'string' && typeof (v as AdvertiserLegal).zip === 'string'
+
+const REVIEW_TRACKING: Record<string, { label: string; tone: string }> = {
+  unverified: { label: 'Tracking unverified', tone: 'text-red-300' },
+  no_data: { label: 'Tracking verified, no conversions yet', tone: 'text-amber-300' },
+  recording: { label: 'Tracking recording', tone: 'text-emerald-300' },
+}
+
+/** The newest weekly ads review under the ads deliverable: tracking, 7-day numbers, changes, flags, a link to the full review. */
+function AdsThisWeek({ review: r }: { review: NonNullable<BoardEngagement['latestAdsReview']> }) {
+  const t = REVIEW_TRACKING[r.trackingState] ?? { label: r.trackingState, tone: 'text-gray-300' }
+  const usd = (n: number | null) => (n === null ? 'n/a' : `$${n.toFixed(2)}`)
+  return (
+    <div className="rounded border border-gray-800 px-3 py-2 text-xs text-gray-300 space-y-1" aria-label="Ads this week">
+      <p className="flex flex-wrap items-baseline gap-x-2">
+        <span className="font-medium text-gray-200">Ads this week</span>
+        <span className="text-gray-500">
+          reviewed <Age iso={r.createdAt} />
+        </span>
+      </p>
+      <p className={t.tone}>{t.label}</p>
+      <p className="tabular-nums">
+        7 days: {usd(r.d7.cost)} spent, {r.d7.clicks} clicks, {r.d7.conversions} conversion{r.d7.conversions === 1 ? '' : 's'}, {usd(r.d7.costPerConversion)} per conversion
+      </p>
+      <p>
+        {r.changes} change{r.changes === 1 ? '' : 's'} made, {r.proposals} proposal{r.proposals === 1 ? '' : 's'}
+        {r.flags.length ? `, flags: ${r.flags.map((f) => FLAG_LABEL[f] ?? f).join(', ')}` : ''}
+      </p>
+      <a href={`/admin/ops/review/${r.id}`} target="_blank" rel="noreferrer" className="inline-flex items-center min-h-[44px] text-blue-400 hover:text-blue-300">
+        Read the full review
+      </a>
+    </div>
+  )
+}

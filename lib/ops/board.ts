@@ -14,7 +14,7 @@ import { TZDate } from '@date-fns/tz'
 import { endOfDay, startOfDay, startOfMonth } from 'date-fns'
 import { db } from '@/lib/db'
 import { getMarketingBusiness } from '@/lib/marketing-funnel'
-import { computeEngagementAlerts, type OpsAlert, type OpsHealth } from '@/lib/ops/alerts'
+import { computeEngagementAlerts, type AdsReviewAlertInput, type OpsAlert, type OpsHealth } from '@/lib/ops/alerts'
 import type { DeliverableStatus } from '@/lib/ops/types'
 import { isVerifiedMrr, mrrBucketOf } from '@/lib/ops/money'
 import { effectiveStatusOf, stepFor, type StepOwner } from '@/lib/ops/steps'
@@ -34,6 +34,16 @@ import { callPromptList, callPromptWindow, leadCallPromptEnabled, type BoardCall
 export const OPS_TIMEZONE = 'America/Detroit'
 
 const iso = (d: Date | null | undefined): string | null => (d ? d.toISOString() : null)
+
+export type BoardAdsReview = {
+  id: string
+  createdAt: string
+  trackingState: string
+  d7: { cost: number; clicks: number; conversions: number; costPerConversion: number | null }
+  changes: number
+  proposals: number
+  flags: string[]
+}
 
 export type BoardCheck = { key: string; passed: boolean | null; detail: string | null; lastRunAt: string }
 
@@ -111,6 +121,8 @@ export type BoardEngagement = {
   statusAt: string | null
   /** The newest Research desk brief (AdsBrief); null when none. */
   latestAdsBrief: { id: string; createdAt: string; terms: number; dailyBudget: number | null } | null
+  /** The newest weekly ads review (AdsReview); null when none. */
+  latestAdsReview: BoardAdsReview | null
   lastActivityAt: string | null
   business: BoardBusiness | null
   pipelinePerson: { status: string; nextFollowUpAt: string | null; lastContactedAt: string | null } | null
@@ -271,6 +283,15 @@ export async function getOpsBoard(): Promise<OpsBoard> {
     .findMany({ orderBy: [{ engagementId: 'asc' }, { createdAt: 'desc' }], distinct: ['engagementId'], select: { id: true, engagementId: true, createdAt: true, data: true } })
     .catch(() => [])
   const briefBy = new Map(latestBriefs.map((b) => [b.engagementId, b]))
+  // Each client's newest weekly ads review: the ads alerts and the panel's "Ads this week". Caught like the briefs.
+  const latestReviews = await db.adsReview
+    .findMany({
+      orderBy: [{ engagementId: 'asc' }, { createdAt: 'desc' }],
+      distinct: ['engagementId'],
+      select: { id: true, engagementId: true, createdAt: true, trackingState: true, metrics: true, changes: true, proposals: true, flags: true },
+    })
+    .catch(() => [])
+  const reviewBy = new Map(latestReviews.map((r) => [r.engagementId, r]))
 
   // CONFIRM_TRACKING (off by default): one extra read, only when the flag is on.
   const noReplyIds = showRateFlags().confirmTracking ? await noConfirmReplyIds(bookings.map((b) => b.id), now) : null
@@ -315,7 +336,8 @@ export async function getOpsBoard(): Promise<OpsBoard> {
         .map((c) => ({ key: c.key, passed: c.passed, detail: c.detail, lastRunAt: c.lastRunAt.toISOString() }))
         .sort((a, b) => a.key.localeCompare(b.key)),
     }))
-    const { alerts, health } = computeEngagementAlerts(e, e.deliverables, e.business, now)
+    const review = reviewBy.get(e.id)
+    const { alerts, health } = computeEngagementAlerts(e, e.deliverables, e.business, now, review ? { trackingState: review.trackingState, createdAt: review.createdAt, metrics: review.metrics as AdsReviewAlertInput['metrics'] } : null)
     const activities = e.activities.map((a) => ({
       id: a.id,
       kind: a.kind,
@@ -355,6 +377,7 @@ export async function getOpsBoard(): Promise<OpsBoard> {
       statusLine: statusBy.get(e.id)?.body ?? null,
       statusAt: iso(statusBy.get(e.id)?.createdAt),
       latestAdsBrief: briefView(briefBy.get(e.id)),
+      latestAdsReview: reviewView(review),
       lastActivityAt: activities[0]?.createdAt ?? null,
       business: e.business ? { ...e.business, createdAt: e.business.createdAt.toISOString() } : null,
       pipelinePerson: e.pipelinePerson
@@ -594,6 +617,22 @@ async function loadCallPrompts(businessId: string, now: Date): Promise<BoardCall
       })
     : []
   return callPromptList(leads, new Set(booked.map((b) => b.customerPhone)), now)
+}
+
+function reviewView(r: { id: string; createdAt: Date; trackingState: string; metrics: unknown; changes: unknown; proposals: unknown; flags: unknown } | undefined): BoardAdsReview | null {
+  if (!r) return null
+  const d7 = ((r.metrics ?? {}) as { d7?: Record<string, unknown> }).d7 ?? {}
+  const num = (v: unknown) => (typeof v === 'number' ? v : 0)
+  const changes = Array.isArray(r.changes) ? (r.changes as { changed?: boolean }[]).filter((c) => c.changed).length : 0
+  return {
+    id: r.id,
+    createdAt: r.createdAt.toISOString(),
+    trackingState: r.trackingState,
+    d7: { cost: num(d7.cost), clicks: num(d7.clicks), conversions: num(d7.conversions), costPerConversion: typeof d7.costPerConversion === 'number' ? d7.costPerConversion : null },
+    changes,
+    proposals: Array.isArray(r.proposals) ? r.proposals.length : 0,
+    flags: Array.isArray(r.flags) ? (r.flags as unknown[]).map(String) : [],
+  }
 }
 
 function briefView(b: { id: string; createdAt: Date; data: unknown } | undefined) {

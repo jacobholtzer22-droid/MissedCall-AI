@@ -1154,6 +1154,7 @@ model Engagement {
   activities   OpsActivity[]
   agentRuns    AgentRun[]
   adsBriefs    AdsBrief[]
+  adsReviews   AdsReview[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -1410,4 +1411,35 @@ model AdsTradeLearning {
   createdAt       DateTime @default(now())
 
   @@unique([tradeKey, periodStart])
+}
+
+// Weekly ads review (Nov 2026, scripts/sql/2026-11-02_add_ads_review.sql). One row
+// per review run (agent ads, kind ads_review): the numbers the code read, what the
+// run changed, what it proposed, the alert flags, and a short summary. The changes
+// column across reviews, with the apply runs' records, is the ledger the
+// structural gates read (lib/ops/hq/ads-gates.ts).
+model AdsReview {
+  id            String     @id @default(cuid())
+  engagementId  String
+  engagement    Engagement @relation(fields: [engagementId], references: [id], onDelete: Cascade)
+  // The review AgentRun that wrote it.
+  runId         String?
+  customerId    String
+  periodStart   DateTime
+  periodEnd     DateTime
+  // unverified | no_data | recording (lib/ops/hq/ads-gates.ts trackingState)
+  trackingState String
+  // { d7, d30, campaigns } as read by the code, not the model
+  metrics       Json
+  // [{ tool, args, result, changed, campaignId, at }]
+  changes       Json
+  // [{ title, action, args, monthlyCostChange, hold?, approvalId? }]
+  proposals     Json
+  // alert flag codes (ads_tag_unverified, ads_disapproved, ...)
+  flags         Json
+  // 5 to 12 lines of markdown
+  summary       String     @db.Text
+  createdAt     DateTime   @default(now())
+
+  @@index([engagementId, createdAt])
 }

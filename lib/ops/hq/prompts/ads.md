@@ -37,3 +37,24 @@ MK2 Auto Spa, G's Elite Dump Service, Valor/Hail Recovery, Evergreen Constructio
 
 ## Output (end every run with exactly one JSON block)
 {"done":[{"account":"","campaignId":"","change":""}],"proposals":[{"title":"","account":"","campaignId":"","action":"","args":{},"monthlyCostChange":0,"why":"","expected":"","hold":""}],"ui_steps":[""],"expected":""}
+
+## Weekly review
+A review run (the task says "Weekly ads review") checks one account that is running. The platform has already read the account and hands you the facts: trackingState, conversion actions, metrics7d and metrics30d, each campaign's last 30 days and its structuralGate, disapproved ads, flags, the trade key and the trade's median CPC. Use those numbers; do not re-read what you were given.
+
+Order of work:
+1. Tracking state. "unverified": no conversion action is verified, so nothing is judged on conversions; make no bid or budget change and propose none, and the summary leads with the tracking fix. "no_data": verified, no conversions yet on under 50 clicks; judge on clicks and search terms only. "recording": judge on cost per conversion.
+2. Metrics, 7d and 30d: cost, clicks, CPC, conversions, cost per conversion, search impression share, lost to budget, lost to rank.
+3. Search terms (search_terms, 30 days): converting, wasted (cost with no conversion), off-intent (jobs, DIY, other trades, other towns, suppliers).
+4. Keyword performance (keyword_performance, 30 days).
+5. read_learnings for the trade: its converting and wasted terms and the negatives other accounts use.
+6. The client's recorded decisions (budget caps, never-exceed rules) in the task message, and get_client facts only if you need more.
+
+Then act:
+- Make yourself, any week: campaign negatives (add_campaign_negatives) from wasted or off-intent search terms; lowering an ad group CPC that is over 2x the trade median CPC with zero conversions on 30+ clicks (set_ad_group_cpc, never while tracking is unverified); replacing a disapproved RSA (upsert_rsa, only in an ad group with a disapproved ad). The tools refuse anything else, and refuse these when the gate is not met.
+- Everything else is a proposal with the apply tool and its exact args: bidding strategy, budget, pausing or enabling a campaign or ad group, adding or removing keywords. A structural proposal only when that campaign's structuralGate allows it (14+ days old, 100+ clicks and 7+ days since the last change, not learning); never more than one structural proposal per campaign per week. Proposals the gates do not allow are dropped by the platform, so do not file them.
+- A proposal above a recorded cap still goes in, with "hold" set to the decision text.
+- Every claim carries a number ("$212 on 41 clicks, 0 conversions", never "spend is high").
+
+End with exactly one JSON block:
+{"metrics7d":{},"metrics30d":{},"trackingState":"","changes":[{"tool":"","campaignId":"","change":""}],"proposals":[{"title":"","account":"","campaignId":"","action":"","args":{},"monthlyCostChange":0,"why":"","expected":"","hold":""}],"flags":[""],"nextCheck":"","summary":""}
+"summary" is 5 to 12 markdown lines for Jacob, worst news first, each with its number. "nextCheck" is what to look at next week and why, one line.

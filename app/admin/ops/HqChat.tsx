@@ -26,8 +26,10 @@ import { MAX_ATTACHMENTS, inboxPath, isVideoAttachment, type ChatAttachment } fr
 import { QueueList, QueueSummary, posterOf, queueBtn, uploadFrames, uploadToBlob, useUploadQueue, type Send as QueueSend } from './UploadQueue'
 import { VideoPoster } from './VideoPoster'
 import { personaFor, PERSONAS } from '@/lib/ops/hq/personas'
-import { Avatar, Markdown, type FeedJob, type FeedMessage, type ReportSection } from './hqShared'
+import { Avatar, Markdown, type FeedApproval, type FeedJob, type FeedMessage, type ReportSection } from './hqShared'
 import { BriefCard } from './BriefCard'
+import { ApprovalCard } from './HqApprovals'
+import { REVIEW_JOB_PREFIX } from '@/lib/ops/hq/ads-review-report'
 
 const chief = personaFor('chief') ?? PERSONAS[0]
 
@@ -36,12 +38,17 @@ export function Chat({
   jobs,
   thinking,
   onSend,
+  approvals = [],
+  onDecide,
   fill = false,
 }: {
   messages: FeedMessage[]
   jobs: FeedJob[]
   thinking: boolean
   onSend: (body: string, attachments: ChatAttachment[]) => Promise<boolean>
+  /** Pending approvals: a weekly ads review's show as compact cards under its report. */
+  approvals?: FeedApproval[]
+  onDecide?: (id: string, decision: 'approve' | 'reject') => Promise<string | null>
   /** Take the parent's full height (HQ) instead of 60vh. */
   fill?: boolean
 }) {
@@ -101,6 +108,16 @@ export function Chat({
     if (!last) continue
     if (job.report) reportAfter.set(last.id, job)
     if (job.briefs?.length) briefsAfter.set(last.id, job)
+  }
+  // A weekly ads review's pending approvals, as compact cards under its report message.
+  const reviewCardsAfter = new Map<string, FeedApproval[]>()
+  if (onDecide) {
+    for (const job of jobs) {
+      if (!job.prompt.startsWith(REVIEW_JOB_PREFIX)) continue
+      const pending = approvals.filter((a) => a.jobId === job.id && a.status === 'pending')
+      const last = [...messages].reverse().find((m) => m.jobId === job.id && m.role === 'chief')
+      if (last && pending.length) reviewCardsAfter.set(last.id, pending)
+    }
   }
 
   // A new message always brings the list to the bottom; other changes only when pinned.
@@ -201,6 +218,12 @@ export function Chat({
               )}
               {briefsAfter.get(m.id)?.briefs?.map((b) => <BriefCard key={b.id} brief={b} onBuild={(text) => onSend(text, [])} />)}
               {reportAfter.has(m.id) && <ReportCard job={reportAfter.get(m.id)!} />}
+              {onDecide &&
+                reviewCardsAfter.get(m.id)?.map((a) => (
+                  <div key={a.id} className="ml-9">
+                    <ApprovalCard approval={a} onDecide={onDecide} compact />
+                  </div>
+                ))}
             </div>
           ))}
           {thinking && (

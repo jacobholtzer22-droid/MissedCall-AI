@@ -3918,3 +3918,118 @@ trades, accounts read, Google calls, skipped and errors.
 ⚠️ Apply `scripts/sql/2026-11-02_add_ads_research.sql` with `npx prisma db execute --file …`
 (never `db push`) before deploying: the feed, the chief and the brief page read `AdsBrief`.
 Applied to production 2026-11-02.
+
+### Weekly ads review (branch `ops-weekly-ads-review`, Nov 2 2026)
+
+Every Monday each running ads account gets the ads specialist in review mode: it reads the
+numbers, makes the few changes that are safe any week, proposes the rest for Push, and saves
+an `AdsReview`. Files: `lib/ops/hq/ads-review.ts` (the job, workers, one run, the report),
+`lib/ops/hq/ads-gates.ts` (the gates, pure), `lib/ops/hq/ads-review-report.ts` (metrics,
+JSON parsing, summary, report lines, pure), the "Weekly review" section of
+`lib/ops/hq/prompts/ads.md`. Tests: `lib/ops/ads-gates.test.ts`, `lib/ops/ads-review.test.ts`.
+
+**Schedule.** `GET /api/cron/ads-review` Mondays 14:00 UTC (CRON_SECRET bearer or the admin;
+`?dry=1`; maxDuration 800). **Not in `vercel.json` yet**: add
+`{ "path": "/api/cron/ads-review", "schedule": "0 14 * * 1" }` once Jacob says so. The weekly
+check-up (`ADS_WEEKLY_CHECKUP`, 14:23 Mondays, flag off) covers the same accounts read-only; do
+not turn both on. Also `POST /api/admin/ops/ads/review[?dry=1]` `{ engagementId? }` (the
+"Run weekly review" button on the HQ Ads desk) and the chief's `review_ads(engagementId | 'all')`.
+
+**Who.** `reviewCandidates()`: not ignored or churned, `ads` in services, a Google Ads customer
+id, the ads step at `running`, not on the never-touch list. One `OpsJob` "Weekly ads review
+<date>" (": <client>" for one, " (dry run)" for a dry run) and one `AgentRun` per account
+(agent ads, kind `ads_review`, mode work), created **queued**.
+
+**Workers, 3 at a time.** On Vercel each account gets its own function invocation:
+`kickWorkers` sends `GET /api/cron/ads-review?worker=<jobId>` with the CRON_SECRET bearer (to
+`NEXT_PUBLIC_APP_URL`); the worker claims the job's oldest queued run (conditional
+queued → running), answers at once, runs that account under `waitUntil` and then asks for the
+next worker. So a fleet never runs inside one function's 800 s. Off Vercel, or with no
+CRON_SECRET, the same three workers run in process. A cancelled queued run is never claimed.
+
+**One run** (`runAdsReviewTask`).
+1. The code reads the account through `researchSearch` (about 8 calls, counted against the
+   run's 150): campaigns (status, start date, `bidding_strategy_system_status`, budget), 7d and
+   30d campaign metrics, conversion actions and 90 days of their conversions, enabled ads with
+   `approval_status = DISAPPROVED`, daily clicks for 365 days, and `change_event` (30 days)
+   only for campaigns the ledger has nothing on.
+2. Computed in code, never by the model: `trackingState`, 7d and 30d totals (`sumMetrics`;
+   impression share and what lost it weighted by eligible impressions), the structural gate per
+   enabled campaign, and the flags (`adsReviewAlerts`, the same function the alerts use).
+3. The ads loop gets the reads, `read_learnings` (the trade's newest `AdsTradeLearning` row)
+   and only the three review writes. A run with no enabled campaign skips the model.
+4. Proposals: `checkProposal({ review: true })` (apply tools, plus `REVIEW_PROPOSABLE`:
+   pause_campaign, pause_ad_group, enable_ad_group, add_keywords, add_campaign_negatives,
+   exclude_conversion_goal, which apply only from a review's own approval, `detail.review`),
+   one fix turn, then `filterReviewProposals`, then `capHold`. Each becomes an `OpsApproval`.
+5. One `AdsReview` row; the run's `output.review` carries the same outcome for the report.
+
+**Gates** (`ads-gates.ts`).
+- `canStructuralChange({ campaignAgeDays, clicksSinceLastChange, daysSinceLastChange, biddingStatus })`:
+  false when age < 14, clicks < 100, days < 7, or bidding is any `LEARNING_*` status; unknown
+  counts as not enough. Structural = `STRUCTURAL_TOOLS` (bidding strategy, budget, pausing or
+  enabling a campaign or ad group, adding or removing keywords, new ad groups or campaigns).
+  Structural changes are proposals only, and at most one per campaign per week.
+- Non-structural, made by the run any week (`REVIEW_AUTO_TOOLS`, each re-checked in
+  `ads-tools.ts` `reviewGuard` before Google): `add_campaign_negatives`; `set_ad_group_cpc`
+  lower only, when the ad group's 30-day CPC is over 2x the trade median CPC (median of the
+  learnings row's account CPCs) with 0 conversions on 30+ clicks; `upsert_rsa` only in an ad
+  group with a disapproved ad.
+- Last change: the platform's ledger first (`AdsReview.changes` with `changed: true`, plus every
+  other ads run's `output.writes`, apply runs included, 60 days); an entry with no campaign id
+  (an ad group bid) counts for every campaign. `change_event` (30 days) is the fallback. No
+  change found: days since = campaign age, clicks since = clicks since the start date.
+- `trackingState({ conversionActions, conversions30d, clicks30d })`: `unverified` when no
+  action is verified (enabled, counted in Conversions, and recorded something in 90 days, or a
+  Google-recorded type such as AD_CALL, or a website action with the Google tag live on the
+  site per Ops evidence); `no_data` when verified but 0 conversions on under 50 clicks;
+  `recording` otherwise. Unverified: no bid or budget change, made or proposed
+  (`BID_BUDGET_TOOLS` refused in the guard and dropped from proposals); the summary leads
+  with the tracking fix.
+- `decisionCaps` reads spend caps from the client's `DECISION:` lines ("never exceed
+  $400/month", "$15 a day cap"; monthly / 30.4, weekly / 7). `capHold`: a budget above the
+  lowest cap, or added spend that would pass it, is still filed, with `hold` = "Recorded
+  decision: <text>" (Push becomes Push anyway).
+
+**`AdsReview`** (`scripts/sql/2026-11-02_add_ads_review.sql`, **not applied**): id,
+engagementId (cascade), runId, customerId, periodStart, periodEnd (the 30 days ending
+yesterday), trackingState, metrics (`d7`, `d30`, `enabledCampaigns`, `disapprovedAds`,
+`campaigns`, `gates`), changes (`[{ tool, args, changed, campaignId, at, result }]`),
+proposals (with `approvalId`, `hold`), flags (codes), summary (5 to 12 lines; the model's when
+its count fits, else `reviewSummary` from the numbers), createdAt; index (engagementId,
+createdAt). A dry run sends every write validate_only and writes no `AdsReview` and no approval.
+
+**Report.** When the last run of a review job ends, `onSpecialistRunEnded` sees
+`isReviewJob` (every run is `ads_review`, or an apply run of one of its approvals) and calls
+`reportReviewJob` instead of the chief: one chat message (role chief), a head line with the
+counts, then one line per client (`outcomeLine`), worst first (`rankOutcomes`: failed runs,
+tracking unverified, then no_data, then 30-day spend with no conversion, then most proposals).
+A failed account keeps its error line; the others report normally. The chat renders the
+job's pending approvals as compact `ApprovalCard`s under that message (jobs whose prompt
+starts with `REVIEW_JOB_PREFIX`). The job summary uses the usual report-card shape.
+
+**UI.** Client panel: "Ads this week" under the ads deliverable (tracking state, 7d spend,
+clicks, conversions, cost per conversion, changes made, flags, "Read the full review" to
+`/admin/ops/review/<id>`). Client card: the ads line adds the 7d cost per conversion, or
+"no conversions" when tracking records (`adsWeekLine`). The board reads the newest
+`AdsReview` per client (`latestAdsReview`), caught so a database without the table still loads.
+
+**Alerts** (`lib/ops/alerts.ts` `adsReviewAlerts`, from the newest review, ignored once it is
+older than 14 days, only for clients with `ads` in services and not churned). They rank in
+Needs you like every other alert.
+
+| Code | Severity | When | Message |
+|---|---|---|---|
+| `ads_tag_unverified` | red | an enabled campaign and trackingState unverified | "Conversion tracking unverified, 1 campaign running, $84 spent in 7 days" |
+| `ads_disapproved` | red | an enabled ad disapproved | "2 ads disapproved" |
+| `ads_no_conversions` | yellow | 30d cost ≥ $100, 0 conversions, tracking recording | "$212 in 30 days, 41 clicks, 0 conversions" |
+| `ads_budget_limited` | yellow | over 20% of search impressions lost to budget (7d) | "Lost 34% of search impressions to budget in 7 days" |
+| `ads_zero_spend` | yellow | an enabled campaign and $0 in 7 days | "2 campaigns enabled, $0 spent in 7 days" |
+
+**What it never does.** Raise a budget or a bid, change a bidding strategy, enable or pause
+anything, or add keywords without Jacob's Push. Make any bid or budget change while tracking
+is unverified. File more than one structural proposal per campaign per week, or one the gates
+refuse. Touch a never-touch account or an account whose ads step is not running. Write
+`Business`, the ads step, or another client's account. Quota: at most 150 calls per run;
+a full fleet (22 accounts) can in theory exceed Explorer's 2,880 a day, so watch `googleAdsCalls`
+in the runs' output after the first live Monday.
