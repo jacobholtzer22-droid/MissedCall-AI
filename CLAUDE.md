@@ -3929,8 +3929,7 @@ JSON parsing, summary, report lines, pure), the "Weekly review" section of
 `lib/ops/hq/prompts/ads.md`. Tests: `lib/ops/ads-gates.test.ts`, `lib/ops/ads-review.test.ts`.
 
 **Schedule.** `GET /api/cron/ads-review` Mondays 14:00 UTC (CRON_SECRET bearer or the admin;
-`?dry=1`; maxDuration 800). **Not in `vercel.json` yet**: add
-`{ "path": "/api/cron/ads-review", "schedule": "0 14 * * 1" }` once Jacob says so. The weekly
+`?dry=1`; maxDuration 800). In `vercel.json` since 2026-11-02 (`0 14 * * 1`). The weekly
 check-up (`ADS_WEEKLY_CHECKUP`, 14:23 Mondays, flag off) covers the same accounts read-only; do
 not turn both on. Also `POST /api/admin/ops/ads/review[?dry=1]` `{ engagementId? }` (the
 "Run weekly review" button on the HQ Ads desk) and the chief's `review_ads(engagementId | 'all')`.
