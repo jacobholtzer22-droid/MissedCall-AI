@@ -12,6 +12,9 @@ import { getClientIp, rateLimit } from '@/lib/rate-limit'
 import { CLIENT_LINK_LIMITS, QUESTIONS, clientIntakeEnabled, publicView } from '@/lib/ops/client-intake'
 import { resolveClientLink } from '@/lib/ops/client-intake-server'
 import { ClientIntakeForm } from './ClientIntakeForm'
+import { IntakeWizard } from './IntakeWizard'
+import { portalIntakeWizardEnabled, wizardView } from '@/lib/ops/intake-wizard'
+import { linkWizardClient } from '@/lib/ops/intake-wizard-server'
 
 export const dynamic = 'force-dynamic'
 
@@ -31,6 +34,11 @@ export default async function ClientIntakePage({ params }: { params: { token: st
   const client = await resolveClientLink(params.token)
   if (!client) {
     return <Message title="This link isn't working" body="It may have expired or been replaced. Text Jacob and he'll send you a new one." />
+  }
+  // PORTAL_INTAKE_WIZARD (off by default): the link lands on the same wizard as the portal.
+  if (portalIntakeWizardEnabled()) {
+    const w = await linkWizardClient(client)
+    return <IntakeWizard apiBase={`/api/intake/${encodeURIComponent(params.token)}`} engagementId={client.id} initial={wizardView(w)} />
   }
   return <ClientIntakeForm token={params.token} engagementId={client.id} initial={publicView(client)} questions={QUESTIONS} />
 }

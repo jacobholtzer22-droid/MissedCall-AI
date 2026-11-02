@@ -33,6 +33,8 @@ import { autoflowAfterPush } from '@/lib/ops/autoflow-server'
 import { LINK_CARD_KIND, duplicateGuardEnabled } from '@/lib/ops/duplicate-guard'
 import { applyLinkCard } from '@/lib/ops/duplicate-guard-server'
 import { approvalStamp, pushedByLine } from '@/lib/ops/approver'
+import { portalIntakeWizardEnabled } from '@/lib/ops/intake-wizard'
+import { applyPortalMerge } from '@/lib/ops/intake-wizard-server'
 
 export type DecideResult =
   | { ok: true; status: 'rejected' }
@@ -54,7 +56,7 @@ export async function decideApproval(
   if (!approval) return { ok: false, httpStatus: 404, error: 'Approval not found' }
   if (approval.status !== 'pending') return { ok: false, httpStatus: 409, error: `Approval is already ${approval.status}` }
   // ADS_ACCOUNT_CREATE (off by default) adds its two card kinds; off, the list is as before.
-  const pushable = ['ads_change', 'admin_change', 'web_push', ...(adsAccountCreateEnabled() ? ACCOUNT_APPROVAL_KINDS : []), ...(duplicateGuardEnabled() ? [LINK_CARD_KIND] : [])]
+  const pushable = ['ads_change', 'admin_change', 'web_push', ...(adsAccountCreateEnabled() ? ACCOUNT_APPROVAL_KINDS : []), ...(duplicateGuardEnabled() || portalIntakeWizardEnabled() ? [LINK_CARD_KIND] : [])]
   if (decision === 'approve' && !pushable.includes(approval.kind)) {
     return { ok: false, httpStatus: 400, error: `Pushing a ${approval.kind} is not wired` }
   }
@@ -110,10 +112,10 @@ export async function decideApproval(
     }
   }
 
-  // DUPLICATE_GUARD: Jacob says the two are the same client.
-  if (duplicateGuardEnabled() && approval.kind === LINK_CARD_KIND) {
+  // DUPLICATE_GUARD: Jacob says the two are the same client. PORTAL_INTAKE_WIZARD: a portal sign-up merges in.
+  if ((duplicateGuardEnabled() || portalIntakeWizardEnabled()) && approval.kind === LINK_CARD_KIND) {
     try {
-      const line = await applyLinkCard(detail)
+      const line = detail.action === 'merge_portal' && portalIntakeWizardEnabled() ? await applyPortalMerge(detail) : await applyLinkCard(detail)
       await db.opsApproval.update({ where: { id }, data: { status: 'applied', appliedAt: new Date(), detail: { ...detail, result: line } as Prisma.InputJsonObject } })
       await pushedNote()
       await closeJobIfSettled(approval.jobId)

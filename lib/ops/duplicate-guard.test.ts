@@ -58,7 +58,7 @@ test('card and warning copy', () => {
 test('flag off: every hook is gated', () => {
   const src = (p: string) => readFileSync(new URL(p, import.meta.url), 'utf8')
   assert.match(src('./sync.ts'), /if \(duplicateGuardEnabled\(\)\) \{\n\s+const held = await holdSignupIfDuplicate/)
-  assert.match(src('./hq/approvals.ts'), /\.\.\.\(duplicateGuardEnabled\(\) \? \[LINK_CARD_KIND\] : \[\]\)/)
+  assert.match(src('./hq/approvals.ts'), /\.\.\.\(duplicateGuardEnabled\(\) \|\| portalIntakeWizardEnabled\(\) \? \[LINK_CARD_KIND\] : \[\]\)/)
   assert.match(src('./hq/admin-change.ts'), /duplicateGuardEnabled\(\) && field === 'telnyxPhoneNumber'/)
   assert.match(src('./hq/chief.ts'), /if \(duplicateGuardEnabled\(\) && input\.notDuplicate !== true\)/)
 })

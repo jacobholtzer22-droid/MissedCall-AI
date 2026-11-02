@@ -13,6 +13,8 @@ import { db } from '@/lib/db'
 import { finishIntake, publicView, type IntakeWithLink } from '@/lib/ops/client-intake'
 import { guard } from '@/lib/ops/client-intake-server'
 import { updateIntake } from '@/lib/ops/intake-server'
+import { portalIntakeWizardEnabled, type IntakeWithWizard } from '@/lib/ops/intake-wizard'
+import { wizardFinishNote } from '@/lib/ops/intake-wizard-routes'
 
 export const dynamic = 'force-dynamic'
 
@@ -23,7 +25,8 @@ export async function POST(request: Request, context: { params: { token: string 
     let note: string | null = null
     const next = await updateIntake(g.client.id, (cur) => {
       const r = finishIntake(cur as IntakeWithLink)
-      note = r.note
+      // PORTAL_INTAKE_WIZARD (off by default): the note also names the plan and the legal details.
+      note = r.note && portalIntakeWizardEnabled() ? wizardFinishNote(r.note, r.intake as IntakeWithWizard, 'link') : r.note
       return r.intake
     })
     if (note) await db.opsActivity.create({ data: { engagementId: g.client.id, kind: 'note', body: note } })

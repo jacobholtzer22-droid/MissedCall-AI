@@ -5,6 +5,7 @@ import { db } from '@/lib/db'
 import { revalidatePath } from 'next/cache'
 import { OnboardingForm } from './OnboardingForm'
 import { getIndustryDefaults } from '@/lib/industry-defaults'
+import { afterSignupPath } from '@/lib/ops/intake-wizard'
 
 export const metadata: Metadata = {
   robots: { index: false, follow: false },
@@ -54,7 +55,8 @@ export default async function OnboardingPage() {
           role: 'owner',
         },
       })
-      redirect('/dashboard')
+      // PORTAL_INTAKE_WIZARD (off by default): the intake wizard next; off, /dashboard as before.
+      redirect(afterSignupPath())
     }
   }
 
@@ -130,7 +132,7 @@ ${cannotHelp ? `Do NOT try to help with: ${cannotHelp}. Instead, offer to have s
     })
 
     revalidatePath('/dashboard')
-    redirect('/dashboard')
+    redirect(afterSignupPath())
   }
 
   return <OnboardingForm createBusiness={createBusiness} />
