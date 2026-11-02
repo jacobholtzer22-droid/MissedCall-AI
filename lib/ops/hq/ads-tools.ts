@@ -266,7 +266,7 @@ const READS: Def[] = [
         `SELECT search_term_view.search_term, search_term_view.status, segments.search_term_match_type, campaign.id, campaign.name, ad_group.id, ad_group.name,
                 metrics.impressions, metrics.clicks, metrics.cost_micros, metrics.conversions
          FROM search_term_view
-         WHERE segments.date BETWEEN '${r.start}' AND '${r.end}' AND metrics.impressions > 0${min > 0 ? ` AND metrics.cost_micros >= ${micros(min)}` : ''}${camp}
+         WHERE segments.date BETWEEN '${r.start}' AND '${r.end}' AND metrics.impressions > 0${min > 0 ? ` AND metrics.cost_micros > ${micros(min) - 1}` : ''}${camp}
          ORDER BY metrics.cost_micros DESC LIMIT 200`
       )
       const terms = rows.map((x) => ({

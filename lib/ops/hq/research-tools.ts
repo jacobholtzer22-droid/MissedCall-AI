@@ -257,8 +257,8 @@ const TOOLS: Def[] = [
       const min = Math.max(Number(i.minCost ?? 10) || 0, 0)
       const base = `SELECT search_term_view.search_term, metrics.clicks, metrics.cost_micros, metrics.conversions FROM search_term_view WHERE segments.date BETWEEN '${w.start}' AND '${w.end}'`
       const [conv, waste] = [
-        await search(ctx, a, `${base} AND metrics.conversions >= 1 ORDER BY metrics.conversions DESC LIMIT 200`),
-        await search(ctx, a, `${base} AND metrics.conversions = 0 AND metrics.cost_micros >= ${Math.round(min * 1_000_000)} ORDER BY metrics.cost_micros DESC LIMIT 200`),
+        await search(ctx, a, `${base} AND metrics.conversions > 0 ORDER BY metrics.conversions DESC LIMIT 200`),
+        await search(ctx, a, `${base} AND metrics.conversions = 0 AND metrics.cost_micros > ${Math.max(Math.round(min * 1_000_000) - 1, -1)} ORDER BY metrics.cost_micros DESC LIMIT 200`),
       ]
       const sum = (rows: any[]) => {
         const m = new Map<string, { term: string; clicks: number; cost: number; conversions: number }>()

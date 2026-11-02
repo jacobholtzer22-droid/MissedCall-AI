@@ -65,7 +65,7 @@ async function modelSummary(tradeKey: string, window: { startDay: string; endDay
 export type LearningsResult = {
   dryRun: boolean
   period: { start: string; end: string }
-  trades: { tradeKey: string; accounts: number; cost: number; conversions: number; summaryBy: 'model' | 'code' }[]
+  trades: { tradeKey: string; accounts: number; googleCalls: number; cost: number; conversions: number; summaryBy: 'model' | 'code' }[]
   accountsRead: number
   googleCalls: number
   skipped: string[]
@@ -100,6 +100,7 @@ export async function runAdsLearnings(opts: { dryRun?: boolean; now?: Date } = {
   const range = `segments.date BETWEEN '${w.startDay}' AND '${w.endDay}'`
   for (const [tradeKey, clients] of Array.from(byTrade)) {
     const inputs: LearningAccountInput[] = []
+    const callsBefore = out.googleCalls
     for (const c of clients) {
       // A fresh cap per account: LEARNING_CALLS_PER_ACCOUNT GAQL calls at most.
       const ctx: AdsToolContext = { runId: '', customerId: c.customerId, client: c.name, engagementId: c.id, mode: 'work', dry: true, calls: 0, writes: [], maxCalls: LEARNING_CALLS_PER_ACCOUNT }
@@ -107,8 +108,8 @@ export async function runAdsLearnings(opts: { dryRun?: boolean; now?: Date } = {
       try {
         const campaigns = await q(`SELECT campaign.id, metrics.cost_micros, metrics.conversions, metrics.clicks FROM campaign WHERE ${range} AND campaign.status != 'REMOVED'`)
         const terms = [
-          ...(await q(`SELECT search_term_view.search_term, metrics.cost_micros, metrics.conversions, metrics.clicks FROM search_term_view WHERE ${range} AND metrics.conversions >= 1 ORDER BY metrics.conversions DESC LIMIT 200`)),
-          ...(await q(`SELECT search_term_view.search_term, metrics.cost_micros, metrics.conversions, metrics.clicks FROM search_term_view WHERE ${range} AND metrics.conversions = 0 AND metrics.cost_micros >= 5000000 ORDER BY metrics.cost_micros DESC LIMIT 200`)),
+          ...(await q(`SELECT search_term_view.search_term, metrics.cost_micros, metrics.conversions, metrics.clicks FROM search_term_view WHERE ${range} AND metrics.conversions > 0 ORDER BY metrics.conversions DESC LIMIT 200`)),
+          ...(await q(`SELECT search_term_view.search_term, metrics.cost_micros, metrics.conversions, metrics.clicks FROM search_term_view WHERE ${range} AND metrics.conversions = 0 AND metrics.cost_micros > 4999999 ORDER BY metrics.cost_micros DESC LIMIT 200`)),
         ]
         const negatives = [
           ...(await q(`SELECT campaign_criterion.keyword.text FROM campaign_criterion WHERE campaign_criterion.negative = TRUE AND campaign_criterion.type = 'KEYWORD' AND campaign.status != 'REMOVED' LIMIT 1000`)).map((x) => String(x.campaign_criterion.keyword?.text ?? '')),
@@ -156,7 +157,7 @@ export async function runAdsLearnings(opts: { dryRun?: boolean; now?: Date } = {
       await db.adsTradeLearning.upsert({ where: { tradeKey_periodStart: { tradeKey, periodStart: w.start } }, create: row, update })
     }
     out.rows.push(dryRun ? row : { tradeKey, periodStart: w.startDay })
-    out.trades.push({ tradeKey, accounts: inputs.length, cost: agg.totals.cost, conversions: agg.totals.conversions, summaryBy })
+    out.trades.push({ tradeKey, accounts: inputs.length, googleCalls: out.googleCalls - callsBefore, cost: agg.totals.cost, conversions: agg.totals.conversions, summaryBy })
   }
 
   console.log(
