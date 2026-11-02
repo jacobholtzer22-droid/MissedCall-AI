@@ -12,6 +12,8 @@ import { STEP_CATALOG, defaultWaitingOn } from '@/lib/ops/steps'
 import { readIntake } from '@/lib/ops/intake'
 import { isNeverTouch, missingAdsEnv } from '@/lib/ops/hq/ads-tools'
 import { applyAccountCreate, applyInvite, proposeAccount, type AccountDeps, type AccountFields } from '@/lib/ops/ads-account'
+import { adsBillingInviteEnabled } from '@/lib/ops/ads-billing'
+import { proposeBillingInvite } from '@/lib/ops/ads-billing-server'
 
 function customer(customerId: string) {
   const missing = missingAdsEnv()
@@ -113,6 +115,8 @@ export async function applyAccountCard(approval: { kind: string; runId: string; 
   const d = deps({ runId: approval.runId, jobId: approval.jobId })
   if (approval.kind === 'ads_account_create') {
     const r = await applyAccountCreate(detail, d, STEP_CATALOG.ads)
+    // ADS_BILLING_INVITE (off by default): bound now; the invite card above counts, so this only adds the fallback draft or the legal details.
+    if (adsBillingInviteEnabled()) await proposeBillingInvite(String(detail.engagementId ?? '')).catch(() => undefined)
     return `created ${r.customerId}${r.inviteApprovalId ? '; invite card waiting for Push' : ''}`
   }
   await applyInvite(detail, d)

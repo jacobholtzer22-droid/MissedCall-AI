@@ -50,6 +50,7 @@ import { lookupGbp } from '@/lib/ops/gbp-server'
 import { questionsFrom } from '@/lib/ops/build-style'
 import { duplicateGuardEnabled, linkCardTitle } from '@/lib/ops/duplicate-guard'
 import { applyRunLine, approverOf, pushedByLine } from '@/lib/ops/approver'
+import { adsBillingInviteEnabled } from '@/lib/ops/ads-billing'
 import { findLikely, proposeLink } from '@/lib/ops/duplicate-guard-server'
 import { CREDIT_NO_RERUN, averageRunCost, creditSetupItem, isCreditFailure } from '@/lib/ops/build-credit'
 import { reportGaps, type GateClient } from '@/lib/ops/launch-gate'
@@ -740,6 +741,25 @@ function chiefTools(ctx: ChiefContext): ClientTool[] {
     },
     // OPS_AUTOFLOW (off by default): work Jacob did outside Ops HQ.
     ...(autoflowEnabled() ? outsideHqTools() : []),
+    // ADS_BILLING_INVITE (off by default): the billing invite for an account bound outside a run.
+    ...(adsBillingInviteEnabled()
+      ? [
+          {
+            name: 'propose_ads_billing_invite',
+            description:
+              'When a client\'s Google Ads account is bound, propose the ONE card that sends Google\'s invite to the client\'s q17 Gmail so they add their own payment method in Google Ads. Never duplicates an existing invite card. With no Gmail, no API access, or a refused invite it puts the billing steps in Ready to send instead. Sends nothing; the invite goes out on Push.',
+            input_schema: { type: 'object', properties: { engagementId: { type: 'string' } }, required: ['engagementId'] },
+            run: async (input: Record<string, unknown>) => {
+              const engagementId = str(input.engagementId)
+              const name = await engagementName(engagementId)
+              const { proposeBillingInvite } = await import('@/lib/ops/ads-billing-server')
+              const r = await proposeBillingInvite(engagementId)
+              const label = r.action === 'card' ? `Billing invite card for ${name} waiting for Push` : r.action === 'draft' ? `Billing steps for ${name} in Ready to send (${r.reason})` : `No billing invite for ${name}: ${r.reason}`
+              return { result: r, label }
+            },
+          } as ClientTool,
+        ]
+      : []),
     {
       name: 'read_doc',
       description:

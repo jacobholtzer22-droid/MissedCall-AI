@@ -236,6 +236,7 @@ test('flag off: no tool, no card kinds, and propose does nothing', async () => {
   const chief = readFileSync(join(process.cwd(), 'lib', 'ops', 'hq', 'chief.ts'), 'utf8')
   assert.match(chief, /\.\.\.\(adsAccountCreateEnabled\(\) \? \[proposeAdsAccountTool\(ctx\)\] : \[\]\)/)
   const approvals = readFileSync(join(process.cwd(), 'lib', 'ops', 'hq', 'approvals.ts'), 'utf8')
-  assert.match(approvals, /\.\.\.\(adsAccountCreateEnabled\(\) \? ACCOUNT_APPROVAL_KINDS : \[\]\)/)
-  assert.match(approvals, /if \(adsAccountCreateEnabled\(\) && \(ACCOUNT_APPROVAL_KINDS/)
+  // ADS_BILLING_INVITE adds ads_invite alone (never ads_account_create) when ADS_ACCOUNT_CREATE is off.
+  assert.match(approvals, /\.\.\.\(adsAccountCreateEnabled\(\) \? ACCOUNT_APPROVAL_KINDS : adsBillingInviteEnabled\(\) \? \['ads_invite'\] : \[\]\)/)
+  assert.match(approvals, /if \(\(adsAccountCreateEnabled\(\) && \(ACCOUNT_APPROVAL_KINDS as readonly string\[\]\)\.includes\(approval\.kind\)\) \|\| \(adsBillingInviteEnabled\(\) && approval\.kind === 'ads_invite'\)\)/)
 })

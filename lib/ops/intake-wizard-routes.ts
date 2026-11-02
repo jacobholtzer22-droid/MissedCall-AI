@@ -8,6 +8,8 @@ import { updateIntake } from '@/lib/ops/intake-server'
 import { WizardError, applyWizardPatch, readWizardPatch, wizardFinishNote, wizardView, type IntakeWithWizard } from '@/lib/ops/intake-wizard'
 
 export { wizardFinishNote }
+import { adsBillingInviteEnabled } from '@/lib/ops/ads-billing'
+import { syncAdvertiserLegal } from '@/lib/ops/ads-billing-server'
 
 type Client = { id: string; displayName: string; contactName: string | null; intake: IntakeWithWizard }
 
@@ -19,6 +21,8 @@ export async function saveWizard(request: Request, client: Client, label: string
     if (text.length > 20_000) throw new WizardError('that is too much for one save')
     const patch = readWizardPatch(JSON.parse(text || '{}'))
     const next = await updateIntake(client.id, (cur) => applyWizardPatch(cur as IntakeWithWizard, patch))
+    // ADS_BILLING_INVITE (off by default): the legal details go to the ads deliverable for advertiser verification.
+    if (patch.kind === 'legal' && adsBillingInviteEnabled()) await syncAdvertiserLegal(client.id, (next as IntakeWithWizard).legal).catch(() => undefined)
     return NextResponse.json({ ok: true, view: wizardView({ ...client, intake: next as IntakeWithWizard }, process.env, door) }, { headers: noStore })
   } catch (err) {
     if (err instanceof WizardError || err instanceof SyntaxError) return NextResponse.json({ error: err.message }, { status: 400 })

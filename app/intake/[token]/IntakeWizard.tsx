@@ -14,6 +14,7 @@ import type { Question } from '@/lib/ops/client-intake'
 import { COPY, SERVICE_LABEL, questionsFor, type Plan, type Service, type StepKey, type WizardView } from '@/lib/ops/intake-wizard'
 import { Uploader } from '@/app/admin/ops/intake/[engagementId]/Uploader'
 import { CARD_COPY } from '@/lib/ops/stripe-billing'
+import { ADS_BILLING_COPY } from '@/lib/ops/ads-billing'
 
 type SaveState = 'idle' | 'saving' | 'saved' | 'error'
 
@@ -332,8 +333,16 @@ export function IntakeWizard({ apiBase, engagementId, initial, dashboardHref }: 
       </div>
     )
   }
-  // 'adsbilling' (ADS_BILLING_INVITE, piece 3) is a stub: with its flag off it is not in the step list; with it
-  // on it renders nothing until that piece lands.
+  else if (view.step === 'adsbilling') {
+    // ADS_BILLING_INVITE: no card here. Google invites the client to add it in Google Ads.
+    body = (
+      <div className="space-y-3">
+        <p className="text-gray-100">{ADS_BILLING_COPY.invite}</p>
+        <p className="text-gray-300">{ADS_BILLING_COPY.separate}</p>
+        <p className="text-sm text-gray-400">{ADS_BILLING_COPY.nothingHere}</p>
+      </div>
+    )
+  }
 
   return (
     <Shell>

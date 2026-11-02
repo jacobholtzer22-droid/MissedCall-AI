@@ -20,6 +20,7 @@
 // GOOGLE_ADS_MCC_ID.
 
 import type { Prisma } from '@prisma/client'
+import { adsBillingInviteEnabled } from '@/lib/ops/ads-billing'
 import { enums, type MutateOperation } from 'google-ads-api'
 import { db } from '@/lib/db'
 import { getGoogleAdsClient } from '@/lib/google-ads'
@@ -662,6 +663,15 @@ const BIND_ACCOUNT: Def = {
     ctx.customerId = id
     const run = await db.agentRun.findUnique({ where: { id: ctx.runId }, select: { input: true } })
     await db.agentRun.update({ where: { id: ctx.runId }, data: { input: { ...((run?.input ?? {}) as Record<string, unknown>), customerId: id } as Prisma.InputJsonObject } })
+    // ADS_BILLING_INVITE (off by default): the account is bound, so propose the one billing invite card (or the fallback draft).
+    if (adsBillingInviteEnabled()) {
+      const engagementId = ctx.engagementId
+      const billing = await import('@/lib/ops/ads-billing-server').then((m) => m.proposeBillingInvite(engagementId)).catch(() => null)
+      return {
+        result: { ok: true, customerId: id, account: account.name, recordedOnPlatform: recorded, billingInvite: billing?.action ?? 'not checked' },
+        label: `Working in ${account.name} (${id})${recorded ? ', customer id recorded on the platform account' : ''}${billing?.action === 'card' ? '; billing invite card waiting for Push' : billing?.action === 'draft' ? '; billing steps are a Ready-to-send draft' : ''}`,
+      }
+    }
     return {
       result: { ok: true, customerId: id, account: account.name, recordedOnPlatform: recorded },
       label: `Working in ${account.name} (${id})${recorded ? ', customer id recorded on the platform account' : ''}`,

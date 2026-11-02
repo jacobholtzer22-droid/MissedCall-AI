@@ -36,6 +36,7 @@ import { approvalStamp, pushedByLine } from '@/lib/ops/approver'
 import { portalIntakeWizardEnabled } from '@/lib/ops/intake-wizard'
 import { applyPortalMerge } from '@/lib/ops/intake-wizard-server'
 import { SUBSCRIPTION_CARD_KIND, stripeCardAtSignupEnabled } from '@/lib/ops/stripe-billing'
+import { adsBillingInviteEnabled } from '@/lib/ops/ads-billing'
 
 export type DecideResult =
   | { ok: true; status: 'rejected' }
@@ -57,7 +58,7 @@ export async function decideApproval(
   if (!approval) return { ok: false, httpStatus: 404, error: 'Approval not found' }
   if (approval.status !== 'pending') return { ok: false, httpStatus: 409, error: `Approval is already ${approval.status}` }
   // ADS_ACCOUNT_CREATE (off by default) adds its two card kinds; off, the list is as before.
-  const pushable = ['ads_change', 'admin_change', 'web_push', ...(adsAccountCreateEnabled() ? ACCOUNT_APPROVAL_KINDS : []), ...(duplicateGuardEnabled() || portalIntakeWizardEnabled() ? [LINK_CARD_KIND] : []), ...(stripeCardAtSignupEnabled() ? [SUBSCRIPTION_CARD_KIND] : [])]
+  const pushable = ['ads_change', 'admin_change', 'web_push', ...(adsAccountCreateEnabled() ? ACCOUNT_APPROVAL_KINDS : adsBillingInviteEnabled() ? ['ads_invite'] : []), ...(duplicateGuardEnabled() || portalIntakeWizardEnabled() ? [LINK_CARD_KIND] : []), ...(stripeCardAtSignupEnabled() ? [SUBSCRIPTION_CARD_KIND] : [])]
   if (decision === 'approve' && !pushable.includes(approval.kind)) {
     return { ok: false, httpStatus: 400, error: `Pushing a ${approval.kind} is not wired` }
   }
@@ -98,7 +99,8 @@ export async function decideApproval(
     }
   }
 
-  if (adsAccountCreateEnabled() && (ACCOUNT_APPROVAL_KINDS as readonly string[]).includes(approval.kind)) {
+  // ADS_BILLING_INVITE (off by default) also pushes ads_invite, through the same applyAccountCard.
+  if ((adsAccountCreateEnabled() && (ACCOUNT_APPROVAL_KINDS as readonly string[]).includes(approval.kind)) || (adsBillingInviteEnabled() && approval.kind === 'ads_invite')) {
     try {
       const line = await applyAccountCard({ kind: approval.kind, runId: approval.runId, jobId: approval.jobId }, detail)
       await db.opsApproval.update({ where: { id }, data: { status: 'applied', appliedAt: new Date(), detail: { ...detail, result: line } as Prisma.InputJsonObject } })
@@ -108,6 +110,10 @@ export async function decideApproval(
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
       await db.opsApproval.update({ where: { id }, data: { status: 'failed', error: message } })
+      // ADS_BILLING_INVITE: Google refused the invite, so the billing steps become a Ready-to-send draft.
+      if (adsBillingInviteEnabled() && approval.kind === 'ads_invite' && typeof detail.engagementId === 'string') {
+        await import('@/lib/ops/ads-billing-server').then((m) => m.inviteRefused(detail.engagementId as string, message)).catch(() => undefined)
+      }
       await closeJobIfSettled(approval.jobId)
       return { ok: false, httpStatus: 422, error: message }
     }

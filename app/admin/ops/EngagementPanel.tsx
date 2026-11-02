@@ -7,6 +7,7 @@
 // which updates the board optimistically and reverts on failure.
 
 import { useEffect, useRef, useState } from 'react'
+import { legalLines, type AdvertiserLegal } from '@/lib/ops/ads-billing'
 import Link from 'next/link'
 import { ExternalLink, X } from 'lucide-react'
 import type { BoardActivity, BoardDeliverable, BoardEngagement } from '@/lib/ops/board'
@@ -712,6 +713,16 @@ function DeliverableCard({
         />
       </div>
 
+      {/* ADS_BILLING_INVITE: the wizard's legal details, for the advertiser verification step. Only present when that flag wrote them. */}
+      {d.type === 'ads' && (d.step === 'verification_docs' || d.step === 'verification') && isAdvertiserLegal(d.evidence.advertiserLegal) && (
+        <div className="rounded border border-gray-800 px-3 py-2 text-xs text-gray-300" aria-label="Advertiser verification details">
+          <p className="mb-1 font-medium text-gray-400">For advertiser verification (from the client&apos;s setup)</p>
+          {legalLines(d.evidence.advertiserLegal).map((l) => (
+            <p key={l}>{l}</p>
+          ))}
+        </div>
+      )}
+
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
         <label className="block">
           <span className={label}>Manual status</span>
@@ -1271,3 +1282,6 @@ function LogContactForm({
     </form>
   )
 }
+
+const isAdvertiserLegal = (v: unknown): v is AdvertiserLegal =>
+  Boolean(v) && typeof v === 'object' && typeof (v as AdvertiserLegal).legalName === 'string' && typeof (v as AdvertiserLegal).address === 'string' && typeof (v as AdvertiserLegal).zip === 'string'
