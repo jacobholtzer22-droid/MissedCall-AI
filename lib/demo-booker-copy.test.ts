@@ -1,6 +1,14 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { confirmationText, hourBeforeText, nightBeforeText } from './marketing-sms-copy'
+import {
+  NIGHT_BEFORE_LINK_MAX_CHARS,
+  confirmationText,
+  hourBeforeText,
+  nightBeforeText,
+  noShowRebookText,
+  startNudgeText,
+} from './marketing-sms-copy'
+import { bookerWhen } from './booker-time'
 import {
   DEMO_EMAIL_FROM,
   confirmationEmail,
@@ -13,6 +21,10 @@ import {
 const TUE_4PM_ET = new Date('2026-09-22T20:00:00Z')
 const MEET = 'https://meet.google.com/abc-defg-hij'
 const VIDEO = 'https://www.alignandacquire.com/demo.mp4'
+const CAL_LINK =
+  'https://www.alignandacquire.com/calendar?l=Ab3dEf6hIj9kLm2n&utm_source=sms&utm_medium=funnel_return&utm_campaign=a'
+/** The night-before reschedule link: short UTM set (calendarLinkShort). */
+const SHORT_LINK = 'https://www.alignandacquire.com/calendar?l=Ab3dEf6hIj9kLm2n&utm_source=sms&utm_medium=funnel_return'
 
 const GSM7 = /^[A-Za-z0-9 \n\r@£$¥èéùìòÇØøÅåΔ_ΦΓΛΩΠΨΣΘΞÆæßÉ!"#¤%&'()*+,\-./:;<=>?¡ÄÖÑÜ§¿äöñüà]*$/
 const NO_DASHES = /^[^\u2013\u2014]*$/
@@ -89,11 +101,95 @@ test('every text is GSM-7 across zones, seasons and fallbacks', () => {
   for (const at of [TUE_4PM_ET, new Date('2027-01-12T21:00:00Z')]) {
     for (const [timeZone, timeZoneSource] of zones) {
       const p = { ...pt, scheduledAt: at, timeZone, timeZoneSource }
-      for (const t of [confirmationText(p), nightBeforeText(p), hourBeforeText(p)]) {
+      const rebook = noShowRebookText({ ...p, rebookLink: CAL_LINK, sentAt: new Date(at.getTime() + 4 * 3600 * 1000) })
+      const nudge = startNudgeText({ ...p, meetLink: MEET })
+      for (const t of [confirmationText(p), nightBeforeText(p), hourBeforeText(p), rebook, nudge]) {
         assert.match(t, GSM7, `not GSM-7: ${t}`)
       }
     }
   }
+})
+
+test('no-show rebook text, exact copy, today / yesterday / no day word', () => {
+  const sameDay = new Date(TUE_4PM_ET.getTime() + 4 * 3600 * 1000)
+  assert.equal(
+    noShowRebookText({ ...pt, rebookLink: CAL_LINK, sentAt: sameDay }),
+    `Hey Marcus, Jacob from Align and Acquire. Sorry we missed each other today. Grab a new time that works for you here: ${CAL_LINK}`
+  )
+  const nextDay = new Date(TUE_4PM_ET.getTime() + 20 * 3600 * 1000)
+  assert.match(noShowRebookText({ ...pt, rebookLink: CAL_LINK, sentAt: nextDay }), /each other yesterday\. Grab/)
+  const later = new Date(TUE_4PM_ET.getTime() + 50 * 3600 * 1000)
+  assert.match(noShowRebookText({ ...pt, firstName: null, rebookLink: CAL_LINK, sentAt: later }), /^Hey, Jacob .*each other\. Grab/)
+})
+
+test('start nudge text, exact copy', () => {
+  assert.equal(
+    startNudgeText({ ...pt, meetLink: MEET }),
+    `Hey Marcus, Jacob from Align and Acquire. I'm on the call now. Join here: ${MEET}`
+  )
+  assert.match(startNudgeText({ ...pt, firstName: '', meetLink: MEET }), /^Hey, Jacob from/)
+})
+
+test('RESCHEDULE_LINK off: night-before and email are exactly today\'s', () => {
+  for (const off of [undefined, null, '', '  ']) {
+    assert.equal(nightBeforeText({ ...pt, rescheduleLink: off }), nightBeforeText(pt))
+    assert.deepEqual(confirmationEmail({ ...pt, videoUrl: VIDEO, rescheduleLink: off }), confirmationEmail({ ...pt, videoUrl: VIDEO }))
+  }
+})
+
+test('RESCHEDULE_LINK on: night-before carries the link in place of the phone line', () => {
+  const t = nightBeforeText({ ...pt, rescheduleLink: SHORT_LINK })
+  assert.equal(
+    t,
+    'Hey Marcus, Jacob from Align and Acquire. Our call is tomorrow at 1:00 PM PDT (your time). ' +
+      `Reply YES if you're still good. Need to move it? Pick a new time here: ${SHORT_LINK}`
+  )
+  assert.match(t, GSM7)
+})
+
+test('RESCHEDULE_LINK on: night-before is at most 280 chars at its worst case', () => {
+  // Worst label the code can produce: an IP-guessed zone rendered beside ET,
+  // swept across every zone the runtime knows and every slot start (7:00 AM to
+  // 8:30 PM ET) on a summer and a winter day.
+  let worst = ''
+  let worstAt = TUE_4PM_ET
+  let worstZone = ''
+  const zones = (Intl as unknown as { supportedValuesOf(k: string): string[] }).supportedValuesOf('timeZone')
+  for (const day of [Date.parse('2026-09-22T11:00:00Z'), Date.parse('2027-01-12T12:00:00Z')]) {
+    for (let slot = 0; slot < 28; slot++) {
+      const at = new Date(day + slot * 30 * 60 * 1000)
+      for (const z of zones) {
+        const label = bookerWhen(at, { timeZone: z, source: 'ip' }).timeMarked
+        if (label.length > worst.length) [worst, worstAt, worstZone] = [label, at, z]
+      }
+    }
+  }
+  assert.ok(worst.length >= 33, `worst label ${worst}`)
+  const t = nightBeforeText({
+    ...pt,
+    firstName: 'Maximilianus',
+    scheduledAt: worstAt,
+    timeZone: worstZone,
+    timeZoneSource: 'ip',
+    rescheduleLink: SHORT_LINK,
+  })
+  assert.ok(t.includes(worst))
+  assert.match(t, /^Hey Maximilianus, /)
+  assert.match(t, GSM7)
+  assert.ok(t.length <= NIGHT_BEFORE_LINK_MAX_CHARS, `length ${t.length}: ${t}`)
+  // The bare /calendar fallback is shorter still.
+  const bare = 'https://www.alignandacquire.com/calendar?utm_source=sms&utm_medium=funnel_return'
+  assert.ok(nightBeforeText({ ...pt, firstName: 'Maximilianus', scheduledAt: worstAt, timeZone: worstZone, timeZoneSource: 'ip', rescheduleLink: bare }).length <= NIGHT_BEFORE_LINK_MAX_CHARS)
+})
+
+test('RESCHEDULE_LINK on: email adds the link and keeps the number', () => {
+  const mail = confirmationEmail({ ...pt, videoUrl: VIDEO, rescheduleLink: CAL_LINK })
+  assert.match(mail.text, new RegExp(`Need a different time\\? Pick a new one here: ${CAL_LINK.replace(/[?.]/g, '\\$&')} Or text or call my cell at 517-580-9709\\.`))
+  assert.ok(!mail.text.includes('Need a different time? Text or call'))
+  assert.match(mail.html, /Need a different time\? <a href="https:\/\/www\.alignandacquire\.com\/calendar\?l=Ab3dEf6hIj9kLm2n&amp;utm_source=sms[^"]*">Pick a new one here<\/a>\. Or text or call my cell at 517-580-9709\./)
+  for (const x of [mail.subject, mail.text, mail.html]) assert.match(x, NO_DASHES)
+  const noPhone = confirmationEmail({ ...pt, ownerPhone: null, rescheduleLink: CAL_LINK })
+  assert.match(noPhone.text, /Pick a new one here: \S+\n\nJacob/)
 })
 
 test('MSG 5 email, exact subject and plain-text body', () => {

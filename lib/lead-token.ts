@@ -19,7 +19,7 @@
 
 import { randomInt } from 'crypto'
 import { db } from '@/lib/db'
-import { withSmsUtms } from '@/lib/attribution'
+import { withShortSmsUtms, withSmsUtms } from '@/lib/attribution'
 
 export const LEAD_TOKEN_TTL_MS = 30 * 24 * 60 * 60 * 1000
 const TOKEN_LENGTH = 16
@@ -75,7 +75,15 @@ export async function resolveCalendarToken(
  * Carries the return UTMs, so a booking off this link stops reading as direct.
  */
 export function calendarLink(token: string | null, arm?: string | null): string {
+  return withSmsUtms(calendarUrl(token), arm)
+}
+
+/** Same page, short UTM set (no utm_campaign). RESCHEDULE_LINK night-before only. */
+export function calendarLinkShort(token: string | null): string {
+  return withShortSmsUtms(calendarUrl(token))
+}
+
+function calendarUrl(token: string | null): string {
   const base = (process.env.NEXT_PUBLIC_APP_URL || 'https://www.alignandacquire.com').replace(/\/$/, '')
-  const url = token ? `${base}/calendar?l=${encodeURIComponent(token)}` : `${base}/calendar`
-  return withSmsUtms(url, arm)
+  return token ? `${base}/calendar?l=${encodeURIComponent(token)}` : `${base}/calendar`
 }

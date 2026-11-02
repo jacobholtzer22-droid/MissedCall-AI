@@ -26,6 +26,9 @@ import { DISMISS_MARKER, billRow, readyToBillEnabled, type BoardBillRow } from '
 import { stripeCardAtSignupEnabled } from '@/lib/ops/stripe-billing'
 import { prStatesFor } from '@/lib/ops/pr-state-server'
 import type { IntakeWithPreview } from '@/lib/ops/preview-feedback'
+import { needsConfirmFlag, showRateFlags } from '@/lib/show-rate'
+import { clientChaseEnabled, clientChaseList, type BoardChaseRow } from '@/lib/ops/client-chase'
+import { callPromptList, callPromptWindow, leadCallPromptEnabled, type BoardCallPrompt } from '@/lib/ops/call-prompt'
 
 /** Ops runs on Jacob's day: "today" and "this month" are America/Detroit. */
 export const OPS_TIMEZONE = 'America/Detroit'
@@ -130,6 +133,12 @@ export type BoardBooking = {
   status: string
   showStatus: string
   googleMeetLink: string | null
+  /**
+   * CONFIRM_TRACKING only (absent when the flag is off): the night-before text
+   * asked for YES, none came, and it is past 9:00 AM booker-local on the call
+   * day. Ops HQ shows it so the owner can text personally.
+   */
+  noConfirmReply?: boolean
 }
 
 export type MoneyBucket = { total: number; count: number; noStripe: number }
@@ -176,6 +185,10 @@ export type OpsBoard = {
   ignored: BoardEngagement[]
   followUpsDue: BoardFollowUp[]
   bookedToday: BoardBooking[]
+  /** LEAD_CALL_PROMPT only (absent when off): verified leads who never booked, to call. */
+  callPrompts?: BoardCallPrompt[]
+  /** CLIENT_CHASE_LIST only (absent when off): client steps waiting over 3 days, each with a draft text. */
+  clientChase?: BoardChaseRow[]
   money: BoardMoney
   agentRuns: BoardAgentRun[]
 }
@@ -250,6 +263,11 @@ export async function getOpsBoard(): Promise<OpsBoard> {
     }),
   ])
   const statusBy = new Map(statuses.map((s) => [s.engagementId, s]))
+
+  // CONFIRM_TRACKING (off by default): one extra read, only when the flag is on.
+  const noReplyIds = showRateFlags().confirmTracking ? await noConfirmReplyIds(bookings.map((b) => b.id), now) : null
+  // LEAD_CALL_PROMPT (off by default): two extra reads, only when the flag is on.
+  const callPrompts = leadCallPromptEnabled() && marketing ? await loadCallPrompts(marketing.id, now) : null
 
   // Prospect names: the latest lead or booking per person, two queries total.
   const phoneKeys = prospects.map((p) => p.personKey).filter((k) => !k.startsWith('lead:'))
@@ -421,7 +439,14 @@ export async function getOpsBoard(): Promise<OpsBoard> {
     engagements: live,
     ignored,
     followUpsDue,
-    bookedToday: bookings.map((b) => ({ ...b, scheduledAt: b.scheduledAt.toISOString() })),
+    bookedToday: bookings.map((b) =>
+      noReplyIds
+        ? { ...b, scheduledAt: b.scheduledAt.toISOString(), noConfirmReply: noReplyIds.has(b.id) }
+        : { ...b, scheduledAt: b.scheduledAt.toISOString() }
+    ),
+    ...(callPrompts ? { callPrompts } : {}),
+    // CLIENT_CHASE_LIST (off by default): derived from the engagements above, no extra read.
+    ...(clientChaseEnabled() ? { clientChase: clientChaseList(live, now) } : {}),
     money,
     agentRuns: runs.flatMap((r) => (r.engagementId && r.engagement ? [{ ...r, engagementId: r.engagementId, engagement: r.engagement }] : [])).map((r) => ({
       id: r.id,
@@ -516,4 +541,48 @@ async function loadBillRows(engagements: BoardEngagement[]): Promise<BoardBillRo
 async function cardStates(ids: string[]): Promise<Map<string, { paymentMethodId?: string; subscriptionId?: string }>> {
   const rows = await db.engagement.findMany({ where: { id: { in: ids } }, select: { id: true, intake: true } })
   return new Map(rows.map((r) => [r.id, ((r.intake ?? {}) as { billing?: { paymentMethodId?: string; subscriptionId?: string } }).billing ?? {}]))
+}
+
+/** Today's bookings Ops HQ should flag for no YES reply (lib/show-rate needsConfirmFlag). */
+async function noConfirmReplyIds(ids: string[], now: Date): Promise<Set<string>> {
+  if (ids.length === 0) return new Set()
+  const rows = await db.appointment.findMany({
+    where: { id: { in: ids } },
+    select: {
+      id: true,
+      scheduledAt: true,
+      status: true,
+      showStatus: true,
+      notes: true,
+      customerTimezone: true,
+      reminderNightBeforeSentAt: true,
+    },
+  })
+  return new Set(rows.filter((r) => needsConfirmFlag(r, now)).map((r) => r.id))
+}
+
+/** Verified, never-booked leads for the Ops HQ call list (lib/ops/call-prompt.ts). */
+async function loadCallPrompts(businessId: string, now: Date): Promise<BoardCallPrompt[]> {
+  const { since, until } = callPromptWindow(now)
+  const leads = await db.websiteLead.findMany({
+    where: {
+      businessId,
+      otpVerifiedAt: { gte: since, lte: until },
+      phone: { not: null },
+      status: { notIn: ['spam', 'deleted'] },
+      junk: false,
+    },
+    orderBy: { otpVerifiedAt: 'desc' },
+    take: 200,
+    select: { id: true, name: true, phone: true, message: true, businessName: true, status: true, junk: true, otpVerifiedAt: true },
+  })
+  const phones = Array.from(new Set(leads.map((l) => l.phone).filter((p): p is string => Boolean(p))))
+  // Same "booked" rule as the follow-up cron: any non-cancelled appointment on the phone.
+  const booked = phones.length
+    ? await db.appointment.findMany({
+        where: { customerPhone: { in: phones }, status: { not: 'cancelled' } },
+        select: { customerPhone: true },
+      })
+    : []
+  return callPromptList(leads, new Set(booked.map((b) => b.customerPhone)), now)
 }

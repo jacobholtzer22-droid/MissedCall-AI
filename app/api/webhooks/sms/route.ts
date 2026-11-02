@@ -26,6 +26,8 @@ import {
   emailInboundToOwner,
 } from '@/lib/marketing-reply'
 import { MARKETING_INBOUND_ACK } from '@/app/book/constants'
+import { showRateFlags } from '@/lib/show-rate'
+import { recordYesReplyForBusiness } from '@/lib/show-rate-reply'
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY ?? '' })
 
@@ -420,6 +422,12 @@ export async function POST(request: NextRequest) {
           // Never silent: Jacob gets every inbound on his phone and in his inbox.
           await pingOwnerWithThread(business.ownerPhone, facts, from, text, null)
           await emailInboundToOwner(business.ownerEmail, business.id, facts, from, text)
+          // CONFIRM_TRACKING (off by default): after the forward, never instead
+          // of it. Records a YES on the upcoming booking; sends nothing, never throws.
+          if (showRateFlags().confirmTracking) {
+            const outcome = await recordYesReplyForBusiness(business.id, from, text)
+            console.log(`[show-rate] confirm-by-reply from=${from} ${JSON.stringify(outcome)}`)
+          }
         } catch (err) {
           console.error('[marketing-reply] FAILED:', err)
         }

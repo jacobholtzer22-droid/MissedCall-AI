@@ -54,6 +54,8 @@ import { getCalendarEventState } from '@/lib/google-calendar'
 import { isSendableStatus } from '@/lib/reminder-status'
 import { nightBeforeText, hourBeforeText } from '@/lib/marketing-sms-copy'
 import { decideReminder, type ReminderKind } from '@/lib/demo-reminder-schedule'
+import { showRateFlags } from '@/lib/show-rate'
+import { reminderExtras, runShowRateSteps, type ShowRateDeps, type ShowRateResult } from '@/lib/show-rate-cron'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
@@ -86,9 +88,11 @@ function reminderText(
   meetLink: string | null,
   ownerPhone: string | null,
   timeZone: string | null,
-  timeZoneSource: string | null
+  timeZoneSource: string | null,
+  rescheduleLink?: string
 ): string {
-  const params = { scheduledAt, firstName, meetLink, ownerPhone, timeZone, timeZoneSource }
+  // rescheduleLink is only ever set with RESCHEDULE_LINK on; undefined renders today's copy.
+  const params = { scheduledAt, firstName, meetLink, ownerPhone, timeZone, timeZoneSource, rescheduleLink }
   return kind === 'night_before' ? nightBeforeText(params) : hourBeforeText(params)
 }
 
@@ -155,6 +159,10 @@ async function runAppointmentReminders(request: NextRequest) {
     take: 200,
   })
 
+  // Show-rate flags (lib/show-rate.ts), each OFF by default.
+  const flags = showRateFlags()
+  const showRateLinks = flags.rescheduleLink ? showRateDeps(business.id, telnyx, fromNumber) : null
+
   const result = {
     checked: candidates.length,
     sent: [] as { id: string; kind: ReminderKind }[],
@@ -182,6 +190,13 @@ async function runAppointmentReminders(request: NextRequest) {
 
     if (await hasOptedOut(business.id, appt.customerPhone)) {
       result.skipped.push({ id: appt.id, reason: 'opted out (STOP)' })
+      continue
+    }
+
+    // RESCHEDULE_LINK only: skip a superseded booking, link in the night-before.
+    const extras = showRateLinks ? await reminderExtras(flags, kind, appt, showRateLinks, now) : {}
+    if (extras.skip) {
+      result.skipped.push({ id: appt.id, reason: extras.skip })
       continue
     }
 
@@ -252,7 +267,8 @@ async function runAppointmentReminders(request: NextRequest) {
       fresh.googleMeetLink,
       business.ownerPhone,
       appt.customerTimezone,
-      appt.customerTimezoneSource
+      appt.customerTimezoneSource,
+      extras.rescheduleLink
     )
 
     try {
@@ -281,8 +297,81 @@ async function runAppointmentReminders(request: NextRequest) {
     }
   }
 
+  // Show-rate steps (lib/show-rate-cron.ts), each behind its own env flag and
+  // OFF by default. With every flag off nothing below runs and the response is
+  // exactly what it was.
+  let showRate: ShowRateResult | null = null
+  if (flags.noshowRebook || flags.startNudge) {
+    showRate = await runShowRateSteps(flags, showRateDeps(business.id, telnyx, fromNumber), now)
+  }
+
   console.log(
     `[reminders] run complete checked=${result.checked} sent=${result.sent.length} skipped=${result.skipped.length} failed=${result.failed.length}`
   )
-  return NextResponse.json({ ok: true, ...result })
+  return NextResponse.json(showRate ? { ok: true, ...result, showRate } : { ok: true, ...result })
+}
+
+const SHOW_RATE_SELECT = {
+  id: true,
+  scheduledAt: true,
+  duration: true,
+  createdAt: true,
+  customerName: true,
+  customerPhone: true,
+  customerTimezone: true,
+  customerTimezoneSource: true,
+  notes: true,
+  status: true,
+  showStatus: true,
+  googleMeetLink: true,
+  googleCalendarEventId: true,
+  reminderNightBeforeSentAt: true,
+} as const
+
+/** The real side effects behind lib/show-rate-cron.ts. Only built when a flag is on. */
+function showRateDeps(businessId: string, telnyx: Telnyx, fromNumber: string): ShowRateDeps {
+  return {
+    findNoShows: (since, until) =>
+      db.appointment.findMany({
+        where: { businessId, showStatus: 'no_show', scheduledAt: { gte: since, lte: until } },
+        orderBy: { scheduledAt: 'asc' },
+        take: 200,
+        select: SHOW_RATE_SELECT,
+      }),
+    findStarting: (since, until) =>
+      db.appointment.findMany({
+        where: { businessId, status: 'confirmed', scheduledAt: { gte: since, lte: until } },
+        orderBy: { scheduledAt: 'asc' },
+        take: 200,
+        select: SHOW_RATE_SELECT,
+      }),
+    claim: async (id, expected, next) =>
+      (await db.appointment.updateMany({ where: { id, notes: expected }, data: { notes: next } })).count,
+    reread: (id) => db.appointment.findUnique({ where: { id }, select: SHOW_RATE_SELECT }),
+    hasOptedOut: (phone) => hasOptedOut(businessId, phone),
+    hasNewerBooking: async (appt) =>
+      (await db.appointment.count({
+        where: {
+          businessId,
+          id: { not: appt.id },
+          customerPhone: normalizeToE164(appt.customerPhone),
+          createdAt: { gt: appt.createdAt },
+          status: 'confirmed',
+        },
+      })) > 0,
+    calendarState: (eventId) => getCalendarEventState(businessId, eventId),
+    leadForPhone: (phone) =>
+      db.websiteLead.findFirst({
+        where: { businessId, phone: normalizeToE164(phone), calendarToken: { not: null } },
+        orderBy: { createdAt: 'desc' },
+        select: { calendarToken: true, otpVerifiedAt: true, createdAt: true, funnelVariant: true },
+      }),
+    send: async (to, text) => {
+      const res = await telnyx.messages.send({ from: fromNumber, to, text })
+      return (res as { data?: { id?: string } })?.data?.id ?? null
+    },
+    logOutbound: async (to, text, providerId) => {
+      await logMarketingOutbound({ phone: to, body: text, telnyxSid: providerId, businessId, label: 'reminders' })
+    },
+  }
 }

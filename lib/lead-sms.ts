@@ -21,7 +21,7 @@ import Telnyx from 'telnyx'
 import { db } from '@/lib/db'
 import { normalizeToE164 } from '@/lib/phone-utils'
 import { isTestPhone } from '@/lib/test-allowlist'
-import { calendarLink } from '@/lib/lead-token'
+import { calendarLink, calendarLinkShort } from '@/lib/lead-token'
 import { isOptedOut } from '@/lib/sms-opt-out'
 import { logMarketingOutbound } from '@/lib/marketing-thread-log'
 import { greetingName } from '@/lib/marketing-sms-copy'
@@ -98,6 +98,51 @@ export function followUpBody(ctx?: LeadContext): string {
     `Hey${greetingName(ctx?.firstName)}, Jacob from Align and Acquire again. ` +
     `Still want to see how this would work for ${companyOrDefault(ctx)}? ` +
     `It's a quick call, pick any time that works: ${leadCalendarLink(ctx)}` +
+    `\n\nReply STOP to opt out.`
+  )
+}
+
+// -------------------------------------------
+// MSG 3b, LEAD_TOUCH_3_SMS (off by default)
+// -------------------------------------------
+
+/**
+ * Marker that means the result line below is still the placeholder. While
+ * LEAD_TOUCH_3_RESULT contains it, the touch-3 step refuses to send anything
+ * (lib/lead-touch-3.ts logs `[lead-touch-3] SKIP reason=result_placeholder`).
+ */
+export const LEAD_TOUCH_3_PLACEHOLDER_MARKER = '[RESULT:'
+
+/**
+ * One real client result, in one sentence, ending in a full stop. Jacob writes
+ * this; nothing goes out until he does. GSM-7 only (straight quotes, no dashes,
+ * no emoji) and at most LEAD_TOUCH_3_RESULT_MAX_CHARS, or the text runs to a
+ * third segment.
+ */
+export const LEAD_TOUCH_3_RESULT = '[RESULT: one real client result, your OK needed]'
+
+export const LEAD_TOUCH_3_RESULT_MAX_CHARS = 120
+/** Two GSM-7 segments. Asserted at the worst case in lib/lead-touch-3.test.ts. */
+export const LEAD_TOUCH_3_MAX_CHARS = 300
+
+export function isLeadTouch3Placeholder(result: string = LEAD_TOUCH_3_RESULT): boolean {
+  return !result.trim() || result.includes(LEAD_TOUCH_3_PLACEHOLDER_MARKER)
+}
+
+/**
+ * Touch 3, day 4 to 7 after OTP, only after touch 2 went out and they still
+ * have not booked. A different angle from touch 2: one concrete result, then
+ * the link. No company name: with a 12-letter first name and a 120-character
+ * result there is no room for one inside two segments.
+ *
+ * The link is the same signed /calendar token link, with the short SMS UTM set
+ * (calendarLinkShort: utm_source=sms, utm_medium=funnel_return, no
+ * utm_campaign) for length.
+ */
+export function leadTouch3Body(ctx: { firstName?: string | null; calendarToken?: string | null }, result: string = LEAD_TOUCH_3_RESULT): string {
+  return (
+    `Hey${greetingName(ctx.firstName)}, Jacob from Align and Acquire. ${result.trim()} ` +
+    `Book: ${calendarLinkShort(ctx.calendarToken ?? null)}` +
     `\n\nReply STOP to opt out.`
   )
 }

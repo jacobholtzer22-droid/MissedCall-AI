@@ -358,6 +358,24 @@ export function formatBookingAttribution(
  * medium is RETURN_MEDIUM on purpose: touchHasSignal() refuses it as a first
  * touch, so our own follow-up can never take credit for finding someone.
  */
+/**
+ * The short form, for a text that has to fit (the RESCHEDULE_LINK night-before
+ * link only). Same utm_source and utm_medium as withSmsUtms, so a click is still
+ * "sms / our text" and still never a first touch; it drops utm_campaign (the
+ * arm). The booking's arm does not depend on it: /api/demo-book takes it from
+ * the lead row the token resolves to.
+ */
+export function withShortSmsUtms(url: string): string {
+  try {
+    const u = new URL(url)
+    u.searchParams.set('utm_source', 'sms')
+    u.searchParams.set('utm_medium', RETURN_MEDIUM)
+    return u.toString()
+  } catch {
+    return url
+  }
+}
+
 export function withSmsUtms(url: string, arm?: string | null): string {
   try {
     const u = new URL(url)

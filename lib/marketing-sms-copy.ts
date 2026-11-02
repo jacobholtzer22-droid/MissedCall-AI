@@ -24,7 +24,8 @@
 // a literal phone number into this file: the row is the source of truth, and a
 // hardcoded number silently outlives the day it changes.
 
-import { bookerWhen } from '@/lib/booker-time'
+import { bookerWhen, normalizeTimeZone } from '@/lib/booker-time'
+import { sameDayInTz } from '@/lib/demo-reminder-schedule'
 
 /**
  * "+15175809709" renders as "517-580-9709".
@@ -69,6 +70,11 @@ export type DemoSmsParams = {
    */
   timeZone?: string | null
   timeZoneSource?: string | null
+  /**
+   * RESCHEDULE_LINK only (off by default): the lead's signed /calendar link.
+   * Absent or null renders today's copy exactly.
+   */
+  rescheduleLink?: string | null
 }
 
 export function demoWhen(params: DemoSmsParams) {
@@ -95,9 +101,24 @@ export function confirmationText(params: DemoSmsParams): string {
  * forwards it to Jacob and auto-replies nothing. YES is not an opt-in keyword
  * there (only START and UNSTOP are).
  */
+/** Cap for the RESCHEDULE_LINK night-before text, asserted at its worst case in the tests. */
+export const NIGHT_BEFORE_LINK_MAX_CHARS = 280
+
 export function nightBeforeText(params: DemoSmsParams): string {
   const when = demoWhen(params)
   const phone = formatReschedulePhone(params.ownerPhone)
+  const reschedule = params.rescheduleLink?.trim()
+  // RESCHEDULE_LINK: the link takes the phone sentence's place (the
+  // confirmation text and email still carry the number), and the wording is
+  // trimmed so the worst case, a 12-letter name plus an IP-guessed zone shown
+  // beside ET, stays at or under NIGHT_BEFORE_LINK_MAX_CHARS.
+  if (reschedule) {
+    return (
+      `Hey${greetingName(params.firstName)}, Jacob from Align and Acquire. ` +
+      `Our call is tomorrow at ${when.timeMarked}. ` +
+      `Reply YES if you're still good. Need to move it? Pick a new time here: ${reschedule}`
+    )
+  }
   return (
     `Hey${greetingName(params.firstName)}, Jacob from Align and Acquire. ` +
     `Looking forward to our call tomorrow at ${when.timeMarked}. ` +
@@ -117,4 +138,36 @@ export function hourBeforeText(params: DemoSmsParams): string {
     `We're on at ${when.time}, about an hour from now.` +
     (params.meetLink ? ` Join here: ${params.meetLink}` : '')
   )
+}
+
+/**
+ * NOSHOW_REBOOK_SMS (off by default). Sent once by the reminder cron a few
+ * hours after the owner marks a booking no_show, booker daytime only. The link
+ * is the lead's signed /calendar link (lib/lead-token calendarLink), the bare
+ * /calendar page when the booking has no usable token.
+ *
+ * "today" / "yesterday" is worked out in the booker's zone at send time, and
+ * dropped for anything older, so a no-show marked late never reads wrong.
+ */
+export function noShowRebookText(params: DemoSmsParams & { rebookLink: string; sentAt: Date }): string {
+  const tz = normalizeTimeZone(params.timeZone) ?? 'America/New_York'
+  const yesterday = new Date(params.sentAt.getTime() - 24 * 60 * 60 * 1000)
+  const day = sameDayInTz(params.scheduledAt, params.sentAt, tz)
+    ? ' today'
+    : sameDayInTz(params.scheduledAt, yesterday, tz)
+      ? ' yesterday'
+      : ''
+  return (
+    `Hey${greetingName(params.firstName)}, Jacob from Align and Acquire. ` +
+    `Sorry we missed each other${day}. Grab a new time that works for you here: ${params.rebookLink}`
+  )
+}
+
+/**
+ * START_NUDGE_SMS (off by default). Sent once by the reminder cron at the start
+ * time while the booking is still unmarked. Never sent without a Meet link, so
+ * the link is required here.
+ */
+export function startNudgeText(params: DemoSmsParams & { meetLink: string }): string {
+  return `Hey${greetingName(params.firstName)}, Jacob from Align and Acquire. I'm on the call now. Join here: ${params.meetLink}`
 }

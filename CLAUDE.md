@@ -2697,6 +2697,61 @@ to read `slotStart.getDate()` in the server zone (UTC on Vercel), so 8:00 and
 Both the GET and the write path treat an unreadable calendar as "no availability"
 rather than "free". Better to show no times than to double-book.
 
+### Show-rate layer (Nov 2026, every flag OFF by default)
+
+Each feature reads its own env flag as `process.env.X === 'true'`; anything else
+is off, and with every flag off the cron, the webhook, the copy and Ops HQ behave
+exactly as before. Decision logic is pure in `lib/show-rate.ts`; the cron steps
+live in `lib/show-rate-cron.ts` with every side effect injected (tests use fakes,
+nothing can send). **No schema change**: state is one marker line per event
+appended to `Appointment.notes` (like the consent marker), written with a
+conditional update on the exact notes value read, so a send is claimed once and
+a concurrent notes write is never clobbered (the losing run simply skips).
+
+| Flag | What | Where | Marker |
+|---|---|---|---|
+| `NOSHOW_REBOOK_SMS` | One rebook text after a booking is marked `no_show`: 3h after the call ends, moved into 10:00 AM to 7:00 PM booker-local (before 10 waits for 10:00 AM, 7 PM or later waits for 10:00 AM next day), only within 72h of the call. Skipped when the same phone booked again after it. Link: the lead's `/calendar?l=` token via `calendarLink`, bare `/calendar` when there is no unexpired token. | reminder cron, after the reminder loop | `Rebook text sent: <ISO>` |
+| `START_NUDGE_SMS` | One "I'm on the call now. Join here: <Meet>" text from `scheduledAt` to +10 min while `status` is `confirmed` and `showStatus` is still `pending`. Needs a Meet link; 7:00 AM quiet hours apply; skipped when the phone booked again after it. Relies on slots starting on :00/:30 and the cron running every 15 min. | reminder cron, after the rebook step | `Start nudge sent: <ISO>` |
+| `CONFIRM_TRACKING` | A whole-message YES reply (`yes`, `y`, `yep`, `yeah`, `confirmed`, `ok`; trimmed, punctuation and emoji stripped, case-insensitive) to the marketing line marks the soonest confirmed booking for that phone starting in the next 36h. Runs AFTER the owner forward, which is unchanged; sends nothing. Ops HQ Sales strip shows "No YES reply. Text them" (an `sms:` link) on a call today once it is 9:00 AM booker-local, the night-before text went out, no YES is recorded and `showStatus` is pending (`BoardBooking.noConfirmReply`, absent when off). | `webhooks/sms` marketing branch (`lib/show-rate-reply.ts`), `lib/ops/board.ts`, `HomeTriage.tsx` | `Confirmed by reply: <ISO>` |
+| `RESCHEDULE_LINK` | The lead's `/calendar?l=` link in the night-before text ("Our call is tomorrow at {time}. Reply YES if you're still good. Need to move it? Pick a new time here: <link>", in place of the phone sentence; at most 280 chars at the worst case of a 12-letter name plus an IP-guessed zone beside ET, asserted in `lib/demo-booker-copy.test.ts`; the link uses `calendarLinkShort`, which keeps `utm_source=sms` and `utm_medium=funnel_return` and drops `utm_campaign`) and in the confirmation email ("Need a different time? Pick a new one here: <link> Or text or call my cell at ..."). Off: both are exactly today's copy. **The link books a NEW slot**, so with the flag on `/api/demo-book`, after the new row is written and after the response, cancels every earlier confirmed upcoming booking from the same phone (`status` cancelled, conditional on the notes value read) and only then deletes its Google event with `sendUpdates: 'all'` (`lib/show-rate-supersede.ts`, wiring in `lib/show-rate-supersede-server.ts`). Delete, not move: there is no update helper in `lib/google-calendar.ts` and the new booking already has its own event and Meet link. A failed delete is logged and the old row stays cancelled. Backstop: the reminder loop also skips any booking whose phone booked again after it (`superseded by a newer booking`). | reminder cron loop (`reminderExtras`), `/api/demo-book` email and supersede | `Superseded by rebook: <newId> <ISO>` on the old row |
+
+### Lead touch 3 (`LEAD_TOUCH_3_SMS`, off by default)
+
+A third text to a verified lead who never booked: 72h to 168h after `otpVerifiedAt`
+(day 4 to 7), at least 24h after touch 2 (`followUpSentAt` set), inside the same
+11:00 AM to 7:00 PM ET window, as a second step of `/api/cron/lead-follow-up`
+(`lib/lead-touch-3.ts`, copy `leadTouch3Body` in `lib/lead-sms.ts`). Same
+exclusions as touch 2: spam/deleted statuses, `junk`, booked by phone (any
+non-cancelled appointment), test allowlist, STOP. Copy: "Hey {first}, Jacob from
+Align and Acquire. {LEAD_TOUCH_3_RESULT} Book: {short /calendar link}" plus the STOP
+line; no company (no room at the 300-char cap with a 120-char result).
+**`LEAD_TOUCH_3_RESULT` is a placeholder until Jacob writes a real result; while
+it contains `[RESULT:` the step sends nothing and logs
+`[lead-touch-3] SKIP reason=result_placeholder`.**
+
+Once-only claim: WebsiteLead has no safe free-text field (`message` is rebuilt by
+the wizard on a return visit), so the claim is the outbound log row itself, a
+`Message` with id `leadtouch3_<leadId>` on the person's demo-line thread, created
+before the send (primary key = atomic) and deleted if the send fails, like touch
+2's release of `followUpSentAt`.
+
+### Ops HQ lists (read only, each OFF by default)
+
+- `LEAD_CALL_PROMPT`: "Leads to call" under the Sales strip. Marketing leads
+  OTP-verified 24h to 14 days ago, not booked (any non-cancelled appointment on
+  the phone), not spam/deleted/junk/test allowlist; name, company, `tel:` phone,
+  hours since OTP. Newest first, one row per phone, capped at 20
+  (`lib/ops/call-prompt.ts`, loaded by `lib/ops/board.ts` into
+  `OpsBoard.callPrompts`, absent when off).
+- `CLIENT_CHASE_LIST`: "Chase clients" in the same panel. Every deliverable with
+  `waitingOn = 'client'` and `stepUpdatedAt` 3+ days old, oldest first, capped at
+  25, skipping terminal steps (including `paused_by_client`) and churned or
+  ignored engagements. Shows client, deliverable and step label, days waiting,
+  "last contacted N days ago" / "never contacted" from `Engagement.lastContactedAt`,
+  and a step-specific draft (`CHASE_DRAFTS` in `lib/ops/client-chase.ts`, generic
+  fallback otherwise) with a Copy button and an `sms:` link prefilled to
+  `Engagement.phone`. Jacob sends it himself; nothing is sent or written.
+
 ---
 
 ## 20. Admin Pipeline (`/admin/pipeline`): outcome + follow-up CRM

@@ -83,6 +83,11 @@ export function SalesStrip({ sales, board, actions }: { sales: Triage['sales']; 
             <li key={b.id} className="flex flex-wrap items-center gap-2 text-sm">
               <span className="w-16 shrink-0 tabular-nums text-gray-100">{detroitTime(b.scheduledAt)}</span>
               <span className="text-gray-200">Demo call: {b.customerName}</span>
+              {full?.noConfirmReply && (
+                <a href={`sms:${full.customerPhone}`} className="text-xs text-amber-300" title="No YES to the night-before text by 9:00 AM their time">
+                  No YES reply. Text them
+                </a>
+              )}
               <span className="ml-auto flex flex-wrap gap-2">
                 {full?.googleMeetLink && (
                   <a href={full.googleMeetLink} target="_blank" rel="noreferrer" className={`${smallButton} min-h-[44px]`}>
@@ -250,6 +255,89 @@ export function ReadyToBillStrip({ board }: { board: OpsBoard }) {
               </button>
             </div>
             {proposed[r.engagementId] && <p className="text-xs text-gray-400">{proposed[r.engagementId]}</p>}
+          </li>
+        ))}
+      </ul>
+    </section>
+  )
+}
+
+/**
+ * LEAD_CALL_PROMPT (off by default): verified leads who never booked, newest
+ * first. Read only. Renders nothing when the board carries no list.
+ */
+export function CallPromptStrip({ board }: { board: OpsBoard }) {
+  const leads = board.callPrompts
+  if (!leads?.length) return null
+  return (
+    <section aria-label="Leads to call" className="bg-gray-900 border border-gray-800 rounded-lg px-4 py-3 space-y-2">
+      <h2 className="text-sm font-semibold text-gray-100">
+        Leads to call
+        <span className="ml-2 text-gray-500 font-normal">verified, never booked</span>
+      </h2>
+      <ul className="space-y-2">
+        {leads.map((l) => (
+          <li key={l.leadId} className="flex flex-wrap items-center gap-2 text-sm">
+            <span className="text-gray-200">{l.name || 'No name'}</span>
+            {l.company && <span className="text-gray-400">{l.company}</span>}
+            <a href={`tel:${l.phone}`} className="text-xs text-blue-400 tabular-nums">
+              {formatPhoneNumber(l.phone)}
+            </a>
+            <span className="ml-auto text-xs text-amber-300 tabular-nums">{l.hoursSinceOtp}h since verified</span>
+          </li>
+        ))}
+      </ul>
+    </section>
+  )
+}
+
+/**
+ * CLIENT_CHASE_LIST (off by default): client steps waiting over 3 days, oldest
+ * first, each with a drafted text Jacob copies or opens in Messages and sends
+ * himself. Nothing is sent from here. Renders nothing when the board carries no list.
+ */
+export function ClientChaseStrip({ board }: { board: OpsBoard }) {
+  const rows = board.clientChase
+  const [copied, setCopied] = useState<string | null>(null)
+  if (!rows?.length) return null
+  const copy = async (id: string, text: string) => {
+    try {
+      await navigator.clipboard.writeText(text)
+      setCopied(id)
+    } catch {
+      setCopied(null)
+    }
+  }
+  return (
+    <section aria-label="Chase clients" className="bg-gray-900 border border-gray-800 rounded-lg px-4 py-3 space-y-2">
+      <h2 className="text-sm font-semibold text-gray-100">
+        Chase clients
+        <span className="ml-2 text-gray-500 font-normal">waiting on them 3+ days</span>
+      </h2>
+      <ul className="space-y-3">
+        {rows.map((r) => (
+          <li key={r.deliverableId} className="space-y-1 text-sm">
+            <div className="flex flex-wrap items-baseline gap-2">
+              <span className="text-gray-100">{r.clientName}</span>
+              <span className="text-gray-400">
+                {r.deliverable}: {r.stepLabel}
+              </span>
+              <span className="text-xs text-amber-300 tabular-nums">
+                {r.daysWaiting} days waiting, {r.lastContacted}
+              </span>
+            </div>
+            <p className="text-xs text-gray-300 whitespace-pre-wrap">{r.draft}</p>
+            <div className="flex flex-wrap gap-2">
+              <button type="button" onClick={() => copy(r.deliverableId, r.draft)} className={`${smallButton} min-h-[44px]`}>
+                {copied === r.deliverableId ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+                {copied === r.deliverableId ? 'Copied' : 'Copy text'}
+              </button>
+              {r.phone && (
+                <a href={`sms:${r.phone}?&body=${encodeURIComponent(r.draft)}`} className={`${smallButton} min-h-[44px]`}>
+                  <MessageSquare className="h-3.5 w-3.5" /> Open in Messages
+                </a>
+              )}
+            </div>
           </li>
         ))}
       </ul>
