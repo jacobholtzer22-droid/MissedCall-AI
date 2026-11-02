@@ -57,7 +57,7 @@ test('parseBrief: keywords must be a table, no em dashes', () => {
   const r = parseBrief(body({ 'Target keywords': '- junk removal katy, phrase' }), data())
   assert.equal(r.ok, false)
   if (!r.ok) assert.ok(r.problems.some((p) => p.includes('markdown table')))
-  const dash = parseBrief(body({ Geo: 'Katy — Presence only' }), data())
+  const dash = parseBrief(body({ Geo: 'Katy \u2014 Presence only' }), data())
   assert.equal(dash.ok, false)
   if (!dash.ok) assert.ok(dash.problems.some((p) => p.includes('em dash')))
 })
