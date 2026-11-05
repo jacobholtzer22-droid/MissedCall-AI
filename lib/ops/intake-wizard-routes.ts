@@ -2,7 +2,9 @@
 // routes. The caller has already decided whose record it is.
 
 import { NextResponse } from 'next/server'
+import { waitUntil } from '@vercel/functions'
 import { db } from '@/lib/db'
+import { sendIntakeDoneAlert } from '@/lib/ops/intake-done-alert'
 import { finishIntake } from '@/lib/ops/client-intake'
 import { updateIntake } from '@/lib/ops/intake-server'
 import { WizardError, applyWizardPatch, readWizardPatch, wizardFinishNote, wizardView, type IntakeWithWizard } from '@/lib/ops/intake-wizard'
@@ -40,6 +42,8 @@ export async function finishWizard(client: Client, via: 'portal' | 'link', label
       return r.intake
     })
     if (note) await db.opsActivity.create({ data: { engagementId: client.id, kind: 'note', body: note } })
+    // Jacob's "intake done" text and email, once per Done that changed something. Never on the response path.
+    if (note) waitUntil(sendIntakeDoneAlert(client.id, via))
     return NextResponse.json({ ok: true, view: wizardView({ ...client, intake: next as IntakeWithWizard }, process.env, via) }, { headers: noStore })
   } catch (err) {
     console.error(`[${label}] finish failed:`, err instanceof Error ? err.message : err)

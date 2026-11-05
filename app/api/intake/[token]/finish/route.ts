@@ -12,6 +12,7 @@ import { autoflowEnabled } from '@/lib/ops/autoflow'
 import { db } from '@/lib/db'
 import { finishIntake, publicView, type IntakeWithLink } from '@/lib/ops/client-intake'
 import { guard } from '@/lib/ops/client-intake-server'
+import { sendIntakeDoneAlert } from '@/lib/ops/intake-done-alert'
 import { updateIntake } from '@/lib/ops/intake-server'
 import { portalIntakeWizardEnabled, type IntakeWithWizard } from '@/lib/ops/intake-wizard'
 import { wizardFinishNote } from '@/lib/ops/intake-wizard-routes'
@@ -30,6 +31,8 @@ export async function POST(request: Request, context: { params: { token: string 
       return r.intake
     })
     if (note) await db.opsActivity.create({ data: { engagementId: g.client.id, kind: 'note', body: note } })
+    // Jacob's "intake done" text and email, once per Done that changed something. Never on the response path.
+    if (note) waitUntil(sendIntakeDoneAlert(g.client.id, 'link'))
     // OPS_AUTOFLOW (off by default): a ready intake gets a brief DRAFT for Jacob's OK. Sends nothing.
     if (autoflowEnabled()) {
       const id = g.client.id

@@ -3642,6 +3642,18 @@ which protect only `/dashboard`, `/onboarding`, `/settings`).
 - **Getting a link**: the chief's `client_intake_link(engagementId, mode get|new|revoke)`,
   listed only with the flag on. It logs a system activity and sends nothing.
 
+#### Intake done alert (Nov 5 2026, always on)
+
+Both Done routes, the portal wizard's (`/api/portal/intake/finish` via `finishWizard`) and
+the link's (`/api/intake/[token]/finish`), text and email Jacob once per Done that changed
+something: they call `sendIntakeDoneAlert(engagementId, via)` (`lib/ops/intake-done-alert.ts`)
+under `waitUntil` only when the finish wrote the "Answers in" note, so a second Done with
+nothing new sends nothing. The text ("Intake done: Cole finished the sign-up intake for X.
+Bought: website, ads. 12 photos, logo yes. Still missing: service area.") goes through
+`notifyOwnerOfMarketingEvent`, the same owner path as every funnel alert (OWNER_PHONE /
+YOUR_EMAIL, else the marketing business's owner phone and email), never to the client. It
+never throws to the route. Copy and wiring are tested in `lib/ops/intake-done-alert.test.ts`.
+
 ### Autoflow (`OPS_AUTOFLOW`, off by default)
 
 After a job's runs finish (the report turn) and after an applied `web_push`, **code**
