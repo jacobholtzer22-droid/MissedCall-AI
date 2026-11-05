@@ -28,6 +28,8 @@ import {
 import { MARKETING_INBOUND_ACK } from '@/app/book/constants'
 import { showRateFlags } from '@/lib/show-rate'
 import { recordYesReplyForBusiness } from '@/lib/show-rate-reply'
+import { outcomeCaptureEnabled } from '@/lib/outcome-capture'
+import { recordOutcomeReplyForBusiness } from '@/lib/outcome-capture-reply'
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY ?? '' })
 
@@ -386,6 +388,18 @@ export async function POST(request: NextRequest) {
       // pingOwnerWithThread.
       if (isMarketingLine(business, to)) {
         try {
+          // OUTCOME_PROMPT_SMS (off by default): Jacob answering "did they
+          // show" from his own number ("1", "A2", "no show") marks the booking
+          // and stops here: it is not saved as a lead message or forwarded back
+          // to him. Any other text from his number, and everything from anyone
+          // else, goes on exactly as before.
+          if (outcomeCaptureEnabled()) {
+            const outcome = await recordOutcomeReplyForBusiness(business, from, text)
+            if (outcome.handled) {
+              console.log(`[outcome] reply from owner ${JSON.stringify(outcome)}`)
+              return new NextResponse('OK', { status: 200 })
+            }
+          }
           const facts = await leadFactsForPhone(business.id, from)
           const convo = await db.conversation.findFirst({
             where: { businessId: business.id, callerPhone: from },

@@ -56,6 +56,10 @@ import { nightBeforeText, hourBeforeText } from '@/lib/marketing-sms-copy'
 import { decideReminder, type ReminderKind } from '@/lib/demo-reminder-schedule'
 import { showRateFlags } from '@/lib/show-rate'
 import { reminderExtras, runShowRateSteps, type ShowRateDeps, type ShowRateResult } from '@/lib/show-rate-cron'
+import { OWNER_TIMEZONE } from '@/lib/booker-time'
+import { outcomeCaptureEnabled } from '@/lib/outcome-capture'
+import { runOutcomeCapture, type OutcomeCronResult, type OutcomeDeps } from '@/lib/outcome-capture-cron'
+import { OUTCOME_SELECT, ownerNumber } from '@/lib/outcome-capture-reply'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
@@ -305,10 +309,26 @@ async function runAppointmentReminders(request: NextRequest) {
     showRate = await runShowRateSteps(flags, showRateDeps(business.id, telnyx, fromNumber), now)
   }
 
+  // Outcome capture (lib/outcome-capture-cron.ts): the owner's "did they show"
+  // prompt 30 minutes after each call and the 6 PM list of unmarked calls.
+  // OUTCOME_PROMPT_SMS off (the default): nothing runs and the response is
+  // exactly what it was. Texts go to the owner only, never to a prospect.
+  let outcome: OutcomeCronResult | null = null
+  if (outcomeCaptureEnabled()) {
+    if (ownerNumber(business.ownerPhone)) {
+      outcome = await runOutcomeCapture(outcomeDeps(business, telnyx, fromNumber), now)
+    } else {
+      console.error('[outcome] SKIP reason=no_owner_number (OWNER_PHONE unset and business.ownerPhone empty)')
+    }
+  }
+
   console.log(
     `[reminders] run complete checked=${result.checked} sent=${result.sent.length} skipped=${result.skipped.length} failed=${result.failed.length}`
   )
-  return NextResponse.json(showRate ? { ok: true, ...result, showRate } : { ok: true, ...result })
+  const body: Record<string, unknown> = { ok: true, ...result }
+  if (showRate) body.showRate = showRate
+  if (outcome) body.outcome = outcome
+  return NextResponse.json(body)
 }
 
 const SHOW_RATE_SELECT = {
@@ -372,6 +392,31 @@ function showRateDeps(businessId: string, telnyx: Telnyx, fromNumber: string): S
     },
     logOutbound: async (to, text, providerId) => {
       await logMarketingOutbound({ phone: to, body: text, telnyxSid: providerId, businessId, label: 'reminders' })
+    },
+  }
+}
+
+/** The real side effects behind lib/outcome-capture-cron.ts. Only built when OUTCOME_PROMPT_SMS is on. */
+function outcomeDeps(
+  business: { id: string; ownerPhone: string | null; timezone: string | null },
+  telnyx: Telnyx,
+  fromNumber: string
+): OutcomeDeps {
+  const to = ownerNumber(business.ownerPhone)
+  return {
+    ownerTimeZone: business.timezone || OWNER_TIMEZONE,
+    findRecent: (since, until) =>
+      db.appointment.findMany({
+        where: { businessId: business.id, scheduledAt: { gte: since, lte: until } },
+        orderBy: { scheduledAt: 'asc' },
+        take: 200,
+        select: OUTCOME_SELECT,
+      }),
+    claim: async (id, expected, next) =>
+      (await db.appointment.updateMany({ where: { id, notes: expected }, data: { notes: next } })).count,
+    sendOwner: async (text) => {
+      const res = await telnyx.messages.send({ from: fromNumber, to, text })
+      return (res as { data?: { id?: string } })?.data?.id ?? null
     },
   }
 }
