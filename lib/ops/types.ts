@@ -134,7 +134,8 @@ export type OpsJobStatus = (typeof OPS_JOB_STATUSES)[number]
 export const OPS_MESSAGE_ROLES = ['jacob', 'chief'] as const
 export type OpsMessageRole = (typeof OPS_MESSAGE_ROLES)[number]
 
-export const AGENT_EVENT_KINDS = ['status', 'thinking', 'tool_call', 'tool_result', 'text', 'error'] as const
+// usage: one per model turn (tokens and dollars, lib/ops/hq/usage.ts). Hidden from the live feed; the run drawer shows it.
+export const AGENT_EVENT_KINDS = ['status', 'thinking', 'tool_call', 'tool_result', 'text', 'error', 'usage'] as const
 export type AgentEventKind = (typeof AGENT_EVENT_KINDS)[number]
 
 export const OPS_APPROVAL_KINDS = ['ads_change', 'web_push'] as const

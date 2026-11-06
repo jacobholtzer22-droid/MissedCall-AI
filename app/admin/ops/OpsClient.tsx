@@ -336,7 +336,7 @@ export function OpsClient({
       <main
         className={`max-w-screen-2xl mx-auto px-3 sm:px-6 ${tab === 'hq' ? 'w-full flex-1 min-h-0 py-3 sm:py-4' : 'py-4 sm:py-6'}`}
       >
-        {tab === 'hq' && <HqTab hq={hq} />}
+        {tab === 'hq' && <HqTab hq={hq} showRevenue={showRevenue} />}
         {tab === 'home' && <HomeTab board={board} actions={actions} hq={hq} triage={triage} showRevenue={showRevenue} onOpenHq={() => switchTab('hq')} />}
         {tab === 'clients' && (
           <ClientsTab

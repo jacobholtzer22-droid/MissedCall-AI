@@ -20,6 +20,7 @@ import { emit } from './events'
 import { adoptUnsent, listInbox, writeCaptions } from './inbox'
 import { onSpecialistRunEnded } from './jobs'
 import { createRun, failRun, finishRun } from './runs'
+import { recordUsage } from './usage'
 
 export const PHOTOS_PER_TURN = 10
 /** A photo run still at running after this long died with its function; it is failed so a new one can start. */
@@ -74,7 +75,7 @@ const RECORD_TOOL: Block = {
  * browser could not play it) is left out: it stays uncaptioned and the chief
  * captions it from what Jacob says.
  */
-export async function captionChunk(chunk: InboxEntry[]): Promise<Map<string, PhotoCaption>> {
+export async function captionChunk(chunk: InboxEntry[], runId?: string): Promise<Map<string, PhotoCaption>> {
   const items = chunk.filter((e) => !isVideoAttachment(e) || (e.frames?.length ?? 0) > 0)
   if (!items.length) return new Map()
   const videos = items.filter(isVideoAttachment).length
@@ -90,6 +91,7 @@ export async function captionChunk(chunk: InboxEntry[]): Promise<Map<string, Pho
     else content.push({ type: 'image', source: { type: 'url', url: e.url } })
   })
   const res = await streamMessage({ model: photoModel(), system: SYSTEM, messages: [{ role: 'user', content }], tools: [RECORD_TOOL], effort: 'low', maxTokens: 8000 }, () => undefined)
+  if (runId) await recordUsage(runId, res.model ?? photoModel(), res.usage, null)
   if (res.stopReason === 'refusal') throw new Error('the model declined to caption these photos')
   const use = res.content.find((b) => b.type === 'tool_use' && b.name === 'record_captions')
   const rows = Array.isArray((use?.input as { photos?: unknown })?.photos) ? ((use!.input as { photos: Record<string, unknown>[] }).photos) : []
@@ -142,7 +144,7 @@ export async function runPhotoRun(runId: string) {
     const r = await captionInChunks({
       entries: targets,
       chunkSize: PHOTOS_PER_TURN,
-      caption: captionChunk,
+      caption: (chunk) => captionChunk(chunk, runId),
       save: writeCaptions,
       progress: async (done, total) => {
         await db.agentRun.updateMany({ where: { id: runId, status: 'running' }, data: { output: { done, total } } })

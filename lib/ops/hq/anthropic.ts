@@ -74,6 +74,12 @@ export async function streamMessage(
     model: req.model,
     max_tokens: req.maxTokens ?? 32000,
     stream: true,
+    // Two cache breakpoints. The explicit one on the system prompt caches tools + system
+    // (they render first). The top-level one is automatic caching: the API puts it on the
+    // last cacheable block of messages and moves it forward each turn, so every turn of a
+    // run reads the whole earlier conversation from cache (0.05x input on Opus 5.5)
+    // instead of paying full input price for it again.
+    cache_control: { type: 'ephemeral' },
     system: [{ type: 'text', text: req.system, cache_control: { type: 'ephemeral' } }],
     messages: req.messages,
     thinking: { type: 'adaptive', display: 'summarized' },

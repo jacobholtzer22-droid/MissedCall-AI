@@ -11,10 +11,12 @@
 //
 // History is append-only: assistant content goes back exactly as received.
 // Before every turn the run row is read; status cancelled stops the loop.
+// After every turn its token usage and cost become a usage event (usage.ts).
 
 import { db } from '@/lib/db'
 import { type ApiMessage, type Block, type Effort, forApi, invalidInput, streamMessage } from './anthropic'
 import { emit, noEmDash, oneLine } from './events'
+import { recordUsage } from './usage'
 
 export const MAX_TURNS = 60
 
@@ -85,6 +87,7 @@ export async function runAgentLoop(opts: LoopOptions): Promise<LoopResult> {
       { model: opts.model, system: opts.system, messages, tools: apiTools, effort: opts.effort },
       onBlock
     )
+    await recordUsage(opts.runId, res.model ?? opts.model, res.usage, turn)
     messages.push({ role: 'assistant', content: res.content.map(forApi) })
 
     if (res.stopReason === 'refusal') {

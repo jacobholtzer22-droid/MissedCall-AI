@@ -12,9 +12,10 @@
 // job report files it as a Setup item and the chief does not offer a rerun,
 // which would fail the same way.
 //
-// Cost per run: no run records its usage today (streamMessage returns usage
-// but nothing stores it, and the workflow sends no cost). A run output with a
-// numeric costUsd is averaged; otherwise the item says "cost not recorded".
+// Cost per run: HQ runs on the platform key (chief, ads, research, photo) get
+// output.costUsd when they end (lib/ops/hq/usage.ts). Web builds run on GitHub
+// and send no cost. A run output with a numeric costUsd is averaged; otherwise
+// the item says "cost not recorded".
 //
 // Pure.
 

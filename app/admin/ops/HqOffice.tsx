@@ -4,10 +4,12 @@
 // agent's state (Idle, Working, Waiting for you, Failed); while it works, the
 // client, the elapsed time and the latest feed line typed in, plus Stop. A
 // click opens the drawer with the whole feed of the current or last run.
+// With revenue shown, each desk shows its model spend (useAgentSpend).
 
 import { useEffect, useRef, useState } from 'react'
 import { Square, X } from 'lucide-react'
 import { PERSONAS, type Persona } from '@/lib/ops/hq/personas'
+import { formatUsd } from '@/lib/ops/hq/pricing'
 import { Avatar, ago, elapsed, isActive, type FeedApproval, type FeedEvent, type FeedRun } from './hqShared'
 
 type DeskState = 'idle' | 'working' | 'waiting' | 'failed'
@@ -17,6 +19,38 @@ const PILL: Record<DeskState, { label: string; tone: string }> = {
   working: { label: 'Working', tone: 'bg-emerald-500/10 text-emerald-300 border-emerald-500/30' },
   waiting: { label: 'Waiting for you', tone: 'bg-amber-500/10 text-amber-300 border-amber-500/30' },
   failed: { label: 'Failed', tone: 'bg-red-500/10 text-red-300 border-red-500/40' },
+}
+
+export type AgentSpendView = { todayUsd: number; monthUsd: number; runsMonth: number }
+export type SpendView = { agents: Record<string, AgentSpendView>; totalTodayUsd: number; totalMonthUsd: number }
+
+/** Model spend per agent, fetched once a minute while enabled (revenue shown); null otherwise or until loaded. */
+export function useAgentSpend(enabled: boolean): SpendView | null {
+  const [spend, setSpend] = useState<SpendView | null>(null)
+  useEffect(() => {
+    if (!enabled) {
+      setSpend(null)
+      return
+    }
+    let cancelled = false
+    const load = async () => {
+      try {
+        const res = await fetch('/api/admin/ops/hq/spend', { cache: 'no-store' })
+        if (!res.ok) return
+        const data = (await res.json()) as { agents: ({ agent: string } & AgentSpendView)[]; totalTodayUsd: number; totalMonthUsd: number }
+        if (!cancelled) setSpend({ agents: Object.fromEntries(data.agents.map((a) => [a.agent, a])), totalTodayUsd: data.totalTodayUsd, totalMonthUsd: data.totalMonthUsd })
+      } catch {
+        // Spend is a nice-to-have: a failed load keeps the last value.
+      }
+    }
+    void load()
+    const id = setInterval(load, 60_000)
+    return () => {
+      cancelled = true
+      clearInterval(id)
+    }
+  }, [enabled])
+  return spend
 }
 
 export type Desk = { persona: Persona; state: DeskState; active: FeedRun[]; run: FeedRun | null; waiting: number }
@@ -38,9 +72,12 @@ export function Office({
   now,
   onOpen,
   onStop,
+  spend = null,
   stacked = false,
 }: {
   desks: Desk[]
+  /** Model spend per agent; null hides every dollar figure. */
+  spend?: SpendView | null
   latestByRun: Map<string, string>
   now: number
   onOpen: (runId: string) => void
@@ -50,12 +87,17 @@ export function Office({
 }) {
   return (
     <section aria-label="The office" className="bg-gray-900 border border-gray-800 rounded-lg">
-      <div className="px-4 py-3 border-b border-gray-800">
+      <div className="px-4 py-3 border-b border-gray-800 flex items-baseline justify-between gap-3">
         <h2 className="text-sm font-semibold text-gray-100">The office</h2>
+        {spend && (
+          <span className="text-xs text-gray-500 tabular-nums" title="Model spend on the API key, Detroit time. Web builds are not counted.">
+            {formatUsd(spend.totalTodayUsd)} today, {formatUsd(spend.totalMonthUsd)} this month
+          </span>
+        )}
       </div>
       <div className={`grid grid-cols-1 gap-3 p-3 ${stacked ? '' : 'sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2'}`}>
         {list.map((d) => (
-          <DeskCard key={d.persona.key} desk={d} latest={d.run ? latestByRun.get(d.run.id) ?? d.run.latest?.label ?? null : null} now={now} onOpen={onOpen} onStop={onStop} />
+          <DeskCard key={d.persona.key} desk={d} latest={d.run ? latestByRun.get(d.run.id) ?? d.run.latest?.label ?? null : null} now={now} onOpen={onOpen} onStop={onStop} spend={spend ? spend.agents[d.persona.key] ?? { todayUsd: 0, monthUsd: 0, runsMonth: 0 } : null} />
         ))}
       </div>
     </section>
@@ -68,8 +110,11 @@ function DeskCard({
   now,
   onOpen,
   onStop,
+  spend,
 }: {
   desk: Desk
+  /** This agent's model spend; null when revenue is hidden. */
+  spend: AgentSpendView | null
   latest: string | null
   now: number
   onOpen: (runId: string) => void
@@ -147,6 +192,13 @@ function DeskCard({
           <Square className="h-3.5 w-3.5" />
           {stopping ? 'Stopping…' : 'Stop'}
         </button>
+      )}
+      {spend && (
+        <p className="text-xs text-gray-500 tabular-nums">
+          {persona.key === 'web' && spend.monthUsd === 0
+            ? 'Spend not tracked (builds run on GitHub)'
+            : `Spent ${formatUsd(spend.todayUsd)} today, ${formatUsd(spend.monthUsd)} this month over ${spend.runsMonth} run${spend.runsMonth === 1 ? '' : 's'}`}
+        </p>
       )}
       {persona.key === 'research' && state !== 'working' && <LearningsButton />}
       {persona.key === 'ads' && <ReviewButton />}
@@ -270,6 +322,7 @@ const EVENT_TONE: Record<string, string> = {
   thinking: 'italic text-gray-500',
   text: 'text-gray-200',
   status: 'text-gray-400 font-medium',
+  usage: 'text-xs text-gray-600 tabular-nums',
 }
 
 function offset(startIso: string | null, atIso: string) {
@@ -284,14 +337,17 @@ export function RunDrawer({
   runs,
   onClose,
   onStop,
+  showRevenue = false,
 }: {
   runId: string
   liveEvents: FeedEvent[]
   runs: FeedRun[]
   onClose: () => void
   onStop: (runId: string) => Promise<void>
+  /** Shows each turn's cost (usage events) and the run's total. */
+  showRevenue?: boolean
 }) {
-  const [loaded, setLoaded] = useState<{ run: FeedRun; events: FeedEvent[] } | null>(null)
+  const [loaded, setLoaded] = useState<{ run: FeedRun; events: FeedEvent[]; costUsd: number | null } | null>(null)
   const [error, setError] = useState<string | null>(null)
   const listRef = useRef<HTMLDivElement>(null)
   const pinned = useRef(true)
@@ -303,7 +359,7 @@ export function RunDrawer({
         const res = await fetch(`/api/admin/ops/hq/runs/${runId}/events`, { cache: 'no-store' })
         const data = await res.json().catch(() => ({}))
         if (cancelled) return
-        if (res.ok) setLoaded({ run: { ...data.run, latest: null, kind: '', jobId: null, engagementId: null }, events: data.events })
+        if (res.ok) setLoaded({ run: { ...data.run, latest: null, kind: '', jobId: null, engagementId: null }, events: data.events, costUsd: typeof data.run?.costUsd === 'number' ? data.run.costUsd : null })
         else setError(String(data.error ?? 'Could not load the run'))
       } catch {
         if (!cancelled) setError('Could not load the run')
@@ -322,7 +378,7 @@ export function RunDrawer({
 
   // Live events from the feed poll join the loaded list.
   const seen = new Set(loaded?.events.map((e) => e.id))
-  const events = loaded ? [...loaded.events, ...liveEvents.filter((e) => e.runId === runId && !seen.has(e.id))] : []
+  const events = (loaded ? [...loaded.events, ...liveEvents.filter((e) => e.runId === runId && !seen.has(e.id))] : []).filter((e) => showRevenue || e.kind !== 'usage')
   const live = runs.find((r) => r.id === runId)
   const run = live ?? loaded?.run ?? null
   const running = isActive(run)
@@ -343,7 +399,7 @@ export function RunDrawer({
               {run?.client ? `, ${run.client}` : ''}
             </h2>
             <p className="text-xs text-gray-500 tabular-nums">
-              {run ? `${run.status}${run.mode === 'apply' ? ', apply' : ''}, ${events.length} event${events.length === 1 ? '' : 's'}` : 'Loading…'}
+              {run ? `${run.status}${run.mode === 'apply' ? ', apply' : ''}, ${events.length} event${events.length === 1 ? '' : 's'}${showRevenue && loaded?.costUsd != null ? `, ${formatUsd(loaded.costUsd)}` : ''}` : 'Loading…'}
             </p>
           </div>
           <div className="flex items-center gap-2 shrink-0">

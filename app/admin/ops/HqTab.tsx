@@ -9,18 +9,22 @@
 // first at full height; the desks and approvals open above it behind the
 // Agents toggle, in their own scroll, so the composer stays in view. Same
 // components as before (Office, Chat, ApprovalCard, RunDrawer); the feed is
-// the shell's useHqFeed, polling fast while this tab is open.
+// the shell's useHqFeed, polling fast while this tab is open. With revenue
+// shown, each desk also shows its model spend today and this month
+// (/api/admin/ops/hq/spend, fetched once a minute) and the drawer shows
+// each turn's cost.
 
 import { useEffect, useMemo, useState } from 'react'
 import { ChevronDown } from 'lucide-react'
 import { Chat } from './HqChat'
-import { Office, RunDrawer, desks } from './HqOffice'
+import { Office, RunDrawer, desks, useAgentSpend } from './HqOffice'
 import { ApprovalCard } from './HqApprovals'
 import { OUTCOME } from './HomeTriage'
 import { HQ_CSS, isActive, type FeedApproval } from './hqShared'
 import type { HqFeedState } from './useHqFeed'
 
-export function HqTab({ hq }: { hq: HqFeedState }) {
+export function HqTab({ hq, showRevenue = false }: { hq: HqFeedState; showRevenue?: boolean }) {
+  const spend = useAgentSpend(showRevenue)
   const [openRun, setOpenRun] = useState<string | null>(null)
   const [agentsOpen, setAgentsOpen] = useState(false)
   const [now, setNow] = useState(() => Date.now())
@@ -61,7 +65,7 @@ export function HqTab({ hq }: { hq: HqFeedState }) {
       >
         {hq.loadError && <p className="rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-2 text-sm text-red-300">{hq.loadError}</p>}
         {hq.feed ? (
-          <Office desks={desks(runs, hq.feed.lastRuns, approvals)} latestByRun={hq.latestByRun} now={now} onOpen={setOpenRun} onStop={hq.stop} stacked />
+          <Office desks={desks(runs, hq.feed.lastRuns, approvals)} latestByRun={hq.latestByRun} now={now} onOpen={setOpenRun} onStop={hq.stop} spend={spend} stacked />
         ) : (
           <p className="rounded-lg border border-gray-800 bg-gray-900 px-4 py-6 text-sm text-gray-500">Loading the office…</p>
         )}
@@ -72,7 +76,7 @@ export function HqTab({ hq }: { hq: HqFeedState }) {
         <Chat messages={hq.messages} jobs={hq.feed?.jobs ?? []} thinking={runs.some((r) => r.agent === 'chief' && isActive(r))} onSend={hq.send} approvals={approvals} onDecide={hq.decide} fill />
       </div>
 
-      {openRun && <RunDrawer runId={openRun} liveEvents={hq.events} runs={runs} onClose={() => setOpenRun(null)} onStop={hq.stop} />}
+      {openRun && <RunDrawer runId={openRun} liveEvents={hq.events} runs={runs} onClose={() => setOpenRun(null)} onStop={hq.stop} showRevenue={showRevenue} />}
     </div>
   )
 }

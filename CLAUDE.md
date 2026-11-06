@@ -3264,6 +3264,16 @@ have no client. The board and the Agents tab list client runs only
   from every label, chat message and report.
 - `runs.ts`: `createRun` (status running, a Started event), `finishRun` (a cancelled
   run stays cancelled), `failRun` (status failed plus an error event).
+- **Model spend** (`pricing.ts`, `usage.ts`, Nov 2026): after every model turn the loop (and
+  the photo desk) writes one `AgentEvent` kind `usage` with tokens and `costUsd` from
+  `MODEL_PRICES` (update that table when prices change; an unknown model prices as null).
+  `finishRun`/`failRun` stamp the totals onto `AgentRun.output` as `costUsd` + `usage`.
+  Usage events are left out of the feed poll and the desks' latest line; the drawer
+  shows them, and `GET /api/admin/ops/hq/spend` sums them per agent (today and month,
+  Detroit) for the desks, both only with revenue shown. Not counted: web builds (GitHub)
+  and the monthly trade-learnings summary (no run row).
+- **History caching**: `streamMessage` sends top-level `cache_control` (automatic caching)
+  beside the system breakpoint, so each turn reads the earlier conversation from cache.
 
 **The chief** (`lib/ops/hq/chief.ts`, `OPS_CHIEF_MODEL`, default `claude-opus-5-5`,
 effort medium). Its context is the last 40 HQ messages (jacob → user, chief →

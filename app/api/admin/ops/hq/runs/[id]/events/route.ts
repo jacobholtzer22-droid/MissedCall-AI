@@ -2,12 +2,14 @@
 // GET /api/admin/ops/hq/runs/[id]/events — one run's whole feed
 // ===========================================
 // For the desk drawer: the run (agent, client, status, times) and every event
-// it wrote, oldest first (up to 2,000). New events after that arrive through the
+// it wrote, oldest first (up to 2,000), usage events included (the drawer shows
+// them only with revenue shown), and the run's model spend so far (costUsd). New events after that arrive through the
 // feed poll, which carries runId on each event.
 
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { requireAdmin } from '@/lib/pipeline-server'
+import { runUsage } from '@/lib/ops/hq/usage'
 
 export const dynamic = 'force-dynamic'
 
@@ -20,6 +22,7 @@ export async function GET(_request: Request, context: { params: { id: string } }
       include: { engagement: { select: { displayName: true } }, events: { orderBy: { createdAt: 'asc' }, take: 2000 } },
     })
     if (!run) return NextResponse.json({ error: 'Run not found' }, { status: 404 })
+    const usage = await runUsage(run.id).catch(() => null)
     return NextResponse.json({
       run: {
         id: run.id,
@@ -30,6 +33,7 @@ export async function GET(_request: Request, context: { params: { id: string } }
         error: run.error,
         startedAt: run.startedAt?.toISOString() ?? null,
         finishedAt: run.finishedAt?.toISOString() ?? null,
+        costUsd: usage?.costUsd ?? null,
       },
       events: run.events.map((e) => ({ id: e.id, runId: e.runId, kind: e.kind, label: e.label, detail: e.detail, createdAt: e.createdAt.toISOString() })),
     })

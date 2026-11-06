@@ -48,7 +48,7 @@ import { emit, noEmDash, oneLine } from './events'
 import { onSpecialistRunEnded } from './jobs'
 import { runAgentLoop } from './loop'
 import { engagementTradeKey } from './research-tools'
-import { failRun, finishRun } from './runs'
+import { failRun, finishRun, stampCost } from './runs'
 import { enums } from 'google-ads-api'
 
 export { REVIEW_JOB_PREFIX }
@@ -458,6 +458,7 @@ export async function runAdsReviewTask(runId: string) {
   } catch (err) {
     const message = await failRun(runId, err)
     await db.agentRun.update({ where: { id: runId }, data: { output: { review: { client, engagementId, failed: message } } as Prisma.InputJsonObject } }).catch(() => {})
+    await stampCost(runId)
   }
   const job = await db.agentRun.findUnique({ where: { id: runId }, select: { jobId: true } })
   if (job?.jobId) await onSpecialistRunEnded(job.jobId).catch((err) => console.error('[hq] job report failed:', err instanceof Error ? err.message : err))

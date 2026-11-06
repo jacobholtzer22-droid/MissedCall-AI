@@ -9,7 +9,8 @@
 // that are pending or were decided in the last 30 minutes (so a pushed card can
 // show Applying, then Applied or the error), and the last 20 jobs with their
 // reports and research briefs. cursor is the newest timestamp returned; pass it
-// back as since.
+// back as since. Usage events (model spend per turn) are left out: the run
+// drawer loads them, and spend per desk comes from /hq/spend.
 
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
@@ -68,15 +69,16 @@ export async function GET(request: Request) {
     const recent = new Date(Date.now() - RECENT_MS)
     const runInclude = {
       engagement: { select: { displayName: true } },
-      events: { orderBy: { createdAt: 'desc' as const }, take: 1, select: { label: true, kind: true, createdAt: true } },
+      // usage events (one per model turn, with dollars) never become a desk's latest line.
+      events: { where: { kind: { not: 'usage' } }, orderBy: { createdAt: 'desc' as const }, take: 1, select: { label: true, kind: true, createdAt: true } },
     }
     const [messages, events, runs, approvals, jobs, lastRuns] = await Promise.all([
       since
         ? db.opsMessage.findMany({ where: { createdAt: { gt: since } }, orderBy: { createdAt: 'asc' }, take: 200 })
         : db.opsMessage.findMany({ orderBy: { createdAt: 'desc' }, take: 50 }).then((r) => r.reverse()),
       since
-        ? db.agentEvent.findMany({ where: { createdAt: { gt: since } }, orderBy: { createdAt: 'asc' }, take: 200 })
-        : db.agentEvent.findMany({ orderBy: { createdAt: 'desc' }, take: 200 }).then((r) => r.reverse()),
+        ? db.agentEvent.findMany({ where: { createdAt: { gt: since }, kind: { not: 'usage' } }, orderBy: { createdAt: 'asc' }, take: 200 })
+        : db.agentEvent.findMany({ where: { kind: { not: 'usage' } }, orderBy: { createdAt: 'desc' }, take: 200 }).then((r) => r.reverse()),
       db.agentRun.findMany({
         where: {
           agent: { not: null },
