@@ -3,7 +3,7 @@
 // Clients: the roster. Counts by stage (each one filters), the two MRR
 // numbers (Verified and Projected, from headlineMrr so they match the Money
 // tab), the pending clients itemised with their amounts editable in place,
-// the unmatched-Stripe strip, then every client as a card with search,
+// the unmatched-Stripe strip, the unlinked-sites strip, then every client as a card with search,
 // filters and sort. Cards carry the deliverable chips and Stripe status the
 // old table had.
 
@@ -16,6 +16,7 @@ import type { UnmatchedPayingCustomer } from '@/lib/ops/sync'
 import { DELIVERABLE_TYPES, DELIVERABLE_TYPES_FOR_SERVICE, SERVICE_KEYS, STAGE_ORDER, type DeliverableType, type ServiceKey } from '@/lib/ops/types'
 import { ClientCard } from './ClientCard'
 import { EngagementPicker } from './Pickers'
+import { UnlinkedSitesStrip } from './UnlinkedSitesStrip'
 import {
   AmountInput,
   DeliverableChip,
@@ -65,6 +66,7 @@ export function ClientsTab({
   unmatched,
   unmatchedLoading,
   onLoadUnmatched,
+  onRefresh,
   showRevenue,
   onShowRevenue,
   working,
@@ -75,6 +77,8 @@ export function ClientsTab({
   unmatched: UnmatchedPayingCustomer[] | null
   unmatchedLoading: boolean
   onLoadUnmatched: (refresh?: boolean) => void
+  /** Reload the board after a link or edit outside the actions. */
+  onRefresh: () => Promise<void>
   showRevenue: boolean
   onShowRevenue: () => void
   /** engagementId → the HQ agent running for it now. */
@@ -185,6 +189,8 @@ export function ClientsTab({
       <MrrPanel board={board} actions={actions} showRevenue={showRevenue} onShowRevenue={onShowRevenue} />
 
       <UnmatchedStrip board={board} actions={actions} customers={unmatched} loading={unmatchedLoading} onLoad={onLoadUnmatched} />
+
+      <UnlinkedSitesStrip actions={actions} onLinked={onRefresh} />
 
       {/* Filters */}
       <div className="flex flex-wrap items-center gap-2">

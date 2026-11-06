@@ -345,6 +345,7 @@ export function OpsClient({
             unmatched={unmatched}
             unmatchedLoading={unmatchedLoading}
             onLoadUnmatched={loadUnmatched}
+            onRefresh={refresh}
             showRevenue={showRevenue}
             onShowRevenue={toggleRevenue}
             working={workingByClient(hq)}

@@ -255,7 +255,7 @@ export async function startWebTask(opts: {
       if (opts.kind === 'site_update' && !opts.instructions?.trim()) throw new Error('site_update needs instructions')
       const started: string[] = []
       if (!w.repoUrl) {
-        if (opts.kind === 'site_update') throw new Error(`${w.name} has no repo yet; build the site first`)
+        if (opts.kind === 'site_update') throw new Error(`${w.name} has no repo on the board. If the site already exists, link it (suggest_repo_links, then link_repo once Jacob confirms); otherwise build the site first`)
         if (!w.businessId) throw new Error(`${w.name} has no platform account; create it first`)
         await provisionRun(w.id, jobId)
         started.push('provision (done)')

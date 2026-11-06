@@ -41,6 +41,7 @@ import { type ApiMessage, type Block, CHIEF_MODEL_DEFAULT } from './anthropic'
 import { DECISION_PREFIX, decisionsByEngagement, standingDecisionRows } from './decisions'
 import { findDecision, supersededMarker } from '@/lib/ops/outside-hq'
 import { runWebChecks } from '@/lib/ops/checks/run-web'
+import { linkSite, loadLinkSuggestions } from '@/lib/ops/checks/link'
 import { noEmDash, oneLine } from './events'
 import { type ClientTool, runAgentLoop } from './loop'
 import { adsAccountUrl } from './links'
@@ -97,6 +98,7 @@ What you do:
 - Every brief follows docs/ops/site-brief-standards.md (get_brief_template returns it with the template): services named and split the way customers search, no published job ranges, no claims the client did not make, hours and towns as the rules say, no invented tagline, about story or reviews, display name without LLC or numbering. List what you applied under "## Standards applied" at the end of the brief body; when the client's answers override a standard, the client wins and you say so there. The same file's section 9 is how the answers become the ads spec.
 - A build needs real photos: with none on file and no old site set to verbatim, site_build is refused. Tell Jacob to add photos at the intake page, or build with stock only if he says so (withStock).
 - Website work: start_web_task. A branch name, preview URL or PR comes from the run's recorded result (get_client, the job report, review), never from the agent's BUILD-REPORT text, which can name a branch that was never pushed. "Build X's site": site_build (it provisions first if needed). After a build reports back: review, which posts the preview and PR. "Merge it" / "take it live" / "connect example.com": merge, go_live, connect_domain, each waiting for Push. Never claim a site is built, merged or live before its run or Push says so.
+- Repo not linked: when a website client shows no repo or Vercel project (get_client, a vercel.project_found failure, "has no repo"), do not ask Jacob for the URL. Call suggest_repo_links, show him the top candidate for that client in one line ("Cowboy Spray Foam looks like repo Christian-Cowboy-Spray-Foam and Vercel project cowboy-spray-foam, link them?"), and call link_repo only after he confirms. If no candidate scores, show the unmatched lists and ask which one. Never link on a guess, and never call provision for a site that already exists.
 - Domains: a client with no domain (intake domain.current empty, domain.wanted set) or "buy example.com for X": offer buy_domain, which checks availability and price and waits for Push. A domain the client owns: connect_domain, then give Jacob the one registrar instruction it returns, word for word. Google Workspace mail on a domain on Vercel DNS: set_email_records.
 - Tracking: "install tracking on X": install_tracking. It needs the ads account's AW- id and conversion labels on the ads deliverable; if they are missing, start the ads specialist with "read the conversion labels" first.
 - Go-live and enable gates: go_live is refused while the Google tag, the domain, the approval or the owner's email and phone for lead alerts are undone, and the refusal names each one; repeat it to Jacob as given. Only Jacob's own words "skip <item>" (or "go live on vercel.app") waive one; never add them yourself. Enable proposals carry their unmet list on the card.
@@ -387,6 +389,74 @@ function outsideHqTools(): ClientTool[] {
           db.opsActivity.create({ data: { engagementId, kind: 'system', body: supersededMarker(old.id, old.text, next) } }),
         ])
         return { result: { ok: true, client: name, replaced: old.text, now: next }, label: `Decision for ${name}: "${old.text}" is replaced by "${next}"` }
+      },
+    },
+  ]
+}
+
+/**
+ * Repo and Vercel project links. The nightly matcher links by slug, git link and
+ * domain only, never by name, so a renamed repo or a placeholder slug leaves a
+ * client unlinked and the web specialist has nothing to work on. These two tools
+ * are the fix in chat: suggest ranks the unmatched repos and projects by name;
+ * link_repo writes the one Jacob confirmed.
+ */
+function linkTools(): ClientTool[] {
+  return [
+    {
+      name: 'suggest_repo_links',
+      description:
+        'Every website client missing a GitHub repo or a Vercel project on the board, each with its best candidate repos and projects (ranked by name, with the reason), plus the full unmatched lists. Use when a client "has no repo", a site check fails on vercel.project_found, or Jacob asks why a site is not linked. Show Jacob the top candidate for each client and ask him to confirm; never call link_repo on a guess. Reads GitHub and Vercel; cached 10 minutes unless refresh is true.',
+      input_schema: { type: 'object', properties: { refresh: { type: 'boolean', description: 'Re-read GitHub and Vercel instead of the 10 minute cache.' } } },
+      run: async (input) => {
+        const s = await loadLinkSuggestions({ refresh: input.refresh === true })
+        const result = {
+          at: s.at,
+          cached: s.cached,
+          unlinkedClients: s.suggestions.map((x) => ({
+            engagementId: x.engagementId,
+            client: x.client,
+            has: x.linked,
+            repoCandidates: x.repos,
+            projectCandidates: x.projects,
+          })),
+          unmatchedRepos: s.unmatchedRepos.map((r) => r.fullName),
+          unmatchedProjects: s.unmatchedProjects.map((p) => `${p.name} (${p.id})${p.gitRepo ? ` git ${p.gitRepo}` : ''}`),
+          apiErrors: s.apiErrors,
+        }
+        return { result, label: `Repo links: ${s.suggestions.length} client${s.suggestions.length === 1 ? '' : 's'} unlinked, ${s.unmatchedRepos.length} repos and ${s.unmatchedProjects.length} projects free` }
+      },
+    },
+    {
+      name: 'link_repo',
+      description:
+        "Link a client's website to its GitHub repo and/or Vercel project after Jacob confirmed which one in this chat (\"yes, that one\", a repo URL, a project name). That confirmation is the approval; do not call this from a suggestion alone. Verifies the repo and project exist, refuses one another client holds, writes the link, logs it on the client, and reruns that client's site checks. Pass repo as owner/name or the GitHub URL and project as the Vercel project id or exact name; either may be left out.",
+      input_schema: {
+        type: 'object',
+        properties: {
+          engagementId: { type: 'string' },
+          repo: { type: 'string', description: 'owner/name or https://github.com/owner/name' },
+          project: { type: 'string', description: 'Vercel project id (prj_…) or exact project name' },
+          words: { type: 'string', description: "Jacob's words confirming it." },
+        },
+        required: ['engagementId'],
+      },
+      run: async (input) => {
+        try {
+          const r = await linkSite({
+            engagementId: str(input.engagementId),
+            repo: str(input.repo) || null,
+            project: str(input.project) || null,
+            by: 'chief',
+            words: noEmDash(str(input.words)) || null,
+          })
+          const parts = [r.repoUrl ? `repo ${r.repoUrl.replace(/^https:\/\/github\.com\//, '')}` : null, r.vercelProjectName ? `Vercel ${r.vercelProjectName}` : null].filter(Boolean).join(', ')
+          const failing = r.checks ? Object.keys(r.checks.failingByKey).length : null
+          return { result: { ok: true, ...r }, label: `Linked ${r.client}: ${parts}${failing === null ? '' : `; site checks rerun, ${failing} failing`}` }
+        } catch (err) {
+          if (err instanceof BadRequest) throw new Error(err.message)
+          throw err
+        }
       },
     },
   ]
@@ -743,6 +813,7 @@ function chiefTools(ctx: ChiefContext): ClientTool[] {
         return { result: { ok: true, client: name }, label: `Decision for ${name}: ${decision}` }
       },
     },
+    ...linkTools(),
     // OPS_AUTOFLOW (off by default): work Jacob did outside Ops HQ.
     ...(autoflowEnabled() ? outsideHqTools() : []),
     // ADS_BILLING_INVITE (off by default): the billing invite for an account bound outside a run.
