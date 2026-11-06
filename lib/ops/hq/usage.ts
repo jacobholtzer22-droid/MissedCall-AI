@@ -1,5 +1,5 @@
 // ===========================================
-// Ops HQ — recording what each run spent on the model
+// Ops HQ: recording what each run spent on the model
 // ===========================================
 // One AgentEvent (kind usage) per model turn: label "Turn 3 $0.042: ...",
 // detail { model, turn, inputTokens, outputTokens, cacheReadTokens,

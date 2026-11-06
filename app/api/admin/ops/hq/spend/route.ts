@@ -1,5 +1,5 @@
 // ===========================================
-// GET /api/admin/ops/hq/spend — model spend per HQ agent
+// GET /api/admin/ops/hq/spend: model spend per HQ agent
 // ===========================================
 // Today and this calendar month (Detroit time), summed from the usage events
 // the agent loop writes per model turn (lib/ops/hq/usage.ts). Covers the

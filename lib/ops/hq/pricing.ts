@@ -1,5 +1,5 @@
 // ===========================================
-// Ops HQ — what one model turn cost (pure)
+// Ops HQ: what one model turn cost (pure)
 // ===========================================
 // Prices are USD per million tokens, first-party Claude API rates, from the
 // claude-api skill's model table (cached 2026-10-06). A 5-minute cache write

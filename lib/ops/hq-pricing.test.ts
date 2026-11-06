@@ -66,5 +66,5 @@ test('labels and dollar formatting', () => {
   assert.equal(formatUsd(1234.4), '$1,234')
   const u = turnCost('claude-sonnet-5-5', { input_tokens: 1200, cache_read_input_tokens: 40000, output_tokens: 800 })
   assert.equal(usageLabel(3, u), 'Turn 3 $0.018: 1,200 in, 40,000 cached, 800 out')
-  assert.ok(!/—/.test(usageLabel(null, turnCost('x', {}))))
+  assert.ok(!/\u2014/.test(usageLabel(null, turnCost('x', {}))))
 })
